@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  CUSTOMER
+  STAFF
+}
+
+enum StoreMemberRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+model Store {
+  id          String        @id @default(cuid())
+  name        String
+  members     StoreMember[]
+  createdById String?
+  createdBy   User?         @relation("CreatedStores", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([createdById])
+}
+
+model User {
+  id               String        @id @default(cuid())
+  email            String        @unique
+  name             String
+  passwordHash     String
+  role             UserRole      @default(CUSTOMER)
+  refreshTokenHash String?
+  storeMembers     StoreMember[]
+  createdStores    Store[]       @relation("CreatedStores")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model StoreMember {
+  id        String          @id @default(cuid())
+  storeId   String
+  userId    String
+  role      StoreMemberRole @default(STAFF)
+  store     Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@unique([storeId, userId])
+  @@index([userId])
+}

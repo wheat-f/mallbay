@@ -1,14 +1,13 @@
-import { IsEmail, IsString, MinLength } from "class-validator";
+import { IsString, Matches, MinLength } from "class-validator";
 
 export class RegisterDto {
-  @IsEmail()
-  email!: string;
+  @IsString()
+  @Matches(/^[a-zA-Z0-9_一-龥]{2,30}$/, {
+    message: "账号只能包含字母、数字、下划线或中文，长度 2-30 位"
+  })
+  username!: string;
 
   @IsString()
-  @MinLength(2)
-  name!: string;
-
-  @IsString()
-  @MinLength(8)
+  @MinLength(8, { message: "密码至少 8 位" })
   password!: string;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { App, Button, Card, Layout, Tag, Typography } from "antd";
+import { App, Avatar, Button, Card, Dropdown, Layout, Tag, Typography } from "antd";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -24,16 +24,20 @@ export default function DashboardPage() {
   });
 
   useEffect(() => {
-    if (hasHydrated && !user) {
+    // 未登录，或 session 是旧格式（无 username 字段）均跳回登录页
+    if (hasHydrated && (!user || !user.username)) {
       router.push("/auth");
     }
   }, [hasHydrated, router, user]);
 
-  if (!hasHydrated || !user) {
+  if (!hasHydrated || !user || !user.username) {
     return null;
   }
 
+  const displayName = user.nickname ?? user.username;
+  const avatarLabel = displayName.charAt(0).toUpperCase();
   const roleText = user.role === "CUSTOMER" ? "客户" : "工作人员";
+
   const sections = [
     {
       title: "客户视角",
@@ -64,9 +68,37 @@ export default function DashboardPage() {
           </Typography.Title>
           <Typography.Text className="text-xs text-slate-500 sm:text-sm">门店 SaaS 工作台</Typography.Text>
         </div>
-        <Button onClick={() => logoutMutation.mutate()} loading={logoutMutation.isPending}>
-          退出
-        </Button>
+
+        <Dropdown
+          menu={{
+            items: [
+              {
+                key: "profile",
+                label: "个人设置",
+                onClick: () => router.push("/profile")
+              },
+              { type: "divider" },
+              {
+                key: "logout",
+                label: "退出登录",
+                danger: true,
+                onClick: () => logoutMutation.mutate()
+              }
+            ]
+          }}
+          placement="bottomRight"
+          trigger={["click"]}
+        >
+          <button className="dashboard-avatar-btn" aria-label="个人设置">
+            {user.avatarUrl ? (
+              <Avatar src={user.avatarUrl} size={36} />
+            ) : (
+              <Avatar size={36} style={{ background: "#1677ff", cursor: "pointer" }}>
+                {avatarLabel}
+              </Avatar>
+            )}
+          </button>
+        </Dropdown>
       </header>
 
       <Layout.Content className="dashboard-content">
@@ -78,15 +110,15 @@ export default function DashboardPage() {
                   当前身份：{roleText}
                 </Tag>
                 <Typography.Title className="dashboard-title">
-                  {user.name}，欢迎回来
+                  {displayName}，欢迎回来
                 </Typography.Title>
                 <Typography.Paragraph className="dashboard-subtitle">
                   账号已经从门店中解耦。接下来可以在这里选择客户或工作人员视角，并根据门店成员关系加载对应的工作内容。
                 </Typography.Paragraph>
               </div>
               <div className="dashboard-account-box">
-                <div className="dashboard-account-title">账号邮箱</div>
-                <div className="dashboard-account-email">{user.email}</div>
+                <div className="dashboard-account-title">登录账号</div>
+                <div className="dashboard-account-email">{user.username}</div>
               </div>
             </div>
           </div>

@@ -9,7 +9,7 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 type AuthRequest = Request & {
   user: {
     id: string;
-    email: string;
+    username: string;
   };
 };
 

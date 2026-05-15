@@ -17,18 +17,17 @@ export class AuthService {
 
   async register(dto: RegisterDto) {
     const existing = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() }
+      where: { username: dto.username }
     });
 
     if (existing) {
-      throw new ConflictException("Email is already registered");
+      throw new ConflictException("账号已被注册");
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const user = await this.prisma.user.create({
       data: {
-        email: dto.email.toLowerCase(),
-        name: dto.name,
+        username: dto.username,
         passwordHash
       }
     });
@@ -37,17 +36,24 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() }
+    const identifier = dto.identifier.trim();
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: identifier },
+          { email: identifier },
+          { phone: identifier }
+        ]
+      }
     });
 
     if (!user) {
-      throw new UnauthorizedException("Invalid email or password");
+      throw new UnauthorizedException("账号或密码不正确");
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isPasswordValid) {
-      throw new UnauthorizedException("Invalid email or password");
+      throw new UnauthorizedException("账号或密码不正确");
     }
 
     return this.issueAndPersistTokens(user.id);
@@ -61,7 +67,7 @@ export class AuthService {
         secret: this.refreshSecret
       });
     } catch {
-      throw new UnauthorizedException("Invalid refresh token");
+      throw new UnauthorizedException("无效的刷新令牌");
     }
 
     const user = await this.prisma.user.findUnique({
@@ -69,12 +75,12 @@ export class AuthService {
     });
 
     if (!user?.refreshTokenHash) {
-      throw new UnauthorizedException("Invalid refresh token");
+      throw new UnauthorizedException("无效的刷新令牌");
     }
 
     const isRefreshTokenValid = await bcrypt.compare(refreshToken, user.refreshTokenHash);
     if (!isRefreshTokenValid) {
-      throw new UnauthorizedException("Invalid refresh token");
+      throw new UnauthorizedException("无效的刷新令牌");
     }
 
     return this.issueAndPersistTokens(user.id);
@@ -104,7 +110,7 @@ export class AuthService {
 
     const payload: TokenPayload = {
       sub: user.id,
-      email: user.email
+      username: user.username
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -140,11 +146,26 @@ export class AuthService {
     return this.config.get<string>("JWT_REFRESH_SECRET") ?? "mallbay-dev-refresh-secret";
   }
 
-  private toAuthUser(user: { id: string; email: string; name: string; role: "CUSTOMER" | "STAFF" }) {
+  toAuthUser(user: {
+    id: string;
+    username: string;
+    nickname: string | null;
+    avatarUrl: string | null;
+    email: string | null;
+    phone: string | null;
+    wechatOpenId: string | null;
+    alipayUserId: string | null;
+    role: "CUSTOMER" | "STAFF";
+  }) {
     return {
       id: user.id,
+      username: user.username,
+      nickname: user.nickname,
+      avatarUrl: user.avatarUrl,
       email: user.email,
-      name: user.name,
+      phone: user.phone,
+      wechatOpenId: user.wechatOpenId,
+      alipayUserId: user.alipayUserId,
       role: user.role
     };
   }

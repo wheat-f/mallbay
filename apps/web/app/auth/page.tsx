@@ -10,7 +10,10 @@ import { authApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 
 type Mode = "login" | "register";
-type AuthFormValues = RegisterPayload;
+
+type LoginFormValues = LoginPayload;
+type RegisterFormValues = RegisterPayload;
+type AuthFormValues = LoginFormValues & RegisterFormValues;
 
 export default function AuthPage() {
   const [mode, setMode] = useState<Mode>("login");
@@ -21,23 +24,18 @@ export default function AuthPage() {
   const { message } = App.useApp();
   const { control, handleSubmit, reset } = useForm<AuthFormValues>({
     defaultValues: {
-      email: "",
-      password: "",
-      name: ""
+      identifier: "",
+      username: "",
+      password: ""
     }
   });
 
   const authMutation = useMutation({
     mutationFn: (values: AuthFormValues) => {
       if (mode === "login") {
-        const payload: LoginPayload = {
-          email: values.email,
-          password: values.password
-        };
-        return authApi.login(payload);
+        return authApi.login({ identifier: values.identifier, password: values.password });
       }
-
-      return authApi.register(values);
+      return authApi.register({ username: values.username, password: values.password });
     },
     onSuccess: (session) => {
       setSession(session);
@@ -107,16 +105,16 @@ export default function AuthPage() {
                 </Typography.Title>
                 <Typography.Text type="secondary">使用个人账号继续</Typography.Text>
               </div>
-            <Segmented
-              value={mode}
-              onChange={(value) => onModeChange(value as Mode)}
-              block
-              className="auth-segmented"
-              options={[
-                { label: "登录", value: "login" },
-                { label: "注册", value: "register" }
-              ]}
-            />
+              <Segmented
+                value={mode}
+                onChange={(value) => onModeChange(value as Mode)}
+                block
+                className="auth-segmented"
+                options={[
+                  { label: "登录", value: "login" },
+                  { label: "注册", value: "register" }
+                ]}
+              />
             </div>
           </div>
 
@@ -126,58 +124,85 @@ export default function AuthPage() {
             onFinish={handleSubmit((values) => authMutation.mutate(values))}
           >
             {mode === "register" ? (
-              <>
-                <Controller
-                  name="name"
-                  control={control}
-                  rules={{ required: "请输入姓名", minLength: { value: 2, message: "至少 2 个字符" } }}
-                  render={({ field, fieldState }) => (
-                    <Form.Item
-                      validateStatus={fieldState.error ? "error" : undefined}
-                      help={fieldState.error?.message}
-                    >
-                      <div className="auth-field-label">姓名</div>
-                      <Input {...field} size="large" placeholder="张三" autoComplete="name" />
-                    </Form.Item>
-                  )}
-                />
-              </>
-            ) : null}
+              <Controller
+                name="username"
+                control={control}
+                rules={{
+                  required: "请输入账号",
+                  minLength: { value: 2, message: "至少 2 个字符" },
+                  maxLength: { value: 30, message: "最多 30 个字符" },
+                  pattern: {
+                    value: /^[a-zA-Z0-9_一-龥]+$/,
+                    message: "只允许字母、数字、下划线或中文"
+                  }
+                }}
+                render={({ field, fieldState }) => (
+                  <Form.Item
+                    validateStatus={fieldState.error ? "error" : undefined}
+                    help={fieldState.error?.message}
+                  >
+                    <div className="auth-field-label">账号</div>
+                    <Input
+                      {...field}
+                      size="large"
+                      placeholder="2-30 位，支持字母 / 数字 / 中文"
+                      autoComplete="username"
+                    />
+                  </Form.Item>
+                )}
+              />
+            ) : (
+              <Controller
+                name="identifier"
+                control={control}
+                rules={{ required: "请输入账号" }}
+                render={({ field, fieldState }) => (
+                  <Form.Item
+                    validateStatus={fieldState.error ? "error" : undefined}
+                    help={fieldState.error?.message}
+                  >
+                    <div className="auth-field-label">账号</div>
+                    <Input
+                      {...field}
+                      size="large"
+                      placeholder="请输入账号"
+                      autoComplete="username"
+                    />
+                  </Form.Item>
+                )}
+              />
+            )}
 
             <Controller
-              name="email"
+              name="password"
               control={control}
               rules={{
-                required: "请输入邮箱",
-                pattern: { value: /^\S+@\S+\.\S+$/, message: "邮箱格式不正确" }
+                required: "请输入密码",
+                minLength: { value: 8, message: "至少 8 个字符" }
               }}
               render={({ field, fieldState }) => (
                 <Form.Item
                   validateStatus={fieldState.error ? "error" : undefined}
                   help={fieldState.error?.message}
                 >
-                  <div className="auth-field-label">邮箱</div>
-                  <Input {...field} size="large" placeholder="owner@mallbay.cn" autoComplete="email" />
-                </Form.Item>
-              )}
-            />
-
-            <Controller
-              name="password"
-              control={control}
-              rules={{ required: "请输入密码", minLength: { value: 8, message: "至少 8 个字符" } }}
-              render={({ field, fieldState }) => (
-                <Form.Item
-                  validateStatus={fieldState.error ? "error" : undefined}
-                  help={fieldState.error?.message}
-                >
                   <div className="auth-field-label">密码</div>
-                  <Input.Password {...field} size="large" placeholder="至少 8 位" autoComplete="current-password" />
+                  <Input.Password
+                    {...field}
+                    size="large"
+                    placeholder="至少 8 位"
+                    autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  />
                 </Form.Item>
               )}
             />
 
-            <Button type="primary" htmlType="submit" size="large" block loading={authMutation.isPending}>
+            <Button
+              type="primary"
+              htmlType="submit"
+              size="large"
+              block
+              loading={authMutation.isPending}
+            >
               {mode === "login" ? "登录" : "注册并登录"}
             </Button>
           </Form>

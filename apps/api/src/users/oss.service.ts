@@ -1,4 +1,4 @@
-import { NotImplementedException } from "@nestjs/common";
+import { InternalServerErrorException } from "@nestjs/common";
 import * as crypto from "crypto";
 import * as path from "path";
 import type { MulterFile } from "./multer-file.type";
@@ -6,7 +6,7 @@ import type { MulterFile } from "./multer-file.type";
 /**
  * 阿里云 OSS 上传服务
  *
- * 环境变量：
+ * 必须配置的环境变量：
  *   OSS_REGION        e.g. oss-cn-shanghai
  *   OSS_ACCESS_KEY_ID
  *   OSS_ACCESS_KEY_SECRET
@@ -14,33 +14,41 @@ import type { MulterFile } from "./multer-file.type";
  *   OSS_CDN_HOST      可选，CDN 域名（不含 https://）
  */
 export class OssService {
-  async uploadAvatar(userId: string, file: MulterFile): Promise<string> {
-    const region = process.env.OSS_REGION;
-    const accessKeyId = process.env.OSS_ACCESS_KEY_ID;
-    const accessKeySecret = process.env.OSS_ACCESS_KEY_SECRET;
-    const bucket = process.env.OSS_BUCKET;
+  private getClient() {
+    const { OSS_REGION: region, OSS_ACCESS_KEY_ID: accessKeyId,
+      OSS_ACCESS_KEY_SECRET: accessKeySecret, OSS_BUCKET: bucket } = process.env;
 
     if (!region || !accessKeyId || !accessKeySecret || !bucket) {
-      throw new NotImplementedException(
-        "OSS 未配置，请在环境变量中设置 OSS_REGION / OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET / OSS_BUCKET"
+      throw new InternalServerErrorException(
+        "OSS 未配置，请检查环境变量：OSS_REGION / OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET / OSS_BUCKET"
       );
     }
 
-    // 延迟 require，避免未安装 ali-oss 时编译 / 启动失败
     // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
     const OSS = require("ali-oss") as any;
-    const client = new OSS({ region, accessKeyId, accessKeySecret, bucket });
+    return { client: new OSS({ region, accessKeyId, accessKeySecret, bucket }), bucket, region };
+  }
 
+  private buildUrl(key: string, bucket: string, region: string): string {
+    const cdnHost = process.env.OSS_CDN_HOST;
+    return cdnHost
+      ? `https://${cdnHost}/${key}`
+      : `https://${bucket}.${region}.aliyuncs.com/${key}`;
+  }
+
+  async uploadAvatar(userId: string, file: MulterFile): Promise<string> {
+    const { client, bucket, region } = this.getClient();
     const ext = path.extname(file.originalname) || ".jpg";
     const key = `avatars/${userId}/${crypto.randomUUID()}${ext}`;
-
     await client.put(key, file.buffer);
+    return this.buildUrl(key, bucket, region);
+  }
 
-    const cdnHost = process.env.OSS_CDN_HOST;
-    if (cdnHost) {
-      return `https://${cdnHost}/${key}`;
-    }
-
-    return `https://${bucket}.${region}.aliyuncs.com/${key}`;
+  async uploadStorePhoto(storeId: string, file: MulterFile): Promise<string> {
+    const { client, bucket, region } = this.getClient();
+    const ext = path.extname(file.originalname) || ".jpg";
+    const key = `stores/${storeId}/${crypto.randomUUID()}${ext}`;
+    await client.put(key, file.buffer);
+    return this.buildUrl(key, bucket, region);
   }
 }

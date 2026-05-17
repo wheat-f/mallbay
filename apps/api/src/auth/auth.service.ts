@@ -88,10 +88,21 @@ export class AuthService {
 
   async me(userId: string) {
     const user = await this.prisma.user.findUniqueOrThrow({
-      where: { id: userId }
+      where: { id: userId },
+      include: {
+        storeMembers: {
+          include: { store: { select: { id: true, name: true, status: true } } }
+        }
+      }
     });
 
-    return this.toAuthUser(user);
+    const member = user.storeMembers[0] ?? null;
+    return {
+      ...this.toAuthUser(user),
+      storeMember: member
+        ? { position: member.position, store: member.store }
+        : null
+    };
   }
 
   async logout(userId: string) {
@@ -110,7 +121,8 @@ export class AuthService {
 
     const payload: TokenPayload = {
       sub: user.id,
-      username: user.username
+      username: user.username,
+      isAuditor: user.isAuditor
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -155,7 +167,7 @@ export class AuthService {
     phone: string | null;
     wechatOpenId: string | null;
     alipayUserId: string | null;
-    role: "CUSTOMER" | "STAFF";
+    isAuditor: boolean;
   }) {
     return {
       id: user.id,
@@ -166,7 +178,7 @@ export class AuthService {
       phone: user.phone,
       wechatOpenId: user.wechatOpenId,
       alipayUserId: user.alipayUserId,
-      role: user.role
+      isAuditor: user.isAuditor
     };
   }
 }

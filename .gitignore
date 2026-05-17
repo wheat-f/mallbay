@@ -1,39 +1,51 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
-/.nx
-/.pnpm-store
-/.pnp
+# ─── Dependencies ────────────────────────────────────────────────
+# node_modules 在任意子目录下都忽略（monorepo 各 app 各有一份）
+node_modules/
+.pnp
 .pnp.js
 
-# testing
-/coverage
+# pnpm
+.pnpm-store/
 
-# next.js
+# ─── Nx ──────────────────────────────────────────────────────────
+.nx/cache/
+.nx/workspace-data/
+
+# ─── Build outputs ───────────────────────────────────────────────
+/build
 /apps/**/.next/
 /apps/**/out/
 /apps/**/dist/
 
-# production
-/build
+# ─── Test & coverage ─────────────────────────────────────────────
+/coverage
 
-# misc
-.DS_Store
-*.pem
+# ─── Environment & secrets ───────────────────────────────────────
+# 提交 .env.example，忽略真实 env 文件
+.env
+.env.*
+!.env.example
 
-# debug
+# ─── Local uploaded files（OSS 兜底 / 开发调试用）─────────────────
+avatars/
+apps/api/uploads/
+
+# ─── Logs ────────────────────────────────────────────────────────
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
-# local env files
-.env*.local
-.env
-
-# vercel
-.vercel
-
-# typescript
+# ─── TypeScript ──────────────────────────────────────────────────
 *.tsbuildinfo
 next-env.d.ts
+
+# ─── Misc ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.pem
+*.key
+.vercel

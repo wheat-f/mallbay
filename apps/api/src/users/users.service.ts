@@ -1,16 +1,24 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException
 } from "@nestjs/common";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "../prisma/prisma.service";
 import { BindEmailDto } from "./dto/bind-email.dto";
 import { BindPhoneDto } from "./dto/bind-phone.dto";
+import { BindWechatDto } from "./dto/bind-wechat.dto";
+import { BindAlipayDto } from "./dto/bind-alipay.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { AuthService } from "../auth/auth.service";
+
+// 审核员重置密码后的初始密码
+const RESET_PASSWORD_DEFAULT = "Test1234!";
 
 @Injectable()
 export class UsersService {
@@ -90,5 +98,81 @@ export class UsersService {
     });
 
     return this.authService.toAuthUser(user);
+  }
+
+  async bindWechat(userId: string, dto: BindWechatDto) {
+    const conflict = await this.prisma.user.findFirst({
+      where: { wechatOpenId: dto.openId, NOT: { id: userId } }
+    });
+    if (conflict) {
+      throw new ConflictException("该微信已被其他账号绑定");
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { wechatOpenId: dto.openId }
+    });
+
+    return this.authService.toAuthUser(user);
+  }
+
+  async bindAlipay(userId: string, dto: BindAlipayDto) {
+    const conflict = await this.prisma.user.findFirst({
+      where: { alipayUserId: dto.userId, NOT: { id: userId } }
+    });
+    if (conflict) {
+      throw new ConflictException("该支付宝已被其他账号绑定");
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { alipayUserId: dto.userId }
+    });
+
+    return this.authService.toAuthUser(user);
+  }
+
+  // 审核员搜索用户（按用户名模糊匹配）
+  async searchUsers(currentUserId: string, isAuditor: boolean, keyword: string) {
+    if (!isAuditor) {
+      throw new ForbiddenException("无权限");
+    }
+
+    return this.prisma.user.findMany({
+      where: {
+        username: { contains: keyword, mode: "insensitive" }
+      },
+      select: {
+        id: true,
+        username: true,
+        nickname: true,
+        avatarUrl: true,
+        isAuditor: true
+      },
+      take: 20
+    });
+  }
+
+  // 审核员重置用户密码为初始密码
+  async resetPassword(isAuditor: boolean, dto: ResetPasswordDto) {
+    if (!isAuditor) {
+      throw new ForbiddenException("无权限");
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { username: dto.username }
+    });
+
+    if (!user) {
+      throw new NotFoundException("用户不存在");
+    }
+
+    const passwordHash = await bcrypt.hash(RESET_PASSWORD_DEFAULT, 12);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, refreshTokenHash: null }
+    });
+
+    return { success: true, defaultPassword: RESET_PASSWORD_DEFAULT };
   }
 }

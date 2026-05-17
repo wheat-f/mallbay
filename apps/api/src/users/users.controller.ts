@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Patch,
   Post,
+  Query,
   Req,
   UploadedFile,
   UseGuards,
@@ -14,13 +16,16 @@ import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { BindEmailDto } from "./dto/bind-email.dto";
 import { BindPhoneDto } from "./dto/bind-phone.dto";
+import { BindWechatDto } from "./dto/bind-wechat.dto";
+import { BindAlipayDto } from "./dto/bind-alipay.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import type { MulterFile } from "./multer-file.type";
 import { UsersService } from "./users.service";
 
 type AuthRequest = Request & {
-  user: { id: string; username: string };
+  user: { id: string; username: string; isAuditor: boolean };
 };
 
 // 头像最大 2 MB
@@ -73,5 +78,27 @@ export class UsersController {
   @Post("bind/phone")
   bindPhone(@Req() req: AuthRequest, @Body() dto: BindPhoneDto) {
     return this.usersService.bindPhone(req.user.id, dto);
+  }
+
+  @Post("bind/wechat")
+  bindWechat(@Req() req: AuthRequest, @Body() dto: BindWechatDto) {
+    return this.usersService.bindWechat(req.user.id, dto);
+  }
+
+  @Post("bind/alipay")
+  bindAlipay(@Req() req: AuthRequest, @Body() dto: BindAlipayDto) {
+    return this.usersService.bindAlipay(req.user.id, dto);
+  }
+
+  // 审核员专用：搜索用户
+  @Get("search")
+  searchUsers(@Req() req: AuthRequest, @Query("q") keyword: string) {
+    return this.usersService.searchUsers(req.user.id, req.user.isAuditor, keyword ?? "");
+  }
+
+  // 审核员专用：重置用户密码
+  @Post("reset-password")
+  resetPassword(@Req() req: AuthRequest, @Body() dto: ResetPasswordDto) {
+    return this.usersService.resetPassword(req.user.isAuditor, dto);
   }
 }

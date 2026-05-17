@@ -1,3 +1,14 @@
+export type StorePosition =
+  | "MANAGER"
+  | "SALES"
+  | "PURCHASING"
+  | "FINANCE"
+  | "SCHEDULER"
+  | "CONSTRUCTION"
+  | "APPRENTICE";
+
+export type StoreStatus = "DRAFTED" | "PENDING_REVIEW" | "PUBLISHED" | "FROZEN";
+
 export type AuthUser = {
   id: string;
   username: string;
@@ -7,7 +18,12 @@ export type AuthUser = {
   phone: string | null;
   wechatOpenId: string | null;
   alipayUserId: string | null;
-  role: "CUSTOMER" | "STAFF";
+  isAuditor: boolean;
+  // 仅 /auth/me 返回，登录/刷新时为 undefined
+  storeMember?: {
+    position: StorePosition;
+    store: { id: string; name: string; status: StoreStatus };
+  } | null;
 };
 
 export type AuthTokens = {

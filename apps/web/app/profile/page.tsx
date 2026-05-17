@@ -9,22 +9,16 @@ import {
   Input,
   Layout,
   Modal,
-  Segmented,
-  Tooltip,
-  Typography,
-  Upload
+  Spin,
+  Typography
 } from "antd";
-import type { UploadFile } from "antd";
+import { LoadingOutlined, PlusOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { userApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
-
-type IdentityMode = "STAFF" | "CUSTOMER";
-
-const IDENTITY_KEY = "mallbay-identity";
 
 // ─── 昵称编辑 Modal ───────────────────────────────────────────────
 function NicknameModal({
@@ -49,7 +43,7 @@ function NicknameModal({
       onOk={() => onSave(val)}
       okText="保存"
       cancelText="取消"
-      destroyOnClose
+      destroyOnHidden
     >
       <Input
         value={val}
@@ -87,7 +81,7 @@ function PasswordModal({
       title="修改密码"
       onCancel={onClose}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form
         layout="vertical"
@@ -176,7 +170,7 @@ function BindModal({
       onOk={() => onSave(val)}
       okText="绑定"
       cancelText="取消"
-      destroyOnClose
+      destroyOnHidden
     >
       <Input
         value={val}
@@ -220,17 +214,6 @@ export default function ProfilePage() {
   const setSession = useAuthStore((state) => state.setSession);
   const router = useRouter();
   const { message } = App.useApp();
-
-  // 身份模式：从 localStorage 读取，默认 STAFF
-  const [identity, setIdentity] = useState<IdentityMode>("STAFF");
-  useEffect(() => {
-    const saved = localStorage.getItem(IDENTITY_KEY) as IdentityMode | null;
-    if (saved === "CUSTOMER" || saved === "STAFF") setIdentity(saved);
-  }, []);
-  const handleIdentityChange = (v: IdentityMode) => {
-    setIdentity(v);
-    localStorage.setItem(IDENTITY_KEY, v);
-  };
 
   // Modal 状态
   const [nicknameOpen, setNicknameOpen] = useState(false);
@@ -312,39 +295,14 @@ export default function ProfilePage() {
       </header>
 
       <Layout.Content className="profile-content">
-        {/* 身份切换 */}
-        <div className="profile-identity-bar">
-          <span className="profile-identity-label">当前身份</span>
-          <Segmented<IdentityMode>
-            value={identity}
-            onChange={handleIdentityChange}
-            options={[
-              { label: "员工", value: "STAFF" },
-              { label: "客户", value: "CUSTOMER" }
-            ]}
-          />
-          <span className="profile-identity-hint">
-            {identity === "STAFF"
-              ? "员工视角：进入对应岗位工作台"
-              : "客户视角：查看门店、下单、追踪消费"}
-          </span>
-        </div>
-
         {/* 头像区域 */}
         <div className="profile-avatar-section">
           <div className="profile-avatar-wrap">
-            {user.avatarUrl ? (
-              <Avatar src={user.avatarUrl} size={80} />
-            ) : (
-              <Avatar size={80} style={{ background: "#1677ff", fontSize: 32 }}>
-                {avatarLabel}
-              </Avatar>
-            )}
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*"
-              className="hidden"
+              style={{ display: "none" }}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
@@ -357,16 +315,42 @@ export default function ProfilePage() {
                 e.target.value = "";
               }}
             />
-            <Button
-              size="small"
-              loading={avatarMutation.isPending}
-              className="profile-avatar-btn"
+            {/* 带框的 + 头像上传 */}
+            <button
               onClick={() => fileInputRef.current?.click()}
+              disabled={avatarMutation.isPending}
+              style={{
+                width: 80, height: 80, borderRadius: "50%",
+                border: "1px dashed #d9d9d9", background: "#fafafa",
+                cursor: "pointer", overflow: "hidden", padding: 0,
+                position: "relative", display: "flex",
+                alignItems: "center", justifyContent: "center"
+              }}
             >
-              更换头像
-            </Button>
+              {avatarMutation.isPending ? (
+                <Spin indicator={<LoadingOutlined style={{ fontSize: 24 }} spin />} />
+              ) : user.avatarUrl ? (
+                <>
+                  <img
+                    src={user.avatarUrl}
+                    alt="avatar"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                  {/* hover 遮罩 */}
+                  <div className="avatar-hover-mask">
+                    <PlusOutlined style={{ color: "#fff", fontSize: 16 }} />
+                    <span style={{ color: "#fff", fontSize: 11, marginTop: 2 }}>更换</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", color: "#999" }}>
+                  <PlusOutlined style={{ fontSize: 20 }} />
+                  <span style={{ fontSize: 11, marginTop: 4 }}>上传头像</span>
+                </div>
+              )}
+            </button>
           </div>
-          <div className="profile-avatar-tip">图片最大 2 MB，支持 JPG / PNG / WebP</div>
+          <div className="profile-avatar-tip">点击上传 · 最大 2 MB · JPG / PNG / WebP</div>
         </div>
 
         {/* 个人信息卡片 */}

@@ -40,7 +40,7 @@ export default function AuthPage() {
     onSuccess: (session) => {
       setSession(session);
       message.success(mode === "login" ? "登录成功" : "注册成功");
-      router.push("/dashboard");
+      router.push("/");
     },
     onError: (error) => {
       message.error(error.message);
@@ -54,7 +54,7 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (hasHydrated && user) {
-      router.push("/dashboard");
+      router.push("/");
     }
   }, [hasHydrated, router, user]);
 

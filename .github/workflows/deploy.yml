@@ -1,0 +1,144 @@
+name: Build & Deploy
+
+# ── 触发规则 ────────────────────────────────────────────────────
+# test、test/xxx、test-xxx 分支 → 构建镜像 + 部署测试环境
+# main 分支 → 构建镜像 + 部署生产环境
+on:
+  push:
+    branches: [test, test/**, test-**, main]
+  workflow_dispatch:
+
+env:
+  ACR_REGISTRY:  ${{ secrets.ACR_REGISTRY }}
+  ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+  IMAGE_TAG:     ${{ github.sha }}
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Job 1: 构建并推送镜像（test / main 分支都会执行）
+  # ──────────────────────────────────────────────────────────────
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Alibaba Cloud ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build & push mallbay-api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: |
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ env.IMAGE_TAG }}
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ github.ref_name }}
+          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:cache
+          cache-to:   type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:cache,mode=max
+
+      - name: Build & push mallbay-web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: |
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ env.IMAGE_TAG }}
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ github.ref_name }}
+          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:cache
+          cache-to:   type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:cache,mode=max
+
+  # ──────────────────────────────────────────────────────────────
+  # Job 2: 部署到测试环境（仅 test 分支触发）
+  # ──────────────────────────────────────────────────────────────
+  deploy-test:
+    name: Deploy → Test
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_name == 'test' || startsWith(github.ref_name, 'test/') || startsWith(github.ref_name, 'test-')
+    environment: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Sync compose file to Test ECS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key:      ${{ secrets.ECS_SSH_KEY }}
+          source:   docker-compose.prod.yml
+          target:   /opt/mallbay
+
+      - name: Deploy to Test via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host:     ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key:      ${{ secrets.ECS_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/mallbay
+
+            sed -i '/^IMAGE_TAG=/d' .env
+            echo "IMAGE_TAG=${{ github.sha }}" >> .env
+
+            docker compose -f docker-compose.prod.yml pull api web
+            docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate api web
+            docker image prune -f
+
+            echo "✅ Test deployed — ${{ github.sha }}"
+
+  # ──────────────────────────────────────────────────────────────
+  # Job 3: 部署到生产环境（仅 main 分支触发）
+  # ──────────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_name == 'main'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Sync compose file to Production ECS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key:      ${{ secrets.ECS_SSH_KEY }}
+          source:   docker-compose.prod.yml
+          target:   /opt/mallbay
+
+      - name: Deploy to Production via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host:     ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key:      ${{ secrets.ECS_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/mallbay
+
+            sed -i '/^IMAGE_TAG=/d' .env
+            echo "IMAGE_TAG=${{ github.sha }}" >> .env
+
+            docker compose -f docker-compose.prod.yml pull api web
+            docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate api web
+            docker image prune -f
+
+            echo "✅ Production deployed — ${{ github.sha }}"

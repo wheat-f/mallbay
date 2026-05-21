@@ -1,0 +1,40 @@
+# Dependencies (reinstalled inside Docker)
+node_modules
+**/node_modules
+
+# Build outputs
+apps/**/.next
+apps/**/dist
+apps/**/out
+
+# Nx cache
+.nx/cache
+.nx/workspace-data
+
+# Git
+.git
+.gitignore
+
+# Environment files (injected at runtime)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test & coverage
+coverage
+**/*.spec.ts
+**/*.test.ts

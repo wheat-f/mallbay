@@ -10,7 +10,7 @@ import type {
 } from "@mallbay/shared";
 import { useAuthStore } from "../stores/auth-store";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 type ApiOptions = RequestInit & {
   auth?: boolean;

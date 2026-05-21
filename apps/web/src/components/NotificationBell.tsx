@@ -276,7 +276,7 @@ export function NotificationBell({ onJoined }: { onJoined?: () => void }) {
       open={open}
       onOpenChange={handleOpenChange}
       arrow={false}
-      styles={{ body: { padding: "8px 12px" } }}
+      styles={{ content: { padding: "8px 12px" } }}
     >
       <button className="notif-bell-btn" aria-label="通知">
         <Badge count={unread} size="small" offset={[-2, 2]}>

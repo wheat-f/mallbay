@@ -1,8 +1,10 @@
 # ─────────────────────────────────────────────────────────────────
 # Stage 1: base — Node + pnpm
 # ─────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS base
-RUN corepack enable && corepack prepare pnpm@11.0.9 --activate
+FROM node:22-alpine AS base
+# 原生模块编译工具（sharp、bcrypt 等需要）
+RUN apk add --no-cache python3 make g++
+RUN npm install -g pnpm@11.0.9
 
 # ─────────────────────────────────────────────────────────────────
 # Stage 2: deps — install all workspace dependencies
@@ -26,8 +28,11 @@ WORKDIR /app
 COPY . .
 
 ENV NODE_ENV=production
-# Disable Next.js telemetry during build
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# NEXT_PUBLIC_ 变量在 build 时静态编译进代码，必须在此阶段传入
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 # Build shared package first
 RUN pnpm --filter @mallbay/shared build 2>/dev/null || true
@@ -38,7 +43,7 @@ RUN pnpm --filter @mallbay/web build
 # ─────────────────────────────────────────────────────────────────
 # Stage 4: runner — minimal standalone image
 # ─────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 RUN apk add --no-cache dumb-init
 WORKDIR /app
 
@@ -51,7 +56,8 @@ ENV HOSTNAME=0.0.0.0
 # inside .next/standalone — copy it wholesale, then add static assets
 COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static      ./apps/web/.next/static
-COPY --from=builder /app/apps/web/public            ./apps/web/public
+# public 目录可选，有才复制
+COPY --from=builder /app/apps/web/public*           ./apps/web/public/
 
 EXPOSE 3000
 

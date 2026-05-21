@@ -1,8 +1,10 @@
 # ─────────────────────────────────────────────────────────────────
 # Stage 1: base — Node + pnpm
 # ─────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS base
-RUN corepack enable && corepack prepare pnpm@11.0.9 --activate
+FROM node:22-alpine AS base
+# 原生模块编译工具（bcrypt、@prisma/engines 等需要）
+RUN apk add --no-cache python3 make g++
+RUN npm install -g pnpm@11.0.9
 
 # ─────────────────────────────────────────────────────────────────
 # Stage 2: deps — install all workspace dependencies
@@ -33,12 +35,12 @@ RUN pnpm --filter @mallbay/api prisma:generate
 RUN pnpm --filter @mallbay/shared build 2>/dev/null || true
 
 # Build NestJS API
-RUN pnpm --filter @mallbay/api build
+RUN pnpm --filter @mallbay/api exec tsc -p tsconfig.app.json
 
 # ─────────────────────────────────────────────────────────────────
 # Stage 4: runner — lean production image
 # ─────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 RUN apk add --no-cache dumb-init
 WORKDIR /app
 
@@ -50,9 +52,10 @@ COPY --from=builder /app/packages               ./packages
 COPY --from=builder /app/package.json           ./package.json
 
 # Copy API build artifacts
-COPY --from=builder /app/apps/api/dist          ./apps/api/dist
-COPY --from=builder /app/apps/api/package.json  ./apps/api/package.json
-COPY --from=builder /app/apps/api/prisma        ./apps/api/prisma
+COPY --from=builder /app/apps/api/dist             ./apps/api/dist
+COPY --from=builder /app/apps/api/package.json     ./apps/api/package.json
+COPY --from=builder /app/apps/api/prisma           ./apps/api/prisma
+COPY --from=builder /app/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 
 # Startup script
 COPY apps/api/scripts/entrypoint.sh /entrypoint.sh

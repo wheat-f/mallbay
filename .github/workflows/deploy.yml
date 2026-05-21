@@ -1,8 +1,8 @@
 name: Build & Deploy
 
 # ── 触发规则 ────────────────────────────────────────────────────
-# PR 创建/更新（新 commit）→ 构建镜像 + 部署测试环境
-# push main（PR 合并）     → 构建镜像 + 部署生产环境
+# PR 创建/更新（新 commit）→ 构建 api + web(test) → 部署测试环境
+# push main（PR 合并）     → 构建 api + web(prod) → 部署生产环境
 # 单纯 push 功能分支       → 不触发任何部署
 on:
   pull_request:
@@ -18,10 +18,10 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────────────
-  # Job 1: 构建并推送镜像（PR 和 main push 都会执行）
+  # Job 1: 构建 API 镜像（PR 和 main push 都会执行，无环境变量差异）
   # ──────────────────────────────────────────────────────────────
-  build:
-    name: Build & Push Images
+  build-api:
+    name: Build & Push API
     runs-on: ubuntu-latest
 
     steps:
@@ -30,6 +30,12 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Compute safe branch tag
+        id: tag
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          echo "branch=${BRANCH//\//-}" >> $GITHUB_OUTPUT
 
       - name: Login to Alibaba Cloud ACR
         uses: docker/login-action@v3
@@ -46,11 +52,41 @@ jobs:
           push: true
           tags: |
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ env.IMAGE_TAG }}
-            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ github.head_ref || github.ref_name }}
-          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:cache
-          cache-to:   type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:cache,mode=max
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ steps.tag.outputs.branch }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
 
-      - name: Build & push mallbay-web
+  # ──────────────────────────────────────────────────────────────
+  # Job 2: 构建 Web 镜像（测试环境）
+  # NEXT_PUBLIC_API_URL 编译进镜像，需从 test environment secrets 读取
+  # ──────────────────────────────────────────────────────────────
+  build-web-test:
+    name: Build & Push Web (Test)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    environment: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute safe branch tag
+        id: tag
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          echo "branch=${BRANCH//\//-}" >> $GITHUB_OUTPUT
+
+      - name: Login to Alibaba Cloud ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build & push mallbay-web (test)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -58,18 +94,63 @@ jobs:
           push: true
           tags: |
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ env.IMAGE_TAG }}
-            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ github.head_ref || github.ref_name }}
-          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:cache
-          cache-to:   type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:cache,mode=max
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ steps.tag.outputs.branch }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
 
   # ──────────────────────────────────────────────────────────────
-  # Job 2: 部署到测试环境（仅 PR 事件触发）
-  # PR 每次新增 commit 都会重新部署
+  # Job 3: 构建 Web 镜像（生产环境）
+  # NEXT_PUBLIC_API_URL 编译进镜像，需从 production environment secrets 读取
+  # ──────────────────────────────────────────────────────────────
+  build-web-prod:
+    name: Build & Push Web (Production)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref_name == 'main'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute safe branch tag
+        id: tag
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          echo "branch=${BRANCH//\//-}" >> $GITHUB_OUTPUT
+
+      - name: Login to Alibaba Cloud ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build & push mallbay-web (production)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: |
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ env.IMAGE_TAG }}
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ steps.tag.outputs.branch }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+  # ──────────────────────────────────────────────────────────────
+  # Job 4: 部署到测试环境（仅 PR 事件触发）
   # ──────────────────────────────────────────────────────────────
   deploy-test:
     name: Deploy → Test
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build-api, build-web-test]
     if: github.event_name == 'pull_request'
     environment: test
 
@@ -106,12 +187,12 @@ jobs:
             echo "✅ Test deployed — ${{ github.sha }}"
 
   # ──────────────────────────────────────────────────────────────
-  # Job 3: 部署到生产环境（仅 push main 触发，即 PR 合并后）
+  # Job 5: 部署到生产环境（仅 push main 触发，即 PR 合并后）
   # ──────────────────────────────────────────────────────────────
   deploy-production:
     name: Deploy → Production
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build-api, build-web-prod]
     if: github.event_name == 'push' && github.ref_name == 'main'
     environment: production
 

@@ -1,11 +1,14 @@
 name: Build & Deploy
 
 # ── 触发规则 ────────────────────────────────────────────────────
-# test、test/xxx、test-xxx 分支 → 构建镜像 + 部署测试环境
-# main 分支 → 构建镜像 + 部署生产环境
+# PR 创建/更新（新 commit）→ 构建镜像 + 部署测试环境
+# push main（PR 合并）     → 构建镜像 + 部署生产环境
+# 单纯 push 功能分支       → 不触发任何部署
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
   push:
-    branches: [test, test/**, test-**, main]
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -15,7 +18,7 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────────────
-  # Job 1: 构建并推送镜像（test / main 分支都会执行）
+  # Job 1: 构建并推送镜像（PR 和 main push 都会执行）
   # ──────────────────────────────────────────────────────────────
   build:
     name: Build & Push Images
@@ -43,7 +46,7 @@ jobs:
           push: true
           tags: |
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ env.IMAGE_TAG }}
-            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ github.ref_name }}
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ github.head_ref || github.ref_name }}
           cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:cache
           cache-to:   type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:cache,mode=max
 
@@ -55,18 +58,19 @@ jobs:
           push: true
           tags: |
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ env.IMAGE_TAG }}
-            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ github.ref_name }}
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ github.head_ref || github.ref_name }}
           cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:cache
           cache-to:   type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:cache,mode=max
 
   # ──────────────────────────────────────────────────────────────
-  # Job 2: 部署到测试环境（仅 test 分支触发）
+  # Job 2: 部署到测试环境（仅 PR 事件触发）
+  # PR 每次新增 commit 都会重新部署
   # ──────────────────────────────────────────────────────────────
   deploy-test:
     name: Deploy → Test
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref_name == 'test' || startsWith(github.ref_name, 'test/') || startsWith(github.ref_name, 'test-')
+    if: github.event_name == 'pull_request'
     environment: test
 
     steps:
@@ -102,13 +106,13 @@ jobs:
             echo "✅ Test deployed — ${{ github.sha }}"
 
   # ──────────────────────────────────────────────────────────────
-  # Job 3: 部署到生产环境（仅 main 分支触发）
+  # Job 3: 部署到生产环境（仅 push main 触发，即 PR 合并后）
   # ──────────────────────────────────────────────────────────────
   deploy-production:
     name: Deploy → Production
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref_name == 'main'
+    if: github.event_name == 'push' && github.ref_name == 'main'
     environment: production
 
     steps:

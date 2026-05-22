@@ -198,3 +198,5 @@ echo "IMAGE_TAG=<commit-sha>" >> .env
 docker compose -f docker-compose.prod.yml pull api web
 docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate api web
 ```
+
+# 是不是需要在数据库初始化一个运营角色

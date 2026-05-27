@@ -22,6 +22,7 @@ import { ChangePasswordDto } from "./dto/change-password.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import type { MulterFile } from "./multer-file.type";
+import { OssService } from "./oss.service";
 import { UsersService } from "./users.service";
 
 type AuthRequest = Request & {
@@ -34,7 +35,10 @@ const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 @UseGuards(JwtAuthGuard)
 @Controller("users")
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly ossService: OssService
+  ) {}
 
   @Patch("profile")
   updateProfile(@Req() req: AuthRequest, @Body() dto: UpdateProfileDto) {
@@ -58,9 +62,7 @@ export class UsersController {
       throw new BadRequestException("请上传图片文件");
     }
 
-    const { OssService } = await import("./oss.service");
-    const ossService = new OssService();
-    const url = await ossService.uploadAvatar(req.user.id, file);
+    const url = await this.ossService.uploadAvatar(req.user.id, file);
 
     return this.usersService.updateAvatar(req.user.id, url);
   }

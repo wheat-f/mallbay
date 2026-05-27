@@ -1,4 +1,4 @@
-import { InternalServerErrorException } from "@nestjs/common";
+import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import * as crypto from "crypto";
 import * as path from "path";
 import type { MulterFile } from "./multer-file.type";
@@ -13,6 +13,7 @@ import type { MulterFile } from "./multer-file.type";
  *   OSS_BUCKET
  *   OSS_CDN_HOST      可选，CDN 域名（不含 https://）
  */
+@Injectable()
 export class OssService {
   private getClient() {
     const { OSS_REGION: region, OSS_ACCESS_KEY_ID: accessKeyId,

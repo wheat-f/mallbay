@@ -7,6 +7,7 @@ import {
 import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { normalizePagination } from "../common/pagination";
 import { CreateStoreDto } from "./dto/create-store.dto";
 import { SubmitStoreDto } from "./dto/submit-store.dto";
 import { ReviewStoreDto, ReviewAction } from "./dto/review-store.dto";
@@ -218,9 +219,7 @@ export class StoresService {
   // ─── 公开门店列表 ──────────────────────────────────────────────────────────
 
   async listPublishedStores(dto: ListStoresDto) {
-    const page = dto.page ?? 1;
-    const pageSize = dto.pageSize ?? 20;
-    const skip = (page - 1) * pageSize;
+    const { page, pageSize, skip } = normalizePagination(dto.page, dto.pageSize);
 
     const where = {
       status: StoreStatus.PUBLISHED,
@@ -266,9 +265,7 @@ export class StoresService {
   async listAllStores(isAuditor: boolean, dto: ListStoresDto) {
     if (!isAuditor) throw new ForbiddenException("无权限");
 
-    const page = dto.page ?? 1;
-    const pageSize = dto.pageSize ?? 20;
-    const skip = (page - 1) * pageSize;
+    const { page, pageSize, skip } = normalizePagination(dto.page, dto.pageSize);
 
     const where = dto.q
       ? {

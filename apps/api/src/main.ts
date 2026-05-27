@@ -2,12 +2,15 @@ import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
+import { ApiExceptionFilter } from "./common/api-exception.filter";
+import { requestIdMiddleware } from "./common/request-id.middleware";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
   const webOrigin = config.get<string>("WEB_ORIGIN") ?? "http://localhost:3000";
 
+  app.use(requestIdMiddleware);
   app.enableCors({
     origin: webOrigin,
     credentials: true,
@@ -21,6 +24,7 @@ async function bootstrap() {
       transform: true
     })
   );
+  app.useGlobalFilters(new ApiExceptionFilter());
 
   await app.listen(config.get<number>("PORT") ?? 3001);
 }

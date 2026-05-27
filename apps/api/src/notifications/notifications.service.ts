@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { NotificationType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizePagination } from "../common/pagination";
 
 @Injectable()
 export class NotificationsService {
@@ -13,18 +14,18 @@ export class NotificationsService {
   }
 
   async list(userId: string, page = 1, pageSize = 20) {
-    const skip = (page - 1) * pageSize;
+    const pagination = normalizePagination(page, pageSize);
     const [total, items] = await Promise.all([
       this.prisma.notification.count({ where: { userId } }),
       this.prisma.notification.findMany({
         where: { userId },
         orderBy: { createdAt: "desc" },
-        skip,
-        take: pageSize
+        skip: pagination.skip,
+        take: pagination.pageSize
       })
     ]);
 
-    return { total, page, pageSize, items };
+    return { total, page: pagination.page, pageSize: pagination.pageSize, items };
   }
 
   async unreadCount(userId: string) {

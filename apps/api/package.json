@@ -6,6 +6,7 @@
     "dev": "nest start --watch -p tsconfig.app.json",
     "build": "nest build -p tsconfig.app.json",
     "start": "node dist/main.js",
+    "test": "tsx --tsconfig tsconfig.app.json --test \"src/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",

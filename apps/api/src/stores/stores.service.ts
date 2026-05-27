@@ -13,6 +13,7 @@ import { SubmitStoreDto } from "./dto/submit-store.dto";
 import { ReviewStoreDto, ReviewAction } from "./dto/review-store.dto";
 import { ListStoresDto } from "./dto/list-stores.dto";
 import { ChangeManagerDto } from "./dto/change-manager.dto";
+import { StorePolicy } from "./domain/store-policy";
 
 @Injectable()
 export class StoresService {
@@ -65,18 +66,8 @@ export class StoresService {
 
     const store = await this.prisma.store.findUniqueOrThrow({ where: { id: storeId } });
 
-    if (store.status === StoreStatus.FROZEN) {
-      throw new BadRequestException("门店已冻结，无法提交");
-    }
-
-    if (dto.photos.length < 1 || dto.photos.length > 5) {
-      throw new BadRequestException("门店照片数量需在 1~5 张之间");
-    }
-
-    // 确保只有一张封面
-    const coverCount = dto.photos.filter((p) => p.isCover).length;
-    if (coverCount === 0) dto.photos[0].isCover = true;
-    if (coverCount > 1) throw new BadRequestException("只能选择一张封面");
+    StorePolicy.assertCanSubmit(store.status);
+    const photos = StorePolicy.normalizeSubmissionPhotos(dto.photos);
 
     // 取消当前 PENDING 中的提交（如有）
     await this.prisma.storeAuditSubmission.updateMany({
@@ -92,10 +83,10 @@ export class StoresService {
         address: dto.address,
         description: dto.description,
         photos: {
-          create: dto.photos.map((p, i) => ({
+          create: photos.map((p) => ({
             url: p.url,
-            isCover: p.isCover ?? false,
-            order: p.order ?? i
+            isCover: p.isCover,
+            order: p.order
           }))
         }
       },
@@ -120,9 +111,7 @@ export class StoresService {
   ) {
     if (!isAuditor) throw new ForbiddenException("无权限");
 
-    if (dto.action === ReviewAction.REJECT && !dto.reviewNote?.trim()) {
-      throw new BadRequestException("驳回时必须填写原因");
-    }
+    StorePolicy.assertReviewInput(dto.action, dto.reviewNote);
 
     const submission = await this.prisma.storeAuditSubmission.findUnique({
       where: { id: submissionId },
@@ -194,7 +183,7 @@ export class StoresService {
       const hasApproved = await this.prisma.storeAuditSubmission.count({
         where: { storeId: submission.storeId, status: SubmissionStatus.APPROVED }
       });
-      const newStatus = hasApproved > 0 ? StoreStatus.PUBLISHED : StoreStatus.DRAFTED;
+      const newStatus = StorePolicy.statusAfterRejectedSubmission(hasApproved > 0);
 
       await this.prisma.store.update({
         where: { id: submission.storeId },

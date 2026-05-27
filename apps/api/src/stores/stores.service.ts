@@ -10,16 +10,18 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { normalizePagination } from "../common/pagination";
 import { CreateStoreDto } from "./dto/create-store.dto";
 import { SubmitStoreDto } from "./dto/submit-store.dto";
-import { ReviewStoreDto, ReviewAction } from "./dto/review-store.dto";
+import { ReviewStoreDto } from "./dto/review-store.dto";
 import { ListStoresDto } from "./dto/list-stores.dto";
 import { ChangeManagerDto } from "./dto/change-manager.dto";
 import { StorePolicy } from "./domain/store-policy";
+import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
 
 @Injectable()
 export class StoresService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
+    private readonly reviewStoreSubmission: ReviewStoreSubmissionUseCase
   ) {}
 
   // ─── 审核员：创建门店并指派店长 ────────────────────────────────────────────
@@ -109,100 +111,7 @@ export class StoresService {
     submissionId: string,
     dto: ReviewStoreDto
   ) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
-
-    StorePolicy.assertReviewInput(dto.action, dto.reviewNote);
-
-    const submission = await this.prisma.storeAuditSubmission.findUnique({
-      where: { id: submissionId },
-      include: { photos: true, store: true }
-    });
-
-    if (!submission) throw new NotFoundException("提交记录不存在");
-    if (submission.status !== SubmissionStatus.PENDING) {
-      throw new BadRequestException("该提交已处理");
-    }
-
-    if (dto.action === ReviewAction.APPROVE) {
-      await this.prisma.$transaction(async (tx) => {
-        // 更新 submission 状态
-        await tx.storeAuditSubmission.update({
-          where: { id: submissionId },
-          data: {
-            status: SubmissionStatus.APPROVED,
-            reviewedById: auditorId,
-            reviewedAt: new Date()
-          }
-        });
-
-        // 将提交内容同步到 Store 表
-        await tx.store.update({
-          where: { id: submission.storeId },
-          data: {
-            name: submission.name,
-            address: submission.address,
-            description: submission.description,
-            status: StoreStatus.PUBLISHED
-          }
-        });
-
-        // 替换 StorePhoto（删旧建新）
-        await tx.storePhoto.deleteMany({ where: { storeId: submission.storeId } });
-        await tx.storePhoto.createMany({
-          data: submission.photos.map((p) => ({
-            storeId: submission.storeId,
-            url: p.url,
-            isCover: p.isCover,
-            order: p.order
-          }))
-        });
-      });
-
-      // 通知店长
-      const manager = await this.prisma.storeMember.findFirst({
-        where: { storeId: submission.storeId, position: StorePosition.MANAGER }
-      });
-      if (manager) {
-        await this.notifications.send(manager.userId, "AUDIT_APPROVED", {
-          storeId: submission.storeId,
-          storeName: submission.name
-        });
-      }
-    } else {
-      await this.prisma.storeAuditSubmission.update({
-        where: { id: submissionId },
-        data: {
-          status: SubmissionStatus.REJECTED,
-          reviewNote: dto.reviewNote,
-          reviewedById: auditorId,
-          reviewedAt: new Date()
-        }
-      });
-
-      // 恢复门店状态：若曾有过审核通过记录说明门店之前是公开的，恢复到公开；否则回到筹办中
-      const hasApproved = await this.prisma.storeAuditSubmission.count({
-        where: { storeId: submission.storeId, status: SubmissionStatus.APPROVED }
-      });
-      const newStatus = StorePolicy.statusAfterRejectedSubmission(hasApproved > 0);
-
-      await this.prisma.store.update({
-        where: { id: submission.storeId },
-        data: { status: newStatus }
-      });
-
-      const manager = await this.prisma.storeMember.findFirst({
-        where: { storeId: submission.storeId, position: StorePosition.MANAGER }
-      });
-      if (manager) {
-        await this.notifications.send(manager.userId, "AUDIT_REJECTED", {
-          storeId: submission.storeId,
-          storeName: submission.store.name,
-          reviewNote: dto.reviewNote
-        });
-      }
-    }
-
-    return { success: true };
+    return this.reviewStoreSubmission.execute(auditorId, isAuditor, submissionId, dto);
   }
 
   // ─── 公开门店列表 ──────────────────────────────────────────────────────────

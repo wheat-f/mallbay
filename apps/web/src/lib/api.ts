@@ -9,6 +9,7 @@ import type {
   UpdateProfilePayload
 } from "@mallbay/shared";
 import { useAuthStore } from "../stores/auth-store";
+import { createApiError } from "./api-error";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -30,7 +31,7 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.message ?? "请求失败");
+    throw createApiError(response.status, errorBody);
   }
 
   return response.json() as Promise<T>;
@@ -49,7 +50,7 @@ async function requestMultipart<T>(path: string, formData: FormData): Promise<T>
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.message ?? "请求失败");
+    throw createApiError(response.status, errorBody);
   }
 
   return response.json() as Promise<T>;

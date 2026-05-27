@@ -17,6 +17,7 @@ import type { MulterFile } from "../users/multer-file.type";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { Public } from "../auth/decorators/public.decorator";
+import { OssService } from "../users/oss.service";
 import { CreateStoreDto } from "./dto/create-store.dto";
 import { SubmitStoreDto } from "./dto/submit-store.dto";
 import { ReviewStoreDto } from "./dto/review-store.dto";
@@ -31,7 +32,10 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("stores")
 export class StoresController {
-  constructor(private readonly storesService: StoresService) {}
+  constructor(
+    private readonly storesService: StoresService,
+    private readonly ossService: OssService
+  ) {}
 
   // 审核员：创建门店并指派店长
   @Post()
@@ -96,9 +100,8 @@ export class StoresController {
     @UploadedFile() file: MulterFile
   ) {
     if (!file) throw new BadRequestException("请上传图片文件");
-    const { OssService } = await import("../users/oss.service");
-    const oss = new OssService();
-    const url = await oss.uploadStorePhoto(id, file);
+    await this.storesService.assertStoreManager(req.user.id, id);
+    const url = await this.ossService.uploadStorePhoto(id, file);
     return { url };
   }
 

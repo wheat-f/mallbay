@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  UnauthorizedException
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
@@ -151,11 +156,19 @@ export class AuthService {
   }
 
   private get accessSecret() {
-    return this.config.get<string>("JWT_ACCESS_SECRET") ?? "mallbay-dev-access-secret";
+    return this.getRequiredConfig("JWT_ACCESS_SECRET");
   }
 
   private get refreshSecret() {
-    return this.config.get<string>("JWT_REFRESH_SECRET") ?? "mallbay-dev-refresh-secret";
+    return this.getRequiredConfig("JWT_REFRESH_SECRET");
+  }
+
+  private getRequiredConfig(key: string) {
+    const value = this.config.get<string>(key);
+    if (!value) {
+      throw new InternalServerErrorException(`${key} 未配置`);
+    }
+    return value;
   }
 
   toAuthUser(user: {

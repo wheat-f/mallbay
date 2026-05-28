@@ -211,10 +211,11 @@ test("reviewSubmission rejection restores prior public store and notifies manage
 });
 
 function createStoresService(prisma: unknown, notifications: unknown) {
+  const storeRepository = new StoreRepository(prisma as never);
   return new StoresService(
     prisma as never,
-    new ReviewStoreSubmissionUseCase(prisma as never, notifications as never),
-    new SubmitStoreForReviewUseCase(new StoreRepository(prisma as never)),
+    new ReviewStoreSubmissionUseCase(storeRepository, notifications as never),
+    new SubmitStoreForReviewUseCase(storeRepository),
     new ChangeStoreManagerUseCase(prisma as never, notifications as never),
     new SetStoreFrozenUseCase(prisma as never, notifications as never)
   );

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { StoreStatus, SubmissionStatus } from "@prisma/client";
+import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
 import { StoreRepository } from "./store.repository";
 
 test("StoreRepository delegates submit-for-review persistence to Prisma", async () => {
@@ -82,5 +82,140 @@ test("StoreRepository delegates submit-for-review persistence to Prisma", async 
     "submission.updateMany",
     "submission.create",
     "store.update"
+  ]);
+});
+
+test("StoreRepository delegates review-submission persistence to Prisma", async () => {
+  const calls: string[] = [];
+  const submission = {
+    id: "submission-1",
+    storeId: "store-1",
+    name: "审核门店",
+    address: "审核地址",
+    description: "审核描述",
+    photos: [{ url: "https://example.com/1.jpg", isCover: true, order: 0 }],
+    store: { name: "旧门店" }
+  };
+  const tx = {
+    storeAuditSubmission: {
+      update: async (args: unknown) => {
+        calls.push("tx.submission.update");
+        const updateArgs = args as { data: { reviewedAt: unknown } };
+        assert.ok(updateArgs.data.reviewedAt instanceof Date);
+        assert.deepEqual(args, {
+          where: { id: "submission-1" },
+          data: {
+            status: SubmissionStatus.APPROVED,
+            reviewedById: "auditor-1",
+            reviewedAt: updateArgs.data.reviewedAt
+          }
+        });
+      }
+    },
+    store: {
+      update: async (args: unknown) => {
+        calls.push("tx.store.update");
+        assert.deepEqual(args, {
+          where: { id: "store-1" },
+          data: {
+            name: "审核门店",
+            address: "审核地址",
+            description: "审核描述",
+            status: StoreStatus.PUBLISHED
+          }
+        });
+      }
+    },
+    storePhoto: {
+      deleteMany: async (args: unknown) => {
+        calls.push("tx.photo.deleteMany");
+        assert.deepEqual(args, { where: { storeId: "store-1" } });
+      },
+      createMany: async (args: unknown) => {
+        calls.push("tx.photo.createMany");
+        assert.deepEqual(args, {
+          data: [
+            {
+              storeId: "store-1",
+              url: "https://example.com/1.jpg",
+              isCover: true,
+              order: 0
+            }
+          ]
+        });
+      }
+    }
+  };
+  const prisma = {
+    $transaction: async (callback: (transaction: typeof tx) => Promise<void>) => callback(tx),
+    storeAuditSubmission: {
+      findUnique: async (args: unknown) => {
+        calls.push("submission.findUnique");
+        assert.deepEqual(args, {
+          where: { id: "submission-1" },
+          include: { photos: true, store: true }
+        });
+        return submission;
+      },
+      update: async (args: unknown) => {
+        calls.push("submission.update");
+        const updateArgs = args as { data: { reviewedAt: unknown } };
+        assert.ok(updateArgs.data.reviewedAt instanceof Date);
+        assert.deepEqual(args, {
+          where: { id: "submission-1" },
+          data: {
+            status: SubmissionStatus.REJECTED,
+            reviewNote: "资料不完整",
+            reviewedById: "auditor-1",
+            reviewedAt: updateArgs.data.reviewedAt
+          }
+        });
+      },
+      count: async (args: unknown) => {
+        calls.push("submission.count");
+        assert.deepEqual(args, {
+          where: { storeId: "store-1", status: SubmissionStatus.APPROVED }
+        });
+        return 1;
+      }
+    },
+    store: {
+      update: async (args: unknown) => {
+        calls.push("store.update");
+        assert.deepEqual(args, {
+          where: { id: "store-1" },
+          data: { status: StoreStatus.PUBLISHED }
+        });
+      }
+    },
+    storeMember: {
+      findFirst: async (args: unknown) => {
+        calls.push("member.findFirst");
+        assert.deepEqual(args, {
+          where: { storeId: "store-1", position: StorePosition.MANAGER }
+        });
+        return { userId: "manager-1" };
+      }
+    }
+  };
+  const repository = new StoreRepository(prisma as never);
+
+  assert.equal(await repository.findSubmissionWithStore("submission-1"), submission);
+  await repository.approveSubmission("auditor-1", "submission-1", submission);
+  await repository.rejectSubmission("auditor-1", "submission-1", "资料不完整");
+  assert.equal(await repository.countApprovedSubmissions("store-1"), 1);
+  await repository.updateStoreStatus("store-1", StoreStatus.PUBLISHED);
+  assert.deepEqual(await repository.findStoreManager("store-1"), { userId: "manager-1" });
+
+  assert.deepEqual(calls, [
+    "submission.findUnique",
+    "tx.submission.update",
+    "tx.store.update",
+    "tx.photo.deleteMany",
+    "tx.photo.createMany",
+    "submission.update",
+    "submission.count",
+    "store.update",
+    "member.findFirst"
   ]);
 });

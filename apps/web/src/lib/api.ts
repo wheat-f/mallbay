@@ -8,53 +8,7 @@ import type {
   RegisterPayload,
   UpdateProfilePayload
 } from "@mallbay/shared";
-import { useAuthStore } from "../stores/auth-store";
-import { createApiError } from "./api-error";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-
-type ApiOptions = RequestInit & {
-  auth?: boolean;
-};
-
-async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
-  const { auth = true, headers, ...init } = options;
-  const token = useAuthStore.getState().accessToken;
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(auth && token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers
-    }
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw createApiError(response.status, errorBody);
-  }
-
-  return response.json() as Promise<T>;
-}
-
-async function requestMultipart<T>(path: string, formData: FormData): Promise<T> {
-  const token = useAuthStore.getState().accessToken;
-  const response = await fetch(`${API_URL}${path}`, {
-    method: "POST",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-      // 不设 Content-Type，让浏览器自动生成 multipart boundary
-    },
-    body: formData
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw createApiError(response.status, errorBody);
-  }
-
-  return response.json() as Promise<T>;
-}
+import { request, requestMultipart } from "./request";
 
 export const authApi = {
   register: (payload: RegisterPayload) =>

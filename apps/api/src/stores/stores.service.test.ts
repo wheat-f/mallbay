@@ -3,7 +3,9 @@ import { test } from "node:test";
 import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
 import { StoresService } from "./stores.service";
 import { ReviewAction } from "./dto/review-store.dto";
+import { ChangeStoreManagerUseCase } from "./use-cases/change-store-manager.use-case";
 import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
+import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
 
 test("listPublishedStores caps pageSize at 100", async () => {
@@ -210,8 +212,9 @@ test("reviewSubmission rejection restores prior public store and notifies manage
 function createStoresService(prisma: unknown, notifications: unknown) {
   return new StoresService(
     prisma as never,
-    notifications as never,
     new ReviewStoreSubmissionUseCase(prisma as never, notifications as never),
-    new SubmitStoreForReviewUseCase(prisma as never)
+    new SubmitStoreForReviewUseCase(prisma as never),
+    new ChangeStoreManagerUseCase(prisma as never, notifications as never),
+    new SetStoreFrozenUseCase(prisma as never, notifications as never)
   );
 }

@@ -6,23 +6,25 @@ import {
 } from "@nestjs/common";
 import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { NotificationsService } from "../notifications/notifications.service";
 import { normalizePagination } from "../common/pagination";
 import { CreateStoreDto } from "./dto/create-store.dto";
 import { SubmitStoreDto } from "./dto/submit-store.dto";
 import { ReviewStoreDto } from "./dto/review-store.dto";
 import { ListStoresDto } from "./dto/list-stores.dto";
 import { ChangeManagerDto } from "./dto/change-manager.dto";
+import { ChangeStoreManagerUseCase } from "./use-cases/change-store-manager.use-case";
 import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
+import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
 
 @Injectable()
 export class StoresService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly notifications: NotificationsService,
     private readonly reviewStoreSubmission: ReviewStoreSubmissionUseCase,
-    private readonly submitStoreForReview: SubmitStoreForReviewUseCase
+    private readonly submitStoreForReview: SubmitStoreForReviewUseCase,
+    private readonly changeStoreManager: ChangeStoreManagerUseCase,
+    private readonly setStoreFrozen: SetStoreFrozenUseCase
   ) {}
 
   // ─── 审核员：创建门店并指派店长 ────────────────────────────────────────────
@@ -280,89 +282,13 @@ export class StoresService {
   // ─── 审核员：冻结 / 解冻门店 ──────────────────────────────────────────────
 
   async setFrozen(isAuditor: boolean, storeId: string, frozen: boolean) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
-
-    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
-    if (!store) throw new NotFoundException("门店不存在");
-
-    if (frozen && store.status === StoreStatus.FROZEN) {
-      throw new BadRequestException("门店已处于冻结状态");
-    }
-    if (!frozen && store.status !== StoreStatus.FROZEN) {
-      throw new BadRequestException("门店未处于冻结状态");
-    }
-
-    const newStatus = frozen ? StoreStatus.FROZEN : StoreStatus.PUBLISHED;
-    await this.prisma.store.update({ where: { id: storeId }, data: { status: newStatus } });
-
-    // 通知所有员工
-    const members = await this.prisma.storeMember.findMany({ where: { storeId } });
-    const notifType = frozen ? "STORE_FROZEN" : "STORE_UNFROZEN";
-    await Promise.all(
-      members.map((m) =>
-        this.notifications.send(m.userId, notifType, { storeId, storeName: store.name })
-      )
-    );
-
-    return { success: true };
+    return this.setStoreFrozen.execute(isAuditor, storeId, frozen);
   }
 
   // ─── 审核员：变更店长 ──────────────────────────────────────────────────────
 
   async changeManager(isAuditor: boolean, storeId: string, dto: ChangeManagerDto) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
-
-    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
-    if (!store) throw new NotFoundException("门店不存在");
-
-    const newManager = await this.prisma.user.findUnique({ where: { id: dto.newManagerId } });
-    if (!newManager) throw new NotFoundException("指定的用户不存在");
-
-    const currentManager = await this.prisma.storeMember.findFirst({
-      where: { storeId, position: StorePosition.MANAGER }
-    });
-
-    if (currentManager?.userId === dto.newManagerId) {
-      throw new BadRequestException("该用户已是本门店店长");
-    }
-
-    // 检查新店长是否在其他门店（不含本门店）
-    const newManagerMember = await this.prisma.storeMember.findUnique({
-      where: { userId: dto.newManagerId }
-    });
-    if (newManagerMember && newManagerMember.storeId !== storeId) {
-      throw new BadRequestException("该用户已是其他门店的成员");
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      // 移除原店长
-      if (currentManager) {
-        await tx.storeMember.delete({ where: { id: currentManager.id } });
-        await this.notifications.send(currentManager.userId, "REMOVED_FROM_STORE", {
-          storeId,
-          storeName: store.name,
-          reason: "店长职位已变更"
-        });
-      }
-
-      // 若新店长已在本门店，更新岗位；否则新建记录
-      if (newManagerMember) {
-        await tx.storeMember.update({
-          where: { id: newManagerMember.id },
-          data: { position: StorePosition.MANAGER }
-        });
-      } else {
-        await tx.storeMember.create({
-          data: {
-            storeId,
-            userId: dto.newManagerId,
-            position: StorePosition.MANAGER
-          }
-        });
-      }
-    });
-
-    return { success: true };
+    return this.changeStoreManager.execute(isAuditor, storeId, dto);
   }
 
   // ─── 工具：断言当前用户是指定门店的店长 ───────────────────────────────────

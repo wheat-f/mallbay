@@ -7,6 +7,7 @@ import { ChangeStoreManagerUseCase } from "./use-cases/change-store-manager.use-
 import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
 import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
+import { StoreRepository } from "./repositories/store.repository";
 
 test("listPublishedStores caps pageSize at 100", async () => {
   let capturedTake = 0;
@@ -213,7 +214,7 @@ function createStoresService(prisma: unknown, notifications: unknown) {
   return new StoresService(
     prisma as never,
     new ReviewStoreSubmissionUseCase(prisma as never, notifications as never),
-    new SubmitStoreForReviewUseCase(prisma as never),
+    new SubmitStoreForReviewUseCase(new StoreRepository(prisma as never)),
     new ChangeStoreManagerUseCase(prisma as never, notifications as never),
     new SetStoreFrozenUseCase(prisma as never, notifications as never)
   );

@@ -1,18 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
-import { StoreRepository } from "../repositories/store.repository";
-import { SubmitStoreForReviewUseCase } from "./submit-store-for-review.use-case";
+import { StoreStatus, SubmissionStatus } from "@prisma/client";
+import { StoreRepository } from "./store.repository";
 
-test("SubmitStoreForReviewUseCase closes pending submissions, creates a normalized submission, and marks store pending review", async () => {
+test("StoreRepository delegates submit-for-review persistence to Prisma", async () => {
   const calls: string[] = [];
-  const createdSubmission = { id: "submission-1", photos: [] };
+  const createdSubmission = { id: "submission-1" };
   const prisma = {
     storeMember: {
       findUnique: async (args: unknown) => {
         calls.push("member.findUnique");
         assert.deepEqual(args, { where: { userId: "manager-1" } });
-        return { storeId: "store-1", position: StorePosition.MANAGER };
+        return { userId: "manager-1" };
       }
     },
     store: {
@@ -47,10 +46,7 @@ test("SubmitStoreForReviewUseCase closes pending submissions, creates a normaliz
             address: "送审地址",
             description: "送审描述",
             photos: {
-              create: [
-                { url: "https://example.com/1.jpg", isCover: true, order: 0 },
-                { url: "https://example.com/2.jpg", isCover: false, order: 9 }
-              ]
+              create: [{ url: "https://example.com/1.jpg", isCover: true, order: 0 }]
             }
           },
           include: { photos: true }
@@ -59,19 +55,27 @@ test("SubmitStoreForReviewUseCase closes pending submissions, creates a normaliz
       }
     }
   };
-  const useCase = new SubmitStoreForReviewUseCase(new StoreRepository(prisma as never));
+  const repository = new StoreRepository(prisma as never);
 
-  const result = await useCase.execute("manager-1", "store-1", {
-    name: "送审门店",
-    address: "送审地址",
-    description: "送审描述",
-    photos: [
-      { url: "https://example.com/1.jpg" },
-      { url: "https://example.com/2.jpg", order: 9 }
-    ]
+  assert.deepEqual(await repository.findMemberByUserId("manager-1"), { userId: "manager-1" });
+  assert.deepEqual(await repository.getStoreOrThrow("store-1"), {
+    id: "store-1",
+    status: StoreStatus.DRAFTED
   });
+  await repository.closePendingSubmissions("store-1");
+  assert.equal(
+    await repository.createAuditSubmission({
+      storeId: "store-1",
+      submittedById: "manager-1",
+      name: "送审门店",
+      address: "送审地址",
+      description: "送审描述",
+      photos: [{ url: "https://example.com/1.jpg", isCover: true, order: 0 }]
+    }),
+    createdSubmission
+  );
+  await repository.updateStoreStatus("store-1", StoreStatus.PENDING_REVIEW);
 
-  assert.equal(result, createdSubmission);
   assert.deepEqual(calls, [
     "member.findUnique",
     "store.findUniqueOrThrow",

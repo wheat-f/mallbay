@@ -3,6 +3,7 @@ import { PrismaModule } from "../prisma/prisma.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { UsersModule } from "../users/users.module";
 import { StoresController } from "./stores.controller";
+import { StoreRepository } from "./repositories/store.repository";
 import { StoresService } from "./stores.service";
 import { ChangeStoreManagerUseCase } from "./use-cases/change-store-manager.use-case";
 import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
@@ -14,6 +15,7 @@ import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review
   controllers: [StoresController],
   providers: [
     StoresService,
+    StoreRepository,
     ReviewStoreSubmissionUseCase,
     SubmitStoreForReviewUseCase,
     ChangeStoreManagerUseCase,

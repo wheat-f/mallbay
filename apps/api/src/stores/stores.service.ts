@@ -13,15 +13,16 @@ import { SubmitStoreDto } from "./dto/submit-store.dto";
 import { ReviewStoreDto } from "./dto/review-store.dto";
 import { ListStoresDto } from "./dto/list-stores.dto";
 import { ChangeManagerDto } from "./dto/change-manager.dto";
-import { StorePolicy } from "./domain/store-policy";
 import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
+import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
 
 @Injectable()
 export class StoresService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly reviewStoreSubmission: ReviewStoreSubmissionUseCase
+    private readonly reviewStoreSubmission: ReviewStoreSubmissionUseCase,
+    private readonly submitStoreForReview: SubmitStoreForReviewUseCase
   ) {}
 
   // ─── 审核员：创建门店并指派店长 ────────────────────────────────────────────
@@ -64,43 +65,7 @@ export class StoresService {
   // ─── 店长：提交门店信息送审 ────────────────────────────────────────────────
 
   async submitStore(userId: string, storeId: string, dto: SubmitStoreDto) {
-    await this.assertStoreManager(userId, storeId);
-
-    const store = await this.prisma.store.findUniqueOrThrow({ where: { id: storeId } });
-
-    StorePolicy.assertCanSubmit(store.status);
-    const photos = StorePolicy.normalizeSubmissionPhotos(dto.photos);
-
-    // 取消当前 PENDING 中的提交（如有）
-    await this.prisma.storeAuditSubmission.updateMany({
-      where: { storeId, status: SubmissionStatus.PENDING },
-      data: { status: SubmissionStatus.REJECTED, reviewNote: "新提交覆盖，自动关闭" }
-    });
-
-    const submission = await this.prisma.storeAuditSubmission.create({
-      data: {
-        storeId,
-        submittedById: userId,
-        name: dto.name,
-        address: dto.address,
-        description: dto.description,
-        photos: {
-          create: photos.map((p) => ({
-            url: p.url,
-            isCover: p.isCover,
-            order: p.order
-          }))
-        }
-      },
-      include: { photos: true }
-    });
-
-    await this.prisma.store.update({
-      where: { id: storeId },
-      data: { status: StoreStatus.PENDING_REVIEW }
-    });
-
-    return submission;
+    return this.submitStoreForReview.execute(userId, storeId, dto);
   }
 
   // ─── 审核员：审核门店提交 ──────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
 import { StoresService } from "./stores.service";
 import { ReviewAction } from "./dto/review-store.dto";
 import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
+import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
 
 test("listPublishedStores caps pageSize at 100", async () => {
   let capturedTake = 0;
@@ -210,6 +211,7 @@ function createStoresService(prisma: unknown, notifications: unknown) {
   return new StoresService(
     prisma as never,
     notifications as never,
-    new ReviewStoreSubmissionUseCase(prisma as never, notifications as never)
+    new ReviewStoreSubmissionUseCase(prisma as never, notifications as never),
+    new SubmitStoreForReviewUseCase(prisma as never)
   );
 }

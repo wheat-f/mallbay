@@ -216,7 +216,7 @@ function createStoresService(prisma: unknown, notifications: unknown) {
     prisma as never,
     new ReviewStoreSubmissionUseCase(storeRepository, notifications as never),
     new SubmitStoreForReviewUseCase(storeRepository),
-    new ChangeStoreManagerUseCase(prisma as never, notifications as never),
-    new SetStoreFrozenUseCase(prisma as never, notifications as never)
+    new ChangeStoreManagerUseCase(storeRepository, notifications as never),
+    new SetStoreFrozenUseCase(storeRepository, notifications as never)
   );
 }

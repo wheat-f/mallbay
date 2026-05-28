@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { StoreStatus } from "@prisma/client";
+import { StoreRepository } from "../repositories/store.repository";
 import { SetStoreFrozenUseCase } from "./set-store-frozen.use-case";
 
 test("SetStoreFrozenUseCase freezes store and notifies all members", async () => {
@@ -25,7 +26,7 @@ test("SetStoreFrozenUseCase freezes store and notifies all members", async () =>
       }
     }
   };
-  const useCase = new SetStoreFrozenUseCase(prisma as never, {
+  const useCase = new SetStoreFrozenUseCase(new StoreRepository(prisma as never), {
     send: async (userId: string, type: string, payload: unknown) => {
       notifications.push({ userId, type, payload });
     }

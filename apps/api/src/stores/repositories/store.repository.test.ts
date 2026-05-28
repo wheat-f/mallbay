@@ -219,3 +219,101 @@ test("StoreRepository delegates review-submission persistence to Prisma", async 
     "member.findFirst"
   ]);
 });
+
+test("StoreRepository delegates store admin persistence to Prisma", async () => {
+  const calls: string[] = [];
+  const tx = {
+    storeMember: {
+      delete: async (args: unknown) => {
+        calls.push("tx.member.delete");
+        assert.deepEqual(args, { where: { id: "member-current" } });
+      },
+      update: async (args: unknown) => {
+        calls.push("tx.member.update");
+        assert.deepEqual(args, {
+          where: { id: "member-new" },
+          data: { position: StorePosition.MANAGER }
+        });
+      }
+    }
+  };
+  const prisma = {
+    $transaction: async (callback: (transaction: typeof tx) => Promise<void>) => callback(tx),
+    store: {
+      findUnique: async (args: unknown) => {
+        calls.push("store.findUnique");
+        assert.deepEqual(args, { where: { id: "store-1" } });
+        return { id: "store-1", name: "门店一", status: StoreStatus.PUBLISHED };
+      },
+      update: async (args: unknown) => {
+        calls.push("store.update");
+        assert.deepEqual(args, {
+          where: { id: "store-1" },
+          data: { status: StoreStatus.FROZEN }
+        });
+      }
+    },
+    user: {
+      findUnique: async (args: unknown) => {
+        calls.push("user.findUnique");
+        assert.deepEqual(args, { where: { id: "manager-new" } });
+        return { id: "manager-new" };
+      }
+    },
+    storeMember: {
+      findFirst: async (args: unknown) => {
+        calls.push("member.findFirst");
+        assert.deepEqual(args, {
+          where: { storeId: "store-1", position: StorePosition.MANAGER }
+        });
+        return { id: "member-current", userId: "manager-old" };
+      },
+      findUnique: async (args: unknown) => {
+        calls.push("member.findUnique");
+        assert.deepEqual(args, { where: { userId: "manager-new" } });
+        return { id: "member-new", userId: "manager-new", storeId: "store-1" };
+      },
+      findMany: async (args: unknown) => {
+        calls.push("member.findMany");
+        assert.deepEqual(args, { where: { storeId: "store-1" } });
+        return [{ userId: "user-1" }];
+      }
+    }
+  };
+  const repository = new StoreRepository(prisma as never);
+
+  assert.deepEqual(await repository.findStore("store-1"), {
+    id: "store-1",
+    name: "门店一",
+    status: StoreStatus.PUBLISHED
+  });
+  assert.deepEqual(await repository.findUser("manager-new"), { id: "manager-new" });
+  assert.deepEqual(await repository.findStoreManager("store-1"), {
+    id: "member-current",
+    userId: "manager-old"
+  });
+  assert.deepEqual(await repository.findMemberByUserId("manager-new"), {
+    id: "member-new",
+    userId: "manager-new",
+    storeId: "store-1"
+  });
+  await repository.changeManager({
+    storeId: "store-1",
+    newManagerId: "manager-new",
+    currentManagerId: "member-current",
+    existingNewManagerMemberId: "member-new"
+  });
+  await repository.updateStoreStatus("store-1", StoreStatus.FROZEN);
+  assert.deepEqual(await repository.findStoreMembers("store-1"), [{ userId: "user-1" }]);
+
+  assert.deepEqual(calls, [
+    "store.findUnique",
+    "user.findUnique",
+    "member.findFirst",
+    "member.findUnique",
+    "tx.member.delete",
+    "tx.member.update",
+    "store.update",
+    "member.findMany"
+  ]);
+});

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { StorePosition } from "@prisma/client";
+import { StoreRepository } from "../repositories/store.repository";
 import { ChangeStoreManagerUseCase } from "./change-store-manager.use-case";
 
 test("ChangeStoreManagerUseCase replaces current manager and notifies removed manager", async () => {
@@ -52,7 +53,7 @@ test("ChangeStoreManagerUseCase replaces current manager and notifies removed ma
     },
     $transaction: async (callback: (transaction: typeof tx) => Promise<void>) => callback(tx)
   };
-  const useCase = new ChangeStoreManagerUseCase(prisma as never, {
+  const useCase = new ChangeStoreManagerUseCase(new StoreRepository(prisma as never), {
     send: async (userId: string, type: string, payload: unknown) => {
       notifications.push({ userId, type, payload });
     }

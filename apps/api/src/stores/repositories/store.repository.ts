@@ -20,6 +20,13 @@ type ReviewableSubmission = {
   photos: Array<{ url: string; isCover: boolean; order: number }>;
 };
 
+type ChangeManagerInput = {
+  storeId: string;
+  newManagerId: string;
+  currentManagerId?: string;
+  existingNewManagerMemberId?: string;
+};
+
 @Injectable()
 export class StoreRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -32,6 +39,14 @@ export class StoreRepository {
 
   getStoreOrThrow(storeId: string) {
     return this.prisma.store.findUniqueOrThrow({ where: { id: storeId } });
+  }
+
+  findStore(storeId: string) {
+    return this.prisma.store.findUnique({ where: { id: storeId } });
+  }
+
+  findUser(userId: string) {
+    return this.prisma.user.findUnique({ where: { id: userId } });
   }
 
   closePendingSubmissions(storeId: string) {
@@ -133,6 +148,33 @@ export class StoreRepository {
   findStoreManager(storeId: string) {
     return this.prisma.storeMember.findFirst({
       where: { storeId, position: StorePosition.MANAGER }
+    });
+  }
+
+  findStoreMembers(storeId: string) {
+    return this.prisma.storeMember.findMany({ where: { storeId } });
+  }
+
+  async changeManager(input: ChangeManagerInput) {
+    await this.prisma.$transaction(async (tx) => {
+      if (input.currentManagerId) {
+        await tx.storeMember.delete({ where: { id: input.currentManagerId } });
+      }
+
+      if (input.existingNewManagerMemberId) {
+        await tx.storeMember.update({
+          where: { id: input.existingNewManagerMemberId },
+          data: { position: StorePosition.MANAGER }
+        });
+      } else {
+        await tx.storeMember.create({
+          data: {
+            storeId: input.storeId,
+            userId: input.newManagerId,
+            position: StorePosition.MANAGER
+          }
+        });
+      }
     });
   }
 }

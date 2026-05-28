@@ -6,19 +6,19 @@ import {
 } from "@nestjs/common";
 import { StoreStatus } from "@prisma/client";
 import { NotificationsService } from "../../notifications/notifications.service";
-import { PrismaService } from "../../prisma/prisma.service";
+import { StoreRepository } from "../repositories/store.repository";
 
 @Injectable()
 export class SetStoreFrozenUseCase {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly stores: StoreRepository,
     private readonly notifications: NotificationsService
   ) {}
 
   async execute(isAuditor: boolean, storeId: string, frozen: boolean) {
     if (!isAuditor) throw new ForbiddenException("无权限");
 
-    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
+    const store = await this.stores.findStore(storeId);
     if (!store) throw new NotFoundException("门店不存在");
 
     if (frozen && store.status === StoreStatus.FROZEN) {
@@ -29,9 +29,9 @@ export class SetStoreFrozenUseCase {
     }
 
     const newStatus = frozen ? StoreStatus.FROZEN : StoreStatus.PUBLISHED;
-    await this.prisma.store.update({ where: { id: storeId }, data: { status: newStatus } });
+    await this.stores.updateStoreStatus(storeId, newStatus);
 
-    const members = await this.prisma.storeMember.findMany({ where: { storeId } });
+    const members = await this.stores.findStoreMembers(storeId);
     const notifType = frozen ? "STORE_FROZEN" : "STORE_UNFROZEN";
     await Promise.all(
       members.map((m) =>

@@ -12,6 +12,7 @@ export async function request<T>(path: string, options: ApiOptions = {}): Promis
   const token = useAuthStore.getState().accessToken;
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(auth && token ? { Authorization: `Bearer ${token}` } : {}),
@@ -31,6 +32,7 @@ export async function requestMultipart<T>(path: string, formData: FormData): Pro
   const token = useAuthStore.getState().accessToken;
   const response = await fetch(`${API_URL}${path}`, {
     method: "POST",
+    credentials: "include",
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     },

@@ -30,6 +30,7 @@ test("request sends auth token and parses JSON responses", async () => {
 
   assert.deepEqual(result, { success: true });
   assert.equal(capturedInput, "http://localhost:3001/test");
+  assert.equal(capturedInit?.credentials, "include");
   assert.deepEqual(capturedInit?.headers, {
     "Content-Type": "application/json",
     Authorization: "Bearer access-token"

@@ -23,6 +23,12 @@ export const authApi = {
       auth: false,
       body: JSON.stringify(payload)
     }),
+  refresh: () =>
+    request<AuthResponse>("/auth/refresh", {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({})
+    }),
   logout: () =>
     request<{ success: boolean }>("/auth/logout", {
       method: "POST"

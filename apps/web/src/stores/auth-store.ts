@@ -14,6 +14,12 @@ type AuthState = {
   clearSession: () => void;
 };
 
+export function authStorePartialize(state: AuthState) {
+  return {
+    user: state.user
+  };
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
@@ -37,11 +43,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "mallbay-auth",
-      partialize: (state) => ({
-        user: state.user,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken
-      }),
+      partialize: authStorePartialize,
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       }

@@ -85,6 +85,31 @@ test("StoreRepository delegates submit-for-review persistence to Prisma", async 
   ]);
 });
 
+test("StoreRepository converts pending submission invariant conflicts to ConflictException", async () => {
+  const prisma = {
+    storeAuditSubmission: {
+      create: async () => {
+        throw {
+          code: "P2002",
+          meta: { target: "StoreAuditSubmission_one_pending_per_store_uidx" }
+        };
+      }
+    }
+  };
+  const repository = new StoreRepository(prisma as never);
+
+  await assert.rejects(
+    () =>
+      repository.createAuditSubmission({
+        storeId: "store-1",
+        submittedById: "manager-1",
+        name: "送审门店",
+        photos: [{ url: "https://example.com/1.jpg", isCover: true, order: 0 }]
+      }),
+    /该门店已有待审核提交/
+  );
+});
+
 test("StoreRepository delegates review-submission persistence to Prisma", async () => {
   const calls: string[] = [];
   const submission = {
@@ -218,6 +243,42 @@ test("StoreRepository delegates review-submission persistence to Prisma", async 
     "store.update",
     "member.findFirst"
   ]);
+});
+
+test("StoreRepository converts approved cover invariant conflicts to ConflictException", async () => {
+  const tx = {
+    storeAuditSubmission: {
+      update: async () => undefined
+    },
+    store: {
+      update: async () => undefined
+    },
+    storePhoto: {
+      deleteMany: async () => undefined,
+      createMany: async () => {
+        throw {
+          code: "P2002",
+          meta: { target: "StorePhoto_one_cover_per_store_uidx" }
+        };
+      }
+    }
+  };
+  const prisma = {
+    $transaction: async (callback: (transaction: typeof tx) => Promise<void>) => callback(tx)
+  };
+  const repository = new StoreRepository(prisma as never);
+
+  await assert.rejects(
+    () =>
+      repository.approveSubmission("auditor-1", "submission-1", {
+        storeId: "store-1",
+        name: "审核门店",
+        address: null,
+        description: null,
+        photos: [{ url: "https://example.com/1.jpg", isCover: true, order: 0 }]
+      }),
+    /该门店已有封面图/
+  );
 });
 
 test("StoreRepository delegates store admin persistence to Prisma", async () => {

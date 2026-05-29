@@ -152,7 +152,7 @@ cd /opt/mallbay
 # 手动复制 compose 文件（之后 CI/CD 会自动同步）
 # scp docker-compose.prod.yml root@<ECS_IP>:/opt/mallbay/
 
-# 先拉起数据库（API 启动时会自动跑 prisma migrate deploy）
+# 先拉起数据库（API 启动时会先跑数据库不变量预检，再执行 prisma migrate deploy）
 docker compose -f docker-compose.prod.yml up -d postgres redis
 
 # 等待 postgres 健康后再启动 api/web

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { ConflictException, Injectable } from "@nestjs/common";
 import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NormalizedSubmissionPhoto } from "../domain/store-policy";
@@ -57,23 +57,43 @@ export class StoreRepository {
   }
 
   createAuditSubmission(input: CreateAuditSubmissionInput) {
-    return this.prisma.storeAuditSubmission.create({
-      data: {
-        storeId: input.storeId,
-        submittedById: input.submittedById,
-        name: input.name,
-        address: input.address,
-        description: input.description,
-        photos: {
-          create: input.photos.map((p) => ({
-            url: p.url,
-            isCover: p.isCover,
-            order: p.order
-          }))
-        }
-      },
-      include: { photos: true }
-    });
+    return this.mapInvariantConflict(() =>
+      this.prisma.storeAuditSubmission.create({
+        data: {
+          storeId: input.storeId,
+          submittedById: input.submittedById,
+          name: input.name,
+          address: input.address,
+          description: input.description,
+          photos: {
+            create: input.photos.map((p) => ({
+              url: p.url,
+              isCover: p.isCover,
+              order: p.order
+            }))
+          }
+        },
+        include: { photos: true }
+      })
+    );
+  }
+
+  private async mapInvariantConflict<T>(operation: () => Promise<T>) {
+    try {
+      return await operation();
+    } catch (error) {
+      const constraint = getUniqueConstraintName(error);
+      if (constraint === "StoreAuditSubmission_one_pending_per_store_uidx") {
+        throw new ConflictException("该门店已有待审核提交，请刷新后重试");
+      }
+      if (constraint === "StorePhoto_one_cover_per_store_uidx") {
+        throw new ConflictException("该门店已有封面图，请刷新后重试");
+      }
+      if (constraint === "StoreSubmissionPhoto_one_cover_per_submission_uidx") {
+        throw new ConflictException("该送审提交已有封面图，请刷新后重试");
+      }
+      throw error;
+    }
   }
 
   updateStoreStatus(storeId: string, status: StoreStatus) {
@@ -95,36 +115,38 @@ export class StoreRepository {
     submissionId: string,
     submission: ReviewableSubmission
   ) {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.storeAuditSubmission.update({
-        where: { id: submissionId },
-        data: {
-          status: SubmissionStatus.APPROVED,
-          reviewedById: auditorId,
-          reviewedAt: new Date()
-        }
-      });
+    await this.mapInvariantConflict(() =>
+      this.prisma.$transaction(async (tx) => {
+        await tx.storeAuditSubmission.update({
+          where: { id: submissionId },
+          data: {
+            status: SubmissionStatus.APPROVED,
+            reviewedById: auditorId,
+            reviewedAt: new Date()
+          }
+        });
 
-      await tx.store.update({
-        where: { id: submission.storeId },
-        data: {
-          name: submission.name,
-          address: submission.address,
-          description: submission.description,
-          status: StoreStatus.PUBLISHED
-        }
-      });
+        await tx.store.update({
+          where: { id: submission.storeId },
+          data: {
+            name: submission.name,
+            address: submission.address,
+            description: submission.description,
+            status: StoreStatus.PUBLISHED
+          }
+        });
 
-      await tx.storePhoto.deleteMany({ where: { storeId: submission.storeId } });
-      await tx.storePhoto.createMany({
-        data: submission.photos.map((p) => ({
-          storeId: submission.storeId,
-          url: p.url,
-          isCover: p.isCover,
-          order: p.order
-        }))
-      });
-    });
+        await tx.storePhoto.deleteMany({ where: { storeId: submission.storeId } });
+        await tx.storePhoto.createMany({
+          data: submission.photos.map((p) => ({
+            storeId: submission.storeId,
+            url: p.url,
+            isCover: p.isCover,
+            order: p.order
+          }))
+        });
+      })
+    );
   }
 
   rejectSubmission(auditorId: string, submissionId: string, reviewNote: string | undefined) {
@@ -177,4 +199,19 @@ export class StoreRepository {
       }
     });
   }
+}
+
+function getUniqueConstraintName(error: unknown) {
+  if (!error || typeof error !== "object" || !("code" in error) || error.code !== "P2002") {
+    return null;
+  }
+
+  const target = (error as { meta?: { target?: unknown } }).meta?.target;
+  if (typeof target === "string") {
+    return target;
+  }
+  if (Array.isArray(target)) {
+    return target.join("_");
+  }
+  return null;
 }

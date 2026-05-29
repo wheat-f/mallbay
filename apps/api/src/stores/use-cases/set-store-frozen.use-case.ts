@@ -6,13 +6,15 @@ import {
 } from "@nestjs/common";
 import { StoreStatus } from "@prisma/client";
 import { NotificationsService } from "../../notifications/notifications.service";
+import { AuditLogService } from "../../observability/audit-log.service";
 import { StoreRepository } from "../repositories/store.repository";
 
 @Injectable()
 export class SetStoreFrozenUseCase {
   constructor(
     private readonly stores: StoreRepository,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
+    private readonly auditLog: AuditLogService
   ) {}
 
   async execute(isAuditor: boolean, storeId: string, frozen: boolean) {
@@ -30,6 +32,12 @@ export class SetStoreFrozenUseCase {
 
     const newStatus = frozen ? StoreStatus.FROZEN : StoreStatus.PUBLISHED;
     await this.stores.updateStoreStatus(storeId, newStatus);
+    this.auditLog.record({
+      action: frozen ? "STORE_FROZEN" : "STORE_UNFROZEN",
+      targetType: "store",
+      targetId: storeId,
+      metadata: { status: newStatus }
+    });
 
     const members = await this.stores.findStoreMembers(storeId);
     const notifType = frozen ? "STORE_FROZEN" : "STORE_UNFROZEN";

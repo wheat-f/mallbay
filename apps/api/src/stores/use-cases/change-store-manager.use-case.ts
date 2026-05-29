@@ -5,6 +5,7 @@ import {
   NotFoundException
 } from "@nestjs/common";
 import { NotificationsService } from "../../notifications/notifications.service";
+import { AuditLogService } from "../../observability/audit-log.service";
 import { ChangeManagerDto } from "../dto/change-manager.dto";
 import { StoreRepository } from "../repositories/store.repository";
 
@@ -12,7 +13,8 @@ import { StoreRepository } from "../repositories/store.repository";
 export class ChangeStoreManagerUseCase {
   constructor(
     private readonly stores: StoreRepository,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
+    private readonly auditLog: AuditLogService
   ) {}
 
   async execute(isAuditor: boolean, storeId: string, dto: ChangeManagerDto) {
@@ -40,6 +42,15 @@ export class ChangeStoreManagerUseCase {
       newManagerId: dto.newManagerId,
       currentManagerId: currentManager?.id,
       existingNewManagerMemberId: newManagerMember?.id
+    });
+    this.auditLog.record({
+      action: "STORE_MANAGER_CHANGED",
+      targetType: "store",
+      targetId: storeId,
+      metadata: {
+        previousManagerId: currentManager?.userId,
+        newManagerId: dto.newManagerId
+      }
     });
 
     if (currentManager) {

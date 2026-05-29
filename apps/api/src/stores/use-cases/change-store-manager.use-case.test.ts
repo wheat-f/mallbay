@@ -7,6 +7,7 @@ import { ChangeStoreManagerUseCase } from "./change-store-manager.use-case";
 test("ChangeStoreManagerUseCase replaces current manager and notifies removed manager", async () => {
   const transactionCalls: string[] = [];
   const notifications: Array<{ userId: string; type: string; payload: unknown }> = [];
+  const auditEvents: unknown[] = [];
   const currentManager = { id: "member-current", userId: "manager-old" };
   const tx = {
     storeMember: {
@@ -53,11 +54,15 @@ test("ChangeStoreManagerUseCase replaces current manager and notifies removed ma
     },
     $transaction: async (callback: (transaction: typeof tx) => Promise<void>) => callback(tx)
   };
-  const useCase = new ChangeStoreManagerUseCase(new StoreRepository(prisma as never), {
-    send: async (userId: string, type: string, payload: unknown) => {
-      notifications.push({ userId, type, payload });
-    }
-  } as never);
+  const useCase = new ChangeStoreManagerUseCase(
+    new StoreRepository(prisma as never),
+    {
+      send: async (userId: string, type: string, payload: unknown) => {
+        notifications.push({ userId, type, payload });
+      }
+    } as never,
+    { record: (event: unknown) => auditEvents.push(event) } as never
+  );
 
   const result = await useCase.execute(true, "store-1", { newManagerId: "manager-new" });
 
@@ -71,6 +76,17 @@ test("ChangeStoreManagerUseCase replaces current manager and notifies removed ma
         storeId: "store-1",
         storeName: "门店一",
         reason: "店长职位已变更"
+      }
+    }
+  ]);
+  assert.deepEqual(auditEvents, [
+    {
+      action: "STORE_MANAGER_CHANGED",
+      targetType: "store",
+      targetId: "store-1",
+      metadata: {
+        previousManagerId: "manager-old",
+        newManagerId: "manager-new"
       }
     }
   ]);

@@ -43,6 +43,7 @@ test("reviewSubmission approval publishes store, replaces photos, and notifies m
   };
   const transactionCalls: string[] = [];
   const notifications: Array<{ userId: string; type: string; payload: unknown }> = [];
+  const auditEvents: unknown[] = [];
 
   const tx = {
     storeAuditSubmission: {
@@ -119,7 +120,9 @@ test("reviewSubmission approval publishes store, replaces photos, and notifies m
       notifications.push({ userId, type, payload });
     }
   };
-  const service = createStoresService(prisma, notificationsService);
+  const service = createStoresService(prisma, notificationsService, {
+    record: (event: unknown) => auditEvents.push(event)
+  });
 
   const result = await service.reviewSubmission("auditor-1", true, "submission-1", {
     action: ReviewAction.APPROVE
@@ -139,11 +142,21 @@ test("reviewSubmission approval publishes store, replaces photos, and notifies m
       payload: { storeId: "store-1", storeName: "已审核门店" }
     }
   ]);
+  assert.deepEqual(auditEvents, [
+    {
+      action: "STORE_REVIEW_APPROVED",
+      actorId: "auditor-1",
+      targetType: "storeSubmission",
+      targetId: "submission-1",
+      metadata: { storeId: "store-1" }
+    }
+  ]);
 });
 
 test("reviewSubmission rejection restores prior public store and notifies manager with reason", async () => {
   const storeUpdates: unknown[] = [];
   const notifications: Array<{ userId: string; type: string; payload: unknown }> = [];
+  const auditEvents: unknown[] = [];
   const prisma = {
     storeAuditSubmission: {
       findUnique: async () => ({
@@ -187,7 +200,9 @@ test("reviewSubmission rejection restores prior public store and notifies manage
       notifications.push({ userId, type, payload });
     }
   };
-  const service = createStoresService(prisma, notificationsService);
+  const service = createStoresService(prisma, notificationsService, {
+    record: (event: unknown) => auditEvents.push(event)
+  });
 
   const result = await service.reviewSubmission("auditor-2", true, "submission-2", {
     action: ReviewAction.REJECT,
@@ -208,15 +223,24 @@ test("reviewSubmission rejection restores prior public store and notifies manage
       payload: { storeId: "store-2", storeName: "待驳回门店", reviewNote: "资料不完整" }
     }
   ]);
+  assert.deepEqual(auditEvents, [
+    {
+      action: "STORE_REVIEW_REJECTED",
+      actorId: "auditor-2",
+      targetType: "storeSubmission",
+      targetId: "submission-2",
+      metadata: { storeId: "store-2" }
+    }
+  ]);
 });
 
-function createStoresService(prisma: unknown, notifications: unknown) {
+function createStoresService(prisma: unknown, notifications: unknown, auditLog: unknown = {}) {
   const storeRepository = new StoreRepository(prisma as never);
   return new StoresService(
     prisma as never,
-    new ReviewStoreSubmissionUseCase(storeRepository, notifications as never),
+    new ReviewStoreSubmissionUseCase(storeRepository, notifications as never, auditLog as never),
     new SubmitStoreForReviewUseCase(storeRepository),
-    new ChangeStoreManagerUseCase(storeRepository, notifications as never),
-    new SetStoreFrozenUseCase(storeRepository, notifications as never)
+    new ChangeStoreManagerUseCase(storeRepository, notifications as never, auditLog as never),
+    new SetStoreFrozenUseCase(storeRepository, notifications as never, auditLog as never)
   );
 }

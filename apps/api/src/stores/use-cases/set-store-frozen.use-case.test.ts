@@ -6,6 +6,7 @@ import { SetStoreFrozenUseCase } from "./set-store-frozen.use-case";
 
 test("SetStoreFrozenUseCase freezes store and notifies all members", async () => {
   const notifications: Array<{ userId: string; type: string; payload: unknown }> = [];
+  const auditEvents: unknown[] = [];
   const prisma = {
     store: {
       findUnique: async (args: unknown) => {
@@ -26,11 +27,15 @@ test("SetStoreFrozenUseCase freezes store and notifies all members", async () =>
       }
     }
   };
-  const useCase = new SetStoreFrozenUseCase(new StoreRepository(prisma as never), {
-    send: async (userId: string, type: string, payload: unknown) => {
-      notifications.push({ userId, type, payload });
-    }
-  } as never);
+  const useCase = new SetStoreFrozenUseCase(
+    new StoreRepository(prisma as never),
+    {
+      send: async (userId: string, type: string, payload: unknown) => {
+        notifications.push({ userId, type, payload });
+      }
+    } as never,
+    { record: (event: unknown) => auditEvents.push(event) } as never
+  );
 
   const result = await useCase.execute(true, "store-1", true);
 
@@ -45,6 +50,14 @@ test("SetStoreFrozenUseCase freezes store and notifies all members", async () =>
       userId: "user-2",
       type: "STORE_FROZEN",
       payload: { storeId: "store-1", storeName: "门店一" }
+    }
+  ]);
+  assert.deepEqual(auditEvents, [
+    {
+      action: "STORE_FROZEN",
+      targetType: "store",
+      targetId: "store-1",
+      metadata: { status: StoreStatus.FROZEN }
     }
   ]);
 });

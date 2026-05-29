@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { PrismaModule } from "../prisma/prisma.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { ObservabilityModule } from "../observability/observability.module";
 import { UsersModule } from "../users/users.module";
 import { StoresController } from "./stores.controller";
 import { StoreRepository } from "./repositories/store.repository";
@@ -11,7 +12,7 @@ import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
 
 @Module({
-  imports: [PrismaModule, NotificationsModule, UsersModule],
+  imports: [PrismaModule, NotificationsModule, UsersModule, ObservabilityModule],
   controllers: [StoresController],
   providers: [
     StoresService,

@@ -33,3 +33,34 @@ test("issueAndPersistTokens fails fast when JWT secrets are missing", async () =
   );
 });
 
+test("login failure increments observability metric without sensitive labels", async () => {
+  const increments: Array<{ name: string; labels: Record<string, string> }> = [];
+  const prisma = {
+    user: {
+      findFirst: async () => null
+    }
+  };
+  const metrics = {
+    increment: (name: string, labels: Record<string, string>) => {
+      increments.push({ name, labels });
+    }
+  };
+  const service = new AuthService(
+    prisma as never,
+    {} as never,
+    {} as never,
+    metrics as never
+  );
+
+  await assert.rejects(
+    () => service.login({ identifier: "owner", password: "wrong-password" }),
+    /账号或密码不正确/
+  );
+
+  assert.deepEqual(increments, [
+    {
+      name: "auth_login_failures_total",
+      labels: { reason: "not_found" }
+    }
+  ]);
+});

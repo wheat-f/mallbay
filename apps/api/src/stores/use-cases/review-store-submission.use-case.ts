@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { SubmissionStatus } from "@prisma/client";
 import { NotificationsService } from "../../notifications/notifications.service";
+import { AuditLogService } from "../../observability/audit-log.service";
 import { ReviewAction, ReviewStoreDto } from "../dto/review-store.dto";
 import { StorePolicy } from "../domain/store-policy";
 import { StoreRepository } from "../repositories/store.repository";
@@ -14,7 +15,8 @@ import { StoreRepository } from "../repositories/store.repository";
 export class ReviewStoreSubmissionUseCase {
   constructor(
     private readonly stores: StoreRepository,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
+    private readonly auditLog: AuditLogService
   ) {}
 
   async execute(auditorId: string, isAuditor: boolean, submissionId: string, dto: ReviewStoreDto) {
@@ -50,6 +52,13 @@ export class ReviewStoreSubmissionUseCase {
     }
   ) {
     await this.stores.approveSubmission(auditorId, submissionId, submission);
+    this.auditLog.record({
+      action: "STORE_REVIEW_APPROVED",
+      actorId: auditorId,
+      targetType: "storeSubmission",
+      targetId: submissionId,
+      metadata: { storeId: submission.storeId }
+    });
 
     const manager = await this.stores.findStoreManager(submission.storeId);
     if (manager) {
@@ -67,6 +76,13 @@ export class ReviewStoreSubmissionUseCase {
     submission: { storeId: string; store: { name: string } }
   ) {
     await this.stores.rejectSubmission(auditorId, submissionId, reviewNote);
+    this.auditLog.record({
+      action: "STORE_REVIEW_REJECTED",
+      actorId: auditorId,
+      targetType: "storeSubmission",
+      targetId: submissionId,
+      metadata: { storeId: submission.storeId }
+    });
 
     const hasApproved = await this.stores.countApprovedSubmissions(submission.storeId);
     const newStatus = StorePolicy.statusAfterRejectedSubmission(hasApproved > 0);

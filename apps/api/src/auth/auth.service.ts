@@ -3,12 +3,14 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Optional,
   UnauthorizedException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import { randomUUID } from "crypto";
+import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
@@ -19,7 +21,8 @@ export class AuthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(JwtService) private readonly jwt: JwtService,
-    @Inject(ConfigService) private readonly config: ConfigService
+    @Inject(ConfigService) private readonly config: ConfigService,
+    @Optional() @Inject(MetricsService) private readonly metrics?: MetricsService
   ) {}
 
   async register(dto: RegisterDto) {
@@ -55,15 +58,21 @@ export class AuthService {
     });
 
     if (!user) {
+      this.recordLoginFailure("not_found");
       throw new UnauthorizedException("账号或密码不正确");
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isPasswordValid) {
+      this.recordLoginFailure("invalid_password");
       throw new UnauthorizedException("账号或密码不正确");
     }
 
     return this.issueAndPersistTokens(user.id);
+  }
+
+  private recordLoginFailure(reason: string) {
+    this.metrics?.increment("auth_login_failures_total", { reason });
   }
 
   async refresh(refreshToken: string) {

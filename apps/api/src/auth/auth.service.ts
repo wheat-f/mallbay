@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException
@@ -7,6 +8,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
+import { randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
@@ -15,9 +17,9 @@ import { TokenPayload } from "./token-payload";
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly jwt: JwtService,
-    private readonly config: ConfigService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(JwtService) private readonly jwt: JwtService,
+    @Inject(ConfigService) private readonly config: ConfigService
   ) {}
 
   async register(dto: RegisterDto) {
@@ -135,10 +137,13 @@ export class AuthService {
         secret: this.accessSecret,
         expiresIn: this.config.get<JwtSignOptions["expiresIn"]>("JWT_ACCESS_EXPIRES_IN") ?? "15m"
       }),
-      this.jwt.signAsync(payload, {
-        secret: this.refreshSecret,
-        expiresIn: this.config.get<JwtSignOptions["expiresIn"]>("JWT_REFRESH_EXPIRES_IN") ?? "7d"
-      })
+      this.jwt.signAsync(
+        { ...payload, jti: randomUUID() },
+        {
+          secret: this.refreshSecret,
+          expiresIn: this.config.get<JwtSignOptions["expiresIn"]>("JWT_REFRESH_EXPIRES_IN") ?? "7d"
+        }
+      )
     ]);
 
     await this.prisma.user.update({

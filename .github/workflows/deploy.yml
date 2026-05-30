@@ -158,6 +158,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Ensure target directory exists on Test ECS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host:     ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key:      ${{ secrets.ECS_SSH_KEY }}
+          script:   mkdir -p /opt/mallbay
+
       - name: Sync compose file to Test ECS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -182,7 +190,7 @@ jobs:
 
             docker compose -f docker-compose.prod.yml pull api web
             docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate api web
-            docker image prune -f
+            docker system prune -af
 
             echo "✅ Test deployed — ${{ github.sha }}"
 
@@ -199,6 +207,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Ensure target directory exists on Production ECS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host:     ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key:      ${{ secrets.ECS_SSH_KEY }}
+          script:   mkdir -p /opt/mallbay
 
       - name: Sync compose file to Production ECS
         uses: appleboy/scp-action@v0.1.7
@@ -224,6 +240,6 @@ jobs:
 
             docker compose -f docker-compose.prod.yml pull api web
             docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate api web
-            docker image prune -f
+            docker system prune -af
 
             echo "✅ Production deployed — ${{ github.sha }}"

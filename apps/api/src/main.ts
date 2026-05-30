@@ -1,6 +1,8 @@
 import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
+import * as express from "express";
+import * as path from "path";
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./common/api-exception.filter";
 import { requestIdMiddleware } from "./common/request-id.middleware";
@@ -15,6 +17,10 @@ async function bootstrap() {
 
   app.use(requestIdMiddleware);
   app.use(httpObservabilityMiddleware(app.get(MetricsService), app.get(StructuredLoggerService)));
+  if (config.get<string>("OSS_PROVIDER") === "local") {
+    const localOssRoot = path.resolve(config.get<string>("OSS_LOCAL_DIR") ?? ".local/oss");
+    app.use("/local-oss", express.static(localOssRoot));
+  }
   app.enableCors({
     origin: webOrigin,
     credentials: true,

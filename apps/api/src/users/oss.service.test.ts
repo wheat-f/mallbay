@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import * as fs from "fs/promises";
+import * as os from "os";
+import * as path from "path";
 import { OssService } from "./oss.service";
 import type { MulterFile } from "./multer-file.type";
 
@@ -72,4 +75,29 @@ test("OssService traces store photo uploads", async () => {
       }
     }
   ]);
+});
+
+test("OssService stores uploads locally when OSS_PROVIDER is local", async () => {
+  const previousProvider = process.env.OSS_PROVIDER;
+  const previousLocalDir = process.env.OSS_LOCAL_DIR;
+  const previousPublicBaseUrl = process.env.OSS_PUBLIC_BASE_URL;
+  const localDir = await fs.mkdtemp(path.join(os.tmpdir(), "mallbay-oss-"));
+  process.env.OSS_PROVIDER = "local";
+  process.env.OSS_LOCAL_DIR = localDir;
+  process.env.OSS_PUBLIC_BASE_URL = "http://localhost:3001/local-oss";
+
+  try {
+    const service = new OssService();
+    const url = await service.uploadAvatar("user-1", imageFile);
+    const key = new URL(url).pathname.replace(/^\/local-oss\//, "");
+    const stored = await fs.readFile(path.join(localDir, key));
+
+    assert.match(url, /^http:\/\/localhost:3001\/local-oss\/avatars\/user-1\//);
+    assert.deepEqual(stored, imageFile.buffer);
+  } finally {
+    process.env.OSS_PROVIDER = previousProvider;
+    process.env.OSS_LOCAL_DIR = previousLocalDir;
+    process.env.OSS_PUBLIC_BASE_URL = previousPublicBaseUrl;
+    await fs.rm(localDir, { recursive: true, force: true });
+  }
 });

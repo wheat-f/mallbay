@@ -204,12 +204,12 @@ export class StoresService {
     return store;
   }
 
-  // ─── 店长：工作台门店详情（含成员列表）──────────────────────────────────────
+  // ─── 门店成员：工作台门店详情（含成员列表）────────────────────────────────
 
   async getWorkbenchStore(userId: string, storeId: string) {
     const member = await this.prisma.storeMember.findUnique({ where: { userId } });
-    if (!member || member.storeId !== storeId || member.position !== StorePosition.MANAGER) {
-      throw new ForbiddenException("仅店长可访问");
+    if (!member || member.storeId !== storeId) {
+      throw new ForbiddenException("仅本店成员可访问");
     }
 
     const store = await this.prisma.store.findUniqueOrThrow({
@@ -231,6 +231,10 @@ export class StoresService {
       address: store.address,
       description: store.description,
       photos: store.photos,
+      currentMember: {
+        id: member.id,
+        position: member.position
+      },
       members: store.members.map((m) => ({
         id: m.id,
         position: m.position,

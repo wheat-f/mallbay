@@ -144,6 +144,7 @@ export const storeApi = {
       address: string | null;
       description: string | null;
       photos: { id: string; url: string; isCover: boolean; order: number }[];
+      currentMember: { id: string; position: string };
       members: {
         id: string;
         position: string;

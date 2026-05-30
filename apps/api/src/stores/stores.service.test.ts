@@ -27,6 +27,67 @@ test("listPublishedStores caps pageSize at 100", async () => {
   assert.equal(capturedTake, 100);
 });
 
+test("getWorkbenchStore allows non-manager store members to view their store", async () => {
+  const prisma = {
+    storeMember: {
+      findUnique: async (args: unknown) => {
+        assert.deepEqual(args, { where: { userId: "sales-1" } });
+        return {
+          id: "member-sales",
+          storeId: "store-1",
+          userId: "sales-1",
+          position: StorePosition.SALES
+        };
+      }
+    },
+    store: {
+      findUniqueOrThrow: async (args: unknown) => {
+        assert.deepEqual(args, {
+          where: { id: "store-1" },
+          include: {
+            photos: { orderBy: { order: "asc" } },
+            members: {
+              include: {
+                user: { select: { id: true, username: true, nickname: true, avatarUrl: true } }
+              }
+            }
+          }
+        });
+        return {
+          id: "store-1",
+          name: "测试门店",
+          status: StoreStatus.PUBLISHED,
+          address: "测试地址",
+          description: "测试简介",
+          photos: [],
+          members: [
+            {
+              id: "member-manager",
+              position: StorePosition.MANAGER,
+              user: { id: "manager-1", username: "manager", nickname: null, avatarUrl: null }
+            },
+            {
+              id: "member-sales",
+              position: StorePosition.SALES,
+              user: { id: "sales-1", username: "zhouqi", nickname: null, avatarUrl: null }
+            }
+          ]
+        };
+      }
+    }
+  };
+  const service = createStoresService(prisma, {});
+
+  const result = await service.getWorkbenchStore("sales-1", "store-1");
+
+  assert.equal(result.id, "store-1");
+  assert.deepEqual(result.currentMember, {
+    id: "member-sales",
+    position: StorePosition.SALES
+  });
+  assert.equal(result.members.length, 2);
+});
+
 test("reviewSubmission approval publishes store, replaces photos, and notifies manager", async () => {
   const submission = {
     id: "submission-1",

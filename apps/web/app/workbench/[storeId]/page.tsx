@@ -307,7 +307,8 @@ export default function WorkbenchPage() {
 
   const store = storeQuery.data;
   const statusCfg = store ? (STATUS_CONFIG[store.status] ?? { text: store.status, color: "default" }) : null;
-  const canEdit = store && store.status !== "PENDING_REVIEW" && store.status !== "FROZEN";
+  const isManager = store?.currentMember.position === "MANAGER";
+  const canManageStore = isManager && store.status !== "PENDING_REVIEW" && store.status !== "FROZEN";
 
   const logoutMutation = useMutation({
     mutationFn: authApi.logout,
@@ -367,12 +368,12 @@ export default function WorkbenchPage() {
                 <div>
                   <div className="section-card-title">门店信息</div>
                 </div>
-                {store.status === "PENDING_REVIEW" ? (
+                {!isManager ? null : store.status === "PENDING_REVIEW" ? (
                   <Tag color="processing">审核中，请等待结果</Tag>
                 ) : store.status === "FROZEN" ? (
                   <Tag color="warning">门店已冻结</Tag>
                 ) : (
-                  <Button type="primary" size="small" onClick={() => setSubmitOpen(true)}>
+                  <Button type="primary" size="small" disabled={!canManageStore} onClick={() => setSubmitOpen(true)}>
                     编辑并提交审核
                   </Button>
                 )}
@@ -419,9 +420,11 @@ export default function WorkbenchPage() {
                     </span>
                   </div>
                 </div>
-                <Button size="small" icon={<PlusOutlined />} onClick={() => setInviteOpen(true)}>
-                  邀请成员
-                </Button>
+                {isManager && (
+                  <Button size="small" icon={<PlusOutlined />} onClick={() => setInviteOpen(true)}>
+                    邀请成员
+                  </Button>
+                )}
               </div>
 
               <div>
@@ -448,7 +451,7 @@ export default function WorkbenchPage() {
                       <Tag color={m.position === "MANAGER" ? "blue" : "default"} style={{ margin: 0 }}>
                         {POSITION_LABEL[m.position] ?? m.position}
                       </Tag>
-                      {m.position !== "MANAGER" && (
+                      {isManager && m.position !== "MANAGER" && (
                         <Button
                           size="small" danger type="text"
                           icon={<DeleteOutlined />}
@@ -472,14 +475,16 @@ export default function WorkbenchPage() {
         )}
       </Layout.Content>
 
-      <InviteModal
-        storeId={storeId}
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        onDone={invalidateStore}
-      />
+      {isManager && (
+        <InviteModal
+          storeId={storeId}
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          onDone={invalidateStore}
+        />
+      )}
 
-      {store && submitOpen && (
+      {store && isManager && submitOpen && (
         <SubmitModal
           storeId={storeId}
           initialData={store}

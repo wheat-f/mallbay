@@ -52,7 +52,7 @@ export class StoresController {
     return this.storesService.listPublishedStores(query);
   }
 
-  // 店长：工作台门店详情（含成员列表）
+  // 门店成员：工作台门店详情（含成员列表）
   @Get("workbench/:id")
   getWorkbenchStore(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.storesService.getWorkbenchStore(req.user.id, id);

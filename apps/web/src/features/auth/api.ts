@@ -1,5 +1,6 @@
 import type {
   AuthResponse,
+  AuthPublicKeyResponse,
   AuthUser,
   BindEmailPayload,
   BindPhonePayload,
@@ -9,8 +10,13 @@ import type {
   UpdateProfilePayload
 } from "@mallbay/shared";
 import { request, requestMultipart } from "../../lib/request";
+import { encryptPassword } from "./credential-encryption";
 
 export const authApi = {
+  publicKey: () =>
+    request<AuthPublicKeyResponse>("/auth/public-key", {
+      auth: false
+    }),
   register: (payload: RegisterPayload) =>
     request<AuthResponse>("/auth/register", {
       method: "POST",
@@ -23,6 +29,28 @@ export const authApi = {
       auth: false,
       body: JSON.stringify(payload)
     }),
+  registerEncrypted: async (payload: RegisterPayload) => {
+    const publicKey = await authApi.publicKey();
+    return request<AuthResponse>("/auth/register", {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({
+        username: payload.username,
+        encryptedPassword: await encryptPassword(payload.password, publicKey)
+      })
+    });
+  },
+  loginEncrypted: async (payload: LoginPayload) => {
+    const publicKey = await authApi.publicKey();
+    return request<AuthResponse>("/auth/login", {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({
+        identifier: payload.identifier,
+        encryptedPassword: await encryptPassword(payload.password, publicKey)
+      })
+    });
+  },
   refresh: () =>
     request<AuthResponse>("/auth/refresh", {
       method: "POST",

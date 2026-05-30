@@ -37,6 +37,11 @@ const REFRESH_TOKEN_COOKIE_OPTIONS: CookieOptions = {
 export class AuthController {
   constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
+  @Get("public-key")
+  publicKey() {
+    return this.authService.getCredentialPublicKey();
+  }
+
   @Post("register")
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const session = await this.authService.register(dto);

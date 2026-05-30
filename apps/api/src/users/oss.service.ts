@@ -1,6 +1,7 @@
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import { Injectable, InternalServerErrorException, Optional } from "@nestjs/common";
 import * as crypto from "crypto";
 import * as path from "path";
+import { TraceService } from "../observability/trace.service";
 import type { MulterFile } from "./multer-file.type";
 
 /**
@@ -15,6 +16,8 @@ import type { MulterFile } from "./multer-file.type";
  */
 @Injectable()
 export class OssService {
+  constructor(@Optional() private readonly trace?: TraceService) {}
+
   private getClient() {
     const { OSS_REGION: region, OSS_ACCESS_KEY_ID: accessKeyId,
       OSS_ACCESS_KEY_SECRET: accessKeySecret, OSS_BUCKET: bucket } = process.env;
@@ -38,18 +41,32 @@ export class OssService {
   }
 
   async uploadAvatar(userId: string, file: MulterFile): Promise<string> {
-    const { client, bucket, region } = this.getClient();
-    const ext = path.extname(file.originalname) || ".jpg";
-    const key = `avatars/${userId}/${crypto.randomUUID()}${ext}`;
-    await client.put(key, file.buffer);
-    return this.buildUrl(key, bucket, region);
+    return this.traceUpload(
+      { component: "oss", target: "avatar", userId, bytes: file.buffer.length },
+      async () => {
+        const { client, bucket, region } = this.getClient();
+        const ext = path.extname(file.originalname) || ".jpg";
+        const key = `avatars/${userId}/${crypto.randomUUID()}${ext}`;
+        await client.put(key, file.buffer);
+        return this.buildUrl(key, bucket, region);
+      }
+    );
   }
 
   async uploadStorePhoto(storeId: string, file: MulterFile): Promise<string> {
-    const { client, bucket, region } = this.getClient();
-    const ext = path.extname(file.originalname) || ".jpg";
-    const key = `stores/${storeId}/${crypto.randomUUID()}${ext}`;
-    await client.put(key, file.buffer);
-    return this.buildUrl(key, bucket, region);
+    return this.traceUpload(
+      { component: "oss", target: "store_photo", storeId, bytes: file.buffer.length },
+      async () => {
+        const { client, bucket, region } = this.getClient();
+        const ext = path.extname(file.originalname) || ".jpg";
+        const key = `stores/${storeId}/${crypto.randomUUID()}${ext}`;
+        await client.put(key, file.buffer);
+        return this.buildUrl(key, bucket, region);
+      }
+    );
+  }
+
+  private traceUpload(fields: Record<string, unknown>, callback: () => Promise<string>) {
+    return this.trace?.traceOperation("oss.upload", fields, callback) ?? callback();
   }
 }

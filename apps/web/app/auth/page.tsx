@@ -124,6 +124,7 @@ export default function AuthPage() {
           >
             {mode === "register" ? (
               <Form.Item<AuthFormValues>
+                label="账号"
                 name="username"
                 rules={[
                   { required: true, message: "请输入账号" },
@@ -135,7 +136,6 @@ export default function AuthPage() {
                   }
                 ]}
               >
-                <div className="auth-field-label">账号</div>
                 <Input
                   size="large"
                   placeholder="2-30 位，支持字母 / 数字 / 中文"
@@ -144,10 +144,10 @@ export default function AuthPage() {
               </Form.Item>
             ) : (
               <Form.Item<AuthFormValues>
+                label="账号"
                 name="identifier"
                 rules={[{ required: true, message: "请输入账号" }]}
               >
-                <div className="auth-field-label">账号</div>
                 <Input
                   size="large"
                   placeholder="请输入账号"
@@ -157,13 +157,13 @@ export default function AuthPage() {
             )}
 
             <Form.Item<AuthFormValues>
+              label="密码"
               name="password"
               rules={[
                 { required: true, message: "请输入密码" },
                 { min: 8, message: "至少 8 个字符" }
               ]}
             >
-              <div className="auth-field-label">密码</div>
               <Input.Password
                 size="large"
                 placeholder="至少 8 位"

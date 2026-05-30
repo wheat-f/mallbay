@@ -66,12 +66,12 @@ function fetchWithAuth(
   auth: boolean,
   buildAuthHeaders: (token: string | null) => Record<string, string>
 ) {
-  const token = useAuthStore.getState().accessToken;
+  const token = auth ? useAuthStore.getState().accessToken : null;
   return fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
     headers: {
-      ...(auth ? buildAuthHeaders(token) : {}),
+      ...buildAuthHeaders(token),
       ...headers
     }
   });

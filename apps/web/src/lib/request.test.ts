@@ -42,6 +42,30 @@ test("request sends auth token and parses JSON responses", async () => {
   });
 });
 
+test("request sends JSON content type for unauthenticated requests", async () => {
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    capturedInit = init;
+    return {
+      ok: true,
+      json: async () => ({ success: true })
+    } as Response;
+  }) as typeof fetch;
+
+  await request<{ success: boolean }>("/auth/login", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify({
+      identifier: "xiaoming",
+      encryptedPassword: "ciphertext"
+    })
+  });
+
+  assert.deepEqual(capturedInit?.headers, {
+    "Content-Type": "application/json"
+  });
+});
+
 test("request refreshes session and retries once after an authenticated 401 response", async () => {
   useAuthStore.setState({ accessToken: "expired-token" });
   const calls: string[] = [];

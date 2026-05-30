@@ -1,7 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 type LogSink = (entry: Record<string, unknown>) => void;
+
+export const STRUCTURED_LOG_SINK = Symbol("STRUCTURED_LOG_SINK");
 
 const SENSITIVE_KEYS = new Set([
   "accessToken",
@@ -14,7 +16,11 @@ const SENSITIVE_KEYS = new Set([
 
 @Injectable()
 export class StructuredLoggerService {
-  constructor(private readonly sink: LogSink = defaultSink) {}
+  private readonly sink: LogSink;
+
+  constructor(@Optional() @Inject(STRUCTURED_LOG_SINK) sink?: LogSink) {
+    this.sink = sink ?? defaultSink;
+  }
 
   debug(event: string, fields: Record<string, unknown> = {}) {
     this.write("debug", event, fields);

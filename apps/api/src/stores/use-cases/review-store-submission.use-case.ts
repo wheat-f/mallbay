@@ -4,17 +4,19 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
-import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
+import { SubmissionStatus } from "@prisma/client";
 import { NotificationsService } from "../../notifications/notifications.service";
-import { PrismaService } from "../../prisma/prisma.service";
+import { AuditLogService } from "../../observability/audit-log.service";
 import { ReviewAction, ReviewStoreDto } from "../dto/review-store.dto";
 import { StorePolicy } from "../domain/store-policy";
+import { StoreRepository } from "../repositories/store.repository";
 
 @Injectable()
 export class ReviewStoreSubmissionUseCase {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly notifications: NotificationsService
+    private readonly stores: StoreRepository,
+    private readonly notifications: NotificationsService,
+    private readonly auditLog: AuditLogService
   ) {}
 
   async execute(auditorId: string, isAuditor: boolean, submissionId: string, dto: ReviewStoreDto) {
@@ -22,10 +24,7 @@ export class ReviewStoreSubmissionUseCase {
 
     StorePolicy.assertReviewInput(dto.action, dto.reviewNote);
 
-    const submission = await this.prisma.storeAuditSubmission.findUnique({
-      where: { id: submissionId },
-      include: { photos: true, store: true }
-    });
+    const submission = await this.stores.findSubmissionWithStore(submissionId);
 
     if (!submission) throw new NotFoundException("提交记录不存在");
     if (submission.status !== SubmissionStatus.PENDING) {
@@ -52,40 +51,16 @@ export class ReviewStoreSubmissionUseCase {
       photos: Array<{ url: string; isCover: boolean; order: number }>;
     }
   ) {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.storeAuditSubmission.update({
-        where: { id: submissionId },
-        data: {
-          status: SubmissionStatus.APPROVED,
-          reviewedById: auditorId,
-          reviewedAt: new Date()
-        }
-      });
-
-      await tx.store.update({
-        where: { id: submission.storeId },
-        data: {
-          name: submission.name,
-          address: submission.address,
-          description: submission.description,
-          status: StoreStatus.PUBLISHED
-        }
-      });
-
-      await tx.storePhoto.deleteMany({ where: { storeId: submission.storeId } });
-      await tx.storePhoto.createMany({
-        data: submission.photos.map((p) => ({
-          storeId: submission.storeId,
-          url: p.url,
-          isCover: p.isCover,
-          order: p.order
-        }))
-      });
+    await this.stores.approveSubmission(auditorId, submissionId, submission);
+    this.auditLog.record({
+      action: "STORE_REVIEW_APPROVED",
+      actorId: auditorId,
+      targetType: "storeSubmission",
+      targetId: submissionId,
+      metadata: { storeId: submission.storeId }
     });
 
-    const manager = await this.prisma.storeMember.findFirst({
-      where: { storeId: submission.storeId, position: StorePosition.MANAGER }
-    });
+    const manager = await this.stores.findStoreManager(submission.storeId);
     if (manager) {
       await this.notifications.send(manager.userId, "AUDIT_APPROVED", {
         storeId: submission.storeId,
@@ -100,29 +75,21 @@ export class ReviewStoreSubmissionUseCase {
     reviewNote: string | undefined,
     submission: { storeId: string; store: { name: string } }
   ) {
-    await this.prisma.storeAuditSubmission.update({
-      where: { id: submissionId },
-      data: {
-        status: SubmissionStatus.REJECTED,
-        reviewNote,
-        reviewedById: auditorId,
-        reviewedAt: new Date()
-      }
+    await this.stores.rejectSubmission(auditorId, submissionId, reviewNote);
+    this.auditLog.record({
+      action: "STORE_REVIEW_REJECTED",
+      actorId: auditorId,
+      targetType: "storeSubmission",
+      targetId: submissionId,
+      metadata: { storeId: submission.storeId }
     });
 
-    const hasApproved = await this.prisma.storeAuditSubmission.count({
-      where: { storeId: submission.storeId, status: SubmissionStatus.APPROVED }
-    });
+    const hasApproved = await this.stores.countApprovedSubmissions(submission.storeId);
     const newStatus = StorePolicy.statusAfterRejectedSubmission(hasApproved > 0);
 
-    await this.prisma.store.update({
-      where: { id: submission.storeId },
-      data: { status: newStatus }
-    });
+    await this.stores.updateStoreStatus(submission.storeId, newStatus);
 
-    const manager = await this.prisma.storeMember.findFirst({
-      where: { storeId: submission.storeId, position: StorePosition.MANAGER }
-    });
+    const manager = await this.stores.findStoreManager(submission.storeId);
     if (manager) {
       await this.notifications.send(manager.userId, "AUDIT_REJECTED", {
         storeId: submission.storeId,

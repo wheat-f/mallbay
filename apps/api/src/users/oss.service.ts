@@ -1,6 +1,8 @@
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import { Injectable, InternalServerErrorException, Optional } from "@nestjs/common";
 import * as crypto from "crypto";
+import * as fs from "fs/promises";
 import * as path from "path";
+import { TraceService } from "../observability/trace.service";
 import type { MulterFile } from "./multer-file.type";
 
 /**
@@ -12,9 +14,20 @@ import type { MulterFile } from "./multer-file.type";
  *   OSS_ACCESS_KEY_SECRET
  *   OSS_BUCKET
  *   OSS_CDN_HOST      可选，CDN 域名（不含 https://）
+ *
+ * 本地开发可设置：
+ *   OSS_PROVIDER=local
+ *   OSS_LOCAL_DIR=.local/oss
+ *   OSS_PUBLIC_BASE_URL=http://localhost:3001/local-oss
  */
 @Injectable()
 export class OssService {
+  constructor(@Optional() private readonly trace?: TraceService) {}
+
+  private isLocalProvider() {
+    return process.env.OSS_PROVIDER === "local";
+  }
+
   private getClient() {
     const { OSS_REGION: region, OSS_ACCESS_KEY_ID: accessKeyId,
       OSS_ACCESS_KEY_SECRET: accessKeySecret, OSS_BUCKET: bucket } = process.env;
@@ -30,6 +43,10 @@ export class OssService {
     return { client: new OSS({ region, accessKeyId, accessKeySecret, bucket }), bucket, region };
   }
 
+  private getLocalRoot() {
+    return path.resolve(process.env.OSS_LOCAL_DIR ?? ".local/oss");
+  }
+
   private buildUrl(key: string, bucket: string, region: string): string {
     const cdnHost = process.env.OSS_CDN_HOST;
     return cdnHost
@@ -37,19 +54,52 @@ export class OssService {
       : `https://${bucket}.${region}.aliyuncs.com/${key}`;
   }
 
+  private buildLocalUrl(key: string): string {
+    const baseUrl = process.env.OSS_PUBLIC_BASE_URL ?? "http://localhost:3001/local-oss";
+    return `${baseUrl.replace(/\/$/, "")}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  }
+
+  private async putLocalObject(key: string, buffer: Buffer) {
+    const targetPath = path.join(this.getLocalRoot(), key);
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.writeFile(targetPath, buffer);
+  }
+
   async uploadAvatar(userId: string, file: MulterFile): Promise<string> {
-    const { client, bucket, region } = this.getClient();
-    const ext = path.extname(file.originalname) || ".jpg";
-    const key = `avatars/${userId}/${crypto.randomUUID()}${ext}`;
-    await client.put(key, file.buffer);
-    return this.buildUrl(key, bucket, region);
+    return this.traceUpload(
+      { component: "oss", target: "avatar", userId, bytes: file.buffer.length },
+      async () => {
+        const ext = path.extname(file.originalname) || ".jpg";
+        const key = `avatars/${userId}/${crypto.randomUUID()}${ext}`;
+        if (this.isLocalProvider()) {
+          await this.putLocalObject(key, file.buffer);
+          return this.buildLocalUrl(key);
+        }
+        const { client, bucket, region } = this.getClient();
+        await client.put(key, file.buffer);
+        return this.buildUrl(key, bucket, region);
+      }
+    );
   }
 
   async uploadStorePhoto(storeId: string, file: MulterFile): Promise<string> {
-    const { client, bucket, region } = this.getClient();
-    const ext = path.extname(file.originalname) || ".jpg";
-    const key = `stores/${storeId}/${crypto.randomUUID()}${ext}`;
-    await client.put(key, file.buffer);
-    return this.buildUrl(key, bucket, region);
+    return this.traceUpload(
+      { component: "oss", target: "store_photo", storeId, bytes: file.buffer.length },
+      async () => {
+        const ext = path.extname(file.originalname) || ".jpg";
+        const key = `stores/${storeId}/${crypto.randomUUID()}${ext}`;
+        if (this.isLocalProvider()) {
+          await this.putLocalObject(key, file.buffer);
+          return this.buildLocalUrl(key);
+        }
+        const { client, bucket, region } = this.getClient();
+        await client.put(key, file.buffer);
+        return this.buildUrl(key, bucket, region);
+      }
+    );
+  }
+
+  private traceUpload(fields: Record<string, unknown>, callback: () => Promise<string>) {
+    return this.trace?.traceOperation("oss.upload", fields, callback) ?? callback();
   }
 }

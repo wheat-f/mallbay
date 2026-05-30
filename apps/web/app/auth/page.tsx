@@ -5,7 +5,6 @@ import { Button, Card, Form, Input, Segmented, Typography, App } from "antd";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
 import { authApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 
@@ -22,20 +21,14 @@ export default function AuthPage() {
   const setSession = useAuthStore((state) => state.setSession);
   const router = useRouter();
   const { message } = App.useApp();
-  const { control, handleSubmit, reset } = useForm<AuthFormValues>({
-    defaultValues: {
-      identifier: "",
-      username: "",
-      password: ""
-    }
-  });
+  const [form] = Form.useForm<AuthFormValues>();
 
   const authMutation = useMutation({
     mutationFn: (values: AuthFormValues) => {
       if (mode === "login") {
-        return authApi.login({ identifier: values.identifier, password: values.password });
+        return authApi.loginEncrypted({ identifier: values.identifier, password: values.password });
       }
-      return authApi.register({ username: values.username, password: values.password });
+      return authApi.registerEncrypted({ username: values.username, password: values.password });
     },
     onSuccess: (session) => {
       setSession(session);
@@ -49,7 +42,7 @@ export default function AuthPage() {
 
   const onModeChange = (value: Mode) => {
     setMode(value);
-    reset();
+    form.resetFields();
   };
 
   useEffect(() => {
@@ -119,82 +112,64 @@ export default function AuthPage() {
           </div>
 
           <Form
+            form={form}
             className="auth-form"
             layout="vertical"
-            onFinish={handleSubmit((values) => authMutation.mutate(values))}
+            initialValues={{
+              identifier: "",
+              username: "",
+              password: ""
+            }}
+            onFinish={(values) => authMutation.mutate(values)}
           >
             {mode === "register" ? (
-              <Controller
+              <Form.Item<AuthFormValues>
+                label="账号"
                 name="username"
-                control={control}
-                rules={{
-                  required: "请输入账号",
-                  minLength: { value: 2, message: "至少 2 个字符" },
-                  maxLength: { value: 30, message: "最多 30 个字符" },
-                  pattern: {
-                    value: /^[a-zA-Z0-9_一-龥]+$/,
+                rules={[
+                  { required: true, message: "请输入账号" },
+                  { min: 2, message: "至少 2 个字符" },
+                  { max: 30, message: "最多 30 个字符" },
+                  {
+                    pattern: /^[a-zA-Z0-9_一-龥]+$/,
                     message: "只允许字母、数字、下划线或中文"
                   }
-                }}
-                render={({ field, fieldState }) => (
-                  <Form.Item
-                    validateStatus={fieldState.error ? "error" : undefined}
-                    help={fieldState.error?.message}
-                  >
-                    <div className="auth-field-label">账号</div>
-                    <Input
-                      {...field}
-                      size="large"
-                      placeholder="2-30 位，支持字母 / 数字 / 中文"
-                      autoComplete="username"
-                    />
-                  </Form.Item>
-                )}
-              />
+                ]}
+              >
+                <Input
+                  size="large"
+                  placeholder="2-30 位，支持字母 / 数字 / 中文"
+                  autoComplete="username"
+                />
+              </Form.Item>
             ) : (
-              <Controller
+              <Form.Item<AuthFormValues>
+                label="账号"
                 name="identifier"
-                control={control}
-                rules={{ required: "请输入账号" }}
-                render={({ field, fieldState }) => (
-                  <Form.Item
-                    validateStatus={fieldState.error ? "error" : undefined}
-                    help={fieldState.error?.message}
-                  >
-                    <div className="auth-field-label">账号</div>
-                    <Input
-                      {...field}
-                      size="large"
-                      placeholder="请输入账号"
-                      autoComplete="username"
-                    />
-                  </Form.Item>
-                )}
-              />
+                rules={[{ required: true, message: "请输入账号" }]}
+              >
+                <Input
+                  size="large"
+                  placeholder="请输入账号"
+                  autoComplete="username"
+                />
+              </Form.Item>
             )}
 
-            <Controller
+            <Form.Item<AuthFormValues>
+              label="密码"
               name="password"
-              control={control}
-              rules={{
-                required: "请输入密码",
-                minLength: { value: 8, message: "至少 8 个字符" }
-              }}
-              render={({ field, fieldState }) => (
-                <Form.Item
-                  validateStatus={fieldState.error ? "error" : undefined}
-                  help={fieldState.error?.message}
-                >
-                  <div className="auth-field-label">密码</div>
-                  <Input.Password
-                    {...field}
-                    size="large"
-                    placeholder="至少 8 位"
-                    autoComplete={mode === "login" ? "current-password" : "new-password"}
-                  />
-                </Form.Item>
-              )}
-            />
+              rules={[
+                { required: true, message: "请输入密码" },
+                { min: 8, message: "至少 8 个字符" }
+              ]}
+            >
+              <Input.Password
+                size="large"
+                placeholder="至少 8 位"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+              />
+            </Form.Item>
 
             <Button
               type="primary"

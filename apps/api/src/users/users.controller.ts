@@ -14,6 +14,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { MetricsService } from "../observability/metrics.service";
 import { BindEmailDto } from "./dto/bind-email.dto";
 import { BindPhoneDto } from "./dto/bind-phone.dto";
 import { BindWechatDto } from "./dto/bind-wechat.dto";
@@ -37,7 +38,8 @@ const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
-    private readonly ossService: OssService
+    private readonly ossService: OssService,
+    private readonly metrics: MetricsService
   ) {}
 
   @Patch("profile")
@@ -62,7 +64,13 @@ export class UsersController {
       throw new BadRequestException("请上传图片文件");
     }
 
-    const url = await this.ossService.uploadAvatar(req.user.id, file);
+    let url: string;
+    try {
+      url = await this.ossService.uploadAvatar(req.user.id, file);
+    } catch (error) {
+      this.metrics.increment("upload_failures_total", { target: "avatar" });
+      throw error;
+    }
 
     return this.usersService.updateAvatar(req.user.id, url);
   }

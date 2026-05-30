@@ -23,7 +23,7 @@ test("uploadAvatar uploads through injected OSS service before updating profile 
       return "https://cdn.mallbay.test/avatar.jpg";
     }
   };
-  const controller = new UsersController(usersService as never, ossService as never);
+  const controller = new UsersController(usersService as never, ossService as never, {} as never);
 
   const result = await controller.uploadAvatar(
     { user: { id: "user-1", username: "owner", isAuditor: false } } as never,
@@ -40,3 +40,34 @@ test("uploadAvatar uploads through injected OSS service before updating profile 
   });
 });
 
+test("uploadAvatar increments upload failure metric when OSS upload fails", async () => {
+  const increments: Array<{ name: string; labels: Record<string, string> }> = [];
+  const usersService = {};
+  const ossService = {
+    uploadAvatar: async () => {
+      throw new Error("oss unavailable");
+    }
+  };
+  const metrics = {
+    increment: (name: string, labels: Record<string, string>) => {
+      increments.push({ name, labels });
+    }
+  };
+  const controller = new UsersController(usersService as never, ossService as never, metrics as never);
+
+  await assert.rejects(
+    () =>
+      controller.uploadAvatar(
+        { user: { id: "user-1", username: "owner", isAuditor: false } } as never,
+        imageFile
+      ),
+    /oss unavailable/
+  );
+
+  assert.deepEqual(increments, [
+    {
+      name: "upload_failures_total",
+      labels: { target: "avatar" }
+    }
+  ]);
+});

@@ -9,7 +9,8 @@ import {
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { memberApi, notificationApi } from "../lib/api";
+import { memberApi } from "../features/members/api";
+import { notificationApi } from "../features/notifications/api";
 import { useAuthStore } from "../stores/auth-store";
 
 const NOTIF_LABEL: Record<string, string> = {

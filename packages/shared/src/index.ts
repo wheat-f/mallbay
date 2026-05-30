@@ -46,6 +46,21 @@ export type RegisterPayload = {
   password: string;
 };
 
+export type EncryptedLoginPayload = {
+  identifier: string;
+  encryptedPassword: string;
+};
+
+export type EncryptedRegisterPayload = {
+  username: string;
+  encryptedPassword: string;
+};
+
+export type AuthPublicKeyResponse = {
+  algorithm: "RSA-OAEP-256";
+  publicKey: string;
+};
+
 export type UpdateProfilePayload = {
   nickname?: string;
 };

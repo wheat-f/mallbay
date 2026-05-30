@@ -17,6 +17,7 @@ import type { MulterFile } from "../users/multer-file.type";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { Public } from "../auth/decorators/public.decorator";
+import { MetricsService } from "../observability/metrics.service";
 import { OssService } from "../users/oss.service";
 import { CreateStoreDto } from "./dto/create-store.dto";
 import { SubmitStoreDto } from "./dto/submit-store.dto";
@@ -34,7 +35,8 @@ type AuthRequest = Request & {
 export class StoresController {
   constructor(
     private readonly storesService: StoresService,
-    private readonly ossService: OssService
+    private readonly ossService: OssService,
+    private readonly metrics: MetricsService
   ) {}
 
   // 审核员：创建门店并指派店长
@@ -50,7 +52,7 @@ export class StoresController {
     return this.storesService.listPublishedStores(query);
   }
 
-  // 店长：工作台门店详情（含成员列表）
+  // 门店成员：工作台门店详情（含成员列表）
   @Get("workbench/:id")
   getWorkbenchStore(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.storesService.getWorkbenchStore(req.user.id, id);
@@ -101,7 +103,13 @@ export class StoresController {
   ) {
     if (!file) throw new BadRequestException("请上传图片文件");
     await this.storesService.assertStoreManager(req.user.id, id);
-    const url = await this.ossService.uploadStorePhoto(id, file);
+    let url: string;
+    try {
+      url = await this.ossService.uploadStorePhoto(id, file);
+    } catch (error) {
+      this.metrics.increment("upload_failures_total", { target: "store_photo" });
+      throw error;
+    }
     return { url };
   }
 

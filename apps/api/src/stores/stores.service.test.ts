@@ -3,7 +3,11 @@ import { test } from "node:test";
 import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
 import { StoresService } from "./stores.service";
 import { ReviewAction } from "./dto/review-store.dto";
+import { ChangeStoreManagerUseCase } from "./use-cases/change-store-manager.use-case";
 import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
+import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
+import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
+import { StoreRepository } from "./repositories/store.repository";
 
 test("listPublishedStores caps pageSize at 100", async () => {
   let capturedTake = 0;
@@ -23,6 +27,67 @@ test("listPublishedStores caps pageSize at 100", async () => {
   assert.equal(capturedTake, 100);
 });
 
+test("getWorkbenchStore allows non-manager store members to view their store", async () => {
+  const prisma = {
+    storeMember: {
+      findUnique: async (args: unknown) => {
+        assert.deepEqual(args, { where: { userId: "sales-1" } });
+        return {
+          id: "member-sales",
+          storeId: "store-1",
+          userId: "sales-1",
+          position: StorePosition.SALES
+        };
+      }
+    },
+    store: {
+      findUniqueOrThrow: async (args: unknown) => {
+        assert.deepEqual(args, {
+          where: { id: "store-1" },
+          include: {
+            photos: { orderBy: { order: "asc" } },
+            members: {
+              include: {
+                user: { select: { id: true, username: true, nickname: true, avatarUrl: true } }
+              }
+            }
+          }
+        });
+        return {
+          id: "store-1",
+          name: "测试门店",
+          status: StoreStatus.PUBLISHED,
+          address: "测试地址",
+          description: "测试简介",
+          photos: [],
+          members: [
+            {
+              id: "member-manager",
+              position: StorePosition.MANAGER,
+              user: { id: "manager-1", username: "manager", nickname: null, avatarUrl: null }
+            },
+            {
+              id: "member-sales",
+              position: StorePosition.SALES,
+              user: { id: "sales-1", username: "zhouqi", nickname: null, avatarUrl: null }
+            }
+          ]
+        };
+      }
+    }
+  };
+  const service = createStoresService(prisma, {});
+
+  const result = await service.getWorkbenchStore("sales-1", "store-1");
+
+  assert.equal(result.id, "store-1");
+  assert.deepEqual(result.currentMember, {
+    id: "member-sales",
+    position: StorePosition.SALES
+  });
+  assert.equal(result.members.length, 2);
+});
+
 test("reviewSubmission approval publishes store, replaces photos, and notifies manager", async () => {
   const submission = {
     id: "submission-1",
@@ -39,6 +104,7 @@ test("reviewSubmission approval publishes store, replaces photos, and notifies m
   };
   const transactionCalls: string[] = [];
   const notifications: Array<{ userId: string; type: string; payload: unknown }> = [];
+  const auditEvents: unknown[] = [];
 
   const tx = {
     storeAuditSubmission: {
@@ -115,7 +181,9 @@ test("reviewSubmission approval publishes store, replaces photos, and notifies m
       notifications.push({ userId, type, payload });
     }
   };
-  const service = createStoresService(prisma, notificationsService);
+  const service = createStoresService(prisma, notificationsService, {
+    record: (event: unknown) => auditEvents.push(event)
+  });
 
   const result = await service.reviewSubmission("auditor-1", true, "submission-1", {
     action: ReviewAction.APPROVE
@@ -135,11 +203,21 @@ test("reviewSubmission approval publishes store, replaces photos, and notifies m
       payload: { storeId: "store-1", storeName: "已审核门店" }
     }
   ]);
+  assert.deepEqual(auditEvents, [
+    {
+      action: "STORE_REVIEW_APPROVED",
+      actorId: "auditor-1",
+      targetType: "storeSubmission",
+      targetId: "submission-1",
+      metadata: { storeId: "store-1" }
+    }
+  ]);
 });
 
 test("reviewSubmission rejection restores prior public store and notifies manager with reason", async () => {
   const storeUpdates: unknown[] = [];
   const notifications: Array<{ userId: string; type: string; payload: unknown }> = [];
+  const auditEvents: unknown[] = [];
   const prisma = {
     storeAuditSubmission: {
       findUnique: async () => ({
@@ -183,7 +261,9 @@ test("reviewSubmission rejection restores prior public store and notifies manage
       notifications.push({ userId, type, payload });
     }
   };
-  const service = createStoresService(prisma, notificationsService);
+  const service = createStoresService(prisma, notificationsService, {
+    record: (event: unknown) => auditEvents.push(event)
+  });
 
   const result = await service.reviewSubmission("auditor-2", true, "submission-2", {
     action: ReviewAction.REJECT,
@@ -204,12 +284,24 @@ test("reviewSubmission rejection restores prior public store and notifies manage
       payload: { storeId: "store-2", storeName: "待驳回门店", reviewNote: "资料不完整" }
     }
   ]);
+  assert.deepEqual(auditEvents, [
+    {
+      action: "STORE_REVIEW_REJECTED",
+      actorId: "auditor-2",
+      targetType: "storeSubmission",
+      targetId: "submission-2",
+      metadata: { storeId: "store-2" }
+    }
+  ]);
 });
 
-function createStoresService(prisma: unknown, notifications: unknown) {
+function createStoresService(prisma: unknown, notifications: unknown, auditLog: unknown = {}) {
+  const storeRepository = new StoreRepository(prisma as never);
   return new StoresService(
     prisma as never,
-    notifications as never,
-    new ReviewStoreSubmissionUseCase(prisma as never, notifications as never)
+    new ReviewStoreSubmissionUseCase(storeRepository, notifications as never, auditLog as never),
+    new SubmitStoreForReviewUseCase(storeRepository),
+    new ChangeStoreManagerUseCase(storeRepository, notifications as never, auditLog as never),
+    new SetStoreFrozenUseCase(storeRepository, notifications as never, auditLog as never)
   );
 }

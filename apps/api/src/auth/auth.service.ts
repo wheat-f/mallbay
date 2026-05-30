@@ -1,13 +1,18 @@
 import {
   ConflictException,
+  Inject,
   Injectable,
   InternalServerErrorException,
+  Optional,
   UnauthorizedException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
+import { randomUUID } from "crypto";
+import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { AuthCryptoService } from "./auth-crypto.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { TokenPayload } from "./token-payload";
@@ -15,9 +20,11 @@ import { TokenPayload } from "./token-payload";
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly jwt: JwtService,
-    private readonly config: ConfigService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(JwtService) private readonly jwt: JwtService,
+    @Inject(ConfigService) private readonly config: ConfigService,
+    @Optional() @Inject(MetricsService) private readonly metrics?: MetricsService,
+    @Optional() @Inject(AuthCryptoService) private readonly authCrypto?: AuthCryptoService
   ) {}
 
   async register(dto: RegisterDto) {
@@ -29,7 +36,8 @@ export class AuthService {
       throw new ConflictException("账号已被注册");
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const password = this.resolvePassword(dto);
+    const passwordHash = await bcrypt.hash(password, 12);
     const user = await this.prisma.user.create({
       data: {
         username: dto.username,
@@ -42,6 +50,7 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     const identifier = dto.identifier.trim();
+    const password = this.resolvePassword(dto);
     const user = await this.prisma.user.findFirst({
       where: {
         OR: [
@@ -53,15 +62,40 @@ export class AuthService {
     });
 
     if (!user) {
+      this.recordLoginFailure("not_found");
       throw new UnauthorizedException("账号或密码不正确");
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
+      this.recordLoginFailure("invalid_password");
       throw new UnauthorizedException("账号或密码不正确");
     }
 
     return this.issueAndPersistTokens(user.id);
+  }
+
+  private recordLoginFailure(reason: string) {
+    this.metrics?.increment("auth_login_failures_total", { reason });
+  }
+
+  getCredentialPublicKey() {
+    return this.authCrypto?.getPublicKey();
+  }
+
+  private resolvePassword(dto: { password?: string; encryptedPassword?: string }) {
+    if (dto.encryptedPassword) {
+      if (!this.authCrypto) {
+        throw new InternalServerErrorException("登录凭据解密服务未配置");
+      }
+      return this.authCrypto.decryptPassword(dto.encryptedPassword);
+    }
+
+    if (dto.password) {
+      return dto.password;
+    }
+
+    throw new UnauthorizedException("账号或密码不正确");
   }
 
   async refresh(refreshToken: string) {
@@ -135,10 +169,13 @@ export class AuthService {
         secret: this.accessSecret,
         expiresIn: this.config.get<JwtSignOptions["expiresIn"]>("JWT_ACCESS_EXPIRES_IN") ?? "15m"
       }),
-      this.jwt.signAsync(payload, {
-        secret: this.refreshSecret,
-        expiresIn: this.config.get<JwtSignOptions["expiresIn"]>("JWT_REFRESH_EXPIRES_IN") ?? "7d"
-      })
+      this.jwt.signAsync(
+        { ...payload, jti: randomUUID() },
+        {
+          secret: this.refreshSecret,
+          expiresIn: this.config.get<JwtSignOptions["expiresIn"]>("JWT_REFRESH_EXPIRES_IN") ?? "7d"
+        }
+      )
     ]);
 
     await this.prisma.user.update({

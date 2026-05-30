@@ -22,7 +22,7 @@ test("uploadStorePhoto verifies manager permission before uploading through inje
       return "https://cdn.mallbay.test/store.jpg";
     }
   };
-  const controller = new StoresController(storesService as never, ossService as never);
+  const controller = new StoresController(storesService as never, ossService as never, {} as never);
 
   const result = await controller.uploadStorePhoto(
     { user: { id: "user-1", username: "manager", isAuditor: false } } as never,
@@ -34,3 +34,37 @@ test("uploadStorePhoto verifies manager permission before uploading through inje
   assert.deepEqual(result, { url: "https://cdn.mallbay.test/store.jpg" });
 });
 
+test("uploadStorePhoto increments upload failure metric when OSS upload fails", async () => {
+  const increments: Array<{ name: string; labels: Record<string, string> }> = [];
+  const storesService = {
+    assertStoreManager: async () => undefined
+  };
+  const ossService = {
+    uploadStorePhoto: async () => {
+      throw new Error("oss unavailable");
+    }
+  };
+  const metrics = {
+    increment: (name: string, labels: Record<string, string>) => {
+      increments.push({ name, labels });
+    }
+  };
+  const controller = new StoresController(storesService as never, ossService as never, metrics as never);
+
+  await assert.rejects(
+    () =>
+      controller.uploadStorePhoto(
+        { user: { id: "user-1", username: "manager", isAuditor: false } } as never,
+        "store-1",
+        imageFile
+      ),
+    /oss unavailable/
+  );
+
+  assert.deepEqual(increments, [
+    {
+      name: "upload_failures_total",
+      labels: { target: "store_photo" }
+    }
+  ]);
+});

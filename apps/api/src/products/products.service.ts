@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/consistent-type-imports */
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, ProductStatus } from "@prisma/client";
 import { normalizePagination } from "../common/pagination";

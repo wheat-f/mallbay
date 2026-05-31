@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import { OrderStatus } from "@prisma/client";
+import type { OrderStatus } from "@prisma/client";
 
 const transitions: Record<OrderStatus, OrderStatus[]> = {
   PENDING_DISPATCH: ["DISPATCHED", "CANCELLED"],

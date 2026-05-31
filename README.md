@@ -41,6 +41,8 @@ pnpm dev
 - [docs/governance/CODE_STYLE.md](./docs/governance/CODE_STYLE.md): TypeScript、NestJS、React、Prisma 编码规范
 - [docs/governance/API_GUIDELINES.md](./docs/governance/API_GUIDELINES.md): REST API、错误、分页、鉴权和版本策略
 - [docs/governance/REFACTOR_PLAN.md](./docs/governance/REFACTOR_PLAN.md): 当前问题清单和渐进式改造路线
+- [docs/features/paint-protection-film-system-plan.md](./docs/features/paint-protection-film-system-plan.md): 漆面保护膜施工管理系统 V1.7 需求建设方案
+- [docs/features/phase-1-customers-orders-plan.md](./docs/features/phase-1-customers-orders-plan.md): Phase 1 客户、产品、订单和收款实施计划
 - [docs/deploy-setup.md](./docs/deploy-setup.md): 部署配置说明
 
 ## 测试账号

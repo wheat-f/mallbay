@@ -1,40 +1,61 @@
-# Phase 1 Customers Orders Implementation Plan
+# Phase 1 客户、产品、订单与收款实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+- 文档类型：功能实施计划
+- 文档状态：草案，待逐步实施
+- 适用范围：MallBay Phase 1 客户、车辆、产品、订单、费用与收款闭环
+- 来源依据：[漆面保护膜施工管理系统建设方案](./paint-protection-film-system-plan.md)、[架构规范](../governance/ARCHITECTURE.md)、[API 规范](../governance/API_GUIDELINES.md)、[编码规范](../governance/CODE_STYLE.md)
 
-**Goal:** Build the Phase 1 business foundation for customers, vehicles, products, sales orders, order amounts, payment accounts, and order payments.
+> **执行要求：** 本计划用于分任务实施。执行时 MUST 使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 按任务推进。任务使用 checkbox (`- [ ]`) 追踪状态。
 
-**Architecture:** Keep the current modular monolith. Add focused NestJS modules under `apps/api/src/customers`, `apps/api/src/products`, and `apps/api/src/orders`; keep role and data-scope decisions in a shared policy rather than scattering checks through services. Extend the current Next.js management UI with customers, products, and orders pages that call typed API clients.
+**目标：** 建立 Phase 1 业务基础能力，覆盖客户、车辆、产品、销售订单、订单费用、收款账户和订单收款。
 
-**Tech Stack:** NestJS 11, Prisma 7.8, PostgreSQL, Next.js 16, React 19, Ant Design 6, TanStack Query 5, Node test runner, TypeScript.
+**架构原则：** MUST 保持当前模块化单体架构。后端在 `apps/api/src/customers`、`apps/api/src/products`、`apps/api/src/orders` 下新增聚焦模块；角色和数据范围判断 MUST 收敛到共享 policy，禁止散落在多个 service 中重复判断。前端在当前 Next.js 管理端中扩展客户、产品和订单页面，并通过类型化 API client 访问后端。
+
+**技术栈：** NestJS 11、Prisma 7.8、PostgreSQL、Next.js 16、React 19、Ant Design 6、TanStack Query 5、Node test runner、TypeScript。
+
+**回滚原则：** 每个任务 MUST 独立提交；数据库变更 MUST 通过 Prisma migration 管理；接口和页面改动 MUST 保持业务行为可回滚，不允许把多个无关重构合并到同一提交。
 
 ---
 
-## Scope
+## 实施范围
 
-This plan implements the first usable Web management loop:
+本计划实现第一版可用的 Web 管理闭环：
 
-1. Customers and vehicles can be created, searched, viewed, and updated.
-2. Products can be managed as orderable base data.
-3. Sales can create orders with customer, vehicle, products, construction type, location, appointment, amount, and optional deposit.
-4. Store managers, sales, customer service, finance, and admins see customer/order data according to the optimized role model.
-5. Payment accounts and order payments are recorded so finance can see deposit and outstanding balance.
+1. 客户和车辆可以创建、搜索、查看和更新。
+2. 产品可以作为可下单的基础资料进行维护。
+3. 销售可以基于客户、车辆、产品、施工类型、施工地点、预约时间、费用和可选定金创建订单。
+4. 店长、销售、客服、财务和管理员按照优化后的角色模型查看客户和订单数据。
+5. 系统记录收款账户和订单收款，财务可以查看定金和未结余额。
 
-This plan does not implement construction dispatch, inventory stock deduction, warranty, after-sales, invoices, rebates, reports, OCR, or mini-program offline sync.
+本计划 MUST NOT 实现施工派单、库存扣减、质保、售后、发票、返利、报表、OCR、小程序离线同步。这些能力进入后续 Phase。
 
-## Role Decisions
+## 角色决策
 
-Use the optimized role model from `docs/features/paint-protection-film-system-plan.md`:
+MUST 使用 [漆面保护膜施工管理系统建设方案](./paint-protection-film-system-plan.md) 中优化后的角色模型：
 
-- `User.isAuditor=true` means administrator. This merges the previous auditor and administrator roles.
-- `StoreMember.position = MANAGER` means store manager.
-- `StoreMember.position = SCHEDULER` means construction supervisor.
-- `CUSTOMER_SERVICE` is required for a complete customer-service role, but Phase 1 must not block on it. Until the enum is added, administrator and store manager can perform customer-service operations.
-- `SALES`, `PURCHASING`, `FINANCE`, `CONSTRUCTION`, and `APPRENTICE` keep their current meanings.
+- `User.isAuditor=true` 统一解释为管理员，合并原审核员和管理员能力。
+- `StoreMember.position = MANAGER` 表示店长。
+- `StoreMember.position = SCHEDULER` 表示施工主管。
+- 完整客服角色需要 `CUSTOMER_SERVICE`，但 Phase 1 MUST NOT 因枚举未扩展而阻塞。新增枚举前，由管理员和店长覆盖客服类操作。
+- `SALES`、`PURCHASING`、`FINANCE`、`CONSTRUCTION`、`APPRENTICE` 保持当前语义。
 
-## File Structure
+## 文档规范符合性
 
-Create or modify these files:
+MUST：
+
+- 本文作为功能实施计划，存放在 `docs/features/`，符合 [文档规范](../DOCUMENTATION_GUIDELINES.md) 的功能文档分类。
+- 文件名沿用已建立的 `phase-1-customers-orders-plan.md`，标题明确为“实施计划”。
+- 实施完成后 MUST 另行创建不带 `plan` 后缀的已交付功能说明：`docs/features/phase-1-customers-orders.md`。
+- 修改本文或新增 Phase 文档时 MUST 同步检查 [文档索引](../README.md)。
+
+MUST NOT：
+
+- 在功能说明中声称未交付能力已经完成。
+- 把实施计划放到 `docs/governance/`，治理目录只承载稳定规范、协作规则和重构路线。
+
+## 文件结构
+
+计划新增或修改以下文件：
 
 ```text
 apps/api/prisma/schema.prisma
@@ -89,9 +110,9 @@ docs/features/phase-1-customers-orders.md
 docs/README.md
 ```
 
-## Data Model
+## 数据模型
 
-Use these Prisma model names and enum names exactly so API, UI, and tests stay aligned:
+MUST 使用以下 Prisma model 和 enum 名称，保证 API、UI 和测试保持一致：
 
 ```prisma
 enum CustomerType {
@@ -171,15 +192,15 @@ enum PaymentAccountType {
 }
 ```
 
-## Task 1: Permission Policy Foundation
+## 任务 1：权限策略基础
 
-**Files:**
-- Create: `apps/api/src/common/policies/permission.policy.ts`
-- Create: `apps/api/src/common/policies/permission.policy.test.ts`
+**文件：**
+- 新增：`apps/api/src/common/policies/permission.policy.ts`
+- 新增：`apps/api/src/common/policies/permission.policy.test.ts`
 
-- [ ] **Step 1: Write the failing permission tests**
+- [ ] **步骤 1：编写先失败的权限测试**
 
-Create `apps/api/src/common/policies/permission.policy.test.ts`:
+新增 `apps/api/src/common/policies/permission.policy.test.ts`：
 
 ```ts
 import assert from "node:assert/strict";
@@ -242,19 +263,19 @@ test("PermissionPolicy limits construction workers to assigned work", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api test -- permission.policy.test.ts
 ```
 
-Expected: FAIL because `apps/api/src/common/policies/permission.policy.ts` does not exist.
+预期：失败，因为 `apps/api/src/common/policies/permission.policy.ts` 尚不存在。
 
-- [ ] **Step 3: Implement the minimal policy**
+- [ ] **步骤 3：实现最小权限策略**
 
-Create `apps/api/src/common/policies/permission.policy.ts`:
+新增 `apps/api/src/common/policies/permission.policy.ts`：
 
 ```ts
 import { StorePosition } from "@prisma/client";
@@ -353,32 +374,32 @@ export class PermissionPolicy {
 }
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [ ] **步骤 4：运行测试并确认通过**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api test -- permission.policy.test.ts
 ```
 
-Expected: PASS for all permission policy tests.
+预期：所有权限策略测试通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/api/src/common/policies/permission.policy.ts apps/api/src/common/policies/permission.policy.test.ts
 git commit -m "feat: add phase one permission policy"
 ```
 
-## Task 2: Prisma Models for Phase 1
+## 任务 2：Phase 1 Prisma 数据模型
 
-**Files:**
-- Modify: `apps/api/prisma/schema.prisma`
-- Test: `apps/api/src/prisma/database-invariants.test.ts`
+**文件：**
+- 修改：`apps/api/prisma/schema.prisma`
+- 测试：`apps/api/src/prisma/database-invariants.test.ts`
 
-- [ ] **Step 1: Add database invariant tests for Phase 1**
+- [ ] **步骤 1：为 Phase 1 增加数据库不变量测试**
 
-Append to `apps/api/src/prisma/database-invariants.test.ts`:
+追加到 `apps/api/src/prisma/database-invariants.test.ts`：
 
 ```ts
 test("phase one schema exposes customer order and payment models", () => {
@@ -419,19 +440,19 @@ If the file currently does not import `readFileSync`, add:
 import { readFileSync } from "node:fs";
 ```
 
-- [ ] **Step 2: Run the invariant test and verify it fails**
+- [ ] **步骤 2：运行不变量测试并确认失败**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api test -- database-invariants.test.ts
 ```
 
-Expected: FAIL because Phase 1 models are missing.
+预期：失败，因为 Phase 1 模型尚不存在。
 
-- [ ] **Step 3: Extend the Prisma schema**
+- [ ] **步骤 3：扩展 Prisma schema**
 
-Modify `apps/api/prisma/schema.prisma` by adding the Phase 1 enums from the Data Model section and these models. Use relation names if Prisma reports ambiguity with `User` relations.
+修改 `apps/api/prisma/schema.prisma`，增加“数据模型”章节中的 Phase 1 enum 和以下 model。如果 Prisma 报告 `User` 关系歧义，MUST 使用显式 relation name。
 
 ```prisma
 model Customer {
@@ -620,7 +641,7 @@ model OrderPayment {
 }
 ```
 
-Also add the corresponding back-relations to existing `User` and `Store` models:
+同时在现有 `User` 和 `Store` model 中增加对应反向关系：
 
 ```prisma
 // User relations
@@ -636,44 +657,44 @@ orders          Order[]
 paymentAccounts PaymentAccount[]
 ```
 
-- [ ] **Step 4: Generate Prisma client and run invariant tests**
+- [ ] **步骤 4：生成 Prisma Client 并运行不变量测试**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api prisma:generate
 corepack pnpm --filter @mallbay/api test -- database-invariants.test.ts
 ```
 
-Expected: Prisma generation succeeds and invariant test passes.
+预期：Prisma 生成成功，不变量测试通过。
 
-- [ ] **Step 5: Create and apply the migration**
+- [ ] **步骤 5：创建并应用 migration**
 
-Run:
+运行：
 
 ```bash
 DATABASE_URL='postgresql://postgres:postgres@localhost:55432/mallbay?schema=public' corepack pnpm --filter @mallbay/api prisma:migrate -- --name phase1_customers_orders
 ```
 
-Expected: migration is created under `apps/api/prisma/migrations/` and applied to local PostgreSQL.
+预期：migration 创建在 `apps/api/prisma/migrations/` 下，并应用到本地 PostgreSQL。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add apps/api/prisma/schema.prisma apps/api/prisma/migrations apps/api/src/prisma/database-invariants.test.ts
 git commit -m "feat: add phase one data model"
 ```
 
-## Task 3: Customers API
+## 任务 3：客户 API
 
-**Files:**
-- Create: `apps/api/src/customers/`
-- Modify: `apps/api/src/app.module.ts`
-- Test: `apps/api/src/customers/customers.service.test.ts`
+**文件：**
+- 新增：`apps/api/src/customers/`
+- 修改：`apps/api/src/app.module.ts`
+- 测试：`apps/api/src/customers/customers.service.test.ts`
 
-- [ ] **Step 1: Write customer service tests**
+- [ ] **步骤 1：编写客户 service 测试**
 
-Create `apps/api/src/customers/customers.service.test.ts`:
+新增 `apps/api/src/customers/customers.service.test.ts`：
 
 ```ts
 import assert from "node:assert/strict";
@@ -753,19 +774,19 @@ test("CustomersService rejects sales editing another sales user's customer", asy
 });
 ```
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api test -- customers.service.test.ts
 ```
 
-Expected: FAIL because `CustomersService` does not exist.
+预期：失败，因为 `CustomersService` 尚不存在。
 
-- [ ] **Step 3: Implement DTOs and service**
+- [ ] **步骤 3：实现 DTO 和 service**
 
-Create DTOs under `apps/api/src/customers/dto/`. Use class-validator decorators:
+在 `apps/api/src/customers/dto/` 下新增 DTO。MUST 使用 class-validator decorator：
 
 ```ts
 import { IsEnum, IsOptional, IsString, Matches, MaxLength, ValidateIf } from "class-validator";
@@ -818,7 +839,7 @@ export class CreateCustomerDto {
 }
 ```
 
-Create `apps/api/src/customers/customers.service.ts` with constructor dependencies `PrismaService` and a small `SensitiveFieldCodec` helper. If no encryption helper exists yet, create an internal interface and use deterministic hash for query:
+新增 `apps/api/src/customers/customers.service.ts`，构造函数依赖 `PrismaService` 和小型 `SensitiveFieldCodec` helper。如果还没有加密 helper，先创建内部接口并使用确定性 hash 支持查询：
 
 ```ts
 export type SensitiveFieldCodec = {
@@ -829,14 +850,14 @@ export type SensitiveFieldCodec = {
 
 The `create()` method must:
 
-1. Verify the current user can create customers in the store.
+1. 校验当前用户可以在该门店创建客户。
 2. Hash the phone.
 3. Reject duplicate `storeId + phoneHash`.
 4. Persist encrypted phone and owner user id.
 
-- [ ] **Step 4: Implement controller and module**
+- [ ] **步骤 4：实现 controller 和 module**
 
-Create `apps/api/src/customers/customers.controller.ts`:
+新增 `apps/api/src/customers/customers.controller.ts`：
 
 ```ts
 import { Body, Controller, Get, Param, Patch, Post, Query, Req } from "@nestjs/common";
@@ -879,9 +900,9 @@ export class CustomersController {
 
 If `storeId` is not in the DTO, add it to the DTO with `@IsString()`.
 
-- [ ] **Step 5: Register module**
+- [ ] **步骤 5：注册 module**
 
-Modify `apps/api/src/app.module.ts`:
+修改 `apps/api/src/app.module.ts`：
 
 ```ts
 import { CustomersModule } from "./customers/customers.module";
@@ -896,34 +917,34 @@ export class AppModule {}
 
 Preserve existing imports and add `CustomersModule` to the current array.
 
-- [ ] **Step 6: Run tests and typecheck**
+- [ ] **步骤 6：运行测试和类型检查**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api test -- customers.service.test.ts
 corepack pnpm --filter @mallbay/api typecheck
 ```
 
-Expected: tests and typecheck pass.
+预期：测试和类型检查通过。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
 ```bash
 git add apps/api/src/customers apps/api/src/app.module.ts
 git commit -m "feat: add customer management api"
 ```
 
-## Task 4: Products API
+## 任务 4：产品 API
 
-**Files:**
-- Create: `apps/api/src/products/`
-- Modify: `apps/api/src/app.module.ts`
-- Test: `apps/api/src/products/products.service.test.ts`
+**文件：**
+- 新增：`apps/api/src/products/`
+- 修改：`apps/api/src/app.module.ts`
+- 测试：`apps/api/src/products/products.service.test.ts`
 
-- [ ] **Step 1: Write product service tests**
+- [ ] **步骤 1：编写产品 service 测试**
 
-Create `apps/api/src/products/products.service.test.ts`:
+新增 `apps/api/src/products/products.service.test.ts`：
 
 ```ts
 import assert from "node:assert/strict";
@@ -974,19 +995,19 @@ test("ProductsService creates active products for store managers", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api test -- products.service.test.ts
 ```
 
-Expected: FAIL because `ProductsService` does not exist.
+预期：失败，因为 `ProductsService` 尚不存在。
 
-- [ ] **Step 3: Implement products module**
+- [ ] **步骤 3：实现 products module**
 
-Create DTOs with class-validator. `CreateProductDto` must include:
+使用 class-validator 新增 DTO。`CreateProductDto` MUST 包含：
 
 ```ts
 storeId: string;
@@ -1000,14 +1021,14 @@ warrantyYears?: number;
 basePriceCents: number;
 ```
 
-Create `ProductsService` with:
+新增 `ProductsService`，包含：
 
 - `create(user, dto)` restricted to admin or store manager.
 - `list(user, query)` available to store members and admin.
 - `update(user, id, dto)` restricted to admin or store manager.
 - Soft delete by setting `status = INACTIVE`.
 
-- [ ] **Step 4: Implement controller and register module**
+- [ ] **步骤 4：实现 controller 并注册 module**
 
 Expose:
 
@@ -1021,35 +1042,35 @@ DELETE /products/:id
 
 Register `ProductsModule` in `apps/api/src/app.module.ts`.
 
-- [ ] **Step 5: Run tests and typecheck**
+- [ ] **步骤 5：运行测试和类型检查**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api test -- products.service.test.ts
 corepack pnpm --filter @mallbay/api typecheck
 ```
 
-Expected: tests and typecheck pass.
+预期：测试和类型检查通过。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add apps/api/src/products apps/api/src/app.module.ts
 git commit -m "feat: add product management api"
 ```
 
-## Task 5: Orders and Payments API
+## 任务 5：订单与收款 API
 
-**Files:**
-- Create: `apps/api/src/orders/`
-- Modify: `apps/api/src/app.module.ts`
-- Test: `apps/api/src/orders/use-cases/create-order.use-case.test.ts`
-- Test: `apps/api/src/orders/orders.service.test.ts`
+**文件：**
+- 新增：`apps/api/src/orders/`
+- 修改：`apps/api/src/app.module.ts`
+- 测试：`apps/api/src/orders/use-cases/create-order.use-case.test.ts`
+- 测试：`apps/api/src/orders/orders.service.test.ts`
 
-- [ ] **Step 1: Write create-order use-case test**
+- [ ] **步骤 1：编写创建订单 use case 测试**
 
-Create `apps/api/src/orders/use-cases/create-order.use-case.test.ts`:
+新增 `apps/api/src/orders/use-cases/create-order.use-case.test.ts`：
 
 ```ts
 import assert from "node:assert/strict";
@@ -1111,19 +1132,19 @@ test("CreateOrderUseCase creates order items amount and deposit payment in one t
 });
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api test -- create-order.use-case.test.ts
 ```
 
-Expected: FAIL because `CreateOrderUseCase` does not exist.
+预期：失败，因为 `CreateOrderUseCase` 尚不存在。
 
-- [ ] **Step 3: Implement order status machine**
+- [ ] **步骤 3：实现订单状态机**
 
-Create `apps/api/src/orders/domain/order-status.machine.ts`:
+新增 `apps/api/src/orders/domain/order-status.machine.ts`：
 
 ```ts
 import { BadRequestException } from "@nestjs/common";
@@ -1145,17 +1166,17 @@ export function assertOrderTransition(from: OrderStatus, to: OrderStatus) {
 }
 ```
 
-- [ ] **Step 4: Implement create order use case**
+- [ ] **步骤 4：实现创建订单 use case**
 
-Create `apps/api/src/orders/use-cases/create-order.use-case.ts` with this behavior:
+新增 `apps/api/src/orders/use-cases/create-order.use-case.ts`，MUST 满足以下行为：
 
-- Verify `PermissionPolicy.canCreateOrder(user, dto.storeId)`.
-- Verify customer belongs to store.
-- Verify vehicle belongs to customer when `vehicleId` is provided.
-- Verify products exist and are `ACTIVE`.
+- 校验 `PermissionPolicy.canCreateOrder(user, dto.storeId)`。
+- 校验客户属于当前门店。
+- 传入 `vehicleId` 时校验车辆属于该客户。
+- 校验产品存在且状态为 `ACTIVE`。
 - Compute `productAmountCents`, `laborCostCents`, `totalAmountCents`, `paidAmountCents`, `outstandingCents`.
-- Create `Order`, `OrderItem`, `OrderAmount`, and optional `OrderPayment` in one Prisma transaction.
-- Generate order number through injected `OrderNumberGenerator`.
+- 在一个 Prisma transaction 中创建 `Order`、`OrderItem`、`OrderAmount` 和可选的 `OrderPayment`。
+- 通过注入的 `OrderNumberGenerator` 生成订单号。
 
 Use this exact order-number interface:
 
@@ -1165,7 +1186,7 @@ export type OrderNumberGenerator = {
 };
 ```
 
-- [ ] **Step 5: Implement orders service and controller**
+- [ ] **步骤 5：实现 orders service 和 controller**
 
 Expose:
 
@@ -1183,13 +1204,13 @@ DELETE /payment-accounts/:id
 
 The payment service must recalculate `OrderAmount.paidAmountCents` and `OrderAmount.outstandingCents` after each payment.
 
-- [ ] **Step 6: Register module**
+- [ ] **步骤 6：注册 module**
 
 Register `OrdersModule` in `apps/api/src/app.module.ts`.
 
-- [ ] **Step 7: Run tests and typecheck**
+- [ ] **步骤 7：运行测试和类型检查**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api test -- create-order.use-case.test.ts
@@ -1197,28 +1218,28 @@ corepack pnpm --filter @mallbay/api test -- orders.service.test.ts
 corepack pnpm --filter @mallbay/api typecheck
 ```
 
-Expected: tests and typecheck pass.
+预期：测试和类型检查通过。
 
-- [ ] **Step 8: Commit**
+- [ ] **步骤 8：提交**
 
 ```bash
 git add apps/api/src/orders apps/api/src/app.module.ts
 git commit -m "feat: add order and payment api"
 ```
 
-## Task 6: Shared Types and Web API Clients
+## 任务 6：共享类型与 Web API Client
 
-**Files:**
-- Modify: `packages/shared/src/index.ts`
-- Create: `apps/web/src/features/customers/api.ts`
-- Create: `apps/web/src/features/products/api.ts`
-- Create: `apps/web/src/features/orders/api.ts`
-- Modify: `apps/web/src/lib/api.ts`
-- Test: `apps/web/src/features/orders/api.test.ts`
+**文件：**
+- 修改：`packages/shared/src/index.ts`
+- 新增：`apps/web/src/features/customers/api.ts`
+- 新增：`apps/web/src/features/products/api.ts`
+- 新增：`apps/web/src/features/orders/api.ts`
+- 修改：`apps/web/src/lib/api.ts`
+- 测试：`apps/web/src/features/orders/api.test.ts`
 
-- [ ] **Step 1: Write web API client test**
+- [ ] **步骤 1：编写 Web API client 测试**
 
-Create `apps/web/src/features/orders/api.test.ts`:
+新增 `apps/web/src/features/orders/api.test.ts`：
 
 ```ts
 import assert from "node:assert/strict";
@@ -1258,19 +1279,19 @@ test("orderApi.create posts JSON to /orders", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/web test -- orders/api.test.ts
 ```
 
-Expected: FAIL because `apps/web/src/features/orders/api.ts` does not exist.
+预期：失败，因为 `apps/web/src/features/orders/api.ts` 尚不存在。
 
-- [ ] **Step 3: Add shared types**
+- [ ] **步骤 3：新增共享类型**
 
-Modify `packages/shared/src/index.ts` to export:
+修改 `packages/shared/src/index.ts`，导出：
 
 ```ts
 export type CustomerType = "PERSONAL" | "COMPANY";
@@ -1281,9 +1302,9 @@ export type OrderStatus = "PENDING_DISPATCH" | "DISPATCHED" | "IN_CONSTRUCTION" 
 export type PaymentType = "DEPOSIT" | "BALANCE" | "FULL";
 ```
 
-- [ ] **Step 4: Add web API clients**
+- [ ] **步骤 4：新增 Web API client**
 
-Create `apps/web/src/features/orders/api.ts`:
+新增 `apps/web/src/features/orders/api.ts`：
 
 ```ts
 import { request } from "../../lib/request";
@@ -1326,9 +1347,9 @@ export const orderApi = {
 };
 ```
 
-Create equivalent `customerApi` and `productApi` modules with `create`, `list`, `detail`, and `update` methods.
+新增等价的 `customerApi` 和 `productApi` 模块，MUST 包含 `create`、`list`、`detail`、`update` 方法。
 
-Modify `apps/web/src/lib/api.ts` to export:
+修改 `apps/web/src/lib/api.ts`，导出：
 
 ```ts
 export { customerApi } from "../features/customers/api";
@@ -1336,37 +1357,37 @@ export { productApi } from "../features/products/api";
 export { orderApi } from "../features/orders/api";
 ```
 
-- [ ] **Step 5: Run web tests and typecheck**
+- [ ] **步骤 5：运行 Web 测试和类型检查**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/web test
 corepack pnpm --filter @mallbay/web typecheck
 ```
 
-Expected: tests and typecheck pass.
+预期：测试和类型检查通过。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add packages/shared/src/index.ts apps/web/src/features/customers apps/web/src/features/products apps/web/src/features/orders apps/web/src/lib/api.ts
 git commit -m "feat: add phase one web api clients"
 ```
 
-## Task 7: Phase 1 Web Pages
+## 任务 7：Phase 1 Web 页面
 
-**Files:**
-- Create: `apps/web/app/customers/page.tsx`
-- Create: `apps/web/app/customers/[id]/page.tsx`
-- Create: `apps/web/app/products/page.tsx`
-- Create: `apps/web/app/orders/page.tsx`
-- Create: `apps/web/app/orders/create/page.tsx`
-- Create: `apps/web/app/orders/[id]/page.tsx`
+**文件：**
+- 新增：`apps/web/app/customers/page.tsx`
+- 新增：`apps/web/app/customers/[id]/page.tsx`
+- 新增：`apps/web/app/products/page.tsx`
+- 新增：`apps/web/app/orders/page.tsx`
+- 新增：`apps/web/app/orders/create/page.tsx`
+- 新增：`apps/web/app/orders/[id]/page.tsx`
 
-- [ ] **Step 1: Create customers list page**
+- [ ] **步骤 1：新增客户列表页**
 
-Create `apps/web/app/customers/page.tsx` with:
+新增 `apps/web/app/customers/page.tsx`，包含：
 
 - Ant Design `Table`.
 - Search input for phone, name, company, car plate, or VIN.
@@ -1423,11 +1444,11 @@ export default function CustomersPage() {
 }
 ```
 
-- [ ] **Step 2: Create products page**
+- [ ] **步骤 2：新增产品页**
 
-Create `apps/web/app/products/page.tsx` with product list, create/edit modal, and active/inactive status tags.
+新增 `apps/web/app/products/page.tsx`，MUST 包含产品列表、创建/编辑弹窗、启用/停用状态标签。
 
-- [ ] **Step 3: Create order pages**
+- [ ] **步骤 3：新增订单页**
 
 Create:
 
@@ -1437,33 +1458,33 @@ Create:
 
 The create page must call `customerApi.search`, `productApi.list`, and `orderApi.create`.
 
-- [ ] **Step 4: Run frontend verification**
+- [ ] **步骤 4：运行前端验证**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/web typecheck
 corepack pnpm --filter @mallbay/web test
 ```
 
-Expected: typecheck and tests pass.
+预期：类型检查和测试通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add apps/web/app/customers apps/web/app/products apps/web/app/orders
 git commit -m "feat: add phase one management pages"
 ```
 
-## Task 8: Phase 1 Documentation and Full Verification
+## 任务 8：Phase 1 文档与完整验证
 
-**Files:**
-- Create: `docs/features/phase-1-customers-orders.md`
-- Modify: `docs/README.md`
+**文件：**
+- 新增：`docs/features/phase-1-customers-orders.md`
+- 修改：`docs/README.md`
 
-- [ ] **Step 1: Write Phase 1 feature documentation**
+- [ ] **步骤 1：编写 Phase 1 功能说明**
 
-Create `docs/features/phase-1-customers-orders.md`:
+新增 `docs/features/phase-1-customers-orders.md`：
 
 ```md
 # Phase 1 客户订单收款功能说明
@@ -1495,17 +1516,17 @@ Create `docs/features/phase-1-customers-orders.md`:
 5. 店长查看本门店客户和订单。
 ```
 
-- [ ] **Step 2: Update docs index**
+- [ ] **步骤 2：更新文档索引**
 
-Add this line to `docs/README.md`:
+在 `docs/README.md` 增加以下入口：
 
 ```md
 - [features/phase-1-customers-orders.md](./features/phase-1-customers-orders.md)：Phase 1 客户、订单、产品和收款功能说明。
 ```
 
-- [ ] **Step 3: Run full verification**
+- [ ] **步骤 3：运行完整验证**
 
-Run:
+运行：
 
 ```bash
 corepack pnpm --filter @mallbay/api test
@@ -1516,7 +1537,7 @@ corepack pnpm lint
 git diff --check
 ```
 
-Expected:
+预期：
 
 - API tests pass.
 - API typecheck passes.
@@ -1525,14 +1546,14 @@ Expected:
 - Lint has 0 errors. Existing warnings are acceptable only if unrelated and documented in the final handoff.
 - `git diff --check` has no output.
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git add docs/features/phase-1-customers-orders.md docs/README.md
 git commit -m "docs: document phase one customer order flow"
 ```
 
-## Self-Review Checklist
+## 自查清单
 
 - [ ] The plan implements the optimized role model: administrator merges auditor/admin, `MANAGER` is store manager, `SCHEDULER` is construction supervisor.
 - [ ] Phase 1 creates customers, vehicles, products, orders, order amounts, payment accounts, and order payments.

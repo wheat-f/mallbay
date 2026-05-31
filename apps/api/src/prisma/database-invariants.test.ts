@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   checkDatabaseInvariants,
@@ -57,4 +58,35 @@ test("formatDatabaseInvariantViolations produces deploy-safe failure output", ()
   assert.match(message, /数据库不变量预检失败/);
   assert.match(message, /store_photo_single_cover/);
   assert.match(message, /store-1/);
+});
+
+test("phase one schema exposes customer order and payment models", () => {
+  const schema = readFileSync(new URL("../../prisma/schema.prisma", import.meta.url), "utf8");
+
+  for (const model of [
+    "model Customer ",
+    "model CustomerVehicle ",
+    "model Product ",
+    "model Order ",
+    "model OrderItem ",
+    "model OrderAmount ",
+    "model PaymentAccount ",
+    "model OrderPayment "
+  ]) {
+    assert.ok(schema.includes(model), `${model.trim()} is missing`);
+  }
+
+  for (const enumName of [
+    "enum CustomerType",
+    "enum ProductCategory",
+    "enum ConstructionType",
+    "enum OrderStatus",
+    "enum PaymentType"
+  ]) {
+    assert.ok(schema.includes(enumName), `${enumName} is missing`);
+  }
+
+  assert.ok(schema.includes("amountCents"), "money fields must use integer cents");
+  assert.ok(schema.includes("phoneHash"), "customer phone search must use a hash field");
+  assert.ok(schema.includes("vinHash"), "VIN search must use a hash field");
 });

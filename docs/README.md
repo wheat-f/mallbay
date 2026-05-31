@@ -18,6 +18,7 @@
 
 - [features/paint-protection-film-system-plan.md](./features/paint-protection-film-system-plan.md)：漆面保护膜施工管理系统 V1.7 需求建设方案。
 - [features/phase-1-customers-orders-plan.md](./features/phase-1-customers-orders-plan.md)：Phase 1 客户、产品、订单和收款实施计划。
+- [features/phase-1-customers-orders.md](./features/phase-1-customers-orders.md)：Phase 1 客户、订单、产品和收款功能说明。
 
 ### 部署与环境
 

@@ -110,34 +110,38 @@ MUST 以订单作为业务主聚合根：
 
 ### 4.1 角色映射
 
-V1.7 定义的角色为：销售、施工主管、师傅、客服、采购、财务、老板、管理员。
+V1.7 原始需求列出了销售、施工主管、师傅、客服、采购、财务、老板、管理员，但遗漏了当前系统已经存在且承担门店运营职责的店长角色。方案 MUST 将店长作为正式业务角色纳入权限矩阵。
 
 当前系统已有：
 
-- `User.isAuditor`：运营/审核员能力。
+- `User.isAuditor`：当前系统已有的审核员能力。后续 MUST 与管理员合并，统一解释为管理员能力，不再单独保留“审核员”角色。
 - `StoreMember.position`：`MANAGER`、`SALES`、`PURCHASING`、`FINANCE`、`SCHEDULER`、`CONSTRUCTION`、`APPRENTICE`。
 
 MUST 在第一阶段复用当前岗位模型，避免过早引入复杂 RBAC：
 
-| V1.7 角色 | 当前可映射岗位 | 说明 |
+| 目标角色 | 当前可映射岗位 | 说明 |
 | --- | --- | --- |
+| 管理员 | `User.isAuditor=true` | 合并当前审核员和管理员能力，负责系统配置、门店创建、门店审核、跨店管理、全量报表和大额审批。 |
+| 店长 | `MANAGER` | 复用现有店长岗位，负责本门店日常运营、成员邀请/移除、门店资料送审、查看本店全量业务数据。 |
 | 销售 | `SALES` | 创建订单、查看自己业绩、申请发票 |
-| 施工主管 | `MANAGER` 或新增 `SCHEDULER` 策略 | 初期由店长/排班员承担派单和质检 |
+| 施工主管 | `SCHEDULER` | 复用现有排班员枚举，负责每日施工量设定、派单、质检、师傅提成核算和排班。 |
 | 师傅 | `CONSTRUCTION`、`APPRENTICE` | 接单、上传施工照片、请假 |
-| 客服 | 暂用 `MANAGER` 或新增 `CUSTOMER_SERVICE` | RECOMMENDED 后续新增枚举 |
+| 客服 | RECOMMENDED 新增 `CUSTOMER_SERVICE` | 负责客户管理、库存协同、质保录入、售后处理和返利申请；短期未建岗位前由店长或管理员代办。 |
 | 采购 | `PURCHASING` | 库存、采购、部分费用申请 |
 | 财务 | `FINANCE` | 收款、报销、发票、返利审批 |
-| 老板 | `isAuditor=true` 或新增 `OWNER` | 大额审批、全量报表 |
-| 管理员 | `isAuditor=true` | 系统配置、全量管理 |
+| 老板 | `User.isAuditor=true` 的高权限用户，RECOMMENDED 后续拆 `OWNER` | 大额费用审批、返利终审、查看所有经营报表。短期与管理员共享能力，后续如需分权再拆独立权限。 |
 
-RECOMMENDED 后续将 `StorePosition` 扩展为 `CUSTOMER_SERVICE`、`OWNER`、`ADMIN`，或引入 `Role`/`Permission` 表。但第一轮实施 MUST 先通过策略函数封装权限判断，例如 `canCreateOrder(user, storeId)`、`canDispatchConstruction(user, storeId)`。
+RECOMMENDED 后续将 `StorePosition` 扩展为 `CUSTOMER_SERVICE`、`OWNER`，或引入 `Role`/`Permission` 表。但第一轮实施 MUST 先通过策略函数封装权限判断，例如 `canCreateOrder(user, storeId)`、`canDispatchConstruction(user, storeId)`。
 
 ### 4.2 权限边界
 
 MUST：
 
+- 管理员可跨门店管理，店长只能管理本门店。
 - 销售只能编辑自己名下客户和订单，除非具备管理权限。
+- 施工主管只能管理本门店施工容量、派单、质检和排班，不默认拥有店长的成员管理和门店送审权限。
 - 施工人员只能处理分配给自己的施工单和售后单。
+- 客服可维护本门店客户、质保、售后和返利申请，但不能审批财务和返利。
 - 财务可查看收款、费用、发票、返利，但不能修改施工照片和库存批次。
 - 库存出入库必须记录操作人和业务来源。
 - 报表查询必须按角色裁剪数据范围。
@@ -146,6 +150,37 @@ MUST NOT：
 
 - 在前端隐藏按钮后就视为权限完成。
 - 在 Service 中散落硬编码岗位判断；必须收敛到 policy 或 use-case。
+
+### 4.3 数据范围矩阵
+
+MUST 按角色裁剪客户、订单和报表数据：
+
+| 角色 | 客户范围 | 订单范围 | 报表范围 |
+| --- | --- | --- | --- |
+| 管理员/老板 | 跨门店全量 | 跨门店全量 | 全量经营报表 |
+| 店长 | 本门店全量 | 本门店全量 | 本门店全量 |
+| 销售 | 自己名下客户 | 自己创建或归属自己的订单 | 自己销售业绩 |
+| 施工主管 | 本门店只读 | 本门店施工相关订单 | 施工相关报表 |
+| 师傅 | 仅关联自己施工任务的客户摘要 | 仅分配给自己的施工订单 | 个人施工统计 |
+| 客服 | 本门店全量 | 本门店全量只读，允许按职责修改客户/质保/售后 | 客服相关统计 |
+| 采购 | 无默认客户权限 | 采购和库存相关订单摘要 | 库存和采购统计 |
+| 财务 | 本门店客户只读 | 本门店订单只读，允许维护收款/发票/返利/报销 | 财务相关报表 |
+
+RECOMMENDED 在 Phase 1 先实现 `PermissionPolicy` 和数据 scope，不急于实现完整 RBAC：
+
+```typescript
+export class PermissionPolicy {
+  static isAdmin(user: AuthUser): boolean;
+  static isStoreManager(user: AuthUser, storeId: string): boolean;
+  static canCreateOrder(user: AuthUser, storeId: string): boolean;
+  static canViewCustomer(user: AuthUser, storeId: string, ownerUserId: string): boolean;
+  static canEditCustomer(user: AuthUser, storeId: string, ownerUserId: string): boolean;
+  static canManageOrderPayment(user: AuthUser, storeId: string): boolean;
+  static canDispatchConstruction(user: AuthUser, storeId: string): boolean;
+  static getCustomerScope(user: AuthUser, storeId: string): CustomerScope;
+  static getOrderScope(user: AuthUser, storeId: string): OrderScope;
+}
+```
 
 ## 5. 数据模型建设方案
 

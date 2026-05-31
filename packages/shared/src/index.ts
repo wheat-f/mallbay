@@ -9,6 +9,41 @@ export type StorePosition =
 
 export type StoreStatus = "DRAFTED" | "PENDING_REVIEW" | "PUBLISHED" | "FROZEN";
 
+export type CustomerType = "PERSONAL" | "COMPANY";
+
+export type Gender = "MALE" | "FEMALE" | "UNKNOWN";
+
+export type CustomerSourceType =
+  | "ONLINE_DOUYIN"
+  | "ONLINE_XIAOHONGSHU"
+  | "ONLINE_KUAISHOU"
+  | "OFFLINE_STORE"
+  | "REFERRAL"
+  | "PARTNER"
+  | "OTHER";
+
+export type ProductCategory = "PPF" | "COLOR_FILM" | "HEAT_FILM" | "MODIFICATION" | "OTHER";
+
+export type ProductUnit = "ROLL" | "METER" | "PIECE";
+
+export type ProductStatus = "ACTIVE" | "INACTIVE";
+
+export type ConstructionType = "PPF" | "COLOR_FILM" | "HEAT_FILM" | "MODIFICATION" | "INSPECTION";
+
+export type ConstructionLocation = "IN_STORE" | "OUTSIDE";
+
+export type OrderStatus =
+  | "PENDING_DISPATCH"
+  | "DISPATCHED"
+  | "IN_CONSTRUCTION"
+  | "COMPLETED"
+  | "WARRANTIED"
+  | "CANCELLED";
+
+export type PaymentType = "DEPOSIT" | "BALANCE" | "FULL";
+
+export type PaymentAccountType = "CORPORATE" | "PERSONAL" | "WECHAT" | "ALIPAY" | "OTHER";
+
 export type AuthUser = {
   id: string;
   username: string;

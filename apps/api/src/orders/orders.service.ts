@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, ProductStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { normalizePagination } from "../common/pagination";
 import {
   PermissionPolicy,

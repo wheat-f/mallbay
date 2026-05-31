@@ -6,7 +6,7 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { CustomerType, Gender, Prisma } from "@prisma/client";
+import { Gender, Prisma } from "@prisma/client";
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { normalizePagination } from "../common/pagination";
 import { type UserWithStoreMember } from "../common/policies/permission.policy";

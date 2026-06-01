@@ -44,6 +44,28 @@ export type PaymentType = "DEPOSIT" | "BALANCE" | "FULL";
 
 export type PaymentAccountType = "CORPORATE" | "PERSONAL" | "WECHAT" | "ALIPAY" | "OTHER";
 
+export type ConstructionTaskStatus = "DISPATCHED" | "IN_CONSTRUCTION" | "COMPLETED";
+
+export type ConstructionPhotoStage = "BEFORE" | "DURING" | "AFTER";
+
+export type QualityCheckResult = "PASS" | "REWORK_REQUIRED";
+
+export type WorkerSkillTag = "PPF" | "COLOR_FILM" | "HEAT_FILM" | "MODIFICATION" | "INSPECTION" | "OUTSIDE";
+
+export type DailyCapacitySummary = {
+  id: string;
+  storeId: string;
+  date: string;
+  inStoreCapacity: number;
+  inStoreReserved: number;
+  outsideCapacity: number;
+  outsideReserved: number;
+  heatFilmCapacity: number;
+  heatFilmReserved: number;
+  inspectionCapacity: number;
+  inspectionReserved: number;
+};
+
 export type AuthUser = {
   id: string;
   username: string;

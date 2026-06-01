@@ -40,6 +40,15 @@ model User {
   customerNotes        CustomerNote[]         @relation("CustomerNoteCreatedBy")
   salesOrders          Order[]                @relation("OrderSalesPerson")
   orderPayments        OrderPayment[]         @relation("OrderPaymentCreatedBy")
+  constructionProfile  ConstructionWorkerProfile?
+  constructionAssigned ConstructionAssignment[] @relation("ConstructionAssignedWorker")
+  constructionDispatched ConstructionRecord[]   @relation("ConstructionDispatchedBy")
+  constructionPhotos   ConstructionPhoto[]      @relation("ConstructionPhotoUploadedBy")
+  qualityChecks        ConstructionRecord[]     @relation("ConstructionQualityCheckedBy")
+  leaveRequests        LeaveRequest[]           @relation("LeaveRequestWorker")
+  schedules            Schedule[]               @relation("ScheduleWorker")
+  commissionSnapshots  WorkerCommissionSnapshot[] @relation("WorkerCommissionWorker")
+  createdCommissionSnapshots WorkerCommissionSnapshot[] @relation("WorkerCommissionCreatedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -74,6 +83,11 @@ model Store {
   products        Product[]
   orders          Order[]
   paymentAccounts PaymentAccount[]
+  dailyCapacities DailyCapacity[]
+  constructionWorkerProfiles ConstructionWorkerProfile[]
+  constructionRecords ConstructionRecord[]
+  leaveRequests   LeaveRequest[]
+  schedules       Schedule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -240,6 +254,44 @@ enum PaymentAccountType {
   OTHER
 }
 
+enum ConstructionTaskStatus {
+  DISPATCHED
+  IN_CONSTRUCTION
+  COMPLETED
+}
+
+enum ConstructionPhotoStage {
+  BEFORE
+  DURING
+  AFTER
+}
+
+enum QualityCheckResult {
+  PASS
+  REWORK_REQUIRED
+}
+
+enum WorkerSkillTag {
+  PPF
+  COLOR_FILM
+  HEAT_FILM
+  MODIFICATION
+  INSPECTION
+  OUTSIDE
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ScheduleStatus {
+  WORKING
+  REST
+  OUTSIDE
+}
+
 model Customer {
   id             String              @id @default(cuid())
   storeId        String
@@ -353,6 +405,7 @@ model Order {
   items       OrderItem[]
   amount      OrderAmount?
   payments    OrderPayment[]
+  constructionRecord ConstructionRecord?
 
   @@index([storeId, status])
   @@index([storeId, salesPersonId])
@@ -423,6 +476,160 @@ model OrderPayment {
 
   @@index([orderId])
   @@index([accountId])
+}
+
+// ─── Phase 2 Construction ───────────────────────────────────────────────────
+
+model DailyCapacity {
+  id                 String   @id @default(cuid())
+  storeId            String
+  date               DateTime @db.Date
+  inStoreCapacity    Int      @default(0)
+  inStoreReserved    Int      @default(0)
+  outsideCapacity    Int      @default(0)
+  outsideReserved    Int      @default(0)
+  heatFilmCapacity   Int      @default(0)
+  heatFilmReserved   Int      @default(0)
+  inspectionCapacity Int      @default(0)
+  inspectionReserved Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, date])
+  @@index([storeId])
+}
+
+model ConstructionWorkerProfile {
+  id              String           @id @default(cuid())
+  storeId          String
+  userId           String           @unique
+  canWorkOutside   Boolean          @default(false)
+  skillTags        WorkerSkillTag[]
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, isActive])
+}
+
+model ConstructionRecord {
+  id                 String                 @id @default(cuid())
+  storeId            String
+  orderId       String                 @unique
+  status             ConstructionTaskStatus @default(DISPATCHED)
+  dispatchedById     String
+  dispatchedAt       DateTime               @default(now())
+  startedAt          DateTime?
+  completedAt        DateTime?
+  actualMinutes      Int?
+  overtimeMinutes    Int                    @default(0)
+  qualityResult      QualityCheckResult?
+  qualityNote        String?
+  qualityCheckedById String?
+  qualityCheckedAt   DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  store            Store                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order            Order                    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  dispatchedBy     User                     @relation("ConstructionDispatchedBy", fields: [dispatchedById], references: [id])
+  qualityCheckedBy User?                    @relation("ConstructionQualityCheckedBy", fields: [qualityCheckedById], references: [id])
+  assignments      ConstructionAssignment[]
+  photos           ConstructionPhoto[]
+  commissionSnapshots WorkerCommissionSnapshot[]
+
+  @@index([storeId, status])
+  @@index([dispatchedById])
+}
+
+model ConstructionAssignment {
+  id           String   @id @default(cuid())
+  recordId     String
+  orderId      String
+  workerUserId String
+  assignedAt   DateTime @default(now())
+
+  record ConstructionRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  worker User               @relation("ConstructionAssignedWorker", fields: [workerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, workerUserId])
+  @@index([recordId])
+  @@index([workerUserId])
+}
+
+model ConstructionPhoto {
+  id           String                 @id @default(cuid())
+  recordId     String
+  stage        ConstructionPhotoStage
+  url          String
+  uploadedById String
+  takenAt      DateTime?
+  createdAt    DateTime               @default(now())
+
+  record     ConstructionRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  uploadedBy User               @relation("ConstructionPhotoUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([recordId, stage])
+  @@index([uploadedById])
+}
+
+model LeaveRequest {
+  id        String             @id @default(cuid())
+  storeId   String
+  workerId  String
+  startDate DateTime           @db.Date
+  endDate   DateTime           @db.Date
+  reason    String?
+  status    LeaveRequestStatus @default(PENDING)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  store  Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  worker User  @relation("LeaveRequestWorker", fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, startDate, endDate])
+  @@index([workerId, status])
+}
+
+model Schedule {
+  id        String         @id @default(cuid())
+  storeId   String
+  workerId  String
+  date      DateTime       @db.Date
+  status    ScheduleStatus @default(WORKING)
+  note      String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  store  Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  worker User  @relation("ScheduleWorker", fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@unique([workerId, date])
+  @@index([storeId, date])
+}
+
+model WorkerCommissionSnapshot {
+  id              String   @id @default(cuid())
+  recordId        String
+  orderId         String
+  workerUserId    String
+  amountCents     Int
+  calculationNote String
+  createdById     String
+  createdAt       DateTime @default(now())
+
+  record    ConstructionRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  worker    User               @relation("WorkerCommissionWorker", fields: [workerUserId], references: [id])
+  createdBy User               @relation("WorkerCommissionCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([recordId, workerUserId])
+  @@index([orderId])
+  @@index([workerUserId])
 }
 
 // 一个用户同一时间只能属于一家门店（数据库层强制）

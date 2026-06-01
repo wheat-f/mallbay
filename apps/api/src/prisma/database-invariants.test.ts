@@ -90,3 +90,33 @@ test("phase one schema exposes customer order and payment models", () => {
   assert.ok(schema.includes("phoneHash"), "customer phone search must use a hash field");
   assert.ok(schema.includes("vinHash"), "VIN search must use a hash field");
 });
+
+test("phase two schema exposes construction capacity assignment and record models", () => {
+  const schema = readFileSync(new URL("../../prisma/schema.prisma", import.meta.url), "utf8");
+
+  for (const model of [
+    "model DailyCapacity ",
+    "model ConstructionWorkerProfile ",
+    "model ConstructionAssignment ",
+    "model ConstructionRecord ",
+    "model ConstructionPhoto ",
+    "model LeaveRequest ",
+    "model Schedule ",
+    "model WorkerCommissionSnapshot "
+  ]) {
+    assert.ok(schema.includes(model), `${model.trim()} is missing`);
+  }
+
+  for (const enumName of [
+    "enum ConstructionTaskStatus",
+    "enum ConstructionPhotoStage",
+    "enum QualityCheckResult",
+    "enum WorkerSkillTag"
+  ]) {
+    assert.ok(schema.includes(enumName), `${enumName} is missing`);
+  }
+
+  assert.ok(schema.includes("@@unique([storeId, date])"), "DailyCapacity must be unique per store date");
+  assert.ok(schema.includes("@@unique([orderId, workerUserId])"), "assignment must prevent duplicate workers");
+  assert.ok(schema.includes("orderId       String                 @unique"), "ConstructionRecord must be unique per order");
+});

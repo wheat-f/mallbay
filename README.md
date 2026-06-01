@@ -44,6 +44,8 @@ pnpm dev
 - [docs/features/paint-protection-film-system-plan.md](./docs/features/paint-protection-film-system-plan.md): 漆面保护膜施工管理系统 V1.7 需求建设方案
 - [docs/features/phase-1-customers-orders-plan.md](./docs/features/phase-1-customers-orders-plan.md): Phase 1 客户、产品、订单和收款实施计划
 - [docs/features/phase-1-customers-orders.md](./docs/features/phase-1-customers-orders.md): Phase 1 客户、订单、产品和收款功能说明
+- [docs/features/phase-2-construction-plan.md](./docs/features/phase-2-construction-plan.md): Phase 2 施工容量、派单与施工记录实施计划
+- [docs/features/phase-2-construction.md](./docs/features/phase-2-construction.md): Phase 2 施工容量、派单与施工记录功能说明
 - [docs/deploy-setup.md](./docs/deploy-setup.md): 部署配置说明
 
 ## 测试账号

@@ -1,0 +1,189 @@
+import { Type } from "class-transformer";
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min
+} from "class-validator";
+import {
+  ConstructionPhotoStage,
+  QualityCheckResult,
+  ScheduleStatus,
+  WorkerSkillTag
+} from "@prisma/client";
+
+export class UpsertDailyCapacityDto {
+  @IsString()
+  storeId!: string;
+
+  @IsDateString()
+  date!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  inStoreCapacity!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  outsideCapacity!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  heatFilmCapacity!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  inspectionCapacity!: number;
+}
+
+export class UpdateDailyCapacityDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  inStoreCapacity?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  outsideCapacity?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  heatFilmCapacity?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  inspectionCapacity?: number;
+}
+
+export class ListConstructionDto {
+  @IsString()
+  storeId!: string;
+
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+}
+
+export class AssignOrderDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(3)
+  @IsString({ each: true })
+  workerUserIds!: string[];
+}
+
+export class CompleteConstructionDto {
+  @IsOptional()
+  @IsDateString()
+  completedAt?: string;
+}
+
+export class UploadConstructionPhotoDto {
+  @IsEnum(ConstructionPhotoStage)
+  stage!: ConstructionPhotoStage;
+
+  @IsOptional()
+  @IsString()
+  url?: string;
+
+  @IsOptional()
+  @IsDateString()
+  takenAt?: string;
+}
+
+export class QualityCheckDto {
+  @IsEnum(QualityCheckResult)
+  result!: QualityCheckResult;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
+export class UpsertWorkerProfileDto {
+  @IsString()
+  storeId!: string;
+
+  @IsString()
+  userId!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  canWorkOutside?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsEnum(WorkerSkillTag, { each: true })
+  skillTags?: WorkerSkillTag[];
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class LeaveRequestDto {
+  @IsString()
+  storeId!: string;
+
+  @IsString()
+  workerId!: string;
+
+  @IsDateString()
+  startDate!: string;
+
+  @IsDateString()
+  endDate!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class UpdateLeaveRequestDto {
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+export class UpsertScheduleDto {
+  @IsString()
+  storeId!: string;
+
+  @IsString()
+  workerId!: string;
+
+  @IsDateString()
+  date!: string;
+
+  @IsEnum(ScheduleStatus)
+  status!: ScheduleStatus;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+}

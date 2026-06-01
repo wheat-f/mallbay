@@ -75,6 +75,28 @@ export class PermissionPolicy {
     return this.isStoreMember(user, storeId) && user.storeMember?.position === StorePosition.SCHEDULER;
   }
 
+  static canWorkOnConstructionTask(
+    user: UserWithStoreMember,
+    storeId: string,
+    assignedWorkerId: string
+  ) {
+    return this.isStoreMember(user, storeId) &&
+      this.constructionWorkers.includes(user.storeMember!.position) &&
+      user.id === assignedWorkerId;
+  }
+
+  static canUploadConstructionPhoto(
+    user: UserWithStoreMember,
+    storeId: string,
+    assignedWorkerId: string
+  ) {
+    return this.canWorkOnConstructionTask(user, storeId, assignedWorkerId);
+  }
+
+  static canQualityCheckConstruction(user: UserWithStoreMember, storeId: string) {
+    return this.canDispatchConstruction(user, storeId);
+  }
+
   static getCustomerScope(user: UserWithStoreMember, storeId: string): CustomerScope {
     if (this.isAdmin(user)) return { all: true };
     if (this.isStoreManager(user, storeId)) return { storeId };

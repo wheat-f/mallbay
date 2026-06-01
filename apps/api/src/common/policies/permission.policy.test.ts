@@ -24,6 +24,16 @@ const worker = {
   isAuditor: false,
   storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
 };
+const apprentice = {
+  id: "apprentice-1",
+  isAuditor: false,
+  storeMember: { storeId: "store-1", position: StorePosition.APPRENTICE }
+};
+const scheduler = {
+  id: "scheduler-1",
+  isAuditor: false,
+  storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
+};
 
 test("PermissionPolicy treats isAuditor as administrator", () => {
   assert.equal(PermissionPolicy.isAdmin(admin), true);
@@ -55,4 +65,27 @@ test("PermissionPolicy limits construction workers to assigned work", () => {
     storeId: "store-1",
     assignedWorkerId: "worker-1"
   });
+});
+
+test("PermissionPolicy allows schedulers managers and admins to dispatch construction", () => {
+  assert.equal(PermissionPolicy.canDispatchConstruction(admin, "store-2"), true);
+  assert.equal(PermissionPolicy.canDispatchConstruction(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canDispatchConstruction(scheduler, "store-1"), true);
+  assert.equal(PermissionPolicy.canDispatchConstruction(scheduler, "store-2"), false);
+  assert.equal(PermissionPolicy.canDispatchConstruction(worker, "store-1"), false);
+});
+
+test("PermissionPolicy allows assigned workers and apprentices to work on construction tasks", () => {
+  assert.equal(PermissionPolicy.canWorkOnConstructionTask(worker, "store-1", "worker-1"), true);
+  assert.equal(PermissionPolicy.canWorkOnConstructionTask(apprentice, "store-1", "apprentice-1"), true);
+  assert.equal(PermissionPolicy.canWorkOnConstructionTask(worker, "store-1", "other-worker"), false);
+  assert.equal(PermissionPolicy.canWorkOnConstructionTask(scheduler, "store-1", "worker-1"), false);
+});
+
+test("PermissionPolicy scopes construction photo upload and quality check", () => {
+  assert.equal(PermissionPolicy.canUploadConstructionPhoto(worker, "store-1", "worker-1"), true);
+  assert.equal(PermissionPolicy.canUploadConstructionPhoto(worker, "store-2", "worker-1"), false);
+  assert.equal(PermissionPolicy.canQualityCheckConstruction(scheduler, "store-1"), true);
+  assert.equal(PermissionPolicy.canQualityCheckConstruction(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canQualityCheckConstruction(worker, "store-1"), false);
 });

@@ -7,7 +7,7 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { OrderStatus, ProductStatus } from "@prisma/client";
+import { ConstructionLocation, ConstructionType, OrderStatus, ProductStatus } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../../common/policies/permission.policy";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateOrderDto } from "../dto/create-order.dto";
@@ -37,6 +37,15 @@ export class CreateOrderUseCase {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const capacityReservation = dto.appointmentDate
+        ? await this.reserveDailyCapacity(
+          tx,
+          dto.storeId,
+          dto.appointmentDate,
+          dto.constructionLocation,
+          dto.constructionType
+        )
+        : null;
       const customer = await tx.customer.findUnique({ where: { id: dto.customerId } });
       if (!customer || customer.storeId !== dto.storeId) {
         throw new NotFoundException("客户不存在");
@@ -126,9 +135,80 @@ export class CreateOrderUseCase {
         });
       }
 
+      if (capacityReservation) {
+        await tx.dailyCapacity.update(capacityReservation);
+      }
+
       return order;
     });
   }
+
+  private async reserveDailyCapacity(
+    tx: {
+      dailyCapacity: {
+        findUnique(args: unknown): Promise<DailyCapacityLike | null>;
+        update(args: unknown): Promise<unknown>;
+      };
+    },
+    storeId: string,
+    appointmentDate: string,
+    location: ConstructionLocation,
+    type: ConstructionType
+  ) {
+    const date = normalizeCapacityDate(appointmentDate);
+    const capacity = await tx.dailyCapacity.findUnique({
+      where: { storeId_date: { storeId, date } }
+    });
+    if (!capacity) {
+      throw new BadRequestException("请先设置施工容量");
+    }
+
+    const increments: Record<string, { increment: number }> = {};
+    if (location === ConstructionLocation.IN_STORE) {
+      assertCapacityAvailable(capacity.inStoreReserved, capacity.inStoreCapacity);
+      increments.inStoreReserved = { increment: 1 };
+    } else {
+      assertCapacityAvailable(capacity.outsideReserved, capacity.outsideCapacity);
+      increments.outsideReserved = { increment: 1 };
+    }
+
+    if (type === ConstructionType.HEAT_FILM) {
+      assertCapacityAvailable(capacity.heatFilmReserved, capacity.heatFilmCapacity);
+      increments.heatFilmReserved = { increment: 1 };
+    }
+    if (type === ConstructionType.INSPECTION) {
+      assertCapacityAvailable(capacity.inspectionReserved, capacity.inspectionCapacity);
+      increments.inspectionReserved = { increment: 1 };
+    }
+
+    return {
+      where: { id: capacity.id },
+      data: increments
+    };
+  }
+}
+
+type DailyCapacityLike = {
+  id: string;
+  inStoreCapacity: number;
+  inStoreReserved: number;
+  outsideCapacity: number;
+  outsideReserved: number;
+  heatFilmCapacity: number;
+  heatFilmReserved: number;
+  inspectionCapacity: number;
+  inspectionReserved: number;
+};
+
+function assertCapacityAvailable(reserved: number, capacity: number) {
+  if (reserved >= capacity) {
+    throw new BadRequestException("施工容量已满");
+  }
+}
+
+function normalizeCapacityDate(value: string) {
+  const datePart = value.includes("T") ? value.slice(0, 10) : value;
+  return new Date(`${datePart}T00:00:00.000Z`);
 }
 
 function createDefaultOrderNumberGenerator(): OrderNumberGenerator {

@@ -15,7 +15,7 @@ type PrismaQueryEvent = {
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor(
-    config: ConfigService,
+    @Inject(ConfigService) config: ConfigService,
     @Optional() @Inject(StructuredLoggerService) logger?: StructuredLoggerService,
     @Optional() @Inject(MetricsService) metrics?: MetricsService
   ) {

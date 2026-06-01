@@ -29,26 +29,29 @@ model User {
   // 运营人员角色（目前仅审核员一个岗位）
   isAuditor Boolean @default(false)
 
-  storeMembers         StoreMember[]
-  sentInvitations      StoreInvitation[]      @relation("InvitedBy")
-  receivedInvitations  StoreInvitation[]      @relation("InvitedUser")
-  notifications        Notification[]
-  submittedSubmissions StoreAuditSubmission[] @relation("SubmittedBy")
-  reviewedSubmissions  StoreAuditSubmission[] @relation("ReviewedBy")
-  createdStores        Store[]                @relation("CreatedBy")
-  ownedCustomers       Customer[]             @relation("CustomerOwner")
-  customerNotes        CustomerNote[]         @relation("CustomerNoteCreatedBy")
-  salesOrders          Order[]                @relation("OrderSalesPerson")
-  orderPayments        OrderPayment[]         @relation("OrderPaymentCreatedBy")
-  constructionProfile  ConstructionWorkerProfile?
-  constructionAssigned ConstructionAssignment[] @relation("ConstructionAssignedWorker")
-  constructionDispatched ConstructionRecord[]   @relation("ConstructionDispatchedBy")
-  constructionPhotos   ConstructionPhoto[]      @relation("ConstructionPhotoUploadedBy")
-  qualityChecks        ConstructionRecord[]     @relation("ConstructionQualityCheckedBy")
-  leaveRequests        LeaveRequest[]           @relation("LeaveRequestWorker")
-  schedules            Schedule[]               @relation("ScheduleWorker")
-  commissionSnapshots  WorkerCommissionSnapshot[] @relation("WorkerCommissionWorker")
+  storeMembers               StoreMember[]
+  sentInvitations            StoreInvitation[]          @relation("InvitedBy")
+  receivedInvitations        StoreInvitation[]          @relation("InvitedUser")
+  notifications              Notification[]
+  submittedSubmissions       StoreAuditSubmission[]     @relation("SubmittedBy")
+  reviewedSubmissions        StoreAuditSubmission[]     @relation("ReviewedBy")
+  createdStores              Store[]                    @relation("CreatedBy")
+  ownedCustomers             Customer[]                 @relation("CustomerOwner")
+  customerNotes              CustomerNote[]             @relation("CustomerNoteCreatedBy")
+  salesOrders                Order[]                    @relation("OrderSalesPerson")
+  orderPayments              OrderPayment[]             @relation("OrderPaymentCreatedBy")
+  constructionProfile        ConstructionWorkerProfile?
+  constructionAssigned       ConstructionAssignment[]   @relation("ConstructionAssignedWorker")
+  constructionDispatched     ConstructionRecord[]       @relation("ConstructionDispatchedBy")
+  constructionPhotos         ConstructionPhoto[]        @relation("ConstructionPhotoUploadedBy")
+  qualityChecks              ConstructionRecord[]       @relation("ConstructionQualityCheckedBy")
+  leaveRequests              LeaveRequest[]             @relation("LeaveRequestWorker")
+  schedules                  Schedule[]                 @relation("ScheduleWorker")
+  commissionSnapshots        WorkerCommissionSnapshot[] @relation("WorkerCommissionWorker")
   createdCommissionSnapshots WorkerCommissionSnapshot[] @relation("WorkerCommissionCreatedBy")
+  inventoryMovements         InventoryMovement[]        @relation("InventoryMovementCreatedBy")
+  purchaseOrders             PurchaseOrder[]            @relation("PurchaseOrderCreatedBy")
+  warranties                 Warranty[]                 @relation("WarrantyCreatedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -75,19 +78,23 @@ model Store {
   createdById String?
   createdBy   User?   @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
-  members         StoreMember[]
-  photos          StorePhoto[]
-  submissions     StoreAuditSubmission[]
-  invitations     StoreInvitation[]
-  customers       Customer[]
-  products        Product[]
-  orders          Order[]
-  paymentAccounts PaymentAccount[]
-  dailyCapacities DailyCapacity[]
+  members                    StoreMember[]
+  photos                     StorePhoto[]
+  submissions                StoreAuditSubmission[]
+  invitations                StoreInvitation[]
+  customers                  Customer[]
+  products                   Product[]
+  orders                     Order[]
+  paymentAccounts            PaymentAccount[]
+  dailyCapacities            DailyCapacity[]
   constructionWorkerProfiles ConstructionWorkerProfile[]
-  constructionRecords ConstructionRecord[]
-  leaveRequests   LeaveRequest[]
-  schedules       Schedule[]
+  constructionRecords        ConstructionRecord[]
+  leaveRequests              LeaveRequest[]
+  schedules                  Schedule[]
+  inventoryBatches           InventoryBatch[]
+  inventoryMovements         InventoryMovement[]
+  purchaseOrders             PurchaseOrder[]
+  warranties                 Warranty[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -292,6 +299,31 @@ enum ScheduleStatus {
   OUTSIDE
 }
 
+enum InventoryMovementType {
+  PURCHASE_IN
+  ORDER_LOCK
+  ORDER_OUT
+  STOCK_RELEASE
+  STOCK_ADJUST
+  DAMAGE
+  TRANSFER
+  UNIT_CONVERSION
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTIAL_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum WarrantyStatus {
+  ACTIVE
+  EXPIRED
+  VOIDED
+}
+
 model Customer {
   id             String              @id @default(cuid())
   storeId        String
@@ -311,13 +343,14 @@ model Customer {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
-  store     Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  owner     User              @relation("CustomerOwner", fields: [ownerUserId], references: [id])
-  referrer  Customer?         @relation("CustomerReferrals", fields: [referrerId], references: [id])
-  referrals Customer[]        @relation("CustomerReferrals")
-  vehicles  CustomerVehicle[]
-  notes     CustomerNote[]
-  orders    Order[]
+  store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  owner      User              @relation("CustomerOwner", fields: [ownerUserId], references: [id])
+  referrer   Customer?         @relation("CustomerReferrals", fields: [referrerId], references: [id])
+  referrals  Customer[]        @relation("CustomerReferrals")
+  vehicles   CustomerVehicle[]
+  notes      CustomerNote[]
+  orders     Order[]
+  warranties Warranty[]
 
   @@unique([storeId, phoneHash])
   @@index([storeId, ownerUserId])
@@ -337,8 +370,9 @@ model CustomerVehicle {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  orders   Order[]
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orders     Order[]
+  warranties Warranty[]
 
   @@index([customerId])
   @@index([carPlate])
@@ -373,8 +407,11 @@ model Product {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
-  store      Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  orderItems OrderItem[]
+  store              Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orderItems         OrderItem[]
+  inventoryBatches   InventoryBatch[]
+  inventoryMovements InventoryMovement[]
+  purchaseOrderItems PurchaseOrderItem[]
 
   @@unique([storeId, brand, model])
   @@index([storeId, category])
@@ -398,14 +435,16 @@ model Order {
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
 
-  store       Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  customer    Customer         @relation(fields: [customerId], references: [id])
-  vehicle     CustomerVehicle? @relation(fields: [vehicleId], references: [id])
-  salesPerson User             @relation("OrderSalesPerson", fields: [salesPersonId], references: [id])
-  items       OrderItem[]
-  amount      OrderAmount?
-  payments    OrderPayment[]
+  store              Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customer           Customer            @relation(fields: [customerId], references: [id])
+  vehicle            CustomerVehicle?    @relation(fields: [vehicleId], references: [id])
+  salesPerson        User                @relation("OrderSalesPerson", fields: [salesPersonId], references: [id])
+  items              OrderItem[]
+  amount             OrderAmount?
+  payments           OrderPayment[]
   constructionRecord ConstructionRecord?
+  inventoryMovements InventoryMovement[]
+  warranty           Warranty?
 
   @@index([storeId, status])
   @@index([storeId, salesPersonId])
@@ -502,14 +541,14 @@ model DailyCapacity {
 }
 
 model ConstructionWorkerProfile {
-  id              String           @id @default(cuid())
-  storeId          String
-  userId           String           @unique
-  canWorkOutside   Boolean          @default(false)
-  skillTags        WorkerSkillTag[]
-  isActive         Boolean          @default(true)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  id             String           @id @default(cuid())
+  storeId        String
+  userId         String           @unique
+  canWorkOutside Boolean          @default(false)
+  skillTags      WorkerSkillTag[]
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -520,7 +559,7 @@ model ConstructionWorkerProfile {
 model ConstructionRecord {
   id                 String                 @id @default(cuid())
   storeId            String
-  orderId       String                 @unique
+  orderId            String                 @unique
   status             ConstructionTaskStatus @default(DISPATCHED)
   dispatchedById     String
   dispatchedAt       DateTime               @default(now())
@@ -535,12 +574,12 @@ model ConstructionRecord {
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 
-  store            Store                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  order            Order                    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  dispatchedBy     User                     @relation("ConstructionDispatchedBy", fields: [dispatchedById], references: [id])
-  qualityCheckedBy User?                    @relation("ConstructionQualityCheckedBy", fields: [qualityCheckedById], references: [id])
-  assignments      ConstructionAssignment[]
-  photos           ConstructionPhoto[]
+  store               Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order               Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  dispatchedBy        User                       @relation("ConstructionDispatchedBy", fields: [dispatchedById], references: [id])
+  qualityCheckedBy    User?                      @relation("ConstructionQualityCheckedBy", fields: [qualityCheckedById], references: [id])
+  assignments         ConstructionAssignment[]
+  photos              ConstructionPhoto[]
   commissionSnapshots WorkerCommissionSnapshot[]
 
   @@index([storeId, status])
@@ -571,8 +610,9 @@ model ConstructionPhoto {
   takenAt      DateTime?
   createdAt    DateTime               @default(now())
 
-  record     ConstructionRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
-  uploadedBy User               @relation("ConstructionPhotoUploadedBy", fields: [uploadedById], references: [id])
+  record         ConstructionRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  uploadedBy     User               @relation("ConstructionPhotoUploadedBy", fields: [uploadedById], references: [id])
+  warrantyPhotos WarrantyPhoto[]
 
   @@index([recordId, stage])
   @@index([uploadedById])
@@ -630,6 +670,134 @@ model WorkerCommissionSnapshot {
   @@unique([recordId, workerUserId])
   @@index([orderId])
   @@index([workerUserId])
+}
+
+// ─── Phase 3 Inventory, Purchase, Warranty ──────────────────────────────────
+
+model InventoryBatch {
+  id                String    @id @default(cuid())
+  storeId           String
+  productId         String
+  batchNo           String
+  supplierName      String?
+  totalQuantity     Int
+  availableQuantity Int
+  lockedQuantity    Int       @default(0)
+  unitCostCents     Int?
+  productionDate    DateTime?
+  receivedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  store     Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product   Product             @relation(fields: [productId], references: [id])
+  movements InventoryMovement[]
+
+  @@unique([storeId, productId, batchNo])
+  @@index([storeId, productId])
+  @@index([storeId, batchNo])
+}
+
+model InventoryMovement {
+  id             String                @id @default(cuid())
+  storeId        String
+  batchId        String
+  productId      String
+  orderId        String?
+  movementType   InventoryMovementType
+  quantity       Int
+  fromUnit       ProductUnit?
+  toUnit         ProductUnit?
+  conversionRate Float?
+  note           String?
+  createdById    String
+  createdAt      DateTime              @default(now())
+
+  store     Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  batch     InventoryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  product   Product        @relation(fields: [productId], references: [id])
+  order     Order?         @relation(fields: [orderId], references: [id])
+  createdBy User           @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id])
+
+  @@index([storeId, createdAt])
+  @@index([orderId])
+  @@index([batchId])
+  @@index([productId])
+}
+
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  storeId      String
+  orderNo      String              @unique
+  supplierName String?
+  status       PurchaseOrderStatus @default(DRAFT)
+  expectedAt   DateTime?
+  createdById  String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  store     Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy User                @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
+  items     PurchaseOrderItem[]
+
+  @@index([storeId, status])
+  @@index([createdById])
+}
+
+model PurchaseOrderItem {
+  id               String @id @default(cuid())
+  purchaseOrderId  String
+  productId        String
+  quantity         Int
+  receivedQuantity Int    @default(0)
+  unitCostCents    Int?
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+}
+
+model Warranty {
+  id          String         @id @default(cuid())
+  storeId     String
+  orderId     String         @unique
+  customerId  String
+  vehicleId   String?
+  warrantyNo  String         @unique
+  status      WarrantyStatus @default(ACTIVE)
+  scope       String
+  startDate   DateTime       @db.Date
+  endDate     DateTime       @db.Date
+  createdById String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  store     Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order     Order            @relation(fields: [orderId], references: [id])
+  customer  Customer         @relation(fields: [customerId], references: [id])
+  vehicle   CustomerVehicle? @relation(fields: [vehicleId], references: [id])
+  createdBy User             @relation("WarrantyCreatedBy", fields: [createdById], references: [id])
+  photos    WarrantyPhoto[]
+
+  @@index([storeId, status])
+  @@index([customerId])
+  @@index([vehicleId])
+}
+
+model WarrantyPhoto {
+  id                  String   @id @default(cuid())
+  warrantyId          String
+  constructionPhotoId String?
+  url                 String
+  createdAt           DateTime @default(now())
+
+  warranty          Warranty           @relation(fields: [warrantyId], references: [id], onDelete: Cascade)
+  constructionPhoto ConstructionPhoto? @relation(fields: [constructionPhotoId], references: [id], onDelete: SetNull)
+
+  @@index([warrantyId])
+  @@index([constructionPhotoId])
 }
 
 // 一个用户同一时间只能属于一家门店（数据库层强制）

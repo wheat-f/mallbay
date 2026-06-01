@@ -46,6 +46,8 @@ pnpm dev
 - [docs/features/phase-1-customers-orders.md](./docs/features/phase-1-customers-orders.md): Phase 1 客户、订单、产品和收款功能说明
 - [docs/features/phase-2-construction-plan.md](./docs/features/phase-2-construction-plan.md): Phase 2 施工容量、派单与施工记录实施计划
 - [docs/features/phase-2-construction.md](./docs/features/phase-2-construction.md): Phase 2 施工容量、派单与施工记录功能说明
+- [docs/features/phase-3-inventory-warranty-plan.md](./docs/features/phase-3-inventory-warranty-plan.md): Phase 3 库存、采购与质保实施计划
+- [docs/features/phase-3-inventory-warranty.md](./docs/features/phase-3-inventory-warranty.md): Phase 3 库存、采购与质保功能说明
 - [docs/deploy-setup.md](./docs/deploy-setup.md): 部署配置说明
 
 ## 测试账号

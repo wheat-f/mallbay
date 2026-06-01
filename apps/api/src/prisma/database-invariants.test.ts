@@ -118,5 +118,32 @@ test("phase two schema exposes construction capacity assignment and record model
 
   assert.ok(schema.includes("@@unique([storeId, date])"), "DailyCapacity must be unique per store date");
   assert.ok(schema.includes("@@unique([orderId, workerUserId])"), "assignment must prevent duplicate workers");
-  assert.ok(schema.includes("orderId       String                 @unique"), "ConstructionRecord must be unique per order");
+  assert.match(schema, /orderId\s+String\s+@unique/, "ConstructionRecord must be unique per order");
+});
+
+test("phase three schema exposes inventory purchase and warranty models", () => {
+  const schema = readFileSync(new URL("../../prisma/schema.prisma", import.meta.url), "utf8");
+
+  for (const model of [
+    "model InventoryBatch ",
+    "model InventoryMovement ",
+    "model PurchaseOrder ",
+    "model PurchaseOrderItem ",
+    "model Warranty ",
+    "model WarrantyPhoto "
+  ]) {
+    assert.ok(schema.includes(model), `${model.trim()} is missing`);
+  }
+
+  for (const enumName of [
+    "enum InventoryMovementType",
+    "enum PurchaseOrderStatus",
+    "enum WarrantyStatus"
+  ]) {
+    assert.ok(schema.includes(enumName), `${enumName} is missing`);
+  }
+
+  assert.ok(schema.includes("@@unique([storeId, productId, batchNo])"), "batch number must be unique per store product");
+  assert.match(schema, /orderId\s+String\s+@unique/, "Warranty must be unique per order");
+  assert.match(schema, /warrantyNo\s+String\s+@unique/, "Warranty number must be globally unique");
 });

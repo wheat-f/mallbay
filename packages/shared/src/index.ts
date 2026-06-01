@@ -52,6 +52,20 @@ export type QualityCheckResult = "PASS" | "REWORK_REQUIRED";
 
 export type WorkerSkillTag = "PPF" | "COLOR_FILM" | "HEAT_FILM" | "MODIFICATION" | "INSPECTION" | "OUTSIDE";
 
+export type InventoryMovementType =
+  | "PURCHASE_IN"
+  | "ORDER_LOCK"
+  | "ORDER_OUT"
+  | "STOCK_RELEASE"
+  | "STOCK_ADJUST"
+  | "DAMAGE"
+  | "TRANSFER"
+  | "UNIT_CONVERSION";
+
+export type PurchaseOrderStatus = "DRAFT" | "ORDERED" | "PARTIAL_RECEIVED" | "RECEIVED" | "CANCELLED";
+
+export type WarrantyStatus = "ACTIVE" | "EXPIRED" | "VOIDED";
+
 export type DailyCapacitySummary = {
   id: string;
   storeId: string;
@@ -64,6 +78,28 @@ export type DailyCapacitySummary = {
   heatFilmReserved: number;
   inspectionCapacity: number;
   inspectionReserved: number;
+};
+
+export type InventoryBatchSummary = {
+  id: string;
+  storeId: string;
+  productId: string;
+  batchNo: string;
+  supplierName: string | null;
+  totalQuantity: number;
+  availableQuantity: number;
+  lockedQuantity: number;
+};
+
+export type WarrantySummary = {
+  id: string;
+  storeId: string;
+  orderId: string;
+  warrantyNo: string;
+  status: WarrantyStatus;
+  scope: string;
+  startDate: string;
+  endDate: string;
 };
 
 export type AuthUser = {

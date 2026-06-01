@@ -19,6 +19,11 @@ const finance = {
   isAuditor: false,
   storeMember: { storeId: "store-1", position: StorePosition.FINANCE }
 };
+const purchasing = {
+  id: "purchasing-1",
+  isAuditor: false,
+  storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+};
 const worker = {
   id: "worker-1",
   isAuditor: false,
@@ -88,4 +93,17 @@ test("PermissionPolicy scopes construction photo upload and quality check", () =
   assert.equal(PermissionPolicy.canQualityCheckConstruction(scheduler, "store-1"), true);
   assert.equal(PermissionPolicy.canQualityCheckConstruction(manager, "store-1"), true);
   assert.equal(PermissionPolicy.canQualityCheckConstruction(worker, "store-1"), false);
+});
+
+test("PermissionPolicy scopes inventory and warranty operations", () => {
+  assert.equal(PermissionPolicy.canManageInventory(admin, "store-2"), true);
+  assert.equal(PermissionPolicy.canManageInventory(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageInventory(purchasing, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageInventory(purchasing, "store-2"), false);
+  assert.equal(PermissionPolicy.canManageInventory(sales, "store-1"), false);
+
+  assert.equal(PermissionPolicy.canCreateWarranty(admin, "store-2"), true);
+  assert.equal(PermissionPolicy.canCreateWarranty(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canCreateWarranty(scheduler, "store-1"), true);
+  assert.equal(PermissionPolicy.canCreateWarranty(finance, "store-1"), false);
 });

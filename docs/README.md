@@ -23,6 +23,8 @@
 - [features/phase-2-construction.md](./features/phase-2-construction.md)：Phase 2 施工容量、派单与施工记录功能说明。
 - [features/phase-3-inventory-warranty-plan.md](./features/phase-3-inventory-warranty-plan.md)：Phase 3 库存、采购与质保实施计划。
 - [features/phase-3-inventory-warranty.md](./features/phase-3-inventory-warranty.md)：Phase 3 库存、采购与质保功能说明。
+- [features/phase-4-after-sales-commission-plan.md](./features/phase-4-after-sales-commission-plan.md)：Phase 4 售后、人员与提成实施计划。
+- [features/phase-4-after-sales-commission.md](./features/phase-4-after-sales-commission.md)：Phase 4 售后、人员与提成功能说明。
 
 ### 部署与环境
 

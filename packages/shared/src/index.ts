@@ -66,6 +66,12 @@ export type PurchaseOrderStatus = "DRAFT" | "ORDERED" | "PARTIAL_RECEIVED" | "RE
 
 export type WarrantyStatus = "ACTIVE" | "EXPIRED" | "VOIDED";
 
+export type AfterSaleStatus = "OPEN" | "ASSIGNED" | "RESOLVED" | "CLOSED" | "CANCELLED";
+
+export type AfterSaleResponsibility = "PENDING" | "CUSTOMER" | "CONSTRUCTION" | "MATERIAL" | "STORE";
+
+export type CommissionRuleType = "FIXED_RATE" | "FIXED_AMOUNT" | "SALES_TIER" | "CONSTRUCTION_TYPE";
+
 export type DailyCapacitySummary = {
   id: string;
   storeId: string;
@@ -100,6 +106,27 @@ export type WarrantySummary = {
   scope: string;
   startDate: string;
   endDate: string;
+};
+
+export type AfterSaleSummary = {
+  id: string;
+  storeId: string;
+  orderId: string;
+  warrantyId: string | null;
+  customerId: string;
+  description: string;
+  status: AfterSaleStatus;
+  responsibility: AfterSaleResponsibility;
+};
+
+export type SalesCommissionRuleSummary = {
+  id: string;
+  storeId: string;
+  name: string;
+  ruleType: CommissionRuleType;
+  rateBasisPoints: number | null;
+  fixedAmountCents: number | null;
+  isActive: boolean;
 };
 
 export type AuthUser = {

@@ -26,6 +26,8 @@ export class PermissionPolicy {
   private static readonly constructionWorkers: StorePosition[] = [StorePosition.CONSTRUCTION, StorePosition.APPRENTICE];
   private static readonly inventoryManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING];
   private static readonly warrantyCreators: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER];
+  private static readonly afterSalesManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER];
+  private static readonly commissionManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.FINANCE];
 
   static isAdmin(user: UserWithStoreMember) {
     return user.isAuditor;
@@ -113,6 +115,18 @@ export class PermissionPolicy {
 
   static canViewWarranty(user: UserWithStoreMember, storeId: string) {
     return this.canViewStoreData(user, storeId);
+  }
+
+  static canManageAfterSales(user: UserWithStoreMember, storeId: string) {
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      this.afterSalesManagers.includes(user.storeMember!.position);
+  }
+
+  static canManageCommission(user: UserWithStoreMember, storeId: string) {
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      this.commissionManagers.includes(user.storeMember!.position);
   }
 
   static getCustomerScope(user: UserWithStoreMember, storeId: string): CustomerScope {

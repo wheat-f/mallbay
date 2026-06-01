@@ -147,3 +147,30 @@ test("phase three schema exposes inventory purchase and warranty models", () => 
   assert.match(schema, /orderId\s+String\s+@unique/, "Warranty must be unique per order");
   assert.match(schema, /warrantyNo\s+String\s+@unique/, "Warranty number must be globally unique");
 });
+
+test("phase four schema exposes after-sales penalty and commission models", () => {
+  const schema = readFileSync(new URL("../../prisma/schema.prisma", import.meta.url), "utf8");
+
+  for (const model of [
+    "model AfterSale ",
+    "model AfterSaleAssignment ",
+    "model Penalty ",
+    "model SalesCommissionRule ",
+    "model SalesCommissionLog ",
+    "model WorkerCommission "
+  ]) {
+    assert.ok(schema.includes(model), `${model.trim()} is missing`);
+  }
+
+  for (const enumName of [
+    "enum AfterSaleStatus",
+    "enum AfterSaleResponsibility",
+    "enum CommissionRuleType"
+  ]) {
+    assert.ok(schema.includes(enumName), `${enumName} is missing`);
+  }
+
+  assert.ok(schema.includes("@@unique([afterSaleId, workerUserId])"), "after-sale assignment must prevent duplicate workers");
+  assert.match(schema, /orderId\s+String\s+@unique/, "sales commission snapshot must be unique per order");
+  assert.ok(schema.includes("@@unique([orderId, workerUserId])"), "worker commission must be unique per order worker");
+});

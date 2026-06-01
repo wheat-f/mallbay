@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { AuthModule } from "./auth/auth.module";
+import { AfterSalesModule } from "./after-sales/after-sales.module";
+import { CommissionsModule } from "./commissions/commissions.module";
 import { ConstructionModule } from "./construction/construction.module";
 import { CustomersModule } from "./customers/customers.module";
 import { InventoryModule } from "./inventory/inventory.module";
@@ -19,6 +21,8 @@ import { WarrantiesModule } from "./warranties/warranties.module";
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     AuthModule,
+    AfterSalesModule,
+    CommissionsModule,
     CustomersModule,
     ConstructionModule,
     InventoryModule,

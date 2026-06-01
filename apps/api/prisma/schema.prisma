@@ -52,6 +52,16 @@ model User {
   inventoryMovements         InventoryMovement[]        @relation("InventoryMovementCreatedBy")
   purchaseOrders             PurchaseOrder[]            @relation("PurchaseOrderCreatedBy")
   warranties                 Warranty[]                 @relation("WarrantyCreatedBy")
+  afterSalesCreated          AfterSale[]                @relation("AfterSaleCreatedBy")
+  afterSalesAssigned         AfterSaleAssignment[]      @relation("AfterSaleAssignedWorker")
+  afterSalesAssignedBy       AfterSaleAssignment[]      @relation("AfterSaleAssignedBy")
+  penalties                  Penalty[]                  @relation("PenaltyWorker")
+  penaltiesCreated           Penalty[]                  @relation("PenaltyCreatedBy")
+  salesCommissionRules       SalesCommissionRule[]      @relation("SalesCommissionRuleCreatedBy")
+  salesCommissionLogs        SalesCommissionLog[]       @relation("SalesCommissionSalesUser")
+  createdSalesCommissions    SalesCommissionLog[]       @relation("SalesCommissionCreatedBy")
+  workerCommissions          WorkerCommission[]         @relation("WorkerCommissionWorker")
+  createdWorkerCommissions   WorkerCommission[]         @relation("WorkerCommissionCreatedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -95,6 +105,10 @@ model Store {
   inventoryMovements         InventoryMovement[]
   purchaseOrders             PurchaseOrder[]
   warranties                 Warranty[]
+  afterSales                 AfterSale[]
+  salesCommissionRules       SalesCommissionRule[]
+  salesCommissionLogs        SalesCommissionLog[]
+  workerCommissions          WorkerCommission[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -324,6 +338,29 @@ enum WarrantyStatus {
   VOIDED
 }
 
+enum AfterSaleStatus {
+  OPEN
+  ASSIGNED
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum AfterSaleResponsibility {
+  PENDING
+  CUSTOMER
+  CONSTRUCTION
+  MATERIAL
+  STORE
+}
+
+enum CommissionRuleType {
+  FIXED_RATE
+  FIXED_AMOUNT
+  SALES_TIER
+  CONSTRUCTION_TYPE
+}
+
 model Customer {
   id             String              @id @default(cuid())
   storeId        String
@@ -351,6 +388,7 @@ model Customer {
   notes      CustomerNote[]
   orders     Order[]
   warranties Warranty[]
+  afterSales AfterSale[]
 
   @@unique([storeId, phoneHash])
   @@index([storeId, ownerUserId])
@@ -445,6 +483,9 @@ model Order {
   constructionRecord ConstructionRecord?
   inventoryMovements InventoryMovement[]
   warranty           Warranty?
+  afterSales         AfterSale[]
+  salesCommissionLog SalesCommissionLog?
+  workerCommissions  WorkerCommission[]
 
   @@index([storeId, status])
   @@index([storeId, salesPersonId])
@@ -581,6 +622,7 @@ model ConstructionRecord {
   assignments         ConstructionAssignment[]
   photos              ConstructionPhoto[]
   commissionSnapshots WorkerCommissionSnapshot[]
+  workerCommissions   WorkerCommission[]
 
   @@index([storeId, status])
   @@index([dispatchedById])
@@ -774,12 +816,13 @@ model Warranty {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  store     Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  order     Order            @relation(fields: [orderId], references: [id])
-  customer  Customer         @relation(fields: [customerId], references: [id])
-  vehicle   CustomerVehicle? @relation(fields: [vehicleId], references: [id])
-  createdBy User             @relation("WarrantyCreatedBy", fields: [createdById], references: [id])
-  photos    WarrantyPhoto[]
+  store      Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order      Order            @relation(fields: [orderId], references: [id])
+  customer   Customer         @relation(fields: [customerId], references: [id])
+  vehicle    CustomerVehicle? @relation(fields: [vehicleId], references: [id])
+  createdBy  User             @relation("WarrantyCreatedBy", fields: [createdById], references: [id])
+  photos     WarrantyPhoto[]
+  afterSales AfterSale[]
 
   @@index([storeId, status])
   @@index([customerId])
@@ -798,6 +841,132 @@ model WarrantyPhoto {
 
   @@index([warrantyId])
   @@index([constructionPhotoId])
+}
+
+// ─── Phase 4 After-sales, Penalty, Commission ───────────────────────────────
+
+model AfterSale {
+  id             String                  @id @default(cuid())
+  storeId        String
+  orderId        String
+  warrantyId     String?
+  customerId     String
+  description    String
+  status         AfterSaleStatus         @default(OPEN)
+  responsibility AfterSaleResponsibility @default(PENDING)
+  resolutionNote String?
+  createdById    String
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  store       Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order       Order                 @relation(fields: [orderId], references: [id])
+  warranty    Warranty?             @relation(fields: [warrantyId], references: [id])
+  customer    Customer              @relation(fields: [customerId], references: [id])
+  createdBy   User                  @relation("AfterSaleCreatedBy", fields: [createdById], references: [id])
+  assignments AfterSaleAssignment[]
+  penalties   Penalty[]
+
+  @@index([storeId, status])
+  @@index([orderId])
+  @@index([warrantyId])
+}
+
+model AfterSaleAssignment {
+  id           String   @id @default(cuid())
+  afterSaleId  String
+  workerUserId String
+  assignedById String
+  assignedAt   DateTime @default(now())
+
+  afterSale  AfterSale @relation(fields: [afterSaleId], references: [id], onDelete: Cascade)
+  worker     User      @relation("AfterSaleAssignedWorker", fields: [workerUserId], references: [id], onDelete: Cascade)
+  assignedBy User      @relation("AfterSaleAssignedBy", fields: [assignedById], references: [id])
+
+  @@unique([afterSaleId, workerUserId])
+  @@index([workerUserId])
+}
+
+model Penalty {
+  id           String   @id @default(cuid())
+  afterSaleId  String
+  workerUserId String
+  amountCents  Int
+  reason       String
+  createdById  String
+  createdAt    DateTime @default(now())
+
+  afterSale AfterSale @relation(fields: [afterSaleId], references: [id], onDelete: Cascade)
+  worker    User      @relation("PenaltyWorker", fields: [workerUserId], references: [id])
+  createdBy User      @relation("PenaltyCreatedBy", fields: [createdById], references: [id])
+
+  @@index([afterSaleId])
+  @@index([workerUserId])
+}
+
+model SalesCommissionRule {
+  id               String             @id @default(cuid())
+  storeId          String
+  name             String
+  ruleType         CommissionRuleType
+  rateBasisPoints  Int?
+  fixedAmountCents Int?
+  minSalesCents    Int?
+  maxSalesCents    Int?
+  constructionType ConstructionType?
+  isActive         Boolean            @default(true)
+  createdById      String
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy User  @relation("SalesCommissionRuleCreatedBy", fields: [createdById], references: [id])
+
+  @@index([storeId, isActive])
+}
+
+model SalesCommissionLog {
+  id              String   @id @default(cuid())
+  storeId         String
+  orderId         String   @unique
+  salesUserId     String
+  amountCents     Int
+  calculationNote String
+  createdById     String
+  createdAt       DateTime @default(now())
+
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  salesUser User  @relation("SalesCommissionSalesUser", fields: [salesUserId], references: [id])
+  createdBy User  @relation("SalesCommissionCreatedBy", fields: [createdById], references: [id])
+
+  @@index([storeId])
+  @@index([salesUserId])
+}
+
+model WorkerCommission {
+  id               String   @id @default(cuid())
+  storeId          String
+  recordId         String?
+  orderId          String
+  workerUserId     String
+  amountCents      Int
+  adjustmentCents  Int      @default(0)
+  finalAmountCents Int
+  calculationNote  String
+  createdById      String
+  createdAt        DateTime @default(now())
+
+  store     Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  record    ConstructionRecord? @relation(fields: [recordId], references: [id], onDelete: SetNull)
+  order     Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  worker    User                @relation("WorkerCommissionWorker", fields: [workerUserId], references: [id])
+  createdBy User                @relation("WorkerCommissionCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([orderId, workerUserId])
+  @@index([storeId])
+  @@index([recordId])
+  @@index([workerUserId])
 }
 
 // 一个用户同一时间只能属于一家门店（数据库层强制）

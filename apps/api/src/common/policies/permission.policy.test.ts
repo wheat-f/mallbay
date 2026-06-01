@@ -107,3 +107,15 @@ test("PermissionPolicy scopes inventory and warranty operations", () => {
   assert.equal(PermissionPolicy.canCreateWarranty(scheduler, "store-1"), true);
   assert.equal(PermissionPolicy.canCreateWarranty(finance, "store-1"), false);
 });
+
+test("PermissionPolicy scopes after-sales and commission operations", () => {
+  assert.equal(PermissionPolicy.canManageAfterSales(admin, "store-2"), true);
+  assert.equal(PermissionPolicy.canManageAfterSales(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageAfterSales(scheduler, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageAfterSales(worker, "store-1"), false);
+
+  assert.equal(PermissionPolicy.canManageCommission(admin, "store-2"), true);
+  assert.equal(PermissionPolicy.canManageCommission(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageCommission(finance, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageCommission(sales, "store-1"), false);
+});

@@ -25,6 +25,8 @@
 - [features/phase-3-inventory-warranty.md](./features/phase-3-inventory-warranty.md)：Phase 3 库存、采购与质保功能说明。
 - [features/phase-4-after-sales-commission-plan.md](./features/phase-4-after-sales-commission-plan.md)：Phase 4 售后、人员与提成实施计划。
 - [features/phase-4-after-sales-commission.md](./features/phase-4-after-sales-commission.md)：Phase 4 售后、人员与提成功能说明。
+- [features/phase-5-finance-invoice-rebate-report-plan.md](./features/phase-5-finance-invoice-rebate-report-plan.md)：Phase 5 财务、发票、返利与报表实施计划。
+- [features/phase-5-finance-invoice-rebate-report.md](./features/phase-5-finance-invoice-rebate-report.md)：Phase 5 财务、发票、返利与报表功能说明。
 
 ### 部署与环境
 

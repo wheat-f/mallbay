@@ -28,6 +28,9 @@ export class PermissionPolicy {
   private static readonly warrantyCreators: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER];
   private static readonly afterSalesManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER];
   private static readonly commissionManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.FINANCE];
+  private static readonly financeManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.FINANCE];
+  private static readonly invoiceApplicants: StorePosition[] = [StorePosition.MANAGER, StorePosition.SALES, StorePosition.FINANCE];
+  private static readonly rebateApplicants: StorePosition[] = [StorePosition.MANAGER, StorePosition.SALES];
 
   static isAdmin(user: UserWithStoreMember) {
     return user.isAuditor;
@@ -127,6 +130,36 @@ export class PermissionPolicy {
     if (this.isAdmin(user)) return true;
     return this.isStoreMember(user, storeId) &&
       this.commissionManagers.includes(user.storeMember!.position);
+  }
+
+  static canManageFinance(user: UserWithStoreMember, storeId: string) {
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      this.financeManagers.includes(user.storeMember!.position);
+  }
+
+  static canApplyInvoice(user: UserWithStoreMember, storeId: string) {
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      this.invoiceApplicants.includes(user.storeMember!.position);
+  }
+
+  static canManageInvoice(user: UserWithStoreMember, storeId: string) {
+    return this.canManageFinance(user, storeId);
+  }
+
+  static canApplyRebate(user: UserWithStoreMember, storeId: string) {
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      this.rebateApplicants.includes(user.storeMember!.position);
+  }
+
+  static canApproveRebate(user: UserWithStoreMember, storeId: string) {
+    return this.canManageFinance(user, storeId);
+  }
+
+  static canViewReports(user: UserWithStoreMember, storeId: string) {
+    return this.isAdmin(user) || this.isStoreManager(user, storeId);
   }
 
   static getCustomerScope(user: UserWithStoreMember, storeId: string): CustomerScope {

@@ -119,3 +119,21 @@ test("PermissionPolicy scopes after-sales and commission operations", () => {
   assert.equal(PermissionPolicy.canManageCommission(finance, "store-1"), true);
   assert.equal(PermissionPolicy.canManageCommission(sales, "store-1"), false);
 });
+
+test("PermissionPolicy scopes finance invoice rebate and report operations", () => {
+  assert.equal(PermissionPolicy.canManageFinance(admin, "store-2"), true);
+  assert.equal(PermissionPolicy.canManageFinance(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageFinance(finance, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageFinance(sales, "store-1"), false);
+
+  assert.equal(PermissionPolicy.canApplyInvoice(sales, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageInvoice(finance, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageInvoice(scheduler, "store-1"), false);
+
+  assert.equal(PermissionPolicy.canApplyRebate(sales, "store-1"), true);
+  assert.equal(PermissionPolicy.canApproveRebate(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canApproveRebate(finance, "store-1"), true);
+  assert.equal(PermissionPolicy.canViewReports(admin, "store-2"), true);
+  assert.equal(PermissionPolicy.canViewReports(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canViewReports(worker, "store-1"), false);
+});

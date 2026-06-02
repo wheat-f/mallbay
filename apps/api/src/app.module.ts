@@ -5,6 +5,8 @@ import { AfterSalesModule } from "./after-sales/after-sales.module";
 import { CommissionsModule } from "./commissions/commissions.module";
 import { ConstructionModule } from "./construction/construction.module";
 import { CustomersModule } from "./customers/customers.module";
+import { FinanceModule } from "./finance/finance.module";
+import { InvoicesModule } from "./invoices/invoices.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { MembersModule } from "./members/members.module";
 import { NotificationsModule } from "./notifications/notifications.module";
@@ -12,6 +14,8 @@ import { ObservabilityModule } from "./observability/observability.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ProductsModule } from "./products/products.module";
+import { RebatesModule } from "./rebates/rebates.module";
+import { ReportsModule } from "./reports/reports.module";
 import { StoresModule } from "./stores/stores.module";
 import { UsersModule } from "./users/users.module";
 import { WarrantiesModule } from "./warranties/warranties.module";
@@ -27,6 +31,10 @@ import { WarrantiesModule } from "./warranties/warranties.module";
     ConstructionModule,
     InventoryModule,
     WarrantiesModule,
+    FinanceModule,
+    InvoicesModule,
+    RebatesModule,
+    ReportsModule,
     ProductsModule,
     OrdersModule,
     UsersModule,

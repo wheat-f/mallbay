@@ -62,6 +62,15 @@ model User {
   createdSalesCommissions    SalesCommissionLog[]       @relation("SalesCommissionCreatedBy")
   workerCommissions          WorkerCommission[]         @relation("WorkerCommissionWorker")
   createdWorkerCommissions   WorkerCommission[]         @relation("WorkerCommissionCreatedBy")
+  expenseApplications        ExpenseApplication[]       @relation("ExpenseApplicant")
+  reviewedExpenses           ExpenseApplication[]       @relation("ExpenseReviewedBy")
+  reimbursementApplications  ReimbursementApplication[] @relation("ReimbursementApplicant")
+  reviewedReimbursements     ReimbursementApplication[] @relation("ReimbursementReviewedBy")
+  paymentRecords             PaymentRecord[]            @relation("PaymentRecordCreatedBy")
+  invoicesApplied            Invoice[]                  @relation("InvoiceAppliedBy")
+  invoicesHandled            InvoiceLog[]               @relation("InvoiceLogCreatedBy")
+  rebatesApplied             CustomerRebate[]           @relation("RebateAppliedBy")
+  rebatesHandled             RebateLog[]                @relation("RebateLogCreatedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -109,6 +118,11 @@ model Store {
   salesCommissionRules       SalesCommissionRule[]
   salesCommissionLogs        SalesCommissionLog[]
   workerCommissions          WorkerCommission[]
+  expenseApplications        ExpenseApplication[]
+  reimbursementApplications  ReimbursementApplication[]
+  paymentRecords             PaymentRecord[]
+  invoices                   Invoice[]
+  customerRebates            CustomerRebate[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -361,6 +375,36 @@ enum CommissionRuleType {
   CONSTRUCTION_TYPE
 }
 
+enum FinanceApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+  CANCELLED
+}
+
+enum PaymentRecordType {
+  ORDER_PAYMENT
+  EXPENSE
+  REIMBURSEMENT
+  REBATE
+  OTHER
+}
+
+enum InvoiceStatus {
+  APPLIED
+  ISSUED
+  VOIDED
+  REISSUED
+}
+
+enum RebateStatus {
+  APPLIED
+  APPROVED
+  REJECTED
+  PAID
+}
+
 model Customer {
   id             String              @id @default(cuid())
   storeId        String
@@ -486,6 +530,8 @@ model Order {
   afterSales         AfterSale[]
   salesCommissionLog SalesCommissionLog?
   workerCommissions  WorkerCommission[]
+  invoices           Invoice[]
+  customerRebates    CustomerRebate[]
 
   @@index([storeId, status])
   @@index([storeId, salesPersonId])
@@ -534,8 +580,9 @@ model PaymentAccount {
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 
-  store    Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  payments OrderPayment[]
+  store          Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  payments       OrderPayment[]
+  paymentRecords PaymentRecord[]
 
   @@index([storeId, isActive])
 }
@@ -967,6 +1014,149 @@ model WorkerCommission {
   @@index([storeId])
   @@index([recordId])
   @@index([workerUserId])
+}
+
+// ─── Phase 5 Finance, Invoice, Rebate, Reports ──────────────────────────────
+
+model ExpenseApplication {
+  id           String                @id @default(cuid())
+  storeId      String
+  applicantId  String
+  title        String
+  amountCents  Int
+  reason       String
+  status       FinanceApprovalStatus @default(PENDING)
+  reviewNote   String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  store          Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  applicant      User                       @relation("ExpenseApplicant", fields: [applicantId], references: [id])
+  reviewedBy     User?                      @relation("ExpenseReviewedBy", fields: [reviewedById], references: [id])
+  reimbursements ReimbursementApplication[]
+
+  @@index([storeId, status])
+  @@index([applicantId])
+}
+
+model ReimbursementApplication {
+  id           String                @id @default(cuid())
+  storeId      String
+  applicantId  String
+  expenseId    String?
+  title        String
+  amountCents  Int
+  reason       String
+  status       FinanceApprovalStatus @default(PENDING)
+  reviewNote   String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  store      Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  applicant  User                @relation("ReimbursementApplicant", fields: [applicantId], references: [id])
+  expense    ExpenseApplication? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  reviewedBy User?               @relation("ReimbursementReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([storeId, status])
+  @@index([applicantId])
+  @@index([expenseId])
+}
+
+model PaymentRecord {
+  id          String            @id @default(cuid())
+  storeId     String
+  accountId   String?
+  type        PaymentRecordType
+  amountCents Int
+  sourceId    String?
+  note        String?
+  createdById String
+  createdAt   DateTime          @default(now())
+
+  store     Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  account   PaymentAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  createdBy User            @relation("PaymentRecordCreatedBy", fields: [createdById], references: [id])
+
+  @@index([storeId, type])
+  @@index([sourceId])
+  @@index([createdById])
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  storeId     String
+  orderId     String
+  title       String
+  taxNo       String?
+  amountCents Int
+  status      InvoiceStatus @default(APPLIED)
+  invoiceNo   String?       @unique
+  appliedById String
+  issuedAt    DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  store     Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order     Order        @relation(fields: [orderId], references: [id])
+  appliedBy User         @relation("InvoiceAppliedBy", fields: [appliedById], references: [id])
+  logs      InvoiceLog[]
+
+  @@index([storeId, status])
+  @@index([orderId])
+}
+
+model InvoiceLog {
+  id          String        @id @default(cuid())
+  invoiceId   String
+  status      InvoiceStatus
+  note        String?
+  createdById String
+  createdAt   DateTime      @default(now())
+
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("InvoiceLogCreatedBy", fields: [createdById], references: [id])
+
+  @@index([invoiceId])
+  @@index([createdById])
+}
+
+model CustomerRebate {
+  id          String       @id @default(cuid())
+  storeId     String
+  orderId     String
+  amountCents Int
+  reason      String
+  status      RebateStatus @default(APPLIED)
+  appliedById String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  store     Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order     Order       @relation(fields: [orderId], references: [id])
+  appliedBy User        @relation("RebateAppliedBy", fields: [appliedById], references: [id])
+  logs      RebateLog[]
+
+  @@index([storeId, status])
+  @@index([orderId])
+}
+
+model RebateLog {
+  id          String       @id @default(cuid())
+  rebateId    String
+  status      RebateStatus
+  note        String?
+  createdById String
+  createdAt   DateTime     @default(now())
+
+  rebate    CustomerRebate @relation(fields: [rebateId], references: [id], onDelete: Cascade)
+  createdBy User           @relation("RebateLogCreatedBy", fields: [createdById], references: [id])
+
+  @@index([rebateId])
+  @@index([createdById])
 }
 
 // 一个用户同一时间只能属于一家门店（数据库层强制）

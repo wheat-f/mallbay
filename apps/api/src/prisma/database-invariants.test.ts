@@ -174,3 +174,32 @@ test("phase four schema exposes after-sales penalty and commission models", () =
   assert.match(schema, /orderId\s+String\s+@unique/, "sales commission snapshot must be unique per order");
   assert.ok(schema.includes("@@unique([orderId, workerUserId])"), "worker commission must be unique per order worker");
 });
+
+test("phase five schema exposes finance invoice rebate and report source models", () => {
+  const schema = readFileSync(new URL("../../prisma/schema.prisma", import.meta.url), "utf8");
+
+  for (const model of [
+    "model ExpenseApplication ",
+    "model ReimbursementApplication ",
+    "model PaymentRecord ",
+    "model Invoice ",
+    "model InvoiceLog ",
+    "model CustomerRebate ",
+    "model RebateLog "
+  ]) {
+    assert.ok(schema.includes(model), `${model.trim()} is missing`);
+  }
+
+  for (const enumName of [
+    "enum FinanceApprovalStatus",
+    "enum PaymentRecordType",
+    "enum InvoiceStatus",
+    "enum RebateStatus"
+  ]) {
+    assert.ok(schema.includes(enumName), `${enumName} is missing`);
+  }
+
+  assert.match(schema, /invoiceNo\s+String\?\s+@unique/, "invoice number must be unique when issued");
+  assert.ok(schema.includes("@@index([storeId, status])"), "phase five workflow tables must be scoped by store and status");
+  assert.ok(schema.includes("amountCents"), "phase five money fields must use integer cents");
+});

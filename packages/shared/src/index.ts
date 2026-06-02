@@ -72,6 +72,14 @@ export type AfterSaleResponsibility = "PENDING" | "CUSTOMER" | "CONSTRUCTION" | 
 
 export type CommissionRuleType = "FIXED_RATE" | "FIXED_AMOUNT" | "SALES_TIER" | "CONSTRUCTION_TYPE";
 
+export type FinanceApprovalStatus = "PENDING" | "APPROVED" | "REJECTED" | "PAID" | "CANCELLED";
+
+export type PaymentRecordType = "ORDER_PAYMENT" | "EXPENSE" | "REIMBURSEMENT" | "REBATE" | "OTHER";
+
+export type InvoiceStatus = "APPLIED" | "ISSUED" | "VOIDED" | "REISSUED";
+
+export type RebateStatus = "APPLIED" | "APPROVED" | "REJECTED" | "PAID";
+
 export type DailyCapacitySummary = {
   id: string;
   storeId: string;
@@ -127,6 +135,44 @@ export type SalesCommissionRuleSummary = {
   rateBasisPoints: number | null;
   fixedAmountCents: number | null;
   isActive: boolean;
+};
+
+export type ExpenseApplicationSummary = {
+  id: string;
+  storeId: string;
+  title: string;
+  amountCents: number;
+  reason: string;
+  status: FinanceApprovalStatus;
+};
+
+export type InvoiceSummary = {
+  id: string;
+  storeId: string;
+  orderId: string;
+  title: string;
+  amountCents: number;
+  status: InvoiceStatus;
+  invoiceNo: string | null;
+};
+
+export type RebateSummary = {
+  id: string;
+  storeId: string;
+  orderId: string;
+  amountCents: number;
+  reason: string;
+  status: RebateStatus;
+};
+
+export type ReportSummary = {
+  orders: number;
+  totalAmountCents: number;
+  paidAmountCents: number;
+  constructionRecords: number;
+  afterSales: number;
+  invoices: number;
+  rebates: number;
 };
 
 export type AuthUser = {

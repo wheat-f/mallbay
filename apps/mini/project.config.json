@@ -1,0 +1,12 @@
+{
+  "description": "MallBay 师傅端小程序",
+  "setting": {
+    "es6": true,
+    "minified": true,
+    "postcss": true
+  },
+  "compileType": "miniprogram",
+  "appid": "touristappid",
+  "projectname": "mallbay-mini",
+  "miniprogramRoot": "./"
+}

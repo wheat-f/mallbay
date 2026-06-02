@@ -1,0 +1,15 @@
+<view class="page">
+  <view class="section">
+    <text class="label">施工状态</text>
+    <text class="value">待开工 / 施工中 / 已完工</text>
+  </view>
+  <view class="section">
+    <text class="label">客户与车辆</text>
+    <text class="value">使用本地缓存快照展示</text>
+  </view>
+  <view class="actions">
+    <button type="primary">施工前拍照</button>
+    <button>施工中拍照</button>
+    <button>施工后拍照</button>
+  </view>
+</view>

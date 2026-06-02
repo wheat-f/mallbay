@@ -52,6 +52,8 @@ pnpm dev
 - [docs/features/phase-4-after-sales-commission.md](./docs/features/phase-4-after-sales-commission.md): Phase 4 售后、人员与提成功能说明
 - [docs/features/phase-5-finance-invoice-rebate-report-plan.md](./docs/features/phase-5-finance-invoice-rebate-report-plan.md): Phase 5 财务、发票、返利与报表实施计划
 - [docs/features/phase-5-finance-invoice-rebate-report.md](./docs/features/phase-5-finance-invoice-rebate-report.md): Phase 5 财务、发票、返利与报表功能说明
+- [docs/features/phase-6-mini-offline-plan.md](./docs/features/phase-6-mini-offline-plan.md): Phase 6 微信小程序与离线实施计划
+- [docs/features/phase-6-mini-offline.md](./docs/features/phase-6-mini-offline.md): Phase 6 微信小程序与离线功能说明
 - [docs/deploy-setup.md](./docs/deploy-setup.md): 部署配置说明
 
 ## 测试账号

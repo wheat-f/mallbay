@@ -18,6 +18,11 @@ import {
   CompleteConstructionDto,
   LeaveRequestDto,
   ListConstructionDto,
+  OfflineLeavePayloadDto,
+  OfflinePhotoPayloadDto,
+  OfflineSyncDto,
+  OfflineSyncOperationDto,
+  OfflineTaskStatusPayloadDto,
   QualityCheckDto,
   UpdateDailyCapacityDto,
   UpdateLeaveRequestDto,
@@ -375,6 +380,55 @@ export class ConstructionService {
       create: { storeId: dto.storeId, workerId: dto.workerId, date, status: dto.status, note: dto.note },
       update: { status: dto.status, note: dto.note }
     });
+  }
+
+  async syncOfflineOperations(user: AuthenticatedConstructionUser, dto: OfflineSyncDto) {
+    const items = [];
+    for (const operation of dto.operations) {
+      try {
+        const result = await this.applyOfflineOperation(user, operation);
+        items.push({ clientOperationId: operation.clientOperationId, status: "SYNCED" as const, result });
+      } catch (error) {
+        items.push({
+          clientOperationId: operation.clientOperationId,
+          status: "FAILED" as const,
+          message: error instanceof Error ? error.message : "同步失败"
+        });
+      }
+    }
+    return { items };
+  }
+
+  private async applyOfflineOperation(user: AuthenticatedConstructionUser, operation: OfflineSyncOperationDto) {
+    if (operation.type === "PHOTO_UPLOAD") {
+      const payload = operation.payload as OfflinePhotoPayloadDto;
+      return this.uploadPhoto(user, payload.recordId, {
+        stage: payload.stage,
+        url: payload.url,
+        takenAt: payload.takenAt
+      });
+    }
+    if (operation.type === "TASK_STATUS") {
+      const payload = operation.payload as OfflineTaskStatusPayloadDto;
+      if (payload.status === ConstructionTaskStatus.IN_CONSTRUCTION) {
+        return this.startOrder(user, payload.orderId);
+      }
+      if (payload.status === ConstructionTaskStatus.COMPLETED) {
+        return this.completeOrderForOrder(user, payload.orderId, { completedAt: payload.completedAt });
+      }
+      throw new BadRequestException("不支持的离线施工状态");
+    }
+    if (operation.type === "LEAVE_REQUEST") {
+      const payload = operation.payload as OfflineLeavePayloadDto;
+      return this.createLeave(user, {
+        storeId: payload.storeId,
+        workerId: payload.workerId ?? user.id,
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        reason: payload.reason
+      });
+    }
+    throw new BadRequestException("不支持的离线操作类型");
   }
 
   private async findRecordForOrder(orderId: string) {

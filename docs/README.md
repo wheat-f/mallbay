@@ -27,6 +27,8 @@
 - [features/phase-4-after-sales-commission.md](./features/phase-4-after-sales-commission.md)：Phase 4 售后、人员与提成功能说明。
 - [features/phase-5-finance-invoice-rebate-report-plan.md](./features/phase-5-finance-invoice-rebate-report-plan.md)：Phase 5 财务、发票、返利与报表实施计划。
 - [features/phase-5-finance-invoice-rebate-report.md](./features/phase-5-finance-invoice-rebate-report.md)：Phase 5 财务、发票、返利与报表功能说明。
+- [features/phase-6-mini-offline-plan.md](./features/phase-6-mini-offline-plan.md)：Phase 6 微信小程序与离线实施计划。
+- [features/phase-6-mini-offline.md](./features/phase-6-mini-offline.md)：Phase 6 微信小程序与离线功能说明。
 
 ### 部署与环境
 

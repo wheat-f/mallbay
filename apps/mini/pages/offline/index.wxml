@@ -1,0 +1,7 @@
+<view class="page">
+  <view class="notice">
+    <text class="title">离线队列</text>
+    <text class="desc">断网时照片、施工状态和请假申请会进入本地队列。</text>
+    <text class="desc">联网后每条记录最多重试 3 次，达到缓存上限会提示先同步。</text>
+  </view>
+</view>

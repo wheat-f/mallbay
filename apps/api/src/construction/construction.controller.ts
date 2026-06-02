@@ -22,6 +22,7 @@ import {
   CompleteConstructionDto,
   LeaveRequestDto,
   ListConstructionDto,
+  OfflineSyncDto,
   QualityCheckDto,
   UpdateDailyCapacityDto,
   UpdateLeaveRequestDto,
@@ -128,5 +129,10 @@ export class ConstructionController {
   @Post("schedules")
   upsertSchedule(@Req() req: AuthRequest, @Body() dto: UpsertScheduleDto) {
     return this.construction.upsertSchedule(req.user, dto);
+  }
+
+  @Post("offline-sync")
+  syncOfflineOperations(@Req() req: AuthRequest, @Body() dto: OfflineSyncDto) {
+    return this.construction.syncOfflineOperations(req.user, dto);
   }
 }

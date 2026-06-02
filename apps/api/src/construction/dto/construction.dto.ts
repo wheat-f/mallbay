@@ -10,10 +10,12 @@ import {
   IsOptional,
   IsString,
   MaxLength,
-  Min
+  Min,
+  ValidateNested
 } from "class-validator";
 import {
   ConstructionPhotoStage,
+  ConstructionTaskStatus,
   QualityCheckResult,
   ScheduleStatus,
   WorkerSkillTag
@@ -186,4 +188,70 @@ export class UpsertScheduleDto {
   @IsString()
   @MaxLength(300)
   note?: string;
+}
+
+export class OfflinePhotoPayloadDto {
+  @IsString()
+  recordId!: string;
+
+  @IsEnum(ConstructionPhotoStage)
+  stage!: ConstructionPhotoStage;
+
+  @IsOptional()
+  @IsString()
+  url?: string;
+
+  @IsOptional()
+  @IsDateString()
+  takenAt?: string;
+}
+
+export class OfflineTaskStatusPayloadDto {
+  @IsString()
+  orderId!: string;
+
+  @IsEnum(ConstructionTaskStatus)
+  status!: ConstructionTaskStatus;
+
+  @IsOptional()
+  @IsDateString()
+  completedAt?: string;
+}
+
+export class OfflineLeavePayloadDto {
+  @IsString()
+  storeId!: string;
+
+  @IsOptional()
+  @IsString()
+  workerId?: string;
+
+  @IsDateString()
+  startDate!: string;
+
+  @IsDateString()
+  endDate!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class OfflineSyncOperationDto {
+  @IsString()
+  clientOperationId!: string;
+
+  @IsString()
+  type!: "PHOTO_UPLOAD" | "TASK_STATUS" | "LEAVE_REQUEST";
+
+  @ValidateNested()
+  payload!: OfflinePhotoPayloadDto | OfflineTaskStatusPayloadDto | OfflineLeavePayloadDto;
+}
+
+export class OfflineSyncDto {
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  operations!: OfflineSyncOperationDto[];
 }

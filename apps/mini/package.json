@@ -1,0 +1,13 @@
+{
+  "name": "@mallbay/mini",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx --tsconfig tsconfig.json --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@mallbay/shared": "workspace:*"
+  }
+}

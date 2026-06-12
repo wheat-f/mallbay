@@ -1,6 +1,6 @@
 "use client";
 
-import { App, Button, Form, Layout, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import { App, Button, Card, Form, Layout, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import { TeamOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -75,11 +75,35 @@ export default function ConstructionAssignmentsPage() {
   const records = (recordsQuery.data ?? []) as ConstructionRecordRow[];
   const workers = ((workersQuery.data ?? []) as WorkerRow[]).filter((worker) => worker.isActive);
   const workerMap = new Map(workers.map((worker) => [worker.userId, worker]));
+  const recordSummary = {
+    dispatched: records.filter((record) => record.status === "DISPATCHED").length,
+    inConstruction: records.filter((record) => record.status === "IN_CONSTRUCTION").length,
+    completed: records.filter((record) => record.status === "COMPLETED").length,
+    activeWorkers: workers.length
+  };
 
   return (
     <Layout className="dashboard-shell">
       <Layout.Content className="dashboard-content">
         <StorePageHeader title="施工派工" description="处理待派工订单并查看施工履约进度" />
+
+        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {[
+            ["待派工", pendingRows.length, "等待施工主管安排"],
+            ["已派工", recordSummary.dispatched, "师傅待接单/待开工"],
+            ["施工中", recordSummary.inConstruction, "正在履约"],
+            ["已完工", recordSummary.completed, "待质检或已归档"],
+            ["可用师傅", recordSummary.activeWorkers, "当前启用施工人员"]
+          ].map(([label, value, description]) => (
+            <Card key={label} size="small">
+              <Typography.Text type="secondary">{label}</Typography.Text>
+              <div className="mt-2 text-2xl font-semibold text-gray-900">{value}</div>
+              <Typography.Text type="secondary" className="text-xs">
+                {description}
+              </Typography.Text>
+            </Card>
+          ))}
+        </div>
 
         <Typography.Title level={4} className="!mt-6">待派工订单</Typography.Title>
         <Table<OrderRow>

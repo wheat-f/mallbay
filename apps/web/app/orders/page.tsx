@@ -1,12 +1,12 @@
 "use client";
 
 import type { ConstructionType, OrderStatus } from "@mallbay/shared";
-import { Button, DatePicker, Input, Layout, Select, Space, Table, Tag } from "antd";
+import { Button, Card, DatePicker, Input, Layout, Select, Space, Table, Tag, Typography } from "antd";
 import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { orderApi } from "../../src/lib/api";
 import type { OrderPaymentStatus } from "../../src/features/orders/api";
 import {
@@ -34,6 +34,14 @@ const PAYMENT_STATUS_LABEL: Record<OrderPaymentStatus, string> = {
   PARTIAL: "部分收款",
   PAID: "已收清"
 };
+
+const QUICK_STATUS_OPTIONS: Array<{ label: string; value?: OrderStatus; tone: string }> = [
+  { label: "全部订单", value: undefined, tone: "default" },
+  { label: "待派工", value: "PENDING_DISPATCH", tone: "warning" },
+  { label: "施工中", value: "IN_CONSTRUCTION", tone: "processing" },
+  { label: "已完工", value: "COMPLETED", tone: "success" },
+  { label: "已取消", value: "CANCELLED", tone: "default" }
+];
 
 export default function OrdersPage() {
   return (
@@ -115,6 +123,20 @@ function OrdersContent() {
   });
 
   const rows = (ordersQuery.data?.items ?? []) as OrderRow[];
+  const orderSummary = useMemo(() => {
+    const totalAmount = rows.reduce((sum, row) => sum + (row.amount?.totalAmountCents ?? 0), 0);
+    const outstanding = rows.reduce((sum, row) => sum + (row.amount?.outstandingCents ?? 0), 0);
+    const riskyCount = rows.filter((row) => (row.amount?.outstandingCents ?? 0) > 0 || row.status === "CANCELLED").length;
+    const inProgressCount = rows.filter((row) => row.status === "DISPATCHED" || row.status === "IN_CONSTRUCTION").length;
+
+    return {
+      total: ordersQuery.data?.total ?? rows.length,
+      totalAmount,
+      outstanding,
+      riskyCount,
+      inProgressCount
+    };
+  }, [ordersQuery.data?.total, rows]);
 
   return (
     <Layout className="dashboard-shell">
@@ -125,7 +147,46 @@ function OrdersContent() {
           </Button>
         </StorePageHeader>
 
-        <Space className="mb-4" wrap>
+        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {[
+            ["订单总数", orderSummary.total, "当前筛选范围"],
+            ["订单总额", yuanCurrency(orderSummary.totalAmount), "当前页合计"],
+            ["待收金额", yuanCurrency(orderSummary.outstanding), "需持续跟进"],
+            ["履约中", orderSummary.inProgressCount, "已派工/施工中"],
+            ["异常关注", orderSummary.riskyCount, "未收或取消"]
+          ].map(([label, value, description]) => (
+            <Card key={label} size="small" className="h-full">
+              <Typography.Text type="secondary">{label}</Typography.Text>
+              <div className="mt-2 text-2xl font-semibold text-gray-900">{value}</div>
+              <Typography.Text type="secondary" className="text-xs">
+                {description}
+              </Typography.Text>
+            </Card>
+          ))}
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {QUICK_STATUS_OPTIONS.map((option) => {
+            const active = status === option.value || (!status && !option.value);
+            return (
+              <Button
+                key={option.label}
+                type={active ? "primary" : "default"}
+                onClick={() => {
+                  setStatus(option.value);
+                  setPage(1);
+                  updateOrderListUrl({ status: option.value, page: 1 });
+                }}
+              >
+                <Tag color={active ? undefined : option.tone} className="mr-1">
+                  {option.label}
+                </Tag>
+              </Button>
+            );
+          })}
+        </div>
+
+        <Space className="mb-4 rounded border border-gray-200 bg-white p-3" wrap>
           <Input.Search
             prefix={<SearchOutlined />}
             placeholder="订单号 / 客户 / 车牌"

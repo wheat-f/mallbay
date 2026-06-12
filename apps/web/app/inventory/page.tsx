@@ -8,7 +8,7 @@ import type {
   CreateSupplierRatingHistoryPayload,
   UpdateSupplierPayload
 } from "../../src/lib/api";
-import { App, Button, Form, Input, InputNumber, Layout, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Form, Input, InputNumber, Layout, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import { InboxOutlined, LockOutlined, ShoppingCartOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -272,6 +272,22 @@ export default function InventoryPage() {
   const shortageRows = matchRows.filter((row) => row.shortageQuantity > 0);
   const movementRows = (movementsQuery.data ?? []) as MovementRow[];
   const movementSummary = getInventoryMovementSummary(movementRows);
+  const purchaseRequirementRows = (purchaseRequirementsQuery.data ?? []) as PurchaseRequirementRow[];
+  const purchaseOrderRows = (purchaseOrdersQuery.data ?? []) as PurchaseOrderRow[];
+  const pendingMatchRows = (pendingOrdersQuery.data ?? []) as PendingMatchOrderRow[];
+  const pendingPurchaseRequirementCount = purchaseRequirementRows.filter((row) => row.status !== "CONVERTED").length;
+  const purchaseArrivalRiskCount = purchaseOrderRows.filter((row) => {
+    const reminder = getPurchaseOrderArrivalReminder(row);
+    return reminder.includes("逾期") || reminder.includes("今日") || reminder.includes("未设置");
+  }).length;
+  const inventoryWorkflowCards = [
+    { key: "pending-orders", title: "库存匹配", value: pendingMatchRows.length, desc: "订单产品需求、批次锁定和出库", color: "processing" },
+    { key: "suppliers", title: "供应商", value: suppliersQuery.data?.length ?? 0, desc: "联系人、评级和采购历史", color: "default" },
+    { key: "batches", title: "库存批次", value: batchesQuery.data?.length ?? 0, desc: "批次入库、可用量和追溯", color: "success" },
+    { key: "purchase", title: "采购处理", value: pendingPurchaseRequirementCount, desc: "采购需求、采购单和到货入库", color: "warning" },
+    { key: "movements", title: "库存流水", value: movementSummary.totalRows, desc: "锁库、出库、释放和调整记录", color: "default" },
+    { key: "split", title: "单位拆分", value: lastSplitResult ? 1 : 0, desc: "卷/米换算和子批次生成", color: "default" }
+  ];
 
   const createBatch = useMutation({
     mutationFn: (values: CreateInventoryBatchPayload) => inventoryApi.createBatch({ ...values, storeId: storeId! }),
@@ -580,6 +596,35 @@ export default function InventoryPage() {
       <Layout.Content className="dashboard-content">
         <StorePageHeader title="库存采购" description="管理产品批次、采购需求、订单锁库和库存流水" />
 
+        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {inventoryWorkflowCards.map((card) => (
+            <Card
+              key={card.key}
+              size="small"
+              className="cursor-pointer transition hover:border-blue-300 hover:shadow-sm"
+              onClick={() => setActiveInventoryTab(card.key)}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Typography.Text strong>{card.title}</Typography.Text>
+                  <div className="mt-1 text-xs text-gray-500">{card.desc}</div>
+                </div>
+                <Tag color={card.color}>{card.value}</Tag>
+              </div>
+            </Card>
+          ))}
+        </div>
+
+        {(pendingMatchRows.length > 0 || pendingPurchaseRequirementCount > 0 || purchaseArrivalRiskCount > 0) ? (
+          <Alert
+            className="mb-4"
+            type="warning"
+            showIcon
+            message="库存采购待处理"
+            description={`待匹配订单 ${pendingMatchRows.length} 个，待处理采购需求 ${pendingPurchaseRequirementCount} 个，到货提醒/风险 ${purchaseArrivalRiskCount} 个。`}
+          />
+        ) : null}
+
         <Tabs
           activeKey={activeInventoryTab}
           onChange={setActiveInventoryTab}
@@ -592,7 +637,7 @@ export default function InventoryPage() {
                   <Table<PendingMatchOrderRow>
                     rowKey="id"
                     loading={pendingOrdersQuery.isLoading}
-                    dataSource={(pendingOrdersQuery.data ?? []) as PendingMatchOrderRow[]}
+                    dataSource={pendingMatchRows}
                     columns={[
                       { title: "订单号", dataIndex: "orderNo" },
                       { title: "客户", render: (_, row) => getInventoryOrderCustomerLabel(row) },
@@ -907,7 +952,7 @@ export default function InventoryPage() {
                   <Table
                     rowKey="id"
                     loading={purchaseRequirementsQuery.isLoading}
-                    dataSource={(purchaseRequirementsQuery.data ?? []) as PurchaseRequirementRow[]}
+                    dataSource={purchaseRequirementRows}
                     columns={[
                       { title: "需求明细", render: (_, row) => getPurchaseRequirementItemsSummary(row, productMap) },
                       { title: "来源订单", render: (_, row) => getPurchaseRequirementSourceOrderLabel(row, sourceOrderMap) },
@@ -927,7 +972,7 @@ export default function InventoryPage() {
                   <Table
                     rowKey="id"
                     loading={purchaseOrdersQuery.isLoading}
-                    dataSource={(purchaseOrdersQuery.data ?? []) as PurchaseOrderRow[]}
+                    dataSource={purchaseOrderRows}
                     columns={[
                       { title: "采购单号", dataIndex: "orderNo" },
                       { title: "供应商", dataIndex: "supplierName" },

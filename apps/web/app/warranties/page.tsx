@@ -2,10 +2,10 @@
 
 import type { WarrantySummary } from "@mallbay/shared";
 import type { CreateWarrantyPayload } from "../../src/lib/api";
-import { App, Button, Card, Descriptions, Form, Input, Layout, Select, Space, Table, Tag } from "antd";
+import { App, Button, Card, Descriptions, Form, Input, Layout, Select, Space, Table, Tag, Typography } from "antd";
 import { FileProtectOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { orderApi, warrantiesApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -54,6 +54,21 @@ export default function WarrantiesPage() {
       order.vehicle?.plateNo
     ].filter(Boolean).join(" / ")
   }));
+  const warrantyRows = (warrantiesQuery.data ?? []) as WarrantySummary[];
+  const warrantySummary = useMemo(() => {
+    const now = Date.now();
+    const expiringSoon = warrantyRows.filter((row) => {
+      if (!row.endDate) return false;
+      const days = (new Date(row.endDate).getTime() - now) / 86_400_000;
+      return days >= 0 && days <= 30;
+    }).length;
+    return {
+      total: warrantyRows.length,
+      active: warrantyRows.filter((row) => row.status === "ACTIVE").length,
+      expiringSoon,
+      completedOrders: completedOrderOptions.length
+    };
+  }, [completedOrderOptions.length, warrantyRows]);
 
   const createWarranty = useMutation({
     mutationFn: (values: CreateWarrantyPayload) => warrantiesApi.createFromOrder(values),
@@ -70,38 +85,64 @@ export default function WarrantiesPage() {
       <Layout.Content className="dashboard-content">
         <StorePageHeader title="质保管理" description="从已完工订单生成质保，并支持按质保编号查询状态" />
 
-        <Form form={form} layout="inline" className="mb-4" onFinish={(values) => createWarranty.mutate(values)}>
-          <Form.Item name="orderId" rules={[{ required: true, message: "请选择已完工订单" }]}>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              loading={completedOrdersQuery.isLoading}
-              placeholder="选择已完工订单"
-              options={completedOrderOptions}
-              style={{ width: 300 }}
-            />
-          </Form.Item>
-          <Form.Item name="scope" rules={[{ required: true, message: "请输入质保范围" }]}>
-            <Input placeholder="质保范围" />
-          </Form.Item>
-          <Form.Item name="startDate">
-            <Input placeholder="起始日期 YYYY-MM-DD" />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" icon={<FileProtectOutlined />} loading={createWarranty.isPending}>
-            生成质保
-          </Button>
-        </Form>
+        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["质保记录", warrantySummary.total, "全部电子质保"],
+            ["有效质保", warrantySummary.active, "可用于售后追溯"],
+            ["即将到期", warrantySummary.expiringSoon, "30 天内需关注"],
+            ["待登记订单", warrantySummary.completedOrders, "已完工可生成"]
+          ].map(([label, value, description]) => (
+            <Card key={label} size="small">
+              <Typography.Text type="secondary">{label}</Typography.Text>
+              <div className="mt-2 text-2xl font-semibold text-gray-900">{value}</div>
+              <Typography.Text type="secondary" className="text-xs">
+                {description}
+              </Typography.Text>
+            </Card>
+          ))}
+        </div>
 
-        <Space className="mb-4" wrap>
-          <Input.Search
-            prefix={<SearchOutlined />}
-            placeholder="输入质保编号查询"
-            allowClear
-            enterButton="查询"
-            onSearch={setWarrantyNo}
-            style={{ width: 320 }}
-          />
-        </Space>
+        <div className="mb-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <Card title="生成电子质保" extra={<Typography.Text type="secondary">从已完工订单提取客户、车辆和施工信息</Typography.Text>}>
+            <Form form={form} layout="vertical" onFinish={(values) => createWarranty.mutate(values)}>
+              <div className="grid gap-3 md:grid-cols-3">
+                <Form.Item name="orderId" label="已完工订单" rules={[{ required: true, message: "请选择已完工订单" }]}>
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    loading={completedOrdersQuery.isLoading}
+                    placeholder="选择已完工订单"
+                    options={completedOrderOptions}
+                  />
+                </Form.Item>
+                <Form.Item name="scope" label="质保范围" rules={[{ required: true, message: "请输入质保范围" }]}>
+                  <Input placeholder="黄变 / 开裂 / 脱胶 / 起泡" />
+                </Form.Item>
+                <Form.Item name="startDate" label="起始日期">
+                  <Input placeholder="默认使用施工完工日期" />
+                </Form.Item>
+              </div>
+              <Button type="primary" htmlType="submit" icon={<FileProtectOutlined />} loading={createWarranty.isPending}>
+                生成质保
+              </Button>
+            </Form>
+          </Card>
+
+          <Card title="质保编号查询">
+            <Space direction="vertical" className="w-full">
+              <Input.Search
+                prefix={<SearchOutlined />}
+                placeholder="输入质保编号查询"
+                allowClear
+                enterButton="查询"
+                onSearch={setWarrantyNo}
+              />
+              <Typography.Text type="secondary">
+                用于客户到店售后、电话咨询或销售回访时快速核验质保状态。
+              </Typography.Text>
+            </Space>
+          </Card>
+        </div>
 
         {lookupQuery.data ? (
           <Card className="mb-4" title="电子质保卡">
@@ -118,7 +159,7 @@ export default function WarrantiesPage() {
         <Table<WarrantySummary>
           rowKey="id"
           loading={warrantiesQuery.isLoading}
-          dataSource={warrantiesQuery.data ?? []}
+          dataSource={warrantyRows}
           columns={[
             { title: "质保编号", dataIndex: "warrantyNo" },
             { title: "订单", render: (_, row) => getWarrantyOrderLabel(row) },

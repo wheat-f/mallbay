@@ -19,6 +19,7 @@
 - [features/paint-protection-film-system-plan.md](./features/paint-protection-film-system-plan.md)：漆面保护膜施工管理系统 V1.7 需求建设方案。
 - [features/v1-7-requirements-gap-plan.md](./features/v1-7-requirements-gap-plan.md)：V1.7 全功能需求差距与验收计划。
 - [features/v1-7-local-verification-audit.md](./features/v1-7-local-verification-audit.md)：V1.7 本地验收审计。
+- [features/prototype-ui-optimization-plan.md](./features/prototype-ui-optimization-plan.md)：基于最新 Stitch 原型的 UI 信息架构优化方案。
 - [features/order-requirements-alignment-plan.md](./features/order-requirements-alignment-plan.md)：订单创建与 V1.7 需求对齐实施计划。
 - [features/phase-1-customers-orders-plan.md](./features/phase-1-customers-orders-plan.md)：Phase 1 客户、产品、订单和收款实施计划。
 - [features/phase-1-customers-orders.md](./features/phase-1-customers-orders.md)：Phase 1 客户、订单、产品和收款功能说明。

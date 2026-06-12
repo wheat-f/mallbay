@@ -1,11 +1,11 @@
 "use client";
 
 import type { DailyCapacitySummary } from "@mallbay/shared";
-import { App, Button, Card, DatePicker, Form, InputNumber, Layout, Space, Table, Typography } from "antd";
+import { Alert, App, Button, Card, DatePicker, Form, InputNumber, Layout, Space, Table, Tag, Typography } from "antd";
 import { ArrowLeftOutlined, SaveOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
@@ -38,6 +38,32 @@ export default function ConstructionCapacitiesPage() {
     queryFn: () => constructionApi.capacities({ storeId: storeId! }),
     enabled: Boolean(storeId)
   });
+  const capacityRows = capacitiesQuery.data ?? [];
+  const capacitySummary = useMemo(() => {
+    const today = dayjs().format("YYYY-MM-DD");
+    const todayCapacity = capacityRows.find((row) => formatDate(row.date) === today);
+    const totalCapacity = todayCapacity
+      ? todayCapacity.inStoreCapacity + todayCapacity.outsideCapacity + todayCapacity.heatFilmCapacity + todayCapacity.inspectionCapacity
+      : 0;
+    const totalReserved = todayCapacity
+      ? todayCapacity.inStoreReserved + todayCapacity.outsideReserved + todayCapacity.heatFilmReserved + todayCapacity.inspectionReserved
+      : 0;
+    const riskCount = capacityRows.filter((row) =>
+      row.inStoreReserved > row.inStoreCapacity ||
+      row.outsideReserved > row.outsideCapacity ||
+      row.heatFilmReserved > row.heatFilmCapacity ||
+      row.inspectionReserved > row.inspectionCapacity
+    ).length;
+
+    return {
+      maintainedDays: capacityRows.length,
+      totalCapacity,
+      totalReserved,
+      remaining: Math.max(totalCapacity - totalReserved, 0),
+      riskCount,
+      todayCapacity
+    };
+  }, [capacityRows]);
 
   const saveMutation = useMutation({
     mutationFn: (values: CapacityFormValues) => constructionApi.upsertCapacity(buildCapacityPayload(storeId!, values)),
@@ -59,6 +85,36 @@ export default function ConstructionCapacitiesPage() {
             </Button>
           ) : null}
         </StorePageHeader>
+
+        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["已维护日期", capacitySummary.maintainedDays, "用于订单预约校验"],
+            ["今日总容量", capacitySummary.totalCapacity, "店内/店外/玻璃膜/复检"],
+            ["今日已预约", capacitySummary.totalReserved, `剩余 ${capacitySummary.remaining}`],
+            ["超量风险", capacitySummary.riskCount, "需重新调整或改约"]
+          ].map(([label, value, description]) => (
+            <Card key={label} size="small">
+              <Typography.Text type="secondary">{label}</Typography.Text>
+              <div className="mt-2 flex items-end gap-2">
+                <span className="text-2xl font-semibold text-gray-900">{value}</span>
+                {label === "超量风险" ? <Tag color={Number(value) > 0 ? "error" : "success"}>{Number(value) > 0 ? "需处理" : "正常"}</Tag> : null}
+              </div>
+              <Typography.Text type="secondary" className="text-xs">
+                {description}
+              </Typography.Text>
+            </Card>
+          ))}
+        </div>
+
+        {!capacitySummary.todayCapacity ? (
+          <Alert
+            className="mb-4"
+            type="warning"
+            showIcon
+            message="今日尚未设置施工容量"
+            description="带预约日期的订单会受容量校验约束。若销售需要今天下单，请先维护今日容量。"
+          />
+        ) : null}
 
         <div className="capacity-page-layout">
           <Card
@@ -110,7 +166,7 @@ export default function ConstructionCapacitiesPage() {
             <Table<DailyCapacitySummary>
               rowKey="id"
               loading={capacitiesQuery.isLoading}
-              dataSource={capacitiesQuery.data ?? []}
+              dataSource={capacityRows}
               columns={[
                 { title: "日期", render: (_, row) => formatDate(row.date) },
                 { title: "店内", render: (_, row) => `${row.inStoreReserved}/${row.inStoreCapacity}` },

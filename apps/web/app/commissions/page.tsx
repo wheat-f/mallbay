@@ -2,7 +2,7 @@
 
 import type { CommissionRuleType, SalesCommissionRuleSummary } from "@mallbay/shared";
 import type { CreateSalesCommissionRulePayload } from "../../src/lib/api";
-import { App, Button, Form, Input, InputNumber, Layout, Select, Space, Table, Tag } from "antd";
+import { Alert, App, Button, Card, Form, Input, InputNumber, Layout, Select, Space, Table, Tag, Typography } from "antd";
 import { CalculatorOutlined, PercentageOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commissionsApi, constructionApi, orderApi } from "../../src/lib/api";
@@ -136,74 +136,95 @@ export default function CommissionsPage() {
       <Layout.Content className="dashboard-content">
         <StorePageHeader title="提成管理" description="销售提成规则、订单提成快照和师傅提成人工调整" />
 
-        <Form form={ruleForm} layout="inline" className="mb-4" onFinish={(values) => createRule.mutate(values)}>
-          <Form.Item name="name" rules={[{ required: true, message: "请输入规则名称" }]}>
-            <Input placeholder="规则名称" />
-          </Form.Item>
-          <Form.Item name="ruleType" rules={[{ required: true, message: "请选择规则类型" }]}>
-            <Select placeholder="类型" style={{ width: 140 }} options={COMMISSION_RULE_TYPE_OPTIONS} />
-          </Form.Item>
-          <Form.Item name="rateBasisPoints">
-            <InputNumber min={0} max={10000} placeholder="BP" />
-          </Form.Item>
-          <Form.Item name="fixedAmountYuan">
-            <InputNumber min={0} precision={2} placeholder="固定金额（元）" />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" icon={<PercentageOutlined />} loading={createRule.isPending}>
-            保存规则
-          </Button>
-        </Form>
+        <Alert
+          className="mb-4"
+          type="info"
+          showIcon
+          message="规则配置与提成生成分离"
+          description="规则只定义计算方式；销售订单和施工记录完成后再生成提成快照，避免后续规则调整影响历史结果。"
+        />
 
-        <Space className="mb-4" wrap>
-          <Form form={salesForm} layout="inline" onFinish={(values) => generateSales.mutate(values)}>
-            <Form.Item name="orderId" rules={[{ required: true, message: "请选择销售提成订单" }]}>
-              <Select
-                showSearch
-                optionFilterProp="label"
-                loading={commissionOrdersQuery.isLoading}
-                placeholder="选择销售提成订单"
-                options={commissionOrderOptions}
-                style={{ width: 300 }}
-              />
-            </Form.Item>
-            <Button htmlType="submit" icon={<CalculatorOutlined />} loading={generateSales.isPending}>
-              生成销售提成
-            </Button>
-          </Form>
+        <div className="mb-4 grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <Card title="佣金规则配置" extra={<Tag>{rulesQuery.data?.length ?? 0} 条规则</Tag>}>
+            <Form form={ruleForm} layout="vertical" onFinish={(values) => createRule.mutate(values)}>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Form.Item name="name" label="规则名称" rules={[{ required: true, message: "请输入规则名称" }]}>
+                  <Input placeholder="例如：漆面保护膜销售提成" />
+                </Form.Item>
+                <Form.Item name="ruleType" label="规则类型" rules={[{ required: true, message: "请选择规则类型" }]}>
+                  <Select placeholder="类型" options={COMMISSION_RULE_TYPE_OPTIONS} />
+                </Form.Item>
+                <Form.Item name="rateBasisPoints" label="比例 BP">
+                  <InputNumber className="w-full" min={0} max={10000} placeholder="1000 = 10%" />
+                </Form.Item>
+                <Form.Item name="fixedAmountYuan" label="固定金额（元）">
+                  <InputNumber className="w-full" min={0} precision={2} placeholder="固定金额" />
+                </Form.Item>
+              </div>
+              <Button type="primary" htmlType="submit" icon={<PercentageOutlined />} loading={createRule.isPending}>
+                保存规则
+              </Button>
+            </Form>
+          </Card>
 
-          <Form form={workerForm} layout="inline" onFinish={(values) => generateWorkers.mutate(values)}>
-            <Form.Item name="recordId" rules={[{ required: true, message: "请选择施工记录" }]}>
-              <Select
-                showSearch
-                optionFilterProp="label"
-                loading={constructionRecordsQuery.isLoading}
-                placeholder="选择施工记录"
-                options={constructionRecordOptions}
-                style={{ width: 260 }}
-              />
-            </Form.Item>
-            <Form.Item name="baseAmountYuan" rules={[{ required: true, message: "请输入基础提成" }]}>
-              <InputNumber min={0} precision={2} placeholder="基础提成（元）" />
-            </Form.Item>
-            <Form.Item name="workerUserId">
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                loading={workersQuery.isLoading}
-                placeholder="选择调整人员"
-                options={workerOptions}
-                style={{ width: 200 }}
-              />
-            </Form.Item>
-            <Form.Item name="adjustmentYuan">
-              <InputNumber precision={2} placeholder="调整金额（元）" />
-            </Form.Item>
-            <Button htmlType="submit" loading={generateWorkers.isPending}>
-              生成师傅提成
-            </Button>
-          </Form>
-        </Space>
+          <Card title="提成生成">
+            <Space direction="vertical" className="w-full" size="large">
+              <div>
+                <Typography.Text strong>销售提成</Typography.Text>
+                <Form form={salesForm} layout="vertical" className="mt-3" onFinish={(values) => generateSales.mutate(values)}>
+                  <Form.Item name="orderId" label="已完工订单" rules={[{ required: true, message: "请选择销售提成订单" }]}>
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      loading={commissionOrdersQuery.isLoading}
+                      placeholder="选择销售提成订单"
+                      options={commissionOrderOptions}
+                    />
+                  </Form.Item>
+                  <Button htmlType="submit" icon={<CalculatorOutlined />} loading={generateSales.isPending}>
+                    生成销售提成
+                  </Button>
+                </Form>
+              </div>
+
+              <div>
+                <Typography.Text strong>师傅提成</Typography.Text>
+                <Form form={workerForm} layout="vertical" className="mt-3" onFinish={(values) => generateWorkers.mutate(values)}>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Form.Item name="recordId" label="施工记录" rules={[{ required: true, message: "请选择施工记录" }]}>
+                      <Select
+                        showSearch
+                        optionFilterProp="label"
+                        loading={constructionRecordsQuery.isLoading}
+                        placeholder="选择施工记录"
+                        options={constructionRecordOptions}
+                      />
+                    </Form.Item>
+                    <Form.Item name="baseAmountYuan" label="基础提成（元）" rules={[{ required: true, message: "请输入基础提成" }]}>
+                      <InputNumber className="w-full" min={0} precision={2} placeholder="基础提成" />
+                    </Form.Item>
+                    <Form.Item name="workerUserId" label="调整人员">
+                      <Select
+                        allowClear
+                        showSearch
+                        optionFilterProp="label"
+                        loading={workersQuery.isLoading}
+                        placeholder="选择调整人员"
+                        options={workerOptions}
+                      />
+                    </Form.Item>
+                    <Form.Item name="adjustmentYuan" label="调整金额（元）">
+                      <InputNumber className="w-full" precision={2} placeholder="可正可负" />
+                    </Form.Item>
+                  </div>
+                  <Button htmlType="submit" loading={generateWorkers.isPending}>
+                    生成师傅提成
+                  </Button>
+                </Form>
+              </div>
+            </Space>
+          </Card>
+        </div>
 
         <Table<SalesCommissionRuleSummary>
           rowKey="id"

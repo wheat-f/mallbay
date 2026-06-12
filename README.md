@@ -44,6 +44,7 @@ pnpm dev
 - [docs/features/paint-protection-film-system-plan.md](./docs/features/paint-protection-film-system-plan.md): 漆面保护膜施工管理系统 V1.7 需求建设方案
 - [docs/features/v1-7-requirements-gap-plan.md](./docs/features/v1-7-requirements-gap-plan.md): V1.7 全功能需求差距与验收计划
 - [docs/features/v1-7-local-verification-audit.md](./docs/features/v1-7-local-verification-audit.md): V1.7 本地验收审计
+- [docs/features/prototype-ui-optimization-plan.md](./docs/features/prototype-ui-optimization-plan.md): 最新 Stitch 原型 UI 信息架构优化方案
 - [docs/features/order-requirements-alignment-plan.md](./docs/features/order-requirements-alignment-plan.md): 订单创建与 V1.7 需求对齐实施计划
 - [docs/features/phase-1-customers-orders-plan.md](./docs/features/phase-1-customers-orders-plan.md): Phase 1 客户、产品、订单和收款实施计划
 - [docs/features/phase-1-customers-orders.md](./docs/features/phase-1-customers-orders.md): Phase 1 客户、订单、产品和收款功能说明

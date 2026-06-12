@@ -66,6 +66,8 @@ test("phase one schema exposes customer order and payment models", () => {
   for (const model of [
     "model Customer ",
     "model CustomerVehicle ",
+    "model CustomerNote ",
+    "model CustomerTag ",
     "model Product ",
     "model Order ",
     "model OrderItem ",
@@ -78,6 +80,7 @@ test("phase one schema exposes customer order and payment models", () => {
 
   for (const enumName of [
     "enum CustomerType",
+    "enum CustomerNoteType",
     "enum ProductCategory",
     "enum ConstructionType",
     "enum OrderStatus",
@@ -86,7 +89,10 @@ test("phase one schema exposes customer order and payment models", () => {
     assert.ok(schema.includes(enumName), `${enumName} is missing`);
   }
 
+  assert.ok(schema.includes("CUSTOMER_SERVICE"), "StorePosition must include customer service for V1.7");
   assert.ok(schema.includes("amountCents"), "money fields must use integer cents");
+  assert.match(schema, /suggestedLaborCostCents\s+Int\?/, "order amount must keep suggested labor snapshot");
+  assert.match(schema, /laborCostAdjustmentReason\s+String\?/, "order amount must keep labor adjustment reason");
   assert.ok(schema.includes("phoneHash"), "customer phone search must use a hash field");
   assert.ok(schema.includes("vinHash"), "VIN search must use a hash field");
 });
@@ -127,8 +133,14 @@ test("phase three schema exposes inventory purchase and warranty models", () => 
   for (const model of [
     "model InventoryBatch ",
     "model InventoryMovement ",
+    "model OrderInventoryAllocation ",
+    "model PurchaseRequirement ",
+    "model PurchaseRequirementItem ",
     "model PurchaseOrder ",
     "model PurchaseOrderItem ",
+    "model Supplier ",
+    "model SupplierContact ",
+    "model SupplierRatingHistory ",
     "model Warranty ",
     "model WarrantyPhoto "
   ]) {
@@ -137,13 +149,43 @@ test("phase three schema exposes inventory purchase and warranty models", () => 
 
   for (const enumName of [
     "enum InventoryMovementType",
+    "enum InventoryAllocationStatus",
+    "enum PurchaseRequirementStatus",
     "enum PurchaseOrderStatus",
     "enum WarrantyStatus"
   ]) {
     assert.ok(schema.includes(enumName), `${enumName} is missing`);
   }
 
+  for (const field of [
+    "inventoryUnit",
+    "salesUnit",
+    "rollWidthMeters",
+    "rollLengthMeters",
+    "metersPerRoll",
+    "quantityPrecision"
+  ]) {
+    assert.ok(schema.includes(field), `Product inventory spec field ${field} is missing`);
+  }
+
+  assert.match(schema, /totalQuantity\s+Decimal/, "InventoryBatch totalQuantity must use Decimal");
+  assert.match(schema, /availableQuantity\s+Decimal/, "InventoryBatch availableQuantity must use Decimal");
+  assert.match(schema, /lockedQuantity\s+Decimal/, "InventoryBatch lockedQuantity must use Decimal");
+  assert.match(schema, /outboundQuantity\s+Decimal/, "InventoryBatch outboundQuantity must use Decimal");
+  assert.match(schema, /lockedQuantity\s+Decimal/, "OrderInventoryAllocation must store locked quantity");
+  assert.match(schema, /outboundQuantity\s+Decimal/, "OrderInventoryAllocation must store outbound quantity");
+  assert.ok(schema.includes("COUNT_IN"), "inventory movement types must include count-in");
+  assert.ok(schema.includes("COUNT_OUT"), "inventory movement types must include count-out");
+  assert.ok(schema.includes("DAMAGE_OUT"), "inventory movement types must include damage-out");
+  assert.ok(schema.includes("TRANSFER_IN"), "inventory movement types must include transfer-in");
+  assert.ok(schema.includes("TRANSFER_OUT"), "inventory movement types must include transfer-out");
+  assert.ok(schema.includes("RETURN_IN"), "inventory movement types must include return-in");
+  assert.ok(schema.includes("RETURN_OUT"), "inventory movement types must include return-out");
+  assert.ok(schema.includes("BATCH_SPLIT"), "inventory movement types must include batch split");
   assert.ok(schema.includes("@@unique([storeId, productId, batchNo])"), "batch number must be unique per store product");
+  assert.ok(schema.includes("@@unique([orderId, orderItemId, batchId])"), "order inventory allocation must be unique per order item batch");
+  assert.ok(schema.includes("@@unique([storeId, name])"), "supplier name must be unique per store");
+  assert.ok(schema.includes("@@index([storeId, isActive])"), "supplier list must support active filtering by store");
   assert.match(schema, /orderId\s+String\s+@unique/, "Warranty must be unique per order");
   assert.match(schema, /warrantyNo\s+String\s+@unique/, "Warranty number must be globally unique");
 });
@@ -200,6 +242,21 @@ test("phase five schema exposes finance invoice rebate and report source models"
   }
 
   assert.match(schema, /invoiceNo\s+String\?\s+@unique/, "invoice number must be unique when issued");
+  assert.match(schema, /fileUrl\s+String\?/, "invoice must keep electronic invoice file url");
   assert.ok(schema.includes("@@index([storeId, status])"), "phase five workflow tables must be scoped by store and status");
   assert.ok(schema.includes("amountCents"), "phase five money fields must use integer cents");
+  assert.ok(schema.includes("REVIEWED"), "rebate workflow must separate business review from finance approval");
+});
+
+test("schema exposes persistent audit events for business critical changes", () => {
+  const schema = readFileSync(new URL("../../prisma/schema.prisma", import.meta.url), "utf8");
+
+  assert.ok(schema.includes("model AuditEvent "), "AuditEvent model is missing");
+  assert.ok(schema.includes("targetType"), "AuditEvent must record target type");
+  assert.ok(schema.includes("targetId"), "AuditEvent must record target id");
+  assert.ok(schema.includes("metadata   Json"), "AuditEvent must store structured metadata");
+  assert.ok(
+    schema.includes("@@index([targetType, targetId, createdAt(sort: Desc)])"),
+    "AuditEvent must be queryable by target"
+  );
 });

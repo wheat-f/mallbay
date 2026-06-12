@@ -16,6 +16,8 @@ export type OfflineQueueOptions = {
   maxRetries: number;
 };
 
+export const DEFAULT_OFFLINE_QUEUE_MAX_RETRIES = 3;
+
 export interface OfflineStorage {
   read(): Promise<OfflineOperation[]>;
   write(items: OfflineOperation[]): Promise<void>;

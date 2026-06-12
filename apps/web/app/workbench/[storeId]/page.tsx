@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { authApi, memberApi, storeApi } from "../../../src/lib/api";
+import { getWorkbenchSections, type StorePosition } from "../../../src/features/workbench/navigation";
 import { useAuthStore } from "../../../src/stores/auth-store";
 
 const POSITION_OPTIONS = [
@@ -309,6 +310,9 @@ export default function WorkbenchPage() {
   const statusCfg = store ? (STATUS_CONFIG[store.status] ?? { text: store.status, color: "default" }) : null;
   const isManager = store?.currentMember.position === "MANAGER";
   const canManageStore = isManager && store.status !== "PENDING_REVIEW" && store.status !== "FROZEN";
+  const workbenchSections = store
+    ? getWorkbenchSections(store.currentMember.position as StorePosition, store.id)
+    : [];
 
   const logoutMutation = useMutation({
     mutationFn: authApi.logout,
@@ -407,6 +411,42 @@ export default function WorkbenchPage() {
                   </Image.PreviewGroup>
                 </>
               )}
+            </section>
+
+            {/* ── 业务入口 ── */}
+            <section className="section-card mb-5">
+              <div className="section-card-header">
+                <div>
+                  <div className="section-card-title">业务入口</div>
+                  <div className="section-card-desc">
+                    {POSITION_LABEL[store.currentMember.position] ?? store.currentMember.position}可用功能
+                  </div>
+                </div>
+              </div>
+
+              <div className="workbench-entry-body">
+                {workbenchSections.map((section) => (
+                  <div key={section.title} className="workbench-entry-section">
+                    <div className="workbench-entry-heading">
+                      <span className="workbench-entry-title">{section.title}</span>
+                      <span className="workbench-entry-desc">{section.description}</span>
+                    </div>
+                    <div className="workbench-entry-grid">
+                      {section.items.map((item) => (
+                        <button
+                          key={`${section.title}-${item.href}-${item.label}`}
+                          type="button"
+                          onClick={() => router.push(item.href)}
+                          className={`workbench-entry-button${item.primary ? " workbench-entry-button-primary" : ""}`}
+                        >
+                          <span className="workbench-entry-label">{item.label}</span>
+                          <span className="workbench-entry-text">{item.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </section>
 
             {/* ── 成员管理 ── */}

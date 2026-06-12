@@ -2,12 +2,19 @@
 
 import type { WarrantySummary } from "@mallbay/shared";
 import type { CreateWarrantyPayload } from "../../src/lib/api";
-import { App, Button, Form, Input, Layout, Space, Table, Tag, Typography } from "antd";
+import { App, Button, Card, Descriptions, Form, Input, Layout, Select, Space, Table, Tag } from "antd";
 import { FileProtectOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { warrantiesApi } from "../../src/lib/api";
+import { orderApi, warrantiesApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
+import { StorePageHeader } from "../../src/features/workbench/store-page-header";
+import {
+  getWarrantyCardRows,
+  getWarrantyExpiryReminder,
+  getWarrantyOrderLabel,
+  getWarrantyStatusLabel
+} from "../../src/features/warranties/display";
 
 export default function WarrantiesPage() {
   const { message } = App.useApp();
@@ -16,6 +23,13 @@ export default function WarrantiesPage() {
   const storeId = user?.storeMember?.store.id;
   const [form] = Form.useForm<CreateWarrantyPayload>();
   const [warrantyNo, setWarrantyNo] = useState("");
+
+  type CompletedOrderOption = {
+    id: string;
+    orderNo?: string | null;
+    customer?: { personalName?: string | null; companyName?: string | null; name?: string | null } | null;
+    vehicle?: { plateNo?: string | null } | null;
+  };
 
   const warrantiesQuery = useQuery({
     queryKey: ["warranties", storeId],
@@ -27,6 +41,19 @@ export default function WarrantiesPage() {
     queryFn: () => warrantiesApi.lookup(warrantyNo),
     enabled: Boolean(warrantyNo)
   });
+  const completedOrdersQuery = useQuery({
+    queryKey: ["warranties", "completed-orders", storeId],
+    queryFn: () => orderApi.list({ storeId: storeId!, status: "COMPLETED", page: 1, pageSize: 100 }),
+    enabled: Boolean(storeId)
+  });
+  const completedOrderOptions = ((completedOrdersQuery.data?.items ?? []) as CompletedOrderOption[]).map((order) => ({
+    value: order.id,
+    label: [
+      order.orderNo ?? order.id,
+      order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name,
+      order.vehicle?.plateNo
+    ].filter(Boolean).join(" / ")
+  }));
 
   const createWarranty = useMutation({
     mutationFn: (values: CreateWarrantyPayload) => warrantiesApi.createFromOrder(values),
@@ -41,14 +68,18 @@ export default function WarrantiesPage() {
   return (
     <Layout className="dashboard-shell">
       <Layout.Content className="dashboard-content">
-        <div className="mb-4">
-          <Typography.Title level={3} className="!mb-1">质保管理</Typography.Title>
-          <Typography.Text type="secondary">从已完工订单生成质保，并支持按质保编号查询状态</Typography.Text>
-        </div>
+        <StorePageHeader title="质保管理" description="从已完工订单生成质保，并支持按质保编号查询状态" />
 
         <Form form={form} layout="inline" className="mb-4" onFinish={(values) => createWarranty.mutate(values)}>
-          <Form.Item name="orderId" rules={[{ required: true, message: "请输入订单 ID" }]}>
-            <Input placeholder="已完工订单 ID" />
+          <Form.Item name="orderId" rules={[{ required: true, message: "请选择已完工订单" }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              loading={completedOrdersQuery.isLoading}
+              placeholder="选择已完工订单"
+              options={completedOrderOptions}
+              style={{ width: 300 }}
+            />
           </Form.Item>
           <Form.Item name="scope" rules={[{ required: true, message: "请输入质保范围" }]}>
             <Input placeholder="质保范围" />
@@ -70,12 +101,19 @@ export default function WarrantiesPage() {
             onSearch={setWarrantyNo}
             style={{ width: 320 }}
           />
-          {lookupQuery.data ? (
-            <Typography.Text>
-              {lookupQuery.data.warrantyNo} <Tag>{lookupQuery.data.status}</Tag>
-            </Typography.Text>
-          ) : null}
         </Space>
+
+        {lookupQuery.data ? (
+          <Card className="mb-4" title="电子质保卡">
+            <Descriptions bordered column={{ xs: 1, sm: 2, lg: 3 }}>
+              {getWarrantyCardRows(lookupQuery.data).map((row) => (
+                <Descriptions.Item key={row.label} label={row.label}>
+                  {row.label === "状态" ? <Tag>{row.value}</Tag> : row.value}
+                </Descriptions.Item>
+              ))}
+            </Descriptions>
+          </Card>
+        ) : null}
 
         <Table<WarrantySummary>
           rowKey="id"
@@ -83,9 +121,16 @@ export default function WarrantiesPage() {
           dataSource={warrantiesQuery.data ?? []}
           columns={[
             { title: "质保编号", dataIndex: "warrantyNo" },
-            { title: "订单", dataIndex: "orderId" },
+            { title: "订单", render: (_, row) => getWarrantyOrderLabel(row) },
             { title: "范围", dataIndex: "scope" },
-            { title: "状态", render: (_, row) => <Tag>{row.status}</Tag> },
+            { title: "状态", render: (_, row) => <Tag>{getWarrantyStatusLabel(row.status)}</Tag> },
+            {
+              title: "到期提醒",
+              render: (_, row) => {
+                const reminder = getWarrantyExpiryReminder(row);
+                return <Tag color={reminder.color}>{reminder.label}</Tag>;
+              }
+            },
             { title: "开始", render: (_, row) => row.startDate?.slice(0, 10) },
             { title: "结束", render: (_, row) => row.endDate?.slice(0, 10) }
           ]}

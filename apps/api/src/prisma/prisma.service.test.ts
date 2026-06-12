@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { recordPrismaQueryTrace } from "./prisma.service";
+import { getRequiredDatabaseUrl, recordPrismaQueryTrace } from "./prisma.service";
+
+test("getRequiredDatabaseUrl fails fast when DATABASE_URL is missing", () => {
+  assert.throws(
+    () =>
+      getRequiredDatabaseUrl({
+        get: () => undefined
+      }),
+    /DATABASE_URL/
+  );
+});
 
 test("recordPrismaQueryTrace emits sanitized Prisma trace logs and metrics", () => {
   const entries: unknown[] = [];

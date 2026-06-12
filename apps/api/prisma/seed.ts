@@ -1,9 +1,9 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
+import { getRequiredEnvValue } from "../src/config/env";
 
-const connectionString =
-  process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/mallbay?schema=public";
+const connectionString = getRequiredEnvValue("DATABASE_URL");
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 

@@ -6,11 +6,12 @@ import { AuthController } from "./auth.controller";
 import { AuthCryptoService } from "./auth-crypto.service";
 import { AuthService } from "./auth.service";
 import { JwtStrategy } from "./jwt.strategy";
+import { WechatMiniProgramService } from "./wechat-mini-program.service";
 
 @Module({
   imports: [PassportModule, JwtModule.register({}), ObservabilityModule],
   controllers: [AuthController],
-  providers: [AuthCryptoService, AuthService, JwtStrategy],
+  providers: [AuthCryptoService, WechatMiniProgramService, AuthService, JwtStrategy],
   exports: [AuthCryptoService, AuthService]
 })
 export class AuthModule {}

@@ -16,3 +16,18 @@ test("reportsApi.summary queries /reports/summary by store", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("reportsApi.summary omits storeId for admin all-store reports", async () => {
+  const calls: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    calls.push({ input, init });
+    return new Response(JSON.stringify({ orders: 1 }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    await reportsApi.summary();
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/reports/summary");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

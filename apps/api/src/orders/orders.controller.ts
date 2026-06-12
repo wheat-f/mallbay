@@ -6,6 +6,7 @@ import { CreateOrderDto } from "./dto/create-order.dto";
 import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
 import { CreatePaymentAccountDto } from "./dto/create-payment-account.dto";
 import { ListOrdersDto } from "./dto/list-orders.dto";
+import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
 import { OrdersService, type AuthenticatedOrderUser } from "./orders.service";
 
@@ -28,9 +29,23 @@ export class OrdersController {
     return this.orders.list(req.user, query);
   }
 
+  @Get(":id/audit-events")
+  listAuditEvents(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.orders.listAuditEvents(req.user, id);
+  }
+
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.orders.detail(req.user, id);
+  }
+
+  @Patch(":id/commercials")
+  updateCommercials(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Body() dto: UpdateOrderCommercialsDto
+  ) {
+    return this.orders.updateCommercials(req.user, id, dto);
   }
 
   @Post(":id/payments")
@@ -61,6 +76,11 @@ export class PaymentAccountsController {
   @Get()
   list(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
     return this.orders.listPaymentAccounts(req.user, storeId);
+  }
+
+  @Get(":id/audit-events")
+  listAuditEvents(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.orders.listPaymentAccountAuditEvents(req.user, id);
   }
 
   @Patch(":id")

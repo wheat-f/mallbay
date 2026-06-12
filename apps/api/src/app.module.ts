@@ -19,10 +19,11 @@ import { ReportsModule } from "./reports/reports.module";
 import { StoresModule } from "./stores/stores.module";
 import { UsersModule } from "./users/users.module";
 import { WarrantiesModule } from "./warranties/warranties.module";
+import { getApiEnvFilePaths } from "./config/env";
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: getApiEnvFilePaths() }),
     PrismaModule,
     AuthModule,
     AfterSalesModule,

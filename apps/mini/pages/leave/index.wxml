@@ -1,0 +1,22 @@
+<view class="page">
+  <view class="panel">
+    <text class="title">请假申请</text>
+    <view class="field">
+      <text class="label">开始日期</text>
+      <picker mode="date" value="{{startDate}}" bindchange="onStartDateChange">
+        <view class="picker">{{startDate || "请选择开始日期"}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <text class="label">结束日期</text>
+      <picker mode="date" value="{{endDate}}" bindchange="onEndDateChange">
+        <view class="picker">{{endDate || "请选择结束日期"}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <text class="label">请假原因</text>
+      <textarea class="textarea" value="{{reason}}" placeholder="请输入请假原因" bindinput="onReasonInput" />
+    </view>
+    <button class="primary" bindtap="submitLeaveRequest">加入离线队列</button>
+  </view>
+</view>

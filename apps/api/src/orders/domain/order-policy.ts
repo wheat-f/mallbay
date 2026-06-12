@@ -12,4 +12,9 @@ export class OrderPolicy {
   static canManagePayment(user: UserWithStoreMember, storeId: string) {
     return PermissionPolicy.canManageOrderPayment(user, storeId);
   }
+
+  static canCreatePaymentAccount(user: UserWithStoreMember, storeId: string) {
+    return PermissionPolicy.canManageOrderPayment(user, storeId) ||
+      PermissionPolicy.canCreateOrder(user, storeId);
+  }
 }

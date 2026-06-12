@@ -2,36 +2,105 @@
 
 import type { CommissionRuleType, SalesCommissionRuleSummary } from "@mallbay/shared";
 import type { CreateSalesCommissionRulePayload } from "../../src/lib/api";
-import { App, Button, Form, Input, InputNumber, Layout, Select, Space, Table, Tag, Typography } from "antd";
+import { App, Button, Form, Input, InputNumber, Layout, Select, Space, Table, Tag } from "antd";
 import { CalculatorOutlined, PercentageOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commissionsApi } from "../../src/lib/api";
+import { commissionsApi, constructionApi, orderApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
+import { StorePageHeader } from "../../src/features/workbench/store-page-header";
+import { COMMISSION_RULE_TYPE_OPTIONS, getCommissionRuleTypeLabel } from "../../src/features/commissions/display";
+import { getConstructionStatusLabel, getConstructionWorkerLabel } from "../../src/features/construction/display";
+import { formatCentsAsYuan, yuanToCents } from "../../src/features/finance/display";
 
-const RULE_OPTIONS: Array<{ value: CommissionRuleType; label: string }> = [
-  { value: "FIXED_RATE", label: "固定比例" },
-  { value: "FIXED_AMOUNT", label: "固定金额" },
-  { value: "SALES_TIER", label: "销售阶梯" },
-  { value: "CONSTRUCTION_TYPE", label: "施工类型" }
-];
+type SalesCommissionRuleFormValues = Omit<CreateSalesCommissionRulePayload, "fixedAmountCents"> & {
+  fixedAmountYuan?: number;
+};
+
+type WorkerCommissionFormValues = {
+  recordId: string;
+  baseAmountYuan: number;
+  workerUserId?: string;
+  adjustmentYuan?: number;
+};
+
+type CommissionOrderOption = {
+  id: string;
+  orderNo?: string | null;
+  customer?: { personalName?: string | null; companyName?: string | null; name?: string | null } | null;
+  vehicle?: { plateNo?: string | null } | null;
+};
+
+type ConstructionRecordOption = {
+  id: string;
+  orderId: string;
+  status?: string | null;
+  order?: { orderNo?: string | null } | null;
+};
+
+type CommissionWorkerOption = {
+  userId: string;
+  skillTags?: string[];
+  isActive?: boolean;
+  user?: { username?: string | null; nickname?: string | null } | null;
+};
 
 export default function CommissionsPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const [ruleForm] = Form.useForm<CreateSalesCommissionRulePayload>();
+  const [ruleForm] = Form.useForm<SalesCommissionRuleFormValues>();
   const [salesForm] = Form.useForm<{ orderId: string }>();
-  const [workerForm] = Form.useForm<{ recordId: string; baseAmountCents: number; workerUserId?: string; adjustmentCents?: number }>();
+  const [workerForm] = Form.useForm<WorkerCommissionFormValues>();
 
   const rulesQuery = useQuery({
     queryKey: ["commission-rules", storeId],
     queryFn: () => commissionsApi.salesRules(storeId!),
     enabled: Boolean(storeId)
   });
+  const commissionOrdersQuery = useQuery({
+    queryKey: ["commissions", "orders", storeId],
+    queryFn: () => orderApi.list({ storeId: storeId!, status: "COMPLETED", page: 1, pageSize: 100 }),
+    enabled: Boolean(storeId)
+  });
+  const constructionRecordsQuery = useQuery({
+    queryKey: ["commissions", "construction-records", storeId],
+    queryFn: () => constructionApi.assignments({ storeId: storeId! }),
+    enabled: Boolean(storeId)
+  });
+  const workersQuery = useQuery({
+    queryKey: ["commissions", "workers", storeId],
+    queryFn: () => constructionApi.workers(storeId!),
+    enabled: Boolean(storeId)
+  });
+  const commissionOrderOptions = ((commissionOrdersQuery.data?.items ?? []) as CommissionOrderOption[]).map((order) => ({
+    value: order.id,
+    label: [
+      order.orderNo ?? "订单未加载",
+      order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name,
+      order.vehicle?.plateNo
+    ].filter(Boolean).join(" / ")
+  }));
+  const constructionRecordOptions = ((constructionRecordsQuery.data ?? []) as ConstructionRecordOption[]).map((record) => ({
+    value: record.id,
+    label: [record.order?.orderNo ?? "订单未加载", getConstructionStatusLabel(record.status)].filter(Boolean).join(" / ")
+  }));
+  const workerOptions = ((workersQuery.data ?? []) as CommissionWorkerOption[])
+    .filter((worker) => worker.isActive !== false)
+    .map((worker) => ({
+      value: worker.userId,
+      label: getConstructionWorkerLabel(worker)
+    }));
 
   const createRule = useMutation({
-    mutationFn: (values: CreateSalesCommissionRulePayload) => commissionsApi.createSalesRule({ ...values, storeId: storeId! }),
+    mutationFn: (values: SalesCommissionRuleFormValues) =>
+      commissionsApi.createSalesRule({
+        storeId: storeId!,
+        name: values.name,
+        ruleType: values.ruleType,
+        rateBasisPoints: values.rateBasisPoints,
+        fixedAmountCents: values.fixedAmountYuan === undefined ? undefined : yuanToCents(values.fixedAmountYuan)
+      }),
     onSuccess: async () => {
       message.success("销售提成规则已保存");
       ruleForm.resetFields();
@@ -48,11 +117,11 @@ export default function CommissionsPage() {
     onError: (error: Error) => message.error(error.message)
   });
   const generateWorkers = useMutation({
-    mutationFn: (values: { recordId: string; baseAmountCents: number; workerUserId?: string; adjustmentCents?: number }) =>
+    mutationFn: (values: WorkerCommissionFormValues) =>
       commissionsApi.generateWorkers(values.recordId, {
-        baseAmountCents: values.baseAmountCents,
+        baseAmountCents: yuanToCents(values.baseAmountYuan),
         adjustments: values.workerUserId
-          ? [{ workerUserId: values.workerUserId, adjustmentCents: values.adjustmentCents ?? 0 }]
+          ? [{ workerUserId: values.workerUserId, adjustmentCents: yuanToCents(values.adjustmentYuan ?? 0) }]
           : []
       }),
     onSuccess: () => {
@@ -65,23 +134,20 @@ export default function CommissionsPage() {
   return (
     <Layout className="dashboard-shell">
       <Layout.Content className="dashboard-content">
-        <div className="mb-4">
-          <Typography.Title level={3} className="!mb-1">提成管理</Typography.Title>
-          <Typography.Text type="secondary">销售提成规则、订单提成快照和师傅提成人工调整</Typography.Text>
-        </div>
+        <StorePageHeader title="提成管理" description="销售提成规则、订单提成快照和师傅提成人工调整" />
 
         <Form form={ruleForm} layout="inline" className="mb-4" onFinish={(values) => createRule.mutate(values)}>
           <Form.Item name="name" rules={[{ required: true, message: "请输入规则名称" }]}>
             <Input placeholder="规则名称" />
           </Form.Item>
           <Form.Item name="ruleType" rules={[{ required: true, message: "请选择规则类型" }]}>
-            <Select placeholder="类型" style={{ width: 140 }} options={RULE_OPTIONS} />
+            <Select placeholder="类型" style={{ width: 140 }} options={COMMISSION_RULE_TYPE_OPTIONS} />
           </Form.Item>
           <Form.Item name="rateBasisPoints">
             <InputNumber min={0} max={10000} placeholder="BP" />
           </Form.Item>
-          <Form.Item name="fixedAmountCents">
-            <InputNumber min={0} placeholder="固定金额分" />
+          <Form.Item name="fixedAmountYuan">
+            <InputNumber min={0} precision={2} placeholder="固定金额（元）" />
           </Form.Item>
           <Button type="primary" htmlType="submit" icon={<PercentageOutlined />} loading={createRule.isPending}>
             保存规则
@@ -90,8 +156,15 @@ export default function CommissionsPage() {
 
         <Space className="mb-4" wrap>
           <Form form={salesForm} layout="inline" onFinish={(values) => generateSales.mutate(values)}>
-            <Form.Item name="orderId" rules={[{ required: true, message: "请输入订单 ID" }]}>
-              <Input placeholder="订单 ID" />
+            <Form.Item name="orderId" rules={[{ required: true, message: "请选择销售提成订单" }]}>
+              <Select
+                showSearch
+                optionFilterProp="label"
+                loading={commissionOrdersQuery.isLoading}
+                placeholder="选择销售提成订单"
+                options={commissionOrderOptions}
+                style={{ width: 300 }}
+              />
             </Form.Item>
             <Button htmlType="submit" icon={<CalculatorOutlined />} loading={generateSales.isPending}>
               生成销售提成
@@ -99,17 +172,32 @@ export default function CommissionsPage() {
           </Form>
 
           <Form form={workerForm} layout="inline" onFinish={(values) => generateWorkers.mutate(values)}>
-            <Form.Item name="recordId" rules={[{ required: true, message: "请输入施工记录 ID" }]}>
-              <Input placeholder="施工记录 ID" />
+            <Form.Item name="recordId" rules={[{ required: true, message: "请选择施工记录" }]}>
+              <Select
+                showSearch
+                optionFilterProp="label"
+                loading={constructionRecordsQuery.isLoading}
+                placeholder="选择施工记录"
+                options={constructionRecordOptions}
+                style={{ width: 260 }}
+              />
             </Form.Item>
-            <Form.Item name="baseAmountCents" rules={[{ required: true, message: "请输入基础提成" }]}>
-              <InputNumber min={0} placeholder="基础提成分" />
+            <Form.Item name="baseAmountYuan" rules={[{ required: true, message: "请输入基础提成" }]}>
+              <InputNumber min={0} precision={2} placeholder="基础提成（元）" />
             </Form.Item>
             <Form.Item name="workerUserId">
-              <Input placeholder="调整人员 ID" />
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                loading={workersQuery.isLoading}
+                placeholder="选择调整人员"
+                options={workerOptions}
+                style={{ width: 200 }}
+              />
             </Form.Item>
-            <Form.Item name="adjustmentCents">
-              <InputNumber placeholder="调整分" />
+            <Form.Item name="adjustmentYuan">
+              <InputNumber precision={2} placeholder="调整金额（元）" />
             </Form.Item>
             <Button htmlType="submit" loading={generateWorkers.isPending}>
               生成师傅提成
@@ -123,9 +211,9 @@ export default function CommissionsPage() {
           dataSource={rulesQuery.data ?? []}
           columns={[
             { title: "规则", dataIndex: "name" },
-            { title: "类型", dataIndex: "ruleType" },
+            { title: "类型", render: (_, row) => getCommissionRuleTypeLabel(row.ruleType) },
             { title: "比例 BP", dataIndex: "rateBasisPoints" },
-            { title: "固定金额", dataIndex: "fixedAmountCents" },
+            { title: "固定金额", render: (_, row) => formatCentsAsYuan(row.fixedAmountCents) },
             { title: "状态", render: (_, row) => <Tag>{row.isActive ? "启用" : "停用"}</Tag> }
           ]}
         />

@@ -102,6 +102,12 @@ export class CompleteConstructionDto {
   completedAt?: string;
 }
 
+export class StartConstructionDto {
+  @IsOptional()
+  @IsDateString()
+  startedAt?: string;
+}
+
 export class UploadConstructionPhotoDto {
   @IsEnum(ConstructionPhotoStage)
   stage!: ConstructionPhotoStage;
@@ -212,6 +218,10 @@ export class OfflineTaskStatusPayloadDto {
 
   @IsEnum(ConstructionTaskStatus)
   status!: ConstructionTaskStatus;
+
+  @IsOptional()
+  @IsDateString()
+  startedAt?: string;
 
   @IsOptional()
   @IsDateString()

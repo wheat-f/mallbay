@@ -2,7 +2,7 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { ApplyInvoiceDto, InvoiceActionDto, IssueInvoiceDto, ListInvoicesDto } from "./dto/invoice.dto";
+import { ApplyInvoiceDto, InvoiceActionDto, IssueInvoiceDto, ListInvoicesDto, SendInvoiceDto } from "./dto/invoice.dto";
 import { InvoicesService, type AuthenticatedInvoiceUser } from "./invoices.service";
 
 type AuthRequest = Request & { user: AuthenticatedInvoiceUser };
@@ -35,5 +35,10 @@ export class InvoicesController {
   @Post(":id/reissue")
   reissue(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: IssueInvoiceDto) {
     return this.invoices.reissue(req.user, id, dto);
+  }
+
+  @Post(":id/send")
+  send(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: SendInvoiceDto) {
+    return this.invoices.send(req.user, id, dto);
   }
 }

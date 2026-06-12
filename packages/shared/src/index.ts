@@ -1,6 +1,7 @@
 export type StorePosition =
   | "MANAGER"
   | "SALES"
+  | "CUSTOMER_SERVICE"
   | "PURCHASING"
   | "FINANCE"
   | "SCHEDULER"
@@ -21,6 +22,8 @@ export type CustomerSourceType =
   | "REFERRAL"
   | "PARTNER"
   | "OTHER";
+
+export type CustomerNoteType = "PREFERENCE" | "REQUIREMENT" | "COMMUNICATION";
 
 export type ProductCategory = "PPF" | "COLOR_FILM" | "HEAT_FILM" | "MODIFICATION" | "OTHER";
 
@@ -60,7 +63,25 @@ export type InventoryMovementType =
   | "STOCK_ADJUST"
   | "DAMAGE"
   | "TRANSFER"
-  | "UNIT_CONVERSION";
+  | "COUNT_IN"
+  | "COUNT_OUT"
+  | "DAMAGE_OUT"
+  | "TRANSFER_IN"
+  | "TRANSFER_OUT"
+  | "RETURN_IN"
+  | "RETURN_OUT"
+  | "UNIT_CONVERSION"
+  | "BATCH_SPLIT";
+
+export type InventoryAllocationStatus = "LOCKED" | "OUTBOUND" | "RELEASED";
+
+export type PurchaseRequirementStatus =
+  | "OPEN"
+  | "PARTIAL_ORDERED"
+  | "ORDERED"
+  | "PARTIAL_RECEIVED"
+  | "FULFILLED"
+  | "CANCELLED";
 
 export type PurchaseOrderStatus = "DRAFT" | "ORDERED" | "PARTIAL_RECEIVED" | "RECEIVED" | "CANCELLED";
 
@@ -78,7 +99,7 @@ export type PaymentRecordType = "ORDER_PAYMENT" | "EXPENSE" | "REIMBURSEMENT" | 
 
 export type InvoiceStatus = "APPLIED" | "ISSUED" | "VOIDED" | "REISSUED";
 
-export type RebateStatus = "APPLIED" | "APPROVED" | "REJECTED" | "PAID";
+export type RebateStatus = "APPLIED" | "REVIEWED" | "APPROVED" | "REJECTED" | "PAID";
 
 export type DailyCapacitySummary = {
   id: string;
@@ -100,15 +121,64 @@ export type InventoryBatchSummary = {
   productId: string;
   batchNo: string;
   supplierName: string | null;
+  unit: ProductUnit;
   totalQuantity: number;
   availableQuantity: number;
   lockedQuantity: number;
+  outboundQuantity: number;
+  receivedAt?: string | null;
+  product?: {
+    brand?: string | null;
+    name?: string | null;
+    model?: string | null;
+    category?: ProductCategory | null;
+    specification?: string | null;
+    inventoryUnit?: ProductUnit | null;
+    salesUnit?: ProductUnit | null;
+    rollWidthMeters?: number | string | null;
+    rollLengthMeters?: number | string | null;
+    metersPerRoll?: number | string | null;
+    quantityPrecision?: number | null;
+    warrantyYears?: number | null;
+  } | null;
+};
+
+export type InventorySupplierSummary = {
+  id?: string;
+  storeId?: string;
+  name: string;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  rating?: number | null;
+  note?: string | null;
+  isActive?: boolean;
+  contacts?: Array<{
+    id: string;
+    name: string;
+    phone?: string | null;
+    role?: string | null;
+    isPrimary?: boolean;
+    isActive?: boolean;
+  }>;
+  ratingHistory?: Array<{
+    id: string;
+    rating: number;
+    note?: string | null;
+    createdAt?: string | Date | null;
+    createdById?: string | null;
+  }>;
+  purchaseOrderCount: number;
+  batchCount: number;
+  lastPurchaseOrderAt?: string | Date | null;
+  lastBatchUpdatedAt?: string | Date | null;
+  lastMasterDataUpdatedAt?: string | Date | null;
 };
 
 export type WarrantySummary = {
   id: string;
   storeId: string;
   orderId: string;
+  order?: BusinessOrderSummary | null;
   warrantyNo: string;
   status: WarrantyStatus;
   scope: string;
@@ -120,6 +190,7 @@ export type AfterSaleSummary = {
   id: string;
   storeId: string;
   orderId: string;
+  order?: BusinessOrderSummary | null;
   warrantyId: string | null;
   customerId: string;
   description: string;
@@ -150,19 +221,40 @@ export type InvoiceSummary = {
   id: string;
   storeId: string;
   orderId: string;
+  order?: BusinessOrderSummary | null;
   title: string;
   amountCents: number;
   status: InvoiceStatus;
   invoiceNo: string | null;
+  fileUrl: string | null;
 };
 
 export type RebateSummary = {
   id: string;
   storeId: string;
   orderId: string;
+  order?: BusinessOrderSummary | null;
   amountCents: number;
   reason: string;
   status: RebateStatus;
+};
+
+export type BusinessOrderSummary = {
+  orderNo?: string | null;
+  customer?: {
+    name?: string | null;
+    personalName?: string | null;
+    companyName?: string | null;
+    contactPerson?: string | null;
+  } | null;
+  vehicle?: {
+    plateNo?: string | null;
+    carPlate?: string | null;
+    model?: string | null;
+    carModel?: string | null;
+    color?: string | null;
+    carColor?: string | null;
+  } | null;
 };
 
 export type ReportSummary = {
@@ -173,6 +265,74 @@ export type ReportSummary = {
   afterSales: number;
   invoices: number;
   rebates: number;
+  inventoryBatches: number;
+  inventoryMovements: number;
+  expenseAmountCents: number;
+  reimbursementAmountCents: number;
+  paymentRecordAmountCents: number;
+  salesCommissionAmountCents: number;
+  workerCommissionAmountCents: number;
+  salesTrend: Array<{
+    month: string;
+    orders: number;
+    totalAmountCents: number;
+    paidAmountCents: number;
+  }>;
+  constructionTrend: Array<{
+    month: string;
+    records: number;
+    completed: number;
+    qualityPassed: number;
+    reworkRequired: number;
+  }>;
+  afterSaleTrend: Array<{
+    month: string;
+    cases: number;
+    resolved: number;
+    constructionResponsibility: number;
+  }>;
+  commissionTrend: Array<{
+    month: string;
+    salesLogs: number;
+    workerCommissions: number;
+    salesCommissionCents: number;
+    workerCommissionCents: number;
+    workerAdjustmentCents: number;
+    totalCommissionCents: number;
+  }>;
+  financeTrend: Array<{
+    month: string;
+    incomeCents: number;
+    expenseCents: number;
+    reimbursementCents: number;
+    rebateCents: number;
+    netCashflowCents: number;
+  }>;
+  inventoryTrend: Array<{
+    month: string;
+    movements: number;
+    inboundQuantity: number;
+    outboundQuantity: number;
+    lockedQuantity: number;
+    releasedQuantity: number;
+    adjustmentQuantity: number;
+  }>;
+  invoiceTrend: Array<{
+    month: string;
+    invoices: number;
+    issued: number;
+    voided: number;
+    reissued: number;
+    amountCents: number;
+  }>;
+  rebateTrend: Array<{
+    month: string;
+    rebates: number;
+    approved: number;
+    paid: number;
+    rejected: number;
+    amountCents: number;
+  }>;
 };
 
 export type AuthUser = {

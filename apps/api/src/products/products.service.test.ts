@@ -49,6 +49,63 @@ test("ProductsService creates active products for store managers", async () => {
   assert.deepEqual(result, { id: "product-1" });
 });
 
+test("ProductsService persists structured inventory conversion fields", async () => {
+  const writes: unknown[] = [];
+  const prisma = {
+    product: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "product-1" };
+      }
+    }
+  };
+  const service = new ProductsService(prisma as never);
+
+  await service.create(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    {
+      storeId: "store-1",
+      brand: "3M",
+      name: "漆面保护膜",
+      model: "PPF-100",
+      category: ProductCategory.PPF,
+      specification: "1.52*15m",
+      unit: ProductUnit.ROLL,
+      inventoryUnit: ProductUnit.ROLL,
+      salesUnit: ProductUnit.METER,
+      rollWidthMeters: 1.52,
+      rollLengthMeters: 15,
+      metersPerRoll: 15,
+      quantityPrecision: 3,
+      warrantyYears: 10,
+      basePriceCents: 5000000
+    }
+  );
+
+  assert.deepEqual((writes[0] as { data: Record<string, unknown> }).data, {
+    storeId: "store-1",
+    brand: "3M",
+    name: "漆面保护膜",
+    model: "PPF-100",
+    category: ProductCategory.PPF,
+    specification: "1.52*15m",
+    unit: ProductUnit.ROLL,
+    inventoryUnit: ProductUnit.ROLL,
+    salesUnit: ProductUnit.METER,
+    rollWidthMeters: 1.52,
+    rollLengthMeters: 15,
+    metersPerRoll: 15,
+    quantityPrecision: 3,
+    warrantyYears: 10,
+    basePriceCents: 5000000,
+    status: ProductStatus.ACTIVE
+  });
+});
+
 test("ProductsService rejects product updates from sales", async () => {
   const service = new ProductsService({
     product: {

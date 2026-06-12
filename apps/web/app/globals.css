@@ -501,6 +501,252 @@ button:hover .avatar-hover-mask {
   padding: 16px 20px;
 }
 
+/* Create order form */
+.create-order-layout {
+  display: grid;
+  gap: 20px;
+}
+
+.create-order-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.create-order-card.ant-card,
+.create-order-summary-card.ant-card {
+  border-color: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.create-order-card .ant-card-head,
+.create-order-summary-card .ant-card-head {
+  min-height: 48px;
+}
+
+.create-order-customer-row,
+.create-order-field-grid,
+.create-order-product-row {
+  display: grid;
+  gap: 12px;
+}
+
+.create-order-history-card.ant-card {
+  margin-top: 4px;
+  background: #f8fafc;
+}
+
+.create-order-summary-card.ant-card {
+  position: sticky;
+  top: 24px;
+}
+
+.create-order-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 10px 0;
+  color: #475569;
+  font-size: 14px;
+}
+
+.create-order-summary-row:first-child {
+  padding-top: 0;
+}
+
+.create-order-summary-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.create-order-summary-row strong {
+  color: #0f172a;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.create-order-summary-total {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.create-order-summary-total strong {
+  color: #1677ff;
+  font-size: 18px;
+}
+
+/* Construction capacity */
+.capacity-page-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.capacity-editor-card.ant-card,
+.capacity-list-card.ant-card {
+  border-color: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.capacity-form-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.capacity-number-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.capacity-form-actions {
+  display: flex;
+  align-items: end;
+}
+
+@media (min-width: 768px) {
+  .capacity-form-grid {
+    grid-template-columns: 180px minmax(320px, 460px) auto;
+    align-items: start;
+    justify-content: space-between;
+  }
+
+  .capacity-number-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .capacity-form-actions {
+    min-height: 78px;
+  }
+}
+
+@media (min-width: 768px) {
+  .create-order-customer-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .create-order-field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .create-order-product-row {
+    grid-template-columns: minmax(280px, 1fr) 88px 132px auto;
+    align-items: start;
+  }
+
+  .create-order-field-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (min-width: 1180px) {
+  .create-order-layout {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    align-items: start;
+  }
+
+  .create-order-aside {
+    min-width: 0;
+  }
+}
+
+/* Workbench business entry */
+.workbench-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px 20px 20px;
+}
+
+.workbench-entry-section {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+}
+
+.workbench-entry-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.workbench-entry-heading {
+  margin-bottom: 12px;
+}
+
+.workbench-entry-title {
+  display: block;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.workbench-entry-desc {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.workbench-entry-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.workbench-entry-button {
+  display: flex;
+  min-height: 88px;
+  width: 100%;
+  cursor: pointer;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px 14px;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.workbench-entry-button:hover {
+  border-color: #93c5fd;
+  background: #f8fbff;
+  box-shadow: var(--shadow-sm);
+}
+
+.workbench-entry-button-primary {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.workbench-entry-label {
+  display: block;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.workbench-entry-text {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@media (min-width: 640px) {
+  .workbench-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Member rows */
 .member-row {
   display: flex;

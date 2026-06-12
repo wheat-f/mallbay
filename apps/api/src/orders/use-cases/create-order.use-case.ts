@@ -23,7 +23,7 @@ export class CreateOrderUseCase {
   private readonly orderNumber: OrderNumberGenerator;
 
   constructor(
-    private readonly prisma: PrismaService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional()
     @Inject(ORDER_NUMBER_GENERATOR)
     orderNumber?: OrderNumberGenerator
@@ -34,6 +34,17 @@ export class CreateOrderUseCase {
   async execute(user: UserWithStoreMember, dto: CreateOrderDto) {
     if (!PermissionPolicy.canCreateOrder(user, dto.storeId)) {
       throw new ForbiddenException("无权限");
+    }
+    const constructionAddress = normalizeOptionalText(dto.constructionAddress);
+    const appointmentTimeSlot = normalizeOptionalText(dto.appointmentTimeSlot);
+    if (dto.constructionLocation === ConstructionLocation.OUTSIDE && !constructionAddress) {
+      throw new BadRequestException("外出地址不能为空");
+    }
+    if (dto.appointmentDate && !appointmentTimeSlot) {
+      throw new BadRequestException("预约时段不能为空");
+    }
+    if (!dto.appointmentDate && appointmentTimeSlot) {
+      throw new BadRequestException("预约日期不能为空");
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -49,6 +60,9 @@ export class CreateOrderUseCase {
       const customer = await tx.customer.findUnique({ where: { id: dto.customerId } });
       if (!customer || customer.storeId !== dto.storeId) {
         throw new NotFoundException("客户不存在");
+      }
+      if (!PermissionPolicy.canViewCustomer(user, customer.storeId, customer.ownerUserId)) {
+        throw new ForbiddenException("无权限");
       }
 
       if (dto.vehicleId) {
@@ -76,12 +90,28 @@ export class CreateOrderUseCase {
         0
       );
       const laborCostCents = dto.laborCostCents;
+      const suggestedLaborCostCents = dto.suggestedLaborCostCents;
+      const laborCostAdjustmentReason = normalizeOptionalText(dto.laborCostAdjustmentReason);
+      if (
+        suggestedLaborCostCents !== undefined &&
+        suggestedLaborCostCents !== laborCostCents &&
+        !laborCostAdjustmentReason
+      ) {
+        throw new BadRequestException("调整施工人工费必须填写原因");
+      }
       const totalAmountCents = productAmountCents + laborCostCents;
       const paidAmountCents = dto.deposit?.amountCents ?? 0;
       const outstandingCents = totalAmountCents - paidAmountCents;
 
       if (outstandingCents < 0) {
         throw new BadRequestException("收款金额不能超过订单总额");
+      }
+
+      if (dto.deposit) {
+        const account = await tx.paymentAccount.findUnique({ where: { id: dto.deposit.accountId } });
+        if (!account || account.storeId !== dto.storeId || !account.isActive) {
+          throw new BadRequestException("收款账户不可用");
+        }
       }
 
       const order = await tx.order.create({
@@ -93,9 +123,9 @@ export class CreateOrderUseCase {
           salesPersonId: user.id,
           constructionType: dto.constructionType,
           constructionLocation: dto.constructionLocation,
-          constructionAddress: dto.constructionAddress,
+          constructionAddress,
           appointmentDate: dto.appointmentDate ? new Date(dto.appointmentDate) : undefined,
-          appointmentTimeSlot: dto.appointmentTimeSlot,
+          appointmentTimeSlot,
           status: OrderStatus.PENDING_DISPATCH,
           remark: dto.remark
         }
@@ -116,9 +146,14 @@ export class CreateOrderUseCase {
           orderId: order.id,
           productAmountCents,
           laborCostCents,
+          suggestedLaborCostCents,
+          laborCostAdjustmentReason,
           totalAmountCents,
           paidAmountCents,
-          outstandingCents
+          outstandingCents,
+          materialCostCents: 0,
+          salesCommissionCents: 0,
+          profitCents: calculateProfitCents(totalAmountCents, 0, 0)
         }
       });
 
@@ -209,6 +244,15 @@ function assertCapacityAvailable(reserved: number, capacity: number) {
 function normalizeCapacityDate(value: string) {
   const datePart = value.includes("T") ? value.slice(0, 10) : value;
   return new Date(`${datePart}T00:00:00.000Z`);
+}
+
+function normalizeOptionalText(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function calculateProfitCents(totalAmountCents: number, materialCostCents: number, salesCommissionCents: number) {
+  return totalAmountCents - materialCostCents - salesCommissionCents;
 }
 
 function createDefaultOrderNumberGenerator(): OrderNumberGenerator {

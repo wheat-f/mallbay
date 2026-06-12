@@ -7,19 +7,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { productApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
+import { StorePageHeader } from "../../src/features/workbench/store-page-header";
+import {
+  getProductCategoryLabel,
+  getProductInventorySpecLabel,
+  getProductUnitLabel,
+  PRODUCT_CATEGORY_OPTIONS,
+  PRODUCT_UNIT_OPTIONS
+} from "../../src/features/products/display";
+import {
+  toProductFormValues,
+  toProductPayload,
+  type ProductFormValues
+} from "../../src/features/products/product-form";
 
 type ProductRow = CreateProductPayload & {
   id: string;
   status: "ACTIVE" | "INACTIVE";
 };
-
-const CATEGORY_OPTIONS = [
-  { label: "漆面保护膜", value: "PPF" },
-  { label: "改色膜", value: "COLOR_FILM" },
-  { label: "隔热膜", value: "HEAT_FILM" },
-  { label: "改装", value: "MODIFICATION" },
-  { label: "其他", value: "OTHER" }
-];
 
 export default function ProductsPage() {
   const { message } = App.useApp();
@@ -28,7 +33,7 @@ export default function ProductsPage() {
   const storeId = user?.storeMember?.store.id;
   const [editing, setEditing] = useState<ProductRow | null>(null);
   const [open, setOpen] = useState(false);
-  const [form] = Form.useForm<CreateProductPayload>();
+  const [form] = Form.useForm<ProductFormValues>();
 
   const productsQuery = useQuery({
     queryKey: ["products", storeId],
@@ -37,8 +42,10 @@ export default function ProductsPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (values: CreateProductPayload) =>
-      editing ? productApi.update(editing.id, values) : productApi.create({ ...values, storeId: storeId! }),
+    mutationFn: (values: ProductFormValues) => {
+      const payload = toProductPayload(storeId!, values);
+      return editing ? productApi.update(editing.id, payload) : productApi.create(payload);
+    },
     onSuccess: async () => {
       message.success("产品已保存");
       setOpen(false);
@@ -63,13 +70,7 @@ export default function ProductsPage() {
   return (
     <Layout className="dashboard-shell">
       <Layout.Content className="dashboard-content">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <Typography.Title level={3} className="!mb-1">
-              产品管理
-            </Typography.Title>
-            <Typography.Text type="secondary">维护可下单产品、价格和质保年限</Typography.Text>
-          </div>
+        <StorePageHeader title="产品管理" description="维护可下单产品、价格和质保年限">
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -82,7 +83,7 @@ export default function ProductsPage() {
           >
             新建产品
           </Button>
-        </div>
+        </StorePageHeader>
 
         <Table<ProductRow>
           rowKey="id"
@@ -92,7 +93,9 @@ export default function ProductsPage() {
             { title: "品牌", dataIndex: "brand" },
             { title: "名称", dataIndex: "name" },
             { title: "型号", dataIndex: "model" },
-            { title: "类别", dataIndex: "category" },
+            { title: "类别", render: (_, row) => getProductCategoryLabel(row.category) },
+            { title: "单位", render: (_, row) => getProductUnitLabel(row.unit) },
+            { title: "库存规格", render: (_, row) => getProductInventorySpecLabel(row) },
             { title: "基础价", render: (_, row) => `￥${(row.basePriceCents / 100).toFixed(2)}` },
             {
               title: "状态",
@@ -111,7 +114,7 @@ export default function ProductsPage() {
                     icon={<EditOutlined />}
                     onClick={() => {
                       setEditing(row);
-                      form.setFieldsValue(row);
+                      form.setFieldsValue(toProductFormValues(row));
                       setOpen(true);
                     }}
                   />
@@ -133,7 +136,7 @@ export default function ProductsPage() {
           onCancel={() => setOpen(false)}
           onOk={() => form.submit()}
           confirmLoading={saveMutation.isPending}
-          destroyOnHidden
+          forceRender
         >
           <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
             <Form.Item name="brand" label="品牌" rules={[{ required: true, message: "请输入品牌" }]}>
@@ -146,23 +149,37 @@ export default function ProductsPage() {
               <Input />
             </Form.Item>
             <Form.Item name="category" label="类别" rules={[{ required: true, message: "请选择类别" }]}>
-              <Select options={CATEGORY_OPTIONS} />
+              <Select options={PRODUCT_CATEGORY_OPTIONS} />
             </Form.Item>
             <Form.Item name="specification" label="规格">
               <Input />
             </Form.Item>
             <Form.Item name="unit" label="单位" rules={[{ required: true, message: "请选择单位" }]}>
-              <Select options={[
-                { label: "卷", value: "ROLL" },
-                { label: "米", value: "METER" },
-                { label: "件", value: "PIECE" }
-              ]} />
+              <Select options={PRODUCT_UNIT_OPTIONS} />
+            </Form.Item>
+            <Form.Item name="inventoryUnit" label="库存单位">
+              <Select options={PRODUCT_UNIT_OPTIONS} allowClear />
+            </Form.Item>
+            <Form.Item name="salesUnit" label="销售单位">
+              <Select options={PRODUCT_UNIT_OPTIONS} allowClear />
+            </Form.Item>
+            <Form.Item name="rollWidthMeters" label="卷宽（米）">
+              <InputNumber className="w-full" min={0} precision={3} />
+            </Form.Item>
+            <Form.Item name="rollLengthMeters" label="卷长（米）">
+              <InputNumber className="w-full" min={0} precision={3} />
+            </Form.Item>
+            <Form.Item name="metersPerRoll" label="每卷米数">
+              <InputNumber className="w-full" min={0} precision={3} />
+            </Form.Item>
+            <Form.Item name="quantityPrecision" label="数量精度">
+              <InputNumber className="w-full" min={0} max={6} />
             </Form.Item>
             <Form.Item name="warrantyYears" label="质保年限">
               <InputNumber className="w-full" min={0} />
             </Form.Item>
-            <Form.Item name="basePriceCents" label="基础价（分）" rules={[{ required: true, message: "请输入基础价" }]}>
-              <InputNumber className="w-full" min={0} />
+            <Form.Item name="basePriceYuan" label="基础价（元）" rules={[{ required: true, message: "请输入基础价" }]}>
+              <InputNumber className="w-full" min={0} precision={2} />
             </Form.Item>
           </Form>
         </Modal>

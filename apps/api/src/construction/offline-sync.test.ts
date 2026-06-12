@@ -16,8 +16,8 @@ test("ConstructionService syncs offline photo status and leave operations in ord
     calls.push(`photo:${recordId}:${dto.stage}`);
     return { id: "photo-1" };
   };
-  service.startOrder = async (_user, orderId) => {
-    calls.push(`start:${orderId}`);
+  service.startOrder = async (_user, orderId, dto) => {
+    calls.push(`start:${orderId}:${dto?.startedAt}`);
     return { id: "record-1" };
   };
   service.completeOrderForOrder = async (_user, orderId) => {
@@ -39,7 +39,11 @@ test("ConstructionService syncs offline photo status and leave operations in ord
       {
         clientOperationId: "op-start",
         type: "TASK_STATUS",
-        payload: { orderId: "order-1", status: ConstructionTaskStatus.IN_CONSTRUCTION }
+        payload: {
+          orderId: "order-1",
+          status: ConstructionTaskStatus.IN_CONSTRUCTION,
+          startedAt: "2026-06-02T07:00:00.000Z"
+        }
       },
       {
         clientOperationId: "op-complete",
@@ -62,7 +66,7 @@ test("ConstructionService syncs offline photo status and leave operations in ord
 
   assert.deepEqual(calls, [
     "photo:record-1:BEFORE",
-    "start:order-1",
+    "start:order-1:2026-06-02T07:00:00.000Z",
     "complete:order-1",
     "leave:worker-1:2026-06-03T00:00:00.000Z"
   ]);

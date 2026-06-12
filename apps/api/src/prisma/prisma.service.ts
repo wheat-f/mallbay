@@ -19,8 +19,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     @Optional() @Inject(StructuredLoggerService) logger?: StructuredLoggerService,
     @Optional() @Inject(MetricsService) metrics?: MetricsService
   ) {
-    const connectionString =
-      config.get<string>("DATABASE_URL") ?? "postgresql://postgres:postgres@localhost:5432/mallbay?schema=public";
+    const connectionString = getRequiredDatabaseUrl(config);
 
     super({
       adapter: new PrismaPg({
@@ -44,6 +43,14 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   async onModuleDestroy() {
     await this.$disconnect();
   }
+}
+
+export function getRequiredDatabaseUrl(config: Pick<ConfigService, "get">) {
+  const connectionString = config.get<string>("DATABASE_URL");
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is required; check API env file loading before starting the server");
+  }
+  return connectionString;
 }
 
 export function recordPrismaQueryTrace(

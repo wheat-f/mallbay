@@ -14,6 +14,7 @@ import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshDto } from "./dto/refresh.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { WechatLoginDto } from "./dto/wechat-login.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 
 type AuthRequest = Request & {
@@ -52,6 +53,13 @@ export class AuthController {
   @Post("login")
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const session = await this.authService.login(dto);
+    this.setRefreshTokenCookie(res, session.refreshToken);
+    return session;
+  }
+
+  @Post("wechat-login")
+  async wechatLogin(@Body() dto: WechatLoginDto, @Res({ passthrough: true }) res: Response) {
+    const session = await this.authService.loginWithWechatCode(dto);
     this.setRefreshTokenCookie(res, session.refreshToken);
     return session;
   }

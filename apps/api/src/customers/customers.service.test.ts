@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CustomerType, Gender, StorePosition } from "@prisma/client";
+import { CustomerNoteType, CustomerType, Gender, StorePosition } from "@prisma/client";
 import { CustomersService } from "./customers.service";
 
 test("CustomersService creates a personal customer owned by the current sales user", async () => {
@@ -90,6 +90,415 @@ test("CustomersService rejects duplicate phone in the same store", async () => {
       ),
     { name: "ConflictException" }
   );
+});
+
+test("CustomersService normalizes birthday strings before creating a customer", async () => {
+  const prisma = {
+    customer: {
+      findUnique: async () => null,
+      create: async (args: { data: { birthday?: Date } }) => {
+        assert.equal(args.data.birthday instanceof Date, true);
+        assert.equal(args.data.birthday?.toISOString().startsWith("1990-01-02"), true);
+        return { id: "customer-1", birthday: args.data.birthday };
+      }
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+
+  await service.create(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    "store-1",
+    {
+      customerType: CustomerType.PERSONAL,
+      name: "张三",
+      phone: "13800138000",
+      birthday: "1990-01-02" as never
+    }
+  );
+});
+
+test("CustomersService rejects invalid birthday before persistence", async () => {
+  const service = new CustomersService({
+    customer: {
+      findUnique: async () => null,
+      create: async () => {
+        throw new Error("should not persist invalid birthday");
+      }
+    }
+  } as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+
+  await assert.rejects(
+    () =>
+      service.create(
+        {
+          id: "sales-1",
+          isAuditor: false,
+          storeMember: { storeId: "store-1", position: StorePosition.SALES }
+        },
+        "store-1",
+        {
+          customerType: CustomerType.PERSONAL,
+          name: "张三",
+          phone: "13800138000",
+          birthday: "not-a-date" as never
+        }
+      ),
+    { name: "BadRequestException" }
+  );
+});
+
+test("CustomersService rejects invalid customer basic information before persistence", async () => {
+  const service = new CustomersService({
+    customer: {
+      findUnique: async () => {
+        throw new Error("should not query duplicate phone for invalid payload");
+      }
+    }
+  } as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+  const user = {
+    id: "sales-1",
+    isAuditor: false,
+    storeMember: { storeId: "store-1", position: StorePosition.SALES }
+  };
+
+  await assert.rejects(
+    () =>
+      service.create(user, "store-1", {
+        customerType: CustomerType.PERSONAL,
+        name: "张三",
+        phone: "1388S"
+      }),
+    { name: "BadRequestException" }
+  );
+
+  await assert.rejects(
+    () =>
+      service.create(user, "store-1", {
+        customerType: CustomerType.PERSONAL,
+        name: " ",
+        phone: "13800138000"
+      }),
+    { name: "BadRequestException" }
+  );
+});
+
+test("CustomersService search includes car plate and VIN hash conditions", async () => {
+  const capturedWhere: unknown[] = [];
+  const service = new CustomersService({
+    customer: {
+      findMany: async (args: { where: unknown }) => {
+        capturedWhere.push(args.where);
+        return [];
+      }
+    }
+  } as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+  const user = {
+    id: "sales-1",
+    isAuditor: false,
+    storeMember: { storeId: "store-1", position: StorePosition.SALES }
+  };
+
+  await service.search(user, "store-1", "湘A12345");
+  await service.search(user, "store-1", "LSVNV2182E2123456");
+
+  assert.deepEqual(capturedWhere, [
+    {
+      storeId: "store-1",
+      ownerUserId: "sales-1",
+      OR: [
+        { name: { contains: "湘A12345", mode: "insensitive" } },
+        { companyName: { contains: "湘A12345", mode: "insensitive" } },
+        { contactPerson: { contains: "湘A12345", mode: "insensitive" } },
+        { wechat: { contains: "湘A12345", mode: "insensitive" } },
+        { vehicles: { some: { carPlate: { contains: "湘A12345", mode: "insensitive" } } } }
+      ]
+    },
+    {
+      storeId: "store-1",
+      ownerUserId: "sales-1",
+      OR: [
+        { name: { contains: "LSVNV2182E2123456", mode: "insensitive" } },
+        { companyName: { contains: "LSVNV2182E2123456", mode: "insensitive" } },
+        { contactPerson: { contains: "LSVNV2182E2123456", mode: "insensitive" } },
+        { wechat: { contains: "LSVNV2182E2123456", mode: "insensitive" } },
+        { vehicles: { some: { carPlate: { contains: "LSVNV2182E2123456", mode: "insensitive" } } } },
+        { vehicles: { some: { vinHash: "hash:LSVNV2182E2123456" } } }
+      ]
+    }
+  ]);
+});
+
+test("CustomersService detail returns generated archive summary from orders warranties and after-sales", async () => {
+  const prisma = {
+    customer: {
+      findUnique: async () => ({
+        id: "customer-1",
+        storeId: "store-1",
+        ownerUserId: "sales-1",
+        customerType: CustomerType.PERSONAL,
+        name: "张三",
+        phoneEncrypted: "enc",
+        phoneHash: "hash",
+        vehicles: [],
+        notes: [],
+        orders: [],
+        warranties: [
+          {
+            id: "warranty-1",
+            status: "ACTIVE",
+            endDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000)
+          },
+          {
+            id: "warranty-2",
+            status: "EXPIRED",
+            endDate: new Date("2025-01-01T00:00:00.000Z")
+          }
+        ],
+        afterSales: [
+          { id: "after-sale-1", status: "OPEN", responsibility: "CONSTRUCTION" },
+          { id: "after-sale-2", status: "CLOSED", responsibility: "MATERIAL" }
+        ]
+      })
+    },
+    order: {
+      aggregate: async () => ({
+        _count: { _all: 2 },
+        _min: { createdAt: new Date("2026-01-01T00:00:00.000Z") },
+        _max: { createdAt: new Date("2026-02-01T00:00:00.000Z") }
+      }),
+      groupBy: async () => [
+        { constructionType: "PPF", _count: { _all: 1 } },
+        { constructionType: "HEAT_FILM", _count: { _all: 1 } }
+      ],
+      findMany: async () => [
+        {
+          createdAt: new Date("2026-01-10T00:00:00.000Z"),
+          amount: {
+            totalAmountCents: 500_000,
+            paidAmountCents: 300_000,
+            outstandingCents: 200_000
+          }
+        },
+        {
+          createdAt: new Date("2026-01-20T00:00:00.000Z"),
+          amount: {
+            totalAmountCents: 300_000,
+            paidAmountCents: 300_000,
+            outstandingCents: 0
+          }
+        },
+        {
+          createdAt: new Date("2026-02-01T00:00:00.000Z"),
+          amount: {
+            totalAmountCents: 400_000,
+            paidAmountCents: 300_000,
+            outstandingCents: 100_000
+          }
+        }
+      ]
+    },
+    orderAmount: {
+      aggregate: async () => ({
+        _sum: {
+          totalAmountCents: 1_200_000,
+          paidAmountCents: 900_000,
+          outstandingCents: 300_000
+        }
+      })
+    },
+    constructionRecord: {
+      findMany: async (args: unknown) => {
+        assert.deepEqual(args, {
+          where: { order: { customerId: "customer-1" } },
+          orderBy: { completedAt: "desc" },
+          take: 3,
+          select: {
+            status: true,
+            completedAt: true,
+            actualMinutes: true,
+            qualityResult: true,
+            order: {
+              select: {
+                orderNo: true,
+                constructionType: true,
+                vehicle: { select: { carPlate: true, carModel: true, carColor: true } }
+              }
+            }
+          }
+        });
+        return [
+          {
+            status: "COMPLETED",
+            completedAt: new Date("2026-02-10T08:00:00.000Z"),
+            actualMinutes: 360,
+            qualityResult: "PASS",
+            order: {
+              orderNo: "MB202602100001",
+              constructionType: "PPF",
+              vehicle: { carPlate: "湘A12345", carModel: "Model 3", carColor: "白色" }
+            }
+          }
+        ];
+      }
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+
+  const result = await service.detail(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    "customer-1"
+  );
+
+  assert.deepEqual(result.archiveSummary.consumption, {
+    orderCount: 2,
+    totalAmountCents: 1_200_000,
+    paidAmountCents: 900_000,
+    outstandingCents: 300_000,
+    constructionTypeDistribution: {
+      PPF: 1,
+      HEAT_FILM: 1
+    },
+    firstConsumedAt: new Date("2026-01-01T00:00:00.000Z"),
+    latestConsumedAt: new Date("2026-02-01T00:00:00.000Z"),
+    trend: [
+      {
+        month: "2026-01",
+        orderCount: 2,
+        totalAmountCents: 800_000,
+        paidAmountCents: 600_000,
+        outstandingCents: 200_000
+      },
+      {
+        month: "2026-02",
+        orderCount: 1,
+        totalAmountCents: 400_000,
+        paidAmountCents: 300_000,
+        outstandingCents: 100_000
+      }
+    ]
+  });
+  assert.equal(result.archiveSummary.warranty.activeCount, 1);
+  assert.equal(result.archiveSummary.warranty.expiredCount, 1);
+  assert.equal(result.archiveSummary.warranty.expiringSoonCount, 1);
+  assert.deepEqual(result.archiveSummary.afterSales.responsibilityDistribution, {
+    CONSTRUCTION: 1,
+    MATERIAL: 1
+  });
+  assert.deepEqual(result.archiveSummary.construction.recentRecords, [
+    {
+      orderNo: "MB202602100001",
+      constructionType: "PPF",
+      status: "COMPLETED",
+      completedAt: new Date("2026-02-10T08:00:00.000Z"),
+      actualMinutes: 360,
+      qualityResult: "PASS",
+      vehicleLabel: "湘A12345 / Model 3 / 白色"
+    }
+  ]);
+  assert.deepEqual(
+    result.archiveSummary.systemTags.map((tag) => tag.code),
+    ["OLD_CUSTOMER", "HIGH_VALUE", "VIP", "KEY_FOLLOW_UP"]
+  );
+});
+
+test("CustomersService creates structured customer notes", async () => {
+  const prisma = {
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
+    },
+    customerNote: {
+      create: async (args: unknown) => {
+        assert.deepEqual(args, {
+          data: {
+            customerId: "customer-1",
+            createdById: "sales-1",
+            noteType: CustomerNoteType.PREFERENCE,
+            content: "喜欢工作日施工"
+          }
+        });
+        return { id: "note-1" };
+      }
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+
+  const result = await service.createNote(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    {
+      customerId: "customer-1",
+      noteType: CustomerNoteType.PREFERENCE,
+      content: "喜欢工作日施工"
+    }
+  );
+
+  assert.deepEqual(result, { id: "note-1" });
+});
+
+test("CustomersService creates custom tags and rejects blank labels", async () => {
+  const prisma = {
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
+    },
+    customerTag: {
+      create: async (args: unknown) => {
+        assert.deepEqual(args, {
+          data: {
+            customerId: "customer-1",
+            createdById: "sales-1",
+            label: "重点客户"
+          }
+        });
+        return { id: "tag-1", label: "重点客户" };
+      }
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+  const user = {
+    id: "sales-1",
+    isAuditor: false,
+    storeMember: { storeId: "store-1", position: StorePosition.SALES }
+  };
+
+  await assert.rejects(
+    () => service.createTag(user, { customerId: "customer-1", label: " " }),
+    { name: "BadRequestException" }
+  );
+  const result = await service.createTag(user, { customerId: "customer-1", label: " 重点客户 " });
+
+  assert.deepEqual(result, { id: "tag-1", label: "重点客户" });
 });
 
 test("CustomersService rejects sales editing another sales user's customer", async () => {

@@ -25,7 +25,7 @@ const STATUS_CONFIG: Record<string, { text: string; color: string }> = {
   FROZEN: { text: "已冻结", color: "warning" }
 };
 
-// ─── 审核员：创建门店 Modal ───────────────────────────────────────
+// ─── 管理员：创建门店 Modal ───────────────────────────────────────
 function CreateStoreModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { message } = App.useApp();
   const [keyword, setKeyword] = useState("");
@@ -213,7 +213,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="dashboard-card-grid">
-          {/* 审核员模块 */}
+          {/* 管理员模块 */}
           {user.isAuditor && (
             <div className="dashboard-section-card">
               <div className="dashboard-section-header">
@@ -222,7 +222,7 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <div className="dashboard-section-title">运营管理</div>
-                  <div className="dashboard-section-desc">审核员工作台</div>
+                  <div className="dashboard-section-desc">管理员工作台</div>
                 </div>
               </div>
               <div className="dashboard-section-actions">

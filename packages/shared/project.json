@@ -7,7 +7,7 @@
     "typecheck": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "pnpm --filter @mallbay/shared typecheck"
+        "command": "corepack pnpm --filter @mallbay/shared typecheck"
       }
     }
   }

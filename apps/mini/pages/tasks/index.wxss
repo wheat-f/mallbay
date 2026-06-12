@@ -17,12 +17,38 @@
   color: #111827;
 }
 
+.toolbar-actions {
+  display: flex;
+  gap: 12rpx;
+}
+
 .badge {
   padding: 8rpx 16rpx;
   border-radius: 8rpx;
   background: #dcfce7;
   color: #166534;
   font-size: 24rpx;
+}
+
+.queue-button {
+  margin: 0;
+  padding: 0 18rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  border-radius: 8rpx;
+  background: #111827;
+  color: #ffffff;
+  font-size: 24rpx;
+}
+
+.empty {
+  padding: 40rpx 28rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 12rpx;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 28rpx;
+  text-align: center;
 }
 
 .task {
@@ -33,15 +59,31 @@
   background: #ffffff;
 }
 
+.task-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+
 .task-title {
-  display: block;
-  margin-bottom: 8rpx;
+  flex: 1;
   font-size: 32rpx;
   font-weight: 600;
   color: #111827;
 }
 
 .task-meta {
+  display: block;
+  margin-top: 8rpx;
   color: #64748b;
   font-size: 26rpx;
+}
+
+.task-progress {
+  display: block;
+  margin-top: 16rpx;
+  color: #2563eb;
+  font-size: 24rpx;
 }

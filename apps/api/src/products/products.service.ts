@@ -29,6 +29,12 @@ export class ProductsService {
         category: dto.category,
         specification: dto.specification,
         unit: dto.unit,
+        ...(dto.inventoryUnit !== undefined ? { inventoryUnit: dto.inventoryUnit } : {}),
+        ...(dto.salesUnit !== undefined ? { salesUnit: dto.salesUnit } : {}),
+        ...(dto.rollWidthMeters !== undefined ? { rollWidthMeters: dto.rollWidthMeters } : {}),
+        ...(dto.rollLengthMeters !== undefined ? { rollLengthMeters: dto.rollLengthMeters } : {}),
+        ...(dto.metersPerRoll !== undefined ? { metersPerRoll: dto.metersPerRoll } : {}),
+        ...(dto.quantityPrecision !== undefined ? { quantityPrecision: dto.quantityPrecision } : {}),
         warrantyYears: dto.warrantyYears,
         basePriceCents: dto.basePriceCents,
         status: ProductStatus.ACTIVE

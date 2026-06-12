@@ -80,6 +80,33 @@ test("refresh reads refresh token from cookie when request body is empty", async
   assert.equal((cookies[REFRESH_TOKEN_COOKIE_NAME] as { value: string }).value, "refresh-token");
 });
 
+test("wechat mini login returns token response and sets refresh token cookie", async () => {
+  let capturedCode: string | undefined;
+  const service = {
+    loginWithWechatCode: async (dto: { code: string }) => {
+      capturedCode = dto.code;
+      return authResponse;
+    }
+  };
+  const controller = new AuthController(service as never);
+  const { response, cookies } = createResponse();
+
+  const result = await controller.wechatLogin({ code: "wx-code" }, response);
+
+  assert.equal(capturedCode, "wx-code");
+  assert.equal(result.accessToken, "access-token");
+  assert.deepEqual(cookies[REFRESH_TOKEN_COOKIE_NAME], {
+    value: "refresh-token",
+    options: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: false,
+      path: "/auth",
+      maxAge: 604_800_000
+    }
+  });
+});
+
 test("logout clears refresh token cookie after invalidating the server token", async () => {
   let capturedUserId: string | undefined;
   const service = {

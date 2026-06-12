@@ -1,6 +1,7 @@
-import { IsString } from "class-validator";
+import { IsOptional, IsString } from "class-validator";
 
 export class ReportQueryDto {
+  @IsOptional()
   @IsString()
-  storeId!: string;
+  storeId?: string;
 }

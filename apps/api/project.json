@@ -7,19 +7,19 @@
     "dev": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "pnpm --filter @mallbay/api dev"
+        "command": "corepack pnpm --filter @mallbay/api dev"
       }
     },
     "build": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "pnpm --filter @mallbay/api build"
+        "command": "corepack pnpm --filter @mallbay/api build"
       }
     },
     "typecheck": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "pnpm --filter @mallbay/api typecheck"
+        "command": "corepack pnpm --filter @mallbay/api typecheck"
       }
     }
   }

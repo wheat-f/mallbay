@@ -37,7 +37,13 @@ test("CreateOrderUseCase creates order items amount and deposit payment in one t
       }
     },
     orderItem: { createMany: async () => operations.push("orderItem.createMany") },
-    orderAmount: { create: async () => operations.push("orderAmount.create") },
+    orderAmount: {
+      create: async (args: unknown) => {
+        operations.push("orderAmount.create");
+        operations.push(JSON.stringify(args));
+      }
+    },
+    paymentAccount: { findUnique: async () => ({ id: "account-1", storeId: "store-1", isActive: true }) },
     orderPayment: { create: async () => operations.push("orderPayment.create") }
   };
   const prisma = {
@@ -77,6 +83,19 @@ test("CreateOrderUseCase creates order items amount and deposit payment in one t
     "order.create",
     "orderItem.createMany",
     "orderAmount.create",
+    JSON.stringify({
+      data: {
+        orderId: "order-1",
+        productAmountCents: 5000000,
+        laborCostCents: 200000,
+        totalAmountCents: 5200000,
+        paidAmountCents: 1000000,
+        outstandingCents: 4200000,
+        materialCostCents: 0,
+        salesCommissionCents: 0,
+        profitCents: 5200000
+      }
+    }),
     "orderPayment.create"
   ]);
 });
@@ -141,6 +160,321 @@ test("CreateOrderUseCase reserves daily capacity for scheduled in store orders",
   ]);
 });
 
+test("CreateOrderUseCase stores suggested labor snapshot and adjustment reason", async () => {
+  const amountCreates: unknown[] = [];
+  const tx = {
+    dailyCapacity: {
+      findUnique: async () => null
+    },
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
+    },
+    customerVehicle: { findUnique: async () => null },
+    product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
+    order: { create: async () => ({ id: "order-1", orderNo: "ORD202606010002" }) },
+    orderItem: { createMany: async () => undefined },
+    orderAmount: { create: async (args: unknown) => amountCreates.push(args) },
+    orderPayment: { create: async () => undefined }
+  };
+  const prisma = {
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const useCase = new CreateOrderUseCase(prisma as never, {
+    next: () => "ORD202606010002"
+  });
+
+  await useCase.execute(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    {
+      storeId: "store-1",
+      customerId: "customer-1",
+      constructionType: ConstructionType.PPF,
+      constructionLocation: ConstructionLocation.OUTSIDE,
+      constructionAddress: "客户小区",
+      items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
+      laborCostCents: 250000,
+      suggestedLaborCostCents: 220000,
+      laborCostAdjustmentReason: "外出距离远，需要增加人工费"
+    } as never
+  );
+
+  assert.deepEqual(amountCreates, [
+    {
+      data: {
+        orderId: "order-1",
+        productAmountCents: 5000000,
+        laborCostCents: 250000,
+        suggestedLaborCostCents: 220000,
+        laborCostAdjustmentReason: "外出距离远，需要增加人工费",
+        totalAmountCents: 5250000,
+        paidAmountCents: 0,
+        outstandingCents: 5250000,
+        materialCostCents: 0,
+        salesCommissionCents: 0,
+        profitCents: 5250000
+      }
+    }
+  ]);
+});
+
+test("CreateOrderUseCase rejects deposit when payment account is unavailable", async () => {
+  const tx = {
+    dailyCapacity: {
+      findUnique: async () => null
+    },
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
+    },
+    customerVehicle: { findUnique: async () => null },
+    product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
+    paymentAccount: {
+      findUnique: async () => ({ id: "account-1", storeId: "store-2", isActive: true })
+    },
+    order: { create: async () => ({ id: "order-1", orderNo: "ORD202606010003" }) },
+    orderItem: { createMany: async () => undefined },
+    orderAmount: { create: async () => undefined },
+    orderPayment: {
+      create: async () => {
+        throw new Error("deposit should not be created with an unavailable payment account");
+      }
+    }
+  };
+  const prisma = {
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const useCase = new CreateOrderUseCase(prisma as never, {
+    next: () => "ORD202606010003"
+  });
+
+  await assert.rejects(
+    () => useCase.execute(
+      {
+        id: "sales-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.SALES }
+      },
+      {
+        storeId: "store-1",
+        customerId: "customer-1",
+        constructionType: ConstructionType.PPF,
+        constructionLocation: ConstructionLocation.IN_STORE,
+        items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
+        laborCostCents: 200000,
+        deposit: {
+          accountId: "account-1",
+          amountCents: 1000000,
+          paymentType: PaymentType.DEPOSIT,
+          paidAt: "2026-05-31T10:00:00.000Z"
+        }
+      }
+    ),
+    /收款账户不可用/
+  );
+});
+
+test("CreateOrderUseCase rejects sales creating orders for another sales person's customer", async () => {
+  const tx = {
+    dailyCapacity: {
+      findUnique: async () => null
+    },
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-2" })
+    },
+    customerVehicle: { findUnique: async () => null },
+    product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
+    order: {
+      create: async () => {
+        throw new Error("order should not be created for another sales person's customer");
+      }
+    },
+    orderItem: { createMany: async () => undefined },
+    orderAmount: { create: async () => undefined },
+    orderPayment: { create: async () => undefined }
+  };
+  const prisma = {
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const useCase = new CreateOrderUseCase(prisma as never, {
+    next: () => "ORD202606010004"
+  });
+
+  await assert.rejects(
+    () => useCase.execute(
+      {
+        id: "sales-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.SALES }
+      },
+      {
+        storeId: "store-1",
+        customerId: "customer-1",
+        constructionType: ConstructionType.PPF,
+        constructionLocation: ConstructionLocation.IN_STORE,
+        items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
+        laborCostCents: 200000
+      }
+    ),
+    /无权限/
+  );
+});
+
+test("CreateOrderUseCase rejects outside construction orders without address", async () => {
+  const tx = {
+    dailyCapacity: {
+      findUnique: async () => null
+    },
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
+    },
+    customerVehicle: { findUnique: async () => null },
+    product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
+    order: {
+      create: async () => {
+        throw new Error("outside order should not be created without construction address");
+      }
+    },
+    orderItem: { createMany: async () => undefined },
+    orderAmount: { create: async () => undefined },
+    orderPayment: { create: async () => undefined }
+  };
+  const prisma = {
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const useCase = new CreateOrderUseCase(prisma as never, {
+    next: () => "ORD202606010005"
+  });
+
+  await assert.rejects(
+    () => useCase.execute(
+      {
+        id: "sales-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.SALES }
+      },
+      {
+        storeId: "store-1",
+        customerId: "customer-1",
+        constructionType: ConstructionType.PPF,
+        constructionLocation: ConstructionLocation.OUTSIDE,
+        constructionAddress: "   ",
+        items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
+        laborCostCents: 200000
+      }
+    ),
+    /外出地址不能为空/
+  );
+});
+
+test("CreateOrderUseCase rejects scheduled orders without appointment time slot", async () => {
+  const tx = {
+    dailyCapacity: {
+      findUnique: async () => ({
+        id: "capacity-1",
+        inStoreCapacity: 1,
+        inStoreReserved: 0,
+        outsideCapacity: 0,
+        outsideReserved: 0,
+        heatFilmCapacity: 0,
+        heatFilmReserved: 0,
+        inspectionCapacity: 0,
+        inspectionReserved: 0
+      }),
+      update: async () => undefined
+    },
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
+    },
+    customerVehicle: { findUnique: async () => null },
+    product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
+    order: {
+      create: async () => {
+        throw new Error("scheduled order should not be created without appointment time slot");
+      }
+    },
+    orderItem: { createMany: async () => undefined },
+    orderAmount: { create: async () => undefined },
+    orderPayment: { create: async () => undefined }
+  };
+  const prisma = {
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const useCase = new CreateOrderUseCase(prisma as never, {
+    next: () => "ORD202606010006"
+  });
+
+  await assert.rejects(
+    () => useCase.execute(
+      {
+        id: "sales-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.SALES }
+      },
+      {
+        storeId: "store-1",
+        customerId: "customer-1",
+        constructionType: ConstructionType.PPF,
+        constructionLocation: ConstructionLocation.IN_STORE,
+        appointmentDate: "2026-06-01",
+        appointmentTimeSlot: "   ",
+        items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
+        laborCostCents: 200000
+      }
+    ),
+    /预约时段不能为空/
+  );
+});
+
+test("CreateOrderUseCase rejects appointment time slot without appointment date", async () => {
+  const tx = {
+    dailyCapacity: {
+      findUnique: async () => null
+    },
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
+    },
+    customerVehicle: { findUnique: async () => null },
+    product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
+    order: {
+      create: async () => {
+        throw new Error("order should not be created with appointment time slot but no date");
+      }
+    },
+    orderItem: { createMany: async () => undefined },
+    orderAmount: { create: async () => undefined },
+    orderPayment: { create: async () => undefined }
+  };
+  const prisma = {
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const useCase = new CreateOrderUseCase(prisma as never, {
+    next: () => "ORD202606010007"
+  });
+
+  await assert.rejects(
+    () => useCase.execute(
+      {
+        id: "sales-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.SALES }
+      },
+      {
+        storeId: "store-1",
+        customerId: "customer-1",
+        constructionType: ConstructionType.PPF,
+        constructionLocation: ConstructionLocation.IN_STORE,
+        appointmentTimeSlot: "09:00-12:00",
+        items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
+        laborCostCents: 200000
+      }
+    ),
+    /预约日期不能为空/
+  );
+});
+
 test("CreateOrderUseCase rejects scheduled orders when daily capacity is full", async () => {
   const tx = {
     dailyCapacity: {
@@ -184,6 +518,7 @@ test("CreateOrderUseCase rejects scheduled orders when daily capacity is full", 
         constructionType: ConstructionType.PPF,
         constructionLocation: ConstructionLocation.IN_STORE,
         appointmentDate: "2026-06-01",
+        appointmentTimeSlot: "09:00-12:00",
         items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
         laborCostCents: 200000
       }

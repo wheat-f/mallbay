@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { constructionApi, orderApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { getConstructionStatusLabel, getConstructionWorkerLabel } from "../../../src/features/construction/display";
+import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 
 type OrderRow = {
   id: string;
@@ -19,6 +21,7 @@ type WorkerRow = {
   userId: string;
   skillTags?: string[];
   isActive: boolean;
+  user?: { username?: string | null; nickname?: string | null } | null;
 };
 
 type ConstructionRecordRow = {
@@ -27,12 +30,6 @@ type ConstructionRecordRow = {
   status: string;
   order?: { orderNo: string };
   assignments?: { workerUserId: string }[];
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  DISPATCHED: "已派工",
-  IN_CONSTRUCTION: "施工中",
-  COMPLETED: "已完工"
 };
 
 export default function ConstructionAssignmentsPage() {
@@ -77,12 +74,12 @@ export default function ConstructionAssignmentsPage() {
   const pendingRows = (pendingOrdersQuery.data?.items ?? []) as OrderRow[];
   const records = (recordsQuery.data ?? []) as ConstructionRecordRow[];
   const workers = ((workersQuery.data ?? []) as WorkerRow[]).filter((worker) => worker.isActive);
+  const workerMap = new Map(workers.map((worker) => [worker.userId, worker]));
 
   return (
     <Layout className="dashboard-shell">
       <Layout.Content className="dashboard-content">
-        <Typography.Title level={3} className="!mb-1">施工派工</Typography.Title>
-        <Typography.Text type="secondary">处理待派工订单并查看施工履约进度</Typography.Text>
+        <StorePageHeader title="施工派工" description="处理待派工订单并查看施工履约进度" />
 
         <Typography.Title level={4} className="!mt-6">待派工订单</Typography.Title>
         <Table<OrderRow>
@@ -110,9 +107,15 @@ export default function ConstructionAssignmentsPage() {
           loading={recordsQuery.isLoading}
           dataSource={records}
           columns={[
-            { title: "订单号", render: (_, row) => row.order?.orderNo ?? row.orderId },
-            { title: "状态", render: (_, row) => <Tag>{STATUS_LABEL[row.status] ?? row.status}</Tag> },
-            { title: "人员", render: (_, row) => row.assignments?.map((item) => item.workerUserId).join("、") ?? "-" },
+            { title: "订单号", render: (_, row) => row.order?.orderNo ?? "订单未加载" },
+            { title: "状态", render: (_, row) => <Tag>{getConstructionStatusLabel(row.status)}</Tag> },
+            {
+              title: "人员",
+              render: (_, row) =>
+                row.assignments
+                  ?.map((item) => getConstructionWorkerLabel(workerMap.get(item.workerUserId) ?? item.workerUserId))
+                  .join("、") ?? "-"
+            },
             {
               title: "操作",
               render: (_, row) => (
@@ -141,7 +144,7 @@ export default function ConstructionAssignmentsPage() {
                 maxCount={3}
                 options={workers.map((worker) => ({
                   value: worker.userId,
-                  label: `${worker.userId}${worker.skillTags?.length ? ` · ${worker.skillTags.join("/")}` : ""}`
+                  label: getConstructionWorkerLabel(worker)
                 }))}
               />
             </Form.Item>

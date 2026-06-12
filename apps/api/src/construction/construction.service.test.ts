@@ -70,6 +70,34 @@ test("ConstructionService rejects assigning more than three workers", async () =
   );
 });
 
+test("ConstructionService limits sales assignment list to their own orders", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    constructionRecord: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [];
+      }
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  await service.listAssignments(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    { storeId: "store-1" }
+  );
+
+  assert.deepEqual((calls[0] as { where: unknown }).where, {
+    storeId: "store-1",
+    order: { salesPersonId: "sales-1" }
+  });
+});
+
 test("ConstructionService starts completes and quality checks assigned tasks", async () => {
   const updates: unknown[] = [];
   const prisma = {

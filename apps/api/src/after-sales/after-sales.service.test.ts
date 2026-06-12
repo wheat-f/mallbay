@@ -89,3 +89,88 @@ test("AfterSalesService assigns workers and records responsibility penalty", asy
   assert.equal(serialized.includes(AfterSaleResponsibility.CONSTRUCTION), true);
   assert.equal(serialized.includes("\"amountCents\":1000"), true);
 });
+
+test("AfterSalesService lists after-sales with order customer and vehicle summary", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    afterSale: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [];
+      }
+    }
+  };
+  const service = new AfterSalesService(prisma as never);
+
+  await service.list(
+    {
+      id: "scheduler-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
+    },
+    { storeId: "store-1" }
+  );
+
+  const serialized = JSON.stringify(calls[0]);
+  assert.match(serialized, /"order"/);
+  assert.match(serialized, /"orderNo"/);
+  assert.match(serialized, /"customer"/);
+  assert.match(serialized, /"vehicle"/);
+});
+
+test("AfterSalesService limits construction workers to assigned after-sales", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    afterSale: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [];
+      }
+    }
+  };
+  const service = new AfterSalesService(prisma as never);
+
+  await service.list(
+    {
+      id: "worker-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+    },
+    { storeId: "store-1" }
+  );
+
+  assert.deepEqual((calls[0] as { where: unknown }).where, {
+    storeId: "store-1",
+    assignments: { some: { workerUserId: "worker-1" } }
+  });
+});
+
+test("AfterSalesService limits sales after-sales list to their own orders", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    afterSale: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [];
+      }
+    }
+  };
+  const service = new AfterSalesService(prisma as never);
+
+  await service.list(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    { storeId: "store-1" }
+  );
+
+  assert.deepEqual((calls[0] as { where: unknown }).where, {
+    storeId: "store-1",
+    order: { salesPersonId: "sales-1" }
+  });
+});

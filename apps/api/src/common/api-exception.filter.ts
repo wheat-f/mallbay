@@ -27,6 +27,15 @@ export class ApiExceptionFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      console.error("Unhandled API exception", {
+        requestId: request.requestId,
+        method: request.method,
+        route: request.originalUrl,
+        exception
+      });
+    }
+
     response.status(status).json(this.toBody(exception, status, request.requestId));
   }
 

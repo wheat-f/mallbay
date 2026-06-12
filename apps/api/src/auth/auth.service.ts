@@ -15,7 +15,9 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuthCryptoService } from "./auth-crypto.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { WechatLoginDto } from "./dto/wechat-login.dto";
 import { TokenPayload } from "./token-payload";
+import { WechatMiniProgramService } from "./wechat-mini-program.service";
 
 @Injectable()
 export class AuthService {
@@ -24,7 +26,8 @@ export class AuthService {
     @Inject(JwtService) private readonly jwt: JwtService,
     @Inject(ConfigService) private readonly config: ConfigService,
     @Optional() @Inject(MetricsService) private readonly metrics?: MetricsService,
-    @Optional() @Inject(AuthCryptoService) private readonly authCrypto?: AuthCryptoService
+    @Optional() @Inject(AuthCryptoService) private readonly authCrypto?: AuthCryptoService,
+    @Optional() @Inject(WechatMiniProgramService) private readonly wechatMiniProgram?: WechatMiniProgramService
   ) {}
 
   async register(dto: RegisterDto) {
@@ -70,6 +73,23 @@ export class AuthService {
     if (!isPasswordValid) {
       this.recordLoginFailure("invalid_password");
       throw new UnauthorizedException("账号或密码不正确");
+    }
+
+    return this.issueAndPersistTokens(user.id);
+  }
+
+  async loginWithWechatCode(dto: WechatLoginDto) {
+    if (!this.wechatMiniProgram) {
+      throw new InternalServerErrorException("微信小程序登录服务未配置");
+    }
+
+    const openId = await this.wechatMiniProgram.resolveOpenId(dto.code);
+    const user = await this.prisma.user.findUnique({
+      where: { wechatOpenId: openId }
+    });
+
+    if (!user) {
+      throw new UnauthorizedException("微信未绑定账号");
     }
 
     return this.issueAndPersistTokens(user.id);

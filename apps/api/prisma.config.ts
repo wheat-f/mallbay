@@ -1,4 +1,5 @@
 import { defineConfig } from "prisma/config";
+import { getRequiredEnvValue } from "./src/config/env";
 
 export default defineConfig({
   schema: "./prisma/schema.prisma",
@@ -6,6 +7,6 @@ export default defineConfig({
     path: "./prisma/migrations"
   },
   datasource: {
-    url: process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/mallbay?schema=public"
+    url: getRequiredEnvValue("DATABASE_URL")
   }
 });

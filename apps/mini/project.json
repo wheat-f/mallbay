@@ -1,0 +1,14 @@
+{
+  "name": "@mallbay/mini",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/mini/src",
+  "projectType": "application",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "corepack pnpm --filter @mallbay/mini typecheck"
+      }
+    }
+  }
+}

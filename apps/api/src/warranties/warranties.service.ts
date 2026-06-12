@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { OrderStatus, WarrantyStatus } from "@prisma/client";
+import { OrderStatus, StorePosition, WarrantyStatus } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import type { CreateWarrantyDto, ListWarrantiesDto } from "./dto/warranty.dto";
@@ -72,10 +72,11 @@ export class WarrantiesService {
     if (!PermissionPolicy.canViewWarranty(actor, query.storeId)) {
       throw new ForbiddenException("无权限");
     }
+    const where = buildWarrantyListScope(actor, query.storeId);
     return this.prisma.warranty.findMany({
-      where: { storeId: query.storeId },
+      where,
       orderBy: { createdAt: "desc" },
-      include: { photos: true }
+      include: { photos: true, order: warrantyOrderSummaryInclude }
     });
   }
 
@@ -83,10 +84,10 @@ export class WarrantiesService {
     const actor = await this.withStoreMember(user);
     const warranty = await this.prisma.warranty.findUnique({
       where: { id },
-      include: { photos: true }
+      include: { photos: true, order: warrantyOrderSummaryInclude }
     });
     if (!warranty) throw new NotFoundException("质保记录不存在");
-    if (!PermissionPolicy.canViewWarranty(actor, warranty.storeId)) {
+    if (!canViewWarrantyRecord(actor, warranty.storeId, warranty.order.salesPersonId)) {
       throw new ForbiddenException("无权限");
     }
     return warranty;
@@ -95,7 +96,7 @@ export class WarrantiesService {
   async lookup(warrantyNo: string) {
     return this.prisma.warranty.findUnique({
       where: { warrantyNo },
-      include: { photos: true }
+      include: { photos: true, order: warrantyOrderSummaryInclude }
     });
   }
 
@@ -109,6 +110,20 @@ export class WarrantiesService {
     });
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
   }
+}
+
+function buildWarrantyListScope(actor: UserWithStoreMember, storeId: string) {
+  const where: { storeId: string; order?: { salesPersonId: string } } = { storeId };
+  if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
+    where.order = { salesPersonId: actor.id };
+  }
+  return where;
+}
+
+function canViewWarrantyRecord(actor: UserWithStoreMember, storeId: string, salesPersonId: string) {
+  if (!PermissionPolicy.canViewWarranty(actor, storeId)) return false;
+  if (actor.isAuditor || actor.storeMember?.position !== StorePosition.SALES) return true;
+  return actor.id === salesPersonId;
 }
 
 function normalizeDate(value: string) {
@@ -126,3 +141,12 @@ function buildWarrantyNo() {
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   return `WAR${stamp}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
+
+const warrantyOrderSummaryInclude = {
+  select: {
+    salesPersonId: true,
+    orderNo: true,
+    customer: { select: { name: true, companyName: true, contactPerson: true } },
+    vehicle: { select: { carPlate: true, carModel: true, carColor: true } }
+  }
+};

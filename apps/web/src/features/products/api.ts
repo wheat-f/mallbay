@@ -9,6 +9,12 @@ export type CreateProductPayload = {
   category: ProductCategory;
   specification?: string;
   unit: ProductUnit;
+  inventoryUnit?: ProductUnit;
+  salesUnit?: ProductUnit;
+  rollWidthMeters?: number;
+  rollLengthMeters?: number;
+  metersPerRoll?: number;
+  quantityPrecision?: number;
   warrantyYears?: number;
   basePriceCents: number;
 };

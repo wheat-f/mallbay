@@ -17,7 +17,7 @@ import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { AuthService } from "../auth/auth.service";
 
-// 审核员重置密码后的初始密码
+// 管理员重置密码后的初始密码
 const RESET_PASSWORD_DEFAULT = "Test1234!";
 
 @Injectable()
@@ -132,7 +132,7 @@ export class UsersService {
     return this.authService.toAuthUser(user);
   }
 
-  // 审核员搜索用户（按用户名模糊匹配）
+  // 管理员搜索用户（按用户名模糊匹配）
   async searchUsers(currentUserId: string, isAuditor: boolean, keyword: string) {
     if (!isAuditor) {
       throw new ForbiddenException("无权限");
@@ -153,7 +153,7 @@ export class UsersService {
     });
   }
 
-  // 审核员重置用户密码为初始密码
+  // 管理员重置用户密码为初始密码
   async resetPassword(isAuditor: boolean, dto: ResetPasswordDto) {
     if (!isAuditor) {
       throw new ForbiddenException("无权限");

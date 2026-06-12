@@ -18,7 +18,7 @@ export const invoicesApi = {
       body: JSON.stringify(payload)
     }),
 
-  issue: (id: string, payload: { invoiceNo: string; note?: string }) =>
+  issue: (id: string, payload: { invoiceNo: string; fileUrl?: string; note?: string }) =>
     request<InvoiceSummary>(`/invoices/${id}/issue`, {
       method: "POST",
       body: JSON.stringify(payload)
@@ -30,8 +30,14 @@ export const invoicesApi = {
       body: JSON.stringify({ note })
     }),
 
-  reissue: (id: string, payload: { invoiceNo: string; note?: string }) =>
+  reissue: (id: string, payload: { invoiceNo: string; fileUrl?: string; note?: string }) =>
     request<InvoiceSummary>(`/invoices/${id}/reissue`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  send: (id: string, payload: { recipient: string; channel: string; note?: string }) =>
+    request<InvoiceSummary>(`/invoices/${id}/send`, {
       method: "POST",
       body: JSON.stringify(payload)
     })

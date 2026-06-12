@@ -6,6 +6,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
+import { getConstructionStatusLabel } from "../../../src/features/construction/display";
 
 type TaskRow = {
   id: string;
@@ -50,16 +52,15 @@ export default function ConstructionTasksPage() {
   return (
     <Layout className="dashboard-shell">
       <Layout.Content className="dashboard-content">
-        <Typography.Title level={3} className="!mb-1">我的施工任务</Typography.Title>
-        <Typography.Text type="secondary">查看已派工任务并推进开工、拍照和完工</Typography.Text>
+        <StorePageHeader title="我的施工任务" description="查看已派工任务并推进开工、拍照和完工" />
         <Table<TaskRow>
           className="mt-4"
           rowKey="id"
           loading={tasksQuery.isLoading}
           dataSource={rows}
           columns={[
-            { title: "订单号", render: (_, row) => row.order?.orderNo ?? row.orderId },
-            { title: "状态", render: (_, row) => <Tag>{row.status}</Tag> },
+            { title: "订单号", render: (_, row) => row.order?.orderNo ?? "订单未加载" },
+            { title: "状态", render: (_, row) => <Tag>{getConstructionStatusLabel(row.status)}</Tag> },
             {
               title: "操作",
               render: (_, row) => (

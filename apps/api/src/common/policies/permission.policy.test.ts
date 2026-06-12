@@ -39,6 +39,11 @@ const scheduler = {
   isAuditor: false,
   storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
 };
+const customerService = {
+  id: "customer-service-1",
+  isAuditor: false,
+  storeMember: { storeId: "store-1", position: "CUSTOMER_SERVICE" as StorePosition }
+};
 
 test("PermissionPolicy treats isAuditor as administrator", () => {
   assert.equal(PermissionPolicy.isAdmin(admin), true);
@@ -59,8 +64,25 @@ test("PermissionPolicy scopes sales to owned customers and orders", () => {
   });
 });
 
+test("PermissionPolicy grants customer service store customer order inventory warranty after-sales and rebate application access", () => {
+  assert.equal(PermissionPolicy.canViewCustomer(customerService, "store-1", "sales-2"), true);
+  assert.equal(PermissionPolicy.canEditCustomer(customerService, "store-1", "sales-2"), true);
+  assert.equal(PermissionPolicy.canCreateOrder(customerService, "store-1"), true);
+  assert.deepEqual(PermissionPolicy.getOrderScope(customerService, "store-1"), { storeId: "store-1" });
+  assert.equal(PermissionPolicy.canManageInventory(customerService, "store-1"), true);
+  assert.equal(PermissionPolicy.canCreateWarranty(customerService, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageAfterSales(customerService, "store-1"), true);
+  assert.equal(PermissionPolicy.canApplyRebate(customerService, "store-1"), true);
+  assert.equal(PermissionPolicy.canApproveRebate(customerService, "store-1"), false);
+  assert.equal(PermissionPolicy.canManageFinance(customerService, "store-1"), false);
+  assert.equal(PermissionPolicy.canManageInvoice(customerService, "store-1"), false);
+  assert.equal(PermissionPolicy.canViewReports(customerService, "store-1"), false);
+  assert.equal(PermissionPolicy.canCreateOrder(customerService, "store-2"), false);
+});
+
 test("PermissionPolicy allows finance to manage payments but not customer edits", () => {
   assert.equal(PermissionPolicy.canManageOrderPayment(finance, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageOrderPayment(sales, "store-1"), false);
   assert.equal(PermissionPolicy.canEditCustomer(finance, "store-1", "sales-1"), false);
 });
 
@@ -125,15 +147,29 @@ test("PermissionPolicy scopes finance invoice rebate and report operations", () 
   assert.equal(PermissionPolicy.canManageFinance(manager, "store-1"), true);
   assert.equal(PermissionPolicy.canManageFinance(finance, "store-1"), true);
   assert.equal(PermissionPolicy.canManageFinance(sales, "store-1"), false);
+  assert.equal(PermissionPolicy.canSubmitFinanceApplication(purchasing, "store-1"), true);
+  assert.equal(PermissionPolicy.canSubmitFinanceApplication(finance, "store-1"), true);
+  assert.equal(PermissionPolicy.canSubmitFinanceApplication(sales, "store-1"), false);
 
   assert.equal(PermissionPolicy.canApplyInvoice(sales, "store-1"), true);
+  assert.equal(PermissionPolicy.canApplyInvoiceForOrder(sales, "store-1", "sales-1"), true);
+  assert.equal(PermissionPolicy.canApplyInvoiceForOrder(sales, "store-1", "sales-2"), false);
+  assert.equal(PermissionPolicy.canApplyInvoiceForOrder(finance, "store-1", "sales-2"), true);
   assert.equal(PermissionPolicy.canManageInvoice(finance, "store-1"), true);
   assert.equal(PermissionPolicy.canManageInvoice(scheduler, "store-1"), false);
 
   assert.equal(PermissionPolicy.canApplyRebate(sales, "store-1"), true);
-  assert.equal(PermissionPolicy.canApproveRebate(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canApplyRebateForOrder(sales, "store-1", "sales-1"), true);
+  assert.equal(PermissionPolicy.canApplyRebateForOrder(sales, "store-1", "sales-2"), false);
+  assert.equal(PermissionPolicy.canApplyRebateForOrder(manager, "store-1", "sales-2"), true);
+  assert.equal(PermissionPolicy.canReviewRebate(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canReviewRebate(finance, "store-1"), false);
+  assert.equal(PermissionPolicy.canApproveRebate(manager, "store-1"), false);
   assert.equal(PermissionPolicy.canApproveRebate(finance, "store-1"), true);
   assert.equal(PermissionPolicy.canViewReports(admin, "store-2"), true);
   assert.equal(PermissionPolicy.canViewReports(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canViewReports(finance, "store-1"), true);
+  assert.equal(PermissionPolicy.canViewReports(sales, "store-1"), true);
+  assert.equal(PermissionPolicy.canViewReports(finance, "store-2"), false);
   assert.equal(PermissionPolicy.canViewReports(worker, "store-1"), false);
 });

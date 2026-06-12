@@ -87,6 +87,17 @@ export class CreateOrderDto {
   laborCostCents!: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  suggestedLaborCostCents?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  laborCostAdjustmentReason?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(500)
   remark?: string;

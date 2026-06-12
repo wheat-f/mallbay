@@ -6,6 +6,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { constructionApi } from "../../../../src/lib/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
+import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
+import {
+  getConstructionPhotoStageLabel,
+  getConstructionQualityResultLabel,
+  getConstructionStatusLabel,
+  getConstructionWorkerLabel
+} from "../../../../src/features/construction/display";
 
 type ConstructionRecord = {
   id: string;
@@ -15,8 +22,15 @@ type ConstructionRecord = {
   qualityNote?: string | null;
   actualMinutes?: number | null;
   overtimeMinutes?: number;
+  order?: { orderNo?: string | null } | null;
   assignments?: { workerUserId: string }[];
   photos?: { id: string; stage: string; url: string; uploadedById: string }[];
+};
+
+type WorkerRow = {
+  userId: string;
+  skillTags?: string[];
+  user?: { username?: string | null; nickname?: string | null } | null;
 };
 
 export default function ConstructionOrderDetailPage() {
@@ -33,7 +47,13 @@ export default function ConstructionOrderDetailPage() {
     queryFn: () => constructionApi.assignments({ storeId: storeId! }),
     enabled: Boolean(storeId)
   });
+  const workersQuery = useQuery({
+    queryKey: ["construction-workers", storeId],
+    queryFn: () => constructionApi.workers(storeId!),
+    enabled: Boolean(storeId)
+  });
   const record = ((recordsQuery.data ?? []) as ConstructionRecord[]).find((item) => item.orderId === params.id);
+  const workerMap = new Map(((workersQuery.data ?? []) as WorkerRow[]).map((worker) => [worker.userId, worker]));
 
   const uploadMutation = useMutation({
     mutationFn: (values: { stage: "BEFORE" | "DURING" | "AFTER"; url?: string }) =>
@@ -60,17 +80,16 @@ export default function ConstructionOrderDetailPage() {
   return (
     <Layout className="dashboard-shell">
       <Layout.Content className="dashboard-content">
-        <Typography.Title level={3} className="!mb-1">施工详情</Typography.Title>
-        <Typography.Text type="secondary">查看施工人员、照片、完工用时和质检结果</Typography.Text>
+        <StorePageHeader title="施工详情" description="查看施工人员、照片、完工用时和质检结果" />
 
         <div className="mt-4 mb-6">
           <Space wrap>
-            <Tag>{record?.status ?? "未派工"}</Tag>
-            <Tag>订单：{params.id}</Tag>
-            <Tag>人员：{record?.assignments?.map((item) => item.workerUserId).join("、") || "-"}</Tag>
+            <Tag>{record ? getConstructionStatusLabel(record.status) : "未派工"}</Tag>
+            <Tag>订单：{record?.order?.orderNo ?? params.id}</Tag>
+            <Tag>人员：{record?.assignments?.map((item) => getConstructionWorkerLabel(workerMap.get(item.workerUserId) ?? item.workerUserId)).join("、") || "-"}</Tag>
             <Tag>用时：{record?.actualMinutes ?? "-"} 分钟</Tag>
             <Tag>超时：{record?.overtimeMinutes ?? 0} 分钟</Tag>
-            <Tag>质检：{record?.qualityResult ?? "-"}</Tag>
+            <Tag>质检：{getConstructionQualityResultLabel(record?.qualityResult)}</Tag>
           </Space>
         </div>
 
@@ -119,9 +138,9 @@ export default function ConstructionOrderDetailPage() {
           rowKey="id"
           dataSource={record?.photos ?? []}
           columns={[
-            { title: "阶段", dataIndex: "stage" },
+            { title: "阶段", render: (_, row) => getConstructionPhotoStageLabel(row.stage) },
             { title: "URL", dataIndex: "url" },
-            { title: "上传人", dataIndex: "uploadedById" }
+            { title: "上传人", render: (_, row) => getConstructionWorkerLabel(workerMap.get(row.uploadedById) ?? row.uploadedById) }
           ]}
         />
 

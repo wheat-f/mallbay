@@ -40,10 +40,21 @@ export class AfterSalesService {
     if (!PermissionPolicy.canViewStoreData(actor, query.storeId)) {
       throw new ForbiddenException("无权限");
     }
+    const where = buildAfterSalesListScope(actor, query.storeId);
     return this.prisma.afterSale.findMany({
-      where: { storeId: query.storeId },
+      where,
       orderBy: { createdAt: "desc" },
-      include: { assignments: true, penalties: true }
+      include: {
+        assignments: true,
+        penalties: true,
+        order: {
+          select: {
+            orderNo: true,
+            customer: { select: { name: true, companyName: true, contactPerson: true } },
+            vehicle: { select: { carPlate: true, carModel: true, carColor: true } }
+          }
+        }
+      }
     });
   }
 
@@ -116,4 +127,23 @@ export class AfterSalesService {
     });
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
   }
+}
+
+function buildAfterSalesListScope(actor: UserWithStoreMember, storeId: string) {
+  const where: {
+    storeId: string;
+    assignments?: { some: { workerUserId: string } };
+    order?: { salesPersonId: string };
+  } = { storeId };
+  if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
+    where.order = { salesPersonId: actor.id };
+    return where;
+  }
+  if (
+    !actor.isAuditor &&
+    (actor.storeMember?.position === StorePosition.CONSTRUCTION || actor.storeMember?.position === StorePosition.APPRENTICE)
+  ) {
+    where.assignments = { some: { workerUserId: actor.id } };
+  }
+  return where;
 }

@@ -1,5 +1,7 @@
 import { StorePosition } from "@prisma/client";
 
+const CUSTOMER_SERVICE = "CUSTOMER_SERVICE" as StorePosition;
+
 export type UserWithStoreMember = {
   id: string;
   isAuditor: boolean;
@@ -21,16 +23,21 @@ export type OrderScope =
   | { storeId: string; assignedWorkerId: string };
 
 export class PermissionPolicy {
-  private static readonly orderCreators: StorePosition[] = [StorePosition.MANAGER, StorePosition.SALES];
-  private static readonly customerViewers: StorePosition[] = [StorePosition.FINANCE, StorePosition.SCHEDULER];
+  private static readonly orderCreators: StorePosition[] = [StorePosition.MANAGER, StorePosition.SALES, CUSTOMER_SERVICE];
+  private static readonly customerViewers: StorePosition[] = [StorePosition.FINANCE, StorePosition.SCHEDULER, CUSTOMER_SERVICE];
   private static readonly constructionWorkers: StorePosition[] = [StorePosition.CONSTRUCTION, StorePosition.APPRENTICE];
-  private static readonly inventoryManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING];
-  private static readonly warrantyCreators: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER];
-  private static readonly afterSalesManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER];
+  private static readonly inventoryManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING, CUSTOMER_SERVICE];
+  private static readonly warrantyCreators: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER, CUSTOMER_SERVICE];
+  private static readonly afterSalesManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER, CUSTOMER_SERVICE];
   private static readonly commissionManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.FINANCE];
   private static readonly financeManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.FINANCE];
+  private static readonly financeApplicants: StorePosition[] = [
+    StorePosition.MANAGER,
+    StorePosition.FINANCE,
+    StorePosition.PURCHASING
+  ];
   private static readonly invoiceApplicants: StorePosition[] = [StorePosition.MANAGER, StorePosition.SALES, StorePosition.FINANCE];
-  private static readonly rebateApplicants: StorePosition[] = [StorePosition.MANAGER, StorePosition.SALES];
+  private static readonly rebateApplicants: StorePosition[] = [StorePosition.MANAGER, StorePosition.SALES, CUSTOMER_SERVICE];
 
   static isAdmin(user: UserWithStoreMember) {
     return user.isAuditor;
@@ -67,6 +74,7 @@ export class PermissionPolicy {
 
   static canEditCustomer(user: UserWithStoreMember, storeId: string, ownerUserId: string) {
     if (this.isAdmin(user) || this.isStoreManager(user, storeId)) return true;
+    if (this.isStoreMember(user, storeId) && user.storeMember?.position === CUSTOMER_SERVICE) return true;
     return this.isStoreMember(user, storeId) &&
       user.storeMember?.position === StorePosition.SALES &&
       ownerUserId === user.id;
@@ -138,10 +146,25 @@ export class PermissionPolicy {
       this.financeManagers.includes(user.storeMember!.position);
   }
 
+  static canSubmitFinanceApplication(user: UserWithStoreMember, storeId: string) {
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      this.financeApplicants.includes(user.storeMember!.position);
+  }
+
   static canApplyInvoice(user: UserWithStoreMember, storeId: string) {
     if (this.isAdmin(user)) return true;
     return this.isStoreMember(user, storeId) &&
       this.invoiceApplicants.includes(user.storeMember!.position);
+  }
+
+  static canApplyInvoiceForOrder(user: UserWithStoreMember, storeId: string, salesPersonId: string) {
+    if (!this.canApplyInvoice(user, storeId)) return false;
+    if (this.isAdmin(user) || this.isStoreManager(user, storeId)) return true;
+    if (this.isStoreMember(user, storeId) && user.storeMember?.position === StorePosition.FINANCE) return true;
+    return this.isStoreMember(user, storeId) &&
+      user.storeMember?.position === StorePosition.SALES &&
+      user.id === salesPersonId;
   }
 
   static canManageInvoice(user: UserWithStoreMember, storeId: string) {
@@ -154,12 +177,29 @@ export class PermissionPolicy {
       this.rebateApplicants.includes(user.storeMember!.position);
   }
 
+  static canApplyRebateForOrder(user: UserWithStoreMember, storeId: string, salesPersonId: string) {
+    if (!this.canApplyRebate(user, storeId)) return false;
+    if (this.isAdmin(user) || this.isStoreManager(user, storeId)) return true;
+    if (this.isStoreMember(user, storeId) && user.storeMember?.position === CUSTOMER_SERVICE) return true;
+    return this.isStoreMember(user, storeId) &&
+      user.storeMember?.position === StorePosition.SALES &&
+      user.id === salesPersonId;
+  }
+
+  static canReviewRebate(user: UserWithStoreMember, storeId: string) {
+    return this.isAdmin(user) || this.isStoreManager(user, storeId);
+  }
+
   static canApproveRebate(user: UserWithStoreMember, storeId: string) {
-    return this.canManageFinance(user, storeId);
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      user.storeMember?.position === StorePosition.FINANCE;
   }
 
   static canViewReports(user: UserWithStoreMember, storeId: string) {
-    return this.isAdmin(user) || this.isStoreManager(user, storeId);
+    if (this.isAdmin(user) || this.isStoreManager(user, storeId)) return true;
+    return this.isStoreMember(user, storeId) &&
+      (user.storeMember?.position === StorePosition.FINANCE || user.storeMember?.position === StorePosition.SALES);
   }
 
   static getCustomerScope(user: UserWithStoreMember, storeId: string): CustomerScope {

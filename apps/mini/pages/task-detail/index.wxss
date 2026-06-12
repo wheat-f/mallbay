@@ -20,9 +20,17 @@
 }
 
 .value {
+  display: block;
   color: #111827;
   font-size: 32rpx;
   font-weight: 600;
+}
+
+.sub-value {
+  display: block;
+  margin-top: 8rpx;
+  color: #475569;
+  font-size: 26rpx;
 }
 
 .actions {

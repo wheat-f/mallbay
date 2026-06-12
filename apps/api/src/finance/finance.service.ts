@@ -13,7 +13,7 @@ export class FinanceService {
 
   async createExpense(user: AuthenticatedFinanceUser, dto: CreateExpenseDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) throw new ForbiddenException("无权限");
+    if (!PermissionPolicy.canSubmitFinanceApplication(actor, dto.storeId)) throw new ForbiddenException("无权限");
     return this.prisma.expenseApplication.create({
       data: {
         storeId: dto.storeId,
@@ -34,7 +34,7 @@ export class FinanceService {
 
   async createReimbursement(user: AuthenticatedFinanceUser, dto: CreateReimbursementDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) throw new ForbiddenException("无权限");
+    if (!PermissionPolicy.canSubmitFinanceApplication(actor, dto.storeId)) throw new ForbiddenException("无权限");
     return this.prisma.reimbursementApplication.create({
       data: {
         storeId: dto.storeId,
@@ -68,7 +68,7 @@ export class FinanceService {
         reviewedAt: new Date()
       }
     });
-    if (dto.status === FinanceApprovalStatus.APPROVED || dto.status === FinanceApprovalStatus.PAID) {
+    if (dto.status === FinanceApprovalStatus.PAID) {
       await this.prisma.paymentRecord.create({
         data: {
           storeId: reimbursement.storeId,

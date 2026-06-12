@@ -20,7 +20,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
   );
 
   return (
-    <ConfigProvider locale={zhCN} theme={{ token: { colorPrimary: "#1677ff", borderRadius: 6 } }}>
+    <ConfigProvider
+      locale={zhCN}
+      getPopupContainer={() => document.body}
+      theme={{ token: { colorPrimary: "#1677ff", borderRadius: 6 } }}
+    >
       <AntdApp>
         <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </AntdApp>

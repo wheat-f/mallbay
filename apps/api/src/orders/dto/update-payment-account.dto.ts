@@ -1,7 +1,12 @@
-import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator";
 import { PaymentAccountType } from "@prisma/client";
 
 export class UpdatePaymentAccountDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  changeReason!: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(100)

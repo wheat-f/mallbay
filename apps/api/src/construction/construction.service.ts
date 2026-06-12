@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   ConstructionPhotoStage,
   ConstructionTaskStatus,
@@ -24,6 +24,7 @@ import {
   OfflineSyncOperationDto,
   OfflineTaskStatusPayloadDto,
   QualityCheckDto,
+  StartConstructionDto,
   UpdateDailyCapacityDto,
   UpdateLeaveRequestDto,
   UploadConstructionPhotoDto,
@@ -39,8 +40,8 @@ export type AuthenticatedConstructionUser = UserWithStoreMember & {
 @Injectable()
 export class ConstructionService {
   constructor(
-    private readonly prisma: PrismaService,
-    @Optional() private readonly oss?: OssService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(OssService) private readonly oss?: OssService
   ) {}
 
   async listCapacities(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
@@ -100,6 +101,9 @@ export class ConstructionService {
       throw new ForbiddenException("无权限");
     }
     const where: Prisma.ConstructionRecordWhereInput = { storeId: query.storeId };
+    if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
+      where.order = { salesPersonId: actor.id };
+    }
     if (
       !actor.isAuditor &&
       (actor.storeMember?.position === StorePosition.CONSTRUCTION ||
@@ -183,17 +187,18 @@ export class ConstructionService {
     });
   }
 
-  async startOrder(user: AuthenticatedConstructionUser, orderId: string) {
+  async startOrder(user: AuthenticatedConstructionUser, orderId: string, dto: StartConstructionDto = {}) {
     const actor = await this.withStoreMember(user);
     const record = await this.findRecordForOrder(orderId);
     this.assertAssignedWorker(actor, record);
     if (record.order.status !== OrderStatus.DISPATCHED) {
       throw new BadRequestException("只有已派单订单可以开工");
     }
+    const startedAt = dto.startedAt ? new Date(dto.startedAt) : new Date();
     await this.prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.IN_CONSTRUCTION } });
     return this.prisma.constructionRecord.update({
       where: { id: record.id },
-      data: { startedAt: new Date(), status: ConstructionTaskStatus.IN_CONSTRUCTION }
+      data: { startedAt, status: ConstructionTaskStatus.IN_CONSTRUCTION }
     });
   }
 
@@ -323,7 +328,8 @@ export class ConstructionService {
     }
     return this.prisma.constructionWorkerProfile.findMany({
       where: { storeId },
-      orderBy: { updatedAt: "desc" }
+      orderBy: { updatedAt: "desc" },
+      include: { user: { select: { username: true, nickname: true } } }
     });
   }
 
@@ -411,7 +417,7 @@ export class ConstructionService {
     if (operation.type === "TASK_STATUS") {
       const payload = operation.payload as OfflineTaskStatusPayloadDto;
       if (payload.status === ConstructionTaskStatus.IN_CONSTRUCTION) {
-        return this.startOrder(user, payload.orderId);
+        return this.startOrder(user, payload.orderId, { startedAt: payload.startedAt });
       }
       if (payload.status === ConstructionTaskStatus.COMPLETED) {
         return this.completeOrderForOrder(user, payload.orderId, { completedAt: payload.completedAt });

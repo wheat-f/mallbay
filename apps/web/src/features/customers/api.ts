@@ -1,4 +1,4 @@
-import type { CustomerSourceType, CustomerType, Gender } from "@mallbay/shared";
+import type { CustomerNoteType, CustomerSourceType, CustomerType, Gender } from "@mallbay/shared";
 import { request } from "../../lib/request";
 
 export type CreateCustomerPayload = {
@@ -16,6 +16,34 @@ export type CreateCustomerPayload = {
   referrerId?: string;
 };
 
+export type CreatedCustomer = CreateCustomerPayload & {
+  id: string;
+};
+
+export type CreateVehiclePayload = {
+  customerId: string;
+  carPlate?: string;
+  vin?: string;
+  carModel: string;
+  carColor?: string;
+  photoUrl?: string;
+};
+
+export type CreatedVehicle = CreateVehiclePayload & {
+  id: string;
+};
+
+export type CreateCustomerNotePayload = {
+  customerId: string;
+  noteType?: CustomerNoteType;
+  content: string;
+};
+
+export type CreateCustomerTagPayload = {
+  customerId: string;
+  label: string;
+};
+
 export type CustomerListQuery = {
   storeId: string;
   q?: string;
@@ -25,7 +53,7 @@ export type CustomerListQuery = {
 
 export const customerApi = {
   create: (payload: CreateCustomerPayload) =>
-    request<unknown>("/customers", {
+    request<CreatedCustomer>("/customers", {
       method: "POST",
       body: JSON.stringify(payload)
     }),
@@ -41,6 +69,29 @@ export const customerApi = {
     request<unknown>(`/customers/${id}`, {
       method: "PATCH",
       body: JSON.stringify(payload)
+    }),
+
+  createVehicle: (payload: CreateVehiclePayload) =>
+    request<CreatedVehicle>("/customers/vehicles", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  createNote: (payload: CreateCustomerNotePayload) =>
+    request<unknown>("/customers/notes", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  createTag: (payload: CreateCustomerTagPayload) =>
+    request<unknown>("/customers/tags", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  deleteTag: (id: string) =>
+    request<{ id: string }>(`/customers/tags/${id}`, {
+      method: "DELETE"
     }),
 
   search: (storeId: string, q: string) =>

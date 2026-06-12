@@ -24,6 +24,7 @@ import {
   ListConstructionDto,
   OfflineSyncDto,
   QualityCheckDto,
+  StartConstructionDto,
   UpdateDailyCapacityDto,
   UpdateLeaveRequestDto,
   UploadConstructionPhotoDto,
@@ -67,8 +68,8 @@ export class ConstructionController {
   }
 
   @Post("orders/:orderId/start")
-  startOrder(@Req() req: AuthRequest, @Param("orderId") orderId: string) {
-    return this.construction.startOrder(req.user, orderId);
+  startOrder(@Req() req: AuthRequest, @Param("orderId") orderId: string, @Body() dto: StartConstructionDto) {
+    return this.construction.startOrder(req.user, orderId, dto);
   }
 
   @Post("orders/:orderId/complete")

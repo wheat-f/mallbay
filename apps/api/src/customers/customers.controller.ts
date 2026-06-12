@@ -1,9 +1,22 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards
+} from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CustomersService, type AuthenticatedCustomerUser } from "./customers.service";
 import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
+import { CreateCustomerTagDto } from "./dto/create-customer-tag.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
 import { ListCustomersDto } from "./dto/list-customers.dto";
@@ -17,7 +30,7 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("customers")
 export class CustomersController {
-  constructor(private readonly customers: CustomersService) {}
+  constructor(@Inject(CustomersService) private readonly customers: CustomersService) {}
 
   @Post()
   create(@Req() req: AuthRequest, @Body() dto: CreateCustomerDto) {
@@ -57,5 +70,15 @@ export class CustomersController {
   @Post("notes")
   createNote(@Req() req: AuthRequest, @Body() dto: CreateCustomerNoteDto) {
     return this.customers.createNote(req.user, dto);
+  }
+
+  @Post("tags")
+  createTag(@Req() req: AuthRequest, @Body() dto: CreateCustomerTagDto) {
+    return this.customers.createTag(req.user, dto);
+  }
+
+  @Delete("tags/:id")
+  deleteTag(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.customers.deleteTag(req.user, id);
   }
 }

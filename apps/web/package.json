@@ -4,7 +4,8 @@
   "private": true,
   "dependencies": {
     "@ant-design/icons": "^6.2.3",
-    "@mallbay/shared": "workspace:*"
+    "@mallbay/shared": "workspace:*",
+    "dayjs": "^1.11.21"
   },
   "scripts": {
     "dev": "next dev -p 3000",

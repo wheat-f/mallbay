@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -7,13 +8,14 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { Gender, Prisma } from "@prisma/client";
+import { CustomerNoteType, Gender, Prisma } from "@prisma/client";
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { normalizePagination } from "../common/pagination";
 import { type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { CustomerPolicy } from "./domain/customer.policy";
 import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
+import { CreateCustomerTagDto } from "./dto/create-customer-tag.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
 import { ListCustomersDto } from "./dto/list-customers.dto";
@@ -36,7 +38,7 @@ export class CustomersService {
   private readonly codec: SensitiveFieldCodec;
 
   constructor(
-    private readonly prisma: PrismaService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional()
     @Inject(SENSITIVE_FIELD_CODEC)
     codec?: SensitiveFieldCodec
@@ -49,6 +51,7 @@ export class CustomersService {
     if (!CustomerPolicy.canCreate(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
+    this.assertValidCreatePayload(dto);
 
     const phoneHash = this.codec.hash(dto.phone);
     const existing = await this.prisma.customer.findUnique({
@@ -65,7 +68,7 @@ export class CustomersService {
         customerType: dto.customerType,
         name: dto.name,
         gender: dto.gender ?? Gender.UNKNOWN,
-        birthday: dto.birthday,
+        birthday: this.normalizeOptionalDate(dto.birthday),
         companyName: dto.companyName,
         contactPerson: dto.contactPerson,
         phoneEncrypted: this.codec.encrypt(dto.phone),
@@ -143,8 +146,19 @@ export class CustomersService {
       include: {
         vehicles: { orderBy: { updatedAt: "desc" } },
         notes: { orderBy: { createdAt: "desc" } },
+        tags: { orderBy: { createdAt: "desc" } },
+        referrer: { select: { id: true, name: true, companyName: true, contactPerson: true } },
         owner: { select: { id: true, username: true, nickname: true } },
-        orders: { orderBy: { createdAt: "desc" }, take: 10 }
+        orders: {
+          orderBy: { createdAt: "desc" },
+          take: 10,
+          include: {
+            amount: true,
+            vehicle: { select: { id: true, carPlate: true, carModel: true, carColor: true } }
+          }
+        },
+        warranties: { orderBy: { endDate: "desc" } },
+        afterSales: { orderBy: { createdAt: "desc" } }
       }
     });
     if (!customer) {
@@ -154,7 +168,71 @@ export class CustomersService {
       throw new ForbiddenException("无权限");
     }
 
-    return this.sanitizeCustomer(customer);
+    const [orderStats, amountStats, constructionTypeStats, consumptionTrendOrders, recentConstructionRecords] = await Promise.all([
+      this.prisma.order.aggregate({
+        where: { customerId: id },
+        _count: { _all: true },
+        _min: { createdAt: true },
+        _max: { createdAt: true }
+      }),
+      this.prisma.orderAmount.aggregate({
+        where: { order: { customerId: id } },
+        _sum: {
+          totalAmountCents: true,
+          paidAmountCents: true,
+          outstandingCents: true
+        }
+      }),
+      this.prisma.order.groupBy({
+        by: ["constructionType"],
+        where: { customerId: id },
+        _count: { _all: true }
+      }),
+      this.prisma.order.findMany({
+        where: { customerId: id },
+        orderBy: { createdAt: "asc" },
+        select: {
+          createdAt: true,
+          amount: {
+            select: {
+              totalAmountCents: true,
+              paidAmountCents: true,
+              outstandingCents: true
+            }
+          }
+        }
+      }),
+      this.prisma.constructionRecord.findMany({
+        where: { order: { customerId: id } },
+        orderBy: { completedAt: "desc" },
+        take: 3,
+        select: {
+          status: true,
+          completedAt: true,
+          actualMinutes: true,
+          qualityResult: true,
+          order: {
+            select: {
+              orderNo: true,
+              constructionType: true,
+              vehicle: { select: { carPlate: true, carModel: true, carColor: true } }
+            }
+          }
+        }
+      })
+    ]);
+
+    return {
+      ...this.sanitizeCustomer(customer),
+      archiveSummary: this.buildArchiveSummary(
+        customer,
+        orderStats,
+        amountStats,
+        constructionTypeStats,
+        consumptionTrendOrders,
+        recentConstructionRecords
+      )
+    };
   }
 
   async update(user: AuthenticatedCustomerUser, id: string, dto: UpdateCustomerDto) {
@@ -171,7 +249,7 @@ export class CustomersService {
       customerType: dto.customerType,
       name: dto.name,
       gender: dto.gender,
-      birthday: dto.birthday,
+      birthday: this.normalizeOptionalDate(dto.birthday),
       companyName: dto.companyName,
       contactPerson: dto.contactPerson,
       wechat: dto.wechat,
@@ -249,9 +327,48 @@ export class CustomersService {
       data: {
         customerId: customer.id,
         createdById: user.id,
+        noteType: dto.noteType ?? CustomerNoteType.COMMUNICATION,
         content: dto.content
       }
     });
+  }
+
+  async createTag(user: AuthenticatedCustomerUser, dto: CreateCustomerTagDto) {
+    const customer = await this.assertCanEditCustomer(user, dto.customerId);
+    const label = dto.label.trim();
+    if (!label) {
+      throw new BadRequestException("请输入客户标签");
+    }
+    try {
+      return await this.prisma.customerTag.create({
+        data: {
+          customerId: customer.id,
+          createdById: user.id,
+          label
+        }
+      });
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException("客户标签已存在");
+      }
+      throw error;
+    }
+  }
+
+  async deleteTag(user: AuthenticatedCustomerUser, id: string) {
+    const actor = await this.withStoreMember(user);
+    const tag = await this.prisma.customerTag.findUnique({
+      where: { id },
+      include: { customer: true }
+    });
+    if (!tag) {
+      throw new NotFoundException("客户标签不存在");
+    }
+    if (!CustomerPolicy.canEdit(actor, tag.customer.storeId, tag.customer.ownerUserId)) {
+      throw new ForbiddenException("无权限");
+    }
+    await this.prisma.customerTag.delete({ where: { id } });
+    return { id };
   }
 
   private async assertCanEditCustomer(user: AuthenticatedCustomerUser, customerId: string) {
@@ -279,15 +396,264 @@ export class CustomersService {
     return { storeId };
   }
 
+  private assertValidCreatePayload(dto: CreateCustomerDto) {
+    if (!/^1\d{10}$/.test(dto.phone)) {
+      throw new BadRequestException("请输入 11 位手机号");
+    }
+    if (dto.customerType === "PERSONAL" && !dto.name?.trim()) {
+      throw new BadRequestException("请输入客户姓名");
+    }
+    if (dto.customerType === "COMPANY") {
+      if (!dto.companyName?.trim()) {
+        throw new BadRequestException("请输入企业名称");
+      }
+      if (!dto.contactPerson?.trim()) {
+        throw new BadRequestException("请输入联系人");
+      }
+    }
+  }
+
+  private normalizeOptionalDate(value: Date | string | undefined) {
+    if (value === undefined || value === "") {
+      return undefined;
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException("日期格式不正确");
+    }
+    return date;
+  }
+
+  private isUniqueConstraintError(error: unknown) {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    );
+  }
+
+  private buildArchiveSummary(
+    customer: {
+      warranties?: Array<{ status: string; endDate: Date }>;
+      afterSales?: Array<{ status: string; responsibility: string }>;
+    },
+    orderStats: {
+      _count: { _all: number };
+      _min: { createdAt: Date | null };
+      _max: { createdAt: Date | null };
+    },
+    amountStats: {
+      _sum: {
+        totalAmountCents: number | null;
+        paidAmountCents: number | null;
+        outstandingCents: number | null;
+      };
+    },
+    constructionTypeStats: Array<{
+      constructionType: string;
+      _count: { _all: number };
+    }>,
+    consumptionTrendOrders: Array<{
+      createdAt: Date;
+      amount?: {
+        totalAmountCents: number;
+        paidAmountCents: number;
+        outstandingCents: number;
+      } | null;
+    }>,
+    recentConstructionRecords: Array<{
+      status: string;
+      completedAt: Date | null;
+      actualMinutes: number | null;
+      qualityResult: string | null;
+      order: {
+        orderNo: string;
+        constructionType: string;
+        vehicle?: {
+          carPlate?: string | null;
+          carModel?: string | null;
+          carColor?: string | null;
+        } | null;
+      };
+    }>
+  ) {
+    const warranties = customer.warranties ?? [];
+    const afterSales = customer.afterSales ?? [];
+    const now = new Date();
+    const expiringSoonThreshold = new Date(now);
+    expiringSoonThreshold.setDate(now.getDate() + 30);
+    const activeWarranties = warranties.filter((warranty) => warranty.status === "ACTIVE");
+    const expiringSoonCount = activeWarranties.filter((warranty) => {
+      const endDate = new Date(warranty.endDate);
+      return endDate >= now && endDate <= expiringSoonThreshold;
+    }).length;
+    const openAfterSalesCount = afterSales.filter((item) =>
+      ["OPEN", "ASSIGNED"].includes(item.status)
+    ).length;
+    const responsibilityDistribution = afterSales.reduce<Record<string, number>>((acc, item) => {
+      acc[item.responsibility] = (acc[item.responsibility] ?? 0) + 1;
+      return acc;
+    }, {});
+    const totalAmountCents = amountStats._sum.totalAmountCents ?? 0;
+    const outstandingCents = amountStats._sum.outstandingCents ?? 0;
+    const constructionTypeDistribution = constructionTypeStats.reduce<Record<string, number>>(
+      (acc, item) => {
+        acc[item.constructionType] = item._count._all;
+        return acc;
+      },
+      {}
+    );
+
+    return {
+      consumption: {
+        orderCount: orderStats._count._all,
+        totalAmountCents,
+        paidAmountCents: amountStats._sum.paidAmountCents ?? 0,
+        outstandingCents,
+        constructionTypeDistribution,
+        firstConsumedAt: orderStats._min.createdAt,
+        latestConsumedAt: orderStats._max.createdAt,
+        trend: this.buildConsumptionTrend(consumptionTrendOrders)
+      },
+      warranty: {
+        activeCount: activeWarranties.length,
+        expiredCount: warranties.filter((warranty) => warranty.status === "EXPIRED").length,
+        expiringSoonCount,
+        latestEndDate: warranties[0]?.endDate ?? null
+      },
+      afterSales: {
+        totalCount: afterSales.length,
+        openCount: openAfterSalesCount,
+        closedCount: afterSales.filter((item) => ["RESOLVED", "CLOSED"].includes(item.status)).length,
+        responsibilityDistribution
+      },
+      construction: {
+        recentRecords: this.buildRecentConstructionRecords(recentConstructionRecords)
+      },
+      systemTags: this.buildSystemTags({
+        orderCount: orderStats._count._all,
+        totalAmountCents,
+        outstandingCents,
+        openAfterSalesCount,
+        expiringSoonCount
+      })
+    };
+  }
+
+  private buildConsumptionTrend(orders: Array<{
+    createdAt: Date;
+    amount?: {
+      totalAmountCents: number;
+      paidAmountCents: number;
+      outstandingCents: number;
+    } | null;
+  }>) {
+    const buckets = new Map<string, {
+      month: string;
+      orderCount: number;
+      totalAmountCents: number;
+      paidAmountCents: number;
+      outstandingCents: number;
+    }>();
+
+    for (const order of orders) {
+      const month = order.createdAt.toISOString().slice(0, 7);
+      const bucket = buckets.get(month) ?? {
+        month,
+        orderCount: 0,
+        totalAmountCents: 0,
+        paidAmountCents: 0,
+        outstandingCents: 0
+      };
+      bucket.orderCount += 1;
+      bucket.totalAmountCents += order.amount?.totalAmountCents ?? 0;
+      bucket.paidAmountCents += order.amount?.paidAmountCents ?? 0;
+      bucket.outstandingCents += order.amount?.outstandingCents ?? 0;
+      buckets.set(month, bucket);
+    }
+
+    return [...buckets.values()].slice(-6);
+  }
+
+  private buildRecentConstructionRecords(records: Array<{
+    status: string;
+    completedAt: Date | null;
+    actualMinutes: number | null;
+    qualityResult: string | null;
+    order: {
+      orderNo: string;
+      constructionType: string;
+      vehicle?: {
+        carPlate?: string | null;
+        carModel?: string | null;
+        carColor?: string | null;
+      } | null;
+    };
+  }>) {
+    return records.map((record) => ({
+      orderNo: record.order.orderNo,
+      constructionType: record.order.constructionType,
+      status: record.status,
+      completedAt: record.completedAt,
+      actualMinutes: record.actualMinutes,
+      qualityResult: record.qualityResult,
+      vehicleLabel: this.buildVehicleLabel(record.order.vehicle)
+    }));
+  }
+
+  private buildVehicleLabel(vehicle?: {
+    carPlate?: string | null;
+    carModel?: string | null;
+    carColor?: string | null;
+  } | null) {
+    const parts = [vehicle?.carPlate, vehicle?.carModel, vehicle?.carColor].filter(Boolean);
+    return parts.length > 0 ? parts.join(" / ") : "-";
+  }
+
+  private buildSystemTags(input: {
+    orderCount: number;
+    totalAmountCents: number;
+    outstandingCents: number;
+    openAfterSalesCount: number;
+    expiringSoonCount: number;
+  }) {
+    const tags: Array<{ code: string; label: string }> = [];
+    if (input.orderCount === 0) {
+      tags.push({ code: "NEW_CUSTOMER", label: "新客户" });
+    }
+    if (input.orderCount >= 2) {
+      tags.push({ code: "OLD_CUSTOMER", label: "老客户" });
+    }
+    if (input.totalAmountCents >= 500_000) {
+      tags.push({ code: "HIGH_VALUE", label: "高价值客户" });
+    }
+    if (input.totalAmountCents >= 1_000_000) {
+      tags.push({ code: "VIP", label: "VIP 客户" });
+    }
+    if (
+      input.outstandingCents > 0 ||
+      input.openAfterSalesCount > 0 ||
+      input.expiringSoonCount > 0
+    ) {
+      tags.push({ code: "KEY_FOLLOW_UP", label: "重点关注客户" });
+    }
+    return tags;
+  }
+
   private buildSearchConditions(q: string): Prisma.CustomerWhereInput[] {
     const conditions: Prisma.CustomerWhereInput[] = [
       { name: { contains: q, mode: "insensitive" } },
       { companyName: { contains: q, mode: "insensitive" } },
       { contactPerson: { contains: q, mode: "insensitive" } },
-      { wechat: { contains: q, mode: "insensitive" } }
+      { wechat: { contains: q, mode: "insensitive" } },
+      { vehicles: { some: { carPlate: { contains: q, mode: "insensitive" } } } }
     ];
     if (/^1\d{10}$/.test(q)) {
       conditions.push({ phoneHash: this.codec.hash(q) });
+    }
+    if (/^[A-HJ-NPR-Z0-9]{17}$/i.test(q)) {
+      conditions.push({ vehicles: { some: { vinHash: this.codec.hash(q) } } });
     }
     return conditions;
   }

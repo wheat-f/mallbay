@@ -42,11 +42,15 @@ pnpm dev
 - [docs/governance/API_GUIDELINES.md](./docs/governance/API_GUIDELINES.md): REST API、错误、分页、鉴权和版本策略
 - [docs/governance/REFACTOR_PLAN.md](./docs/governance/REFACTOR_PLAN.md): 当前问题清单和渐进式改造路线
 - [docs/features/paint-protection-film-system-plan.md](./docs/features/paint-protection-film-system-plan.md): 漆面保护膜施工管理系统 V1.7 需求建设方案
+- [docs/features/v1-7-requirements-gap-plan.md](./docs/features/v1-7-requirements-gap-plan.md): V1.7 全功能需求差距与验收计划
+- [docs/features/v1-7-local-verification-audit.md](./docs/features/v1-7-local-verification-audit.md): V1.7 本地验收审计
+- [docs/features/order-requirements-alignment-plan.md](./docs/features/order-requirements-alignment-plan.md): 订单创建与 V1.7 需求对齐实施计划
 - [docs/features/phase-1-customers-orders-plan.md](./docs/features/phase-1-customers-orders-plan.md): Phase 1 客户、产品、订单和收款实施计划
 - [docs/features/phase-1-customers-orders.md](./docs/features/phase-1-customers-orders.md): Phase 1 客户、订单、产品和收款功能说明
 - [docs/features/phase-2-construction-plan.md](./docs/features/phase-2-construction-plan.md): Phase 2 施工容量、派单与施工记录实施计划
 - [docs/features/phase-2-construction.md](./docs/features/phase-2-construction.md): Phase 2 施工容量、派单与施工记录功能说明
 - [docs/features/phase-3-inventory-warranty-plan.md](./docs/features/phase-3-inventory-warranty-plan.md): Phase 3 库存、采购与质保实施计划
+- [docs/features/phase-3-inventory-purchase-improvement-plan.md](./docs/features/phase-3-inventory-purchase-improvement-plan.md): Phase 3 库存采购改进实施计划
 - [docs/features/phase-3-inventory-warranty.md](./docs/features/phase-3-inventory-warranty.md): Phase 3 库存、采购与质保功能说明
 - [docs/features/phase-4-after-sales-commission-plan.md](./docs/features/phase-4-after-sales-commission-plan.md): Phase 4 售后、人员与提成实施计划
 - [docs/features/phase-4-after-sales-commission.md](./docs/features/phase-4-after-sales-commission.md): Phase 4 售后、人员与提成功能说明
@@ -54,6 +58,9 @@ pnpm dev
 - [docs/features/phase-5-finance-invoice-rebate-report.md](./docs/features/phase-5-finance-invoice-rebate-report.md): Phase 5 财务、发票、返利与报表功能说明
 - [docs/features/phase-6-mini-offline-plan.md](./docs/features/phase-6-mini-offline-plan.md): Phase 6 微信小程序与离线实施计划
 - [docs/features/phase-6-mini-offline.md](./docs/features/phase-6-mini-offline.md): Phase 6 微信小程序与离线功能说明
+- [docs/features/phase-6-mini-program-integration-plan.md](./docs/features/phase-6-mini-program-integration-plan.md): Phase 6 微信小程序联调与发布实施计划
+- [docs/features/phase-6-mini-program-acceptance.md](./docs/features/phase-6-mini-program-acceptance.md): Phase 6 微信小程序真机验收脚本
+- [docs/features/phase-6-mini-program-release-checklist.md](./docs/features/phase-6-mini-program-release-checklist.md): Phase 6 微信小程序发布前检查清单
 - [docs/deploy-setup.md](./docs/deploy-setup.md): 部署配置说明
 
 ## 测试账号

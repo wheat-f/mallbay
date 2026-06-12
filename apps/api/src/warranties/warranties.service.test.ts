@@ -72,3 +72,87 @@ test("WarrantiesService looks up active warranty by warranty number for customer
   assert.equal(result?.warrantyNo, "WAR202606010001");
   assert.equal(result?.status, WarrantyStatus.ACTIVE);
 });
+
+test("WarrantiesService lists warranties with order customer and vehicle summary", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    warranty: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [];
+      }
+    }
+  };
+  const service = new WarrantiesService(prisma as never);
+
+  await service.list(
+    {
+      id: "scheduler-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
+    },
+    { storeId: "store-1" }
+  );
+
+  const serialized = JSON.stringify(calls[0]);
+  assert.match(serialized, /"order"/);
+  assert.match(serialized, /"orderNo"/);
+  assert.match(serialized, /"customer"/);
+  assert.match(serialized, /"vehicle"/);
+});
+
+test("WarrantiesService limits sales warranty list to their own orders", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    warranty: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [];
+      }
+    }
+  };
+  const service = new WarrantiesService(prisma as never);
+
+  await service.list(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    { storeId: "store-1" }
+  );
+
+  assert.deepEqual((calls[0] as { where: unknown }).where, {
+    storeId: "store-1",
+    order: { salesPersonId: "sales-1" }
+  });
+});
+
+test("WarrantiesService rejects sales viewing another sales person's warranty detail", async () => {
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    warranty: {
+      findUnique: async () => ({
+        id: "warranty-1",
+        storeId: "store-1",
+        order: { salesPersonId: "sales-2" }
+      })
+    }
+  };
+  const service = new WarrantiesService(prisma as never);
+
+  await assert.rejects(
+    () =>
+      service.detail(
+        {
+          id: "sales-1",
+          isAuditor: false,
+          storeMember: { storeId: "store-1", position: StorePosition.SALES }
+        },
+        "warranty-1"
+      ),
+    /无权限/
+  );
+});

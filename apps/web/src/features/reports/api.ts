@@ -2,7 +2,7 @@ import type { ReportSummary } from "@mallbay/shared";
 import { request } from "../../lib/request";
 
 export const reportsApi = {
-  summary: (storeId: string) =>
+  summary: (storeId?: string) =>
     request<ReportSummary>(`/reports/summary${toQueryString({ storeId })}`)
 };
 

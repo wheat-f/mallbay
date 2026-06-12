@@ -53,7 +53,7 @@ export class MembersService {
     await this.assertManager(managerId, storeId);
 
     if (dto.position === StorePosition.MANAGER) {
-      throw new BadRequestException("不能通过邀请指派店长，请联系审核员变更");
+      throw new BadRequestException("不能通过邀请指派店长，请联系管理员变更");
     }
 
     const store = await this.prisma.store.findUniqueOrThrow({ where: { id: storeId } });
@@ -191,7 +191,7 @@ export class MembersService {
     }
 
     if (member.position === StorePosition.MANAGER) {
-      throw new BadRequestException("不能开除店长，请联系审核员变更");
+      throw new BadRequestException("不能开除店长，请联系管理员变更");
     }
 
     const store = await this.prisma.store.findUniqueOrThrow({

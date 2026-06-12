@@ -38,6 +38,7 @@ model User {
   createdStores              Store[]                    @relation("CreatedBy")
   ownedCustomers             Customer[]                 @relation("CustomerOwner")
   customerNotes              CustomerNote[]             @relation("CustomerNoteCreatedBy")
+  customerTags               CustomerTag[]              @relation("CustomerTagCreatedBy")
   salesOrders                Order[]                    @relation("OrderSalesPerson")
   orderPayments              OrderPayment[]             @relation("OrderPaymentCreatedBy")
   constructionProfile        ConstructionWorkerProfile?
@@ -50,7 +51,13 @@ model User {
   commissionSnapshots        WorkerCommissionSnapshot[] @relation("WorkerCommissionWorker")
   createdCommissionSnapshots WorkerCommissionSnapshot[] @relation("WorkerCommissionCreatedBy")
   inventoryMovements         InventoryMovement[]        @relation("InventoryMovementCreatedBy")
+  inventoryAllocationsLocked OrderInventoryAllocation[] @relation("InventoryAllocationLockedBy")
+  inventoryAllocationsOut    OrderInventoryAllocation[] @relation("InventoryAllocationOutboundBy")
+  purchaseRequirements       PurchaseRequirement[]      @relation("PurchaseRequirementCreatedBy")
   purchaseOrders             PurchaseOrder[]            @relation("PurchaseOrderCreatedBy")
+  suppliersCreated           Supplier[]                 @relation("SupplierCreatedBy")
+  supplierContactsCreated    SupplierContact[]          @relation("SupplierContactCreatedBy")
+  supplierRatingsCreated     SupplierRatingHistory[]    @relation("SupplierRatingCreatedBy")
   warranties                 Warranty[]                 @relation("WarrantyCreatedBy")
   afterSalesCreated          AfterSale[]                @relation("AfterSaleCreatedBy")
   afterSalesAssigned         AfterSaleAssignment[]      @relation("AfterSaleAssignedWorker")
@@ -112,7 +119,10 @@ model Store {
   schedules                  Schedule[]
   inventoryBatches           InventoryBatch[]
   inventoryMovements         InventoryMovement[]
+  inventoryAllocations       OrderInventoryAllocation[]
+  purchaseRequirements       PurchaseRequirement[]
   purchaseOrders             PurchaseOrder[]
+  suppliers                  Supplier[]
   warranties                 Warranty[]
   afterSales                 AfterSale[]
   salesCommissionRules       SalesCommissionRule[]
@@ -204,6 +214,7 @@ model StoreSubmissionPhoto {
 enum StorePosition {
   MANAGER // 店长
   SALES // 销售
+  CUSTOMER_SERVICE // 客服
   PURCHASING // 采购
   FINANCE // 财务
   SCHEDULER // 排班员
@@ -335,7 +346,30 @@ enum InventoryMovementType {
   STOCK_ADJUST
   DAMAGE
   TRANSFER
+  COUNT_IN
+  COUNT_OUT
+  DAMAGE_OUT
+  TRANSFER_IN
+  TRANSFER_OUT
+  RETURN_IN
+  RETURN_OUT
   UNIT_CONVERSION
+  BATCH_SPLIT
+}
+
+enum InventoryAllocationStatus {
+  LOCKED
+  OUTBOUND
+  RELEASED
+}
+
+enum PurchaseRequirementStatus {
+  OPEN
+  PARTIAL_ORDERED
+  ORDERED
+  PARTIAL_RECEIVED
+  FULFILLED
+  CANCELLED
 }
 
 enum PurchaseOrderStatus {
@@ -400,9 +434,16 @@ enum InvoiceStatus {
 
 enum RebateStatus {
   APPLIED
+  REVIEWED
   APPROVED
   REJECTED
   PAID
+}
+
+enum CustomerNoteType {
+  PREFERENCE
+  REQUIREMENT
+  COMMUNICATION
 }
 
 model Customer {
@@ -430,6 +471,7 @@ model Customer {
   referrals  Customer[]        @relation("CustomerReferrals")
   vehicles   CustomerVehicle[]
   notes      CustomerNote[]
+  tags       CustomerTag[]
   orders     Order[]
   warranties Warranty[]
   afterSales AfterSale[]
@@ -462,38 +504,61 @@ model CustomerVehicle {
 }
 
 model CustomerNote {
-  id          String   @id @default(cuid())
+  id          String           @id @default(cuid())
   customerId  String
   createdById String
+  noteType    CustomerNoteType @default(COMMUNICATION)
   content     String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime         @default(now())
 
   customer  Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   createdBy User     @relation("CustomerNoteCreatedBy", fields: [createdById], references: [id])
 
-  @@index([customerId, createdAt])
+  @@index([customerId, noteType, createdAt])
+}
+
+model CustomerTag {
+  id          String   @id @default(cuid())
+  customerId  String
+  label       String
+  createdById String
+  createdAt   DateTime @default(now())
+
+  customer  Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdBy User     @relation("CustomerTagCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([customerId, label])
+  @@index([customerId])
 }
 
 model Product {
-  id             String          @id @default(cuid())
-  storeId        String
-  brand          String
-  name           String
-  model          String
-  category       ProductCategory
-  specification  String?
-  unit           ProductUnit
-  warrantyYears  Int?
-  basePriceCents Int
-  status         ProductStatus   @default(ACTIVE)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id                String          @id @default(cuid())
+  storeId           String
+  brand             String
+  name              String
+  model             String
+  category          ProductCategory
+  specification     String?
+  unit              ProductUnit
+  inventoryUnit     ProductUnit     @default(ROLL)
+  salesUnit         ProductUnit     @default(ROLL)
+  rollWidthMeters   Decimal?        @db.Decimal(8, 3)
+  rollLengthMeters  Decimal?        @db.Decimal(8, 3)
+  metersPerRoll     Decimal?        @db.Decimal(10, 3)
+  quantityPrecision Int             @default(3)
+  warrantyYears     Int?
+  basePriceCents    Int
+  status            ProductStatus   @default(ACTIVE)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
-  store              Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  orderItems         OrderItem[]
-  inventoryBatches   InventoryBatch[]
-  inventoryMovements InventoryMovement[]
-  purchaseOrderItems PurchaseOrderItem[]
+  store                    Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orderItems               OrderItem[]
+  inventoryBatches         InventoryBatch[]
+  inventoryMovements       InventoryMovement[]
+  inventoryAllocations     OrderInventoryAllocation[]
+  purchaseRequirementItems PurchaseRequirementItem[]
+  purchaseOrderItems       PurchaseOrderItem[]
 
   @@unique([storeId, brand, model])
   @@index([storeId, category])
@@ -517,21 +582,23 @@ model Order {
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
 
-  store              Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  customer           Customer            @relation(fields: [customerId], references: [id])
-  vehicle            CustomerVehicle?    @relation(fields: [vehicleId], references: [id])
-  salesPerson        User                @relation("OrderSalesPerson", fields: [salesPersonId], references: [id])
-  items              OrderItem[]
-  amount             OrderAmount?
-  payments           OrderPayment[]
-  constructionRecord ConstructionRecord?
-  inventoryMovements InventoryMovement[]
-  warranty           Warranty?
-  afterSales         AfterSale[]
-  salesCommissionLog SalesCommissionLog?
-  workerCommissions  WorkerCommission[]
-  invoices           Invoice[]
-  customerRebates    CustomerRebate[]
+  store                Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customer             Customer                   @relation(fields: [customerId], references: [id])
+  vehicle              CustomerVehicle?           @relation(fields: [vehicleId], references: [id])
+  salesPerson          User                       @relation("OrderSalesPerson", fields: [salesPersonId], references: [id])
+  items                OrderItem[]
+  amount               OrderAmount?
+  payments             OrderPayment[]
+  constructionRecord   ConstructionRecord?
+  inventoryMovements   InventoryMovement[]
+  inventoryAllocations OrderInventoryAllocation[]
+  purchaseRequirements PurchaseRequirement[]
+  warranty             Warranty?
+  afterSales           AfterSale[]
+  salesCommissionLog   SalesCommissionLog?
+  workerCommissions    WorkerCommission[]
+  invoices             Invoice[]
+  customerRebates      CustomerRebate[]
 
   @@index([storeId, status])
   @@index([storeId, salesPersonId])
@@ -547,8 +614,10 @@ model OrderItem {
   unitPriceCents Int
   amountCents    Int
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  order                    Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product                  Product                    @relation(fields: [productId], references: [id])
+  inventoryAllocations     OrderInventoryAllocation[]
+  purchaseRequirementItems PurchaseRequirementItem[]
 
   @@index([orderId])
 }
@@ -558,6 +627,8 @@ model OrderAmount {
   orderId              String @unique
   productAmountCents   Int
   laborCostCents       Int
+  suggestedLaborCostCents Int?
+  laborCostAdjustmentReason String?
   totalAmountCents     Int
   paidAmountCents      Int    @default(0)
   outstandingCents     Int
@@ -764,27 +835,36 @@ model WorkerCommissionSnapshot {
 // ─── Phase 3 Inventory, Purchase, Warranty ──────────────────────────────────
 
 model InventoryBatch {
-  id                String    @id @default(cuid())
+  id                String      @id @default(cuid())
   storeId           String
   productId         String
   batchNo           String
   supplierName      String?
-  totalQuantity     Int
-  availableQuantity Int
-  lockedQuantity    Int       @default(0)
+  unit              ProductUnit @default(ROLL)
+  totalQuantity     Decimal     @db.Decimal(12, 3)
+  availableQuantity Decimal     @db.Decimal(12, 3)
+  lockedQuantity    Decimal     @default(0) @db.Decimal(12, 3)
+  outboundQuantity  Decimal     @default(0) @db.Decimal(12, 3)
   unitCostCents     Int?
   productionDate    DateTime?
   receivedAt        DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  parentBatchId     String?
+  sourceType        String?
+  sourceId          String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
-  store     Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  product   Product             @relation(fields: [productId], references: [id])
-  movements InventoryMovement[]
+  store        Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product      Product                    @relation(fields: [productId], references: [id])
+  parentBatch  InventoryBatch?            @relation("InventoryBatchSplit", fields: [parentBatchId], references: [id])
+  childBatches InventoryBatch[]           @relation("InventoryBatchSplit")
+  movements    InventoryMovement[]
+  allocations  OrderInventoryAllocation[]
 
   @@unique([storeId, productId, batchNo])
   @@index([storeId, productId])
   @@index([storeId, batchNo])
+  @@index([parentBatchId])
 }
 
 model InventoryMovement {
@@ -794,10 +874,13 @@ model InventoryMovement {
   productId      String
   orderId        String?
   movementType   InventoryMovementType
-  quantity       Int
+  quantity       Decimal               @db.Decimal(12, 3)
+  unit           ProductUnit?
   fromUnit       ProductUnit?
   toUnit         ProductUnit?
   conversionRate Float?
+  sourceType     String?
+  sourceId       String?
   note           String?
   createdById    String
   createdAt      DateTime              @default(now())
@@ -812,40 +895,178 @@ model InventoryMovement {
   @@index([orderId])
   @@index([batchId])
   @@index([productId])
+  @@index([sourceType, sourceId])
+}
+
+model OrderInventoryAllocation {
+  id               String                    @id @default(cuid())
+  storeId          String
+  orderId          String
+  orderItemId      String
+  productId        String
+  batchId          String
+  lockedQuantity   Decimal                   @db.Decimal(12, 3)
+  outboundQuantity Decimal                   @default(0) @db.Decimal(12, 3)
+  status           InventoryAllocationStatus @default(LOCKED)
+  lockedById       String
+  lockedAt         DateTime                  @default(now())
+  outboundById     String?
+  outboundAt       DateTime?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  store      Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem  OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  product    Product        @relation(fields: [productId], references: [id])
+  batch      InventoryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  lockedBy   User           @relation("InventoryAllocationLockedBy", fields: [lockedById], references: [id])
+  outboundBy User?          @relation("InventoryAllocationOutboundBy", fields: [outboundById], references: [id])
+
+  @@unique([orderId, orderItemId, batchId])
+  @@index([storeId, status])
+  @@index([orderId])
+  @@index([batchId])
+  @@index([lockedById])
+  @@index([outboundById])
+}
+
+model PurchaseRequirement {
+  id            String                    @id @default(cuid())
+  storeId       String
+  sourceOrderId String?
+  status        PurchaseRequirementStatus @default(OPEN)
+  createdById   String
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+
+  store          Store                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sourceOrder    Order?                    @relation(fields: [sourceOrderId], references: [id], onDelete: SetNull)
+  createdBy      User                      @relation("PurchaseRequirementCreatedBy", fields: [createdById], references: [id])
+  items          PurchaseRequirementItem[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([storeId, status])
+  @@index([sourceOrderId])
+  @@index([createdById])
+}
+
+model PurchaseRequirementItem {
+  id                    String      @id @default(cuid())
+  purchaseRequirementId String
+  productId             String
+  orderItemId           String?
+  requiredQuantity      Decimal     @db.Decimal(12, 3)
+  requiredUnit          ProductUnit
+  fulfilledQuantity     Decimal     @default(0) @db.Decimal(12, 3)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  purchaseRequirement PurchaseRequirement @relation(fields: [purchaseRequirementId], references: [id], onDelete: Cascade)
+  product             Product             @relation(fields: [productId], references: [id])
+  orderItem           OrderItem?          @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  purchaseOrderItems  PurchaseOrderItem[]
+
+  @@index([purchaseRequirementId])
+  @@index([productId])
+  @@index([orderItemId])
 }
 
 model PurchaseOrder {
-  id           String              @id @default(cuid())
-  storeId      String
-  orderNo      String              @unique
-  supplierName String?
-  status       PurchaseOrderStatus @default(DRAFT)
-  expectedAt   DateTime?
-  createdById  String
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
+  id                    String              @id @default(cuid())
+  storeId               String
+  purchaseRequirementId String?
+  orderNo               String              @unique
+  supplierName          String?
+  status                PurchaseOrderStatus @default(DRAFT)
+  expectedAt            DateTime?
+  createdById           String
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 
-  store     Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  createdBy User                @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
-  items     PurchaseOrderItem[]
+  store               Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  purchaseRequirement PurchaseRequirement? @relation(fields: [purchaseRequirementId], references: [id], onDelete: SetNull)
+  createdBy           User                 @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
+  items               PurchaseOrderItem[]
 
   @@index([storeId, status])
+  @@index([purchaseRequirementId])
   @@index([createdById])
 }
 
 model PurchaseOrderItem {
-  id               String @id @default(cuid())
-  purchaseOrderId  String
-  productId        String
-  quantity         Int
-  receivedQuantity Int    @default(0)
-  unitCostCents    Int?
+  id                        String  @id @default(cuid())
+  purchaseOrderId           String
+  purchaseRequirementItemId String?
+  productId                 String
+  quantity                  Decimal @db.Decimal(12, 3)
+  receivedQuantity          Decimal @default(0) @db.Decimal(12, 3)
+  unitCostCents             Int?
 
-  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  product       Product       @relation(fields: [productId], references: [id])
+  purchaseOrder           PurchaseOrder            @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  purchaseRequirementItem PurchaseRequirementItem? @relation(fields: [purchaseRequirementItemId], references: [id], onDelete: SetNull)
+  product                 Product                  @relation(fields: [productId], references: [id])
 
   @@index([purchaseOrderId])
+  @@index([purchaseRequirementItemId])
   @@index([productId])
+}
+
+model Supplier {
+  id           String   @id @default(cuid())
+  storeId      String
+  name         String
+  contactName  String?
+  contactPhone String?
+  rating       Int?
+  note         String?
+  isActive     Boolean  @default(true)
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  store         Store                   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy     User                    @relation("SupplierCreatedBy", fields: [createdById], references: [id])
+  contacts      SupplierContact[]
+  ratingHistory SupplierRatingHistory[]
+
+  @@unique([storeId, name])
+  @@index([storeId, isActive])
+  @@index([createdById])
+}
+
+model SupplierContact {
+  id          String   @id @default(cuid())
+  supplierId  String
+  name        String
+  phone       String?
+  role        String?
+  isPrimary   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  supplier  Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  createdBy User     @relation("SupplierContactCreatedBy", fields: [createdById], references: [id])
+
+  @@index([supplierId, isActive])
+  @@index([createdById])
+}
+
+model SupplierRatingHistory {
+  id          String   @id @default(cuid())
+  supplierId  String
+  rating      Int
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  supplier  Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  createdBy User     @relation("SupplierRatingCreatedBy", fields: [createdById], references: [id])
+
+  @@index([supplierId, createdAt])
+  @@index([createdById])
 }
 
 model Warranty {
@@ -1095,6 +1316,7 @@ model Invoice {
   amountCents Int
   status      InvoiceStatus @default(APPLIED)
   invoiceNo   String?       @unique
+  fileUrl     String?
   appliedById String
   issuedAt    DateTime?
   createdAt   DateTime      @default(now())
@@ -1232,4 +1454,23 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([userId, createdAt(sort: Desc)])
+}
+
+// ─── Audit Events ───────────────────────────────────────────────────────────
+
+model AuditEvent {
+  id         String  @id @default(cuid())
+  action     String
+  actorId    String?
+  storeId    String?
+  targetType String
+  targetId   String?
+  metadata   Json    @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([storeId, createdAt(sort: Desc)])
+  @@index([targetType, targetId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([action])
 }

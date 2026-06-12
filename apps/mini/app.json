@@ -2,7 +2,9 @@
   "pages": [
     "pages/tasks/index",
     "pages/task-detail/index",
-    "pages/offline/index"
+    "pages/offline/index",
+    "pages/leave/index",
+    "pages/settings/index"
   ],
   "window": {
     "navigationBarTitleText": "MallBay 施工",

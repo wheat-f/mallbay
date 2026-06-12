@@ -11,6 +11,7 @@ import type {
 import { Alert, App, Button, Card, Form, Input, InputNumber, Layout, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import { InboxOutlined, LockOutlined, ShoppingCartOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { inventoryApi, orderApi, productApi, userApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
@@ -160,6 +161,7 @@ type MovementFilterValues = {
 export default function InventoryPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const [batchForm] = Form.useForm<CreateInventoryBatchPayload>();
@@ -997,6 +999,12 @@ export default function InventoryPage() {
                         title: "操作",
                         render: (_, row: PurchaseOrderRow) => (
                           <Space>
+                            <Button
+                              size="small"
+                              onClick={() => router.push(`/inventory/purchase-orders/${row.id}`)}
+                            >
+                              详情
+                            </Button>
                             {row.status === "DRAFT" ? (
                               <Button
                                 size="small"

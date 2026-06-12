@@ -5,6 +5,7 @@ import type { CreateWarrantyPayload } from "../../src/lib/api";
 import { App, Button, Card, Descriptions, Form, Input, Layout, Select, Space, Table, Tag, Typography } from "antd";
 import { FileProtectOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { orderApi, warrantiesApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
@@ -19,6 +20,7 @@ import {
 export default function WarrantiesPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const [form] = Form.useForm<CreateWarrantyPayload>();
@@ -173,7 +175,15 @@ export default function WarrantiesPage() {
               }
             },
             { title: "开始", render: (_, row) => row.startDate?.slice(0, 10) },
-            { title: "结束", render: (_, row) => row.endDate?.slice(0, 10) }
+            { title: "结束", render: (_, row) => row.endDate?.slice(0, 10) },
+            {
+              title: "操作",
+              render: (_, row) => (
+                <Button size="small" onClick={() => router.push(`/warranties/${row.id}`)}>
+                  详情
+                </Button>
+              )
+            }
           ]}
         />
       </Layout.Content>

@@ -1,9 +1,9 @@
 "use client";
 
-import { App, Button, Descriptions, Form, Input, InputNumber, Layout, List, Modal, Select, Skeleton, Space, Tag, Typography } from "antd";
-import { EditOutlined, MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
+import { App, Button, Card, Descriptions, Form, Input, InputNumber, Layout, List, Modal, Select, Skeleton, Space, Tag, Typography } from "antd";
+import { CheckCircleOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { orderApi, productApi } from "../../../src/lib/api";
 import type { OrderAuditEvent } from "../../../src/features/orders/api";
@@ -61,6 +61,7 @@ export default function OrderDetailPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const [commercialsOpen, setCommercialsOpen] = useState(false);
   const [commercialsForm] = Form.useForm<CommercialsFormValues>();
   const orderQuery = useQuery({
@@ -103,6 +104,7 @@ export default function OrderDetailPage() {
     value: product.id
   }));
   const canEditCommercials = order?.status === "PENDING_DISPATCH";
+  const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH";
 
   const openCommercialsModal = () => {
     if (!order) return;
@@ -135,6 +137,48 @@ export default function OrderDetailPage() {
           <Skeleton active />
         ) : (
           <>
+            {shouldShowFulfillmentConfirmation ? (
+              <Card
+                className="mb-4"
+                title="确认提交派工与库房匹配"
+                extra={<Tag color="processing">待派工</Tag>}
+              >
+                <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                  <div>
+                    <Typography.Paragraph type="secondary">
+                      订单创建后需要先核对客户、车辆、产品和施工要求，再进入库房匹配与施工派工。当前页面只做确认提示和流程入口，状态流转仍由库存与施工模块控制。
+                    </Typography.Paragraph>
+                    <List
+                      size="small"
+                      dataSource={[
+                        "已核对客户信息、车辆信息和施工要求",
+                        "已确认产品型号、数量、单价和施工人工费",
+                        "已告知客户施工时间、交车流程和注意事项"
+                      ]}
+                      renderItem={(item) => (
+                        <List.Item>
+                          <Space>
+                            <CheckCircleOutlined className="text-green-600" />
+                            <Typography.Text>{item}</Typography.Text>
+                          </Space>
+                        </List.Item>
+                      )}
+                    />
+                  </div>
+                  <Card size="small" title="下一步">
+                    <Space direction="vertical" className="w-full">
+                      <Button block onClick={() => router.push("/inventory")}>
+                        进入库房匹配
+                      </Button>
+                      <Button block onClick={() => router.push("/construction/assignments")}>
+                        进入施工派工
+                      </Button>
+                    </Space>
+                  </Card>
+                </div>
+              </Card>
+            ) : null}
+
             <Descriptions bordered column={2} className="mb-4">
               <Descriptions.Item label="客户">
                 {order?.customer?.companyName ?? order?.customer?.name ?? "-"}

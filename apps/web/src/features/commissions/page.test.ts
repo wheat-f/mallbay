@@ -30,3 +30,14 @@ test("commissions page uses business selectors instead of manual ids", () => {
   assert.doesNotMatch(pageSource, /<Input placeholder="施工记录 ID"/);
   assert.doesNotMatch(pageSource, /<Input placeholder="调整人员 ID"/);
 });
+
+test("commissions page exposes settlement source summary without fake settled records", () => {
+  const pageSource = readFileSync("app/commissions/page.tsx", "utf8");
+
+  assert.match(pageSource, /const settlementRows =/);
+  assert.match(pageSource, /可结算订单/);
+  assert.match(pageSource, /施工记录/);
+  assert.match(pageSource, /提成规则/);
+  assert.match(pageSource, /title="结算日志明细"/);
+  assert.match(pageSource, /当前版本展示可结算来源，不伪造已结算流水/);
+});

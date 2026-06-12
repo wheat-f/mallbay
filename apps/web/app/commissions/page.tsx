@@ -3,7 +3,7 @@
 import type { CommissionRuleType, SalesCommissionRuleSummary } from "@mallbay/shared";
 import type { CreateSalesCommissionRulePayload } from "../../src/lib/api";
 import { Alert, App, Button, Card, Form, Input, InputNumber, Layout, Select, Space, Table, Tag, Typography } from "antd";
-import { CalculatorOutlined, PercentageOutlined } from "@ant-design/icons";
+import { CalculatorOutlined, FileSearchOutlined, PercentageOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commissionsApi, constructionApi, orderApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
@@ -91,6 +91,32 @@ export default function CommissionsPage() {
       value: worker.userId,
       label: getConstructionWorkerLabel(worker)
     }));
+  const settlementRows = [
+    {
+      id: "rules",
+      stage: "规则配置",
+      subject: `${rulesQuery.data?.length ?? 0} 条规则`,
+      status: "已维护",
+      owner: "财务 / 店长",
+      note: "规则只影响后续生成，不回写历史提成快照"
+    },
+    {
+      id: "sales",
+      stage: "销售提成",
+      subject: `${commissionOrderOptions.length} 个已完工订单`,
+      status: commissionOrderOptions.length > 0 ? "待生成" : "暂无来源",
+      owner: "财务",
+      note: "按已完工订单生成销售提成快照"
+    },
+    {
+      id: "workers",
+      stage: "师傅提成",
+      subject: `${constructionRecordOptions.length} 条施工记录`,
+      status: constructionRecordOptions.length > 0 ? "待生成" : "暂无来源",
+      owner: "施工主管 / 财务",
+      note: "基于施工记录和人工调整生成师傅提成"
+    }
+  ];
 
   const createRule = useMutation({
     mutationFn: (values: SalesCommissionRuleFormValues) =>
@@ -143,6 +169,22 @@ export default function CommissionsPage() {
           message="规则配置与提成生成分离"
           description="规则只定义计算方式；销售订单和施工记录完成后再生成提成快照，避免后续规则调整影响历史结果。"
         />
+
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          {[
+            ["可结算订单", commissionOrderOptions.length, "已完工订单可生成销售提成"],
+            ["施工记录", constructionRecordOptions.length, "可生成师傅提成的施工记录"],
+            ["提成规则", rulesQuery.data?.length ?? 0, "启用后用于后续快照计算"]
+          ].map(([label, value, description]) => (
+            <Card key={label} size="small">
+              <Typography.Text type="secondary">{label}</Typography.Text>
+              <div className="mt-2 text-2xl font-semibold text-gray-900">{value}</div>
+              <Typography.Text type="secondary" className="text-xs">
+                {description}
+              </Typography.Text>
+            </Card>
+          ))}
+        </div>
 
         <div className="mb-4 grid gap-4 xl:grid-cols-[1fr_1fr]">
           <Card title="佣金规则配置" extra={<Tag>{rulesQuery.data?.length ?? 0} 条规则</Tag>}>
@@ -225,6 +267,28 @@ export default function CommissionsPage() {
             </Space>
           </Card>
         </div>
+
+        <Card
+          className="mb-4"
+          title="结算日志明细"
+          extra={<Typography.Text type="secondary">当前版本展示可结算来源，不伪造已结算流水</Typography.Text>}
+        >
+          <Table
+            rowKey="id"
+            pagination={false}
+            dataSource={settlementRows}
+            columns={[
+              { title: "结算环节", dataIndex: "stage" },
+              { title: "来源范围", dataIndex: "subject" },
+              { title: "状态", render: (_, row) => <Tag>{row.status}</Tag> },
+              { title: "负责人", dataIndex: "owner" },
+              { title: "说明", dataIndex: "note" }
+            ]}
+          />
+          <Button className="mt-3" icon={<FileSearchOutlined />} onClick={() => message.info("提成结算导出将在后续财务批次中实现")}>
+            导出报表
+          </Button>
+        </Card>
 
         <Table<SalesCommissionRuleSummary>
           rowKey="id"

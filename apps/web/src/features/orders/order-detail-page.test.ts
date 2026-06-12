@@ -18,3 +18,14 @@ test("order detail renders suggested and final labor cost with adjustment reason
   assert.match(pageSource, /suggestedLaborCostCents/);
   assert.match(pageSource, /laborCostAdjustmentReason/);
 });
+
+test("order detail exposes pending dispatch confirmation and fulfillment links", () => {
+  const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /shouldShowFulfillmentConfirmation/);
+  assert.match(pageSource, /确认提交派工与库房匹配/);
+  assert.match(pageSource, /进入库房匹配/);
+  assert.match(pageSource, /router\.push\("\/inventory"\)/);
+  assert.match(pageSource, /进入施工派工/);
+  assert.match(pageSource, /router\.push\("\/construction\/assignments"\)/);
+});

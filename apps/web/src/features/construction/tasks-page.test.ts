@@ -246,22 +246,35 @@ test("construction offline page follows the prototype upload queue layout", () =
   assert.match(cssSource, /\.construction-offline-progress/);
 });
 
-test("construction profile page follows the prototype account and connection center", () => {
+test("construction profile page follows the prototype connection and offline settings center", () => {
   const pageSource = readFileSync("app/construction/profile/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
-  assert.match(pageSource, /construction-profile-hero/);
+  assert.match(pageSource, /title="连接与离线设置"/);
+  assert.match(pageSource, /variant="settings"/);
   assert.match(pageSource, /construction-profile-status-card/);
+  assert.match(pageSource, /construction-profile-config-section/);
   assert.match(pageSource, /construction-profile-config-list/);
   assert.match(pageSource, /construction-profile-cache-card/);
+  assert.match(pageSource, /construction-profile-cache-actions/);
   assert.match(pageSource, /construction-profile-toggle-list/);
-  assert.match(pageSource, /MallBay 施工端/);
-  assert.match(pageSource, /门店施工协同解决方案/);
+  assert.match(pageSource, /当前网络状态/);
+  assert.match(pageSource, /延迟 \(Ping\)/);
+  assert.match(pageSource, /API 终端地址/);
+  assert.match(pageSource, /离线缓存空间/);
+  assert.match(pageSource, /建议限制/);
+  assert.doesNotMatch(pageSource, /construction-profile-hero/);
+  assert.doesNotMatch(pageSource, /Avatar/);
+  assert.doesNotMatch(pageSource, /快捷入口/);
   assert.doesNotMatch(pageSource, /MallBay Worker|Workplace Solutions/);
   assert.match(pageSource, /NEXT_PUBLIC_API_URL/);
-  assert.match(cssSource, /\.construction-profile-hero/);
   assert.match(cssSource, /\.construction-profile-status-card/);
+  assert.match(cssSource, /\.construction-mobile-shell-settings/);
+  assert.match(cssSource, /\.construction-mobile-settings-header/);
+  assert.match(cssSource, /\.construction-profile-config-section/);
+  assert.match(cssSource, /\.construction-profile-setting-row/);
   assert.match(cssSource, /\.construction-profile-config-list/);
   assert.match(cssSource, /\.construction-profile-cache-card/);
+  assert.match(cssSource, /\.construction-profile-cache-actions/);
   assert.match(cssSource, /\.construction-profile-toggle-list/);
 });

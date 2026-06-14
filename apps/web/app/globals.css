@@ -13344,6 +13344,11 @@ button.workbench-task-row:hover {
   padding-top: 14px;
 }
 
+.construction-mobile-shell-settings {
+  background: var(--mb-background);
+  padding: 0 14px 88px;
+}
+
 .construction-mobile-header {
   display: flex;
   width: 100%;
@@ -13405,6 +13410,47 @@ button.workbench-task-row:hover {
 .construction-mobile-shell-calendar .construction-mobile-content {
   gap: 16px;
   padding-bottom: 156px;
+}
+
+.construction-mobile-settings-header {
+  position: sticky;
+  top: 0;
+  z-index: 70;
+  display: grid;
+  max-width: 430px;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+  margin: 0 auto 18px;
+  border-bottom: 1px solid var(--mb-border-strong);
+  background: rgb(255 255 255 / 0.98);
+  color: var(--mb-primary);
+  padding: 14px 0;
+  box-shadow: none;
+}
+
+.construction-mobile-settings-header h1 {
+  margin: 0;
+  color: var(--mb-primary);
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.construction-mobile-settings-header .ant-btn {
+  color: var(--mb-primary);
+  font-size: 20px;
+}
+
+.construction-mobile-settings-spacer {
+  width: 44px;
+  height: 44px;
+}
+
+.construction-mobile-shell-settings .construction-mobile-content {
+  gap: 14px;
+  padding-bottom: 132px;
 }
 
 .construction-mobile-content {
@@ -13498,7 +13544,7 @@ button.workbench-task-row:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 58px;
   gap: 14px;
-  border: 1px solid var(--mb-border);
+  border: 1px solid var(--mb-border-strong);
   border-radius: 22px;
   background: var(--mb-surface);
   box-shadow: var(--mb-shadow-sm);
@@ -13546,16 +13592,30 @@ button.workbench-task-row:hover {
 .construction-profile-status-card dl {
   display: grid;
   grid-column: 1 / -1;
-  gap: 12px;
   margin: 0;
   border-top: 1px solid var(--mb-border-subtle);
-  padding-top: 14px;
+  padding-top: 10px;
 }
 
 .construction-profile-status-card dl > div {
   display: flex;
   justify-content: space-between;
   gap: 16px;
+  padding: 10px 0;
+}
+
+.construction-profile-config-section {
+  display: grid;
+  gap: 12px;
+}
+
+.construction-profile-config-section h2 {
+  margin: 0;
+  color: var(--mb-text-secondary);
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
 }
 
 .construction-profile-status-card dd {
@@ -13571,28 +13631,28 @@ button.workbench-task-row:hover {
   gap: 12px;
 }
 
-.construction-profile-config-list button {
+.construction-profile-setting-row {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  border: 1px solid var(--mb-border);
+  border: 1px solid var(--mb-border-strong);
   border-radius: 18px;
   background: var(--mb-surface);
   color: var(--mb-text-primary);
   cursor: pointer;
-  padding: 14px;
+  padding: 18px;
   text-align: left;
 }
 
-.construction-profile-config-list button:disabled {
+.construction-profile-setting-row:disabled {
   cursor: not-allowed;
   opacity: 0.62;
 }
 
-.construction-profile-config-list button > .anticon:first-child {
-  color: var(--mb-primary);
-  font-size: 23px;
+.construction-profile-setting-row > .anticon:first-child {
+  color: var(--mb-text-muted);
+  font-size: 24px;
 }
 
 .construction-profile-config-list strong,
@@ -13602,7 +13662,7 @@ button.workbench-task-row:hover {
 
 .construction-profile-config-list strong {
   color: var(--mb-text-primary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 900;
 }
 
@@ -13610,7 +13670,7 @@ button.workbench-task-row:hover {
   overflow: hidden;
   margin-top: 5px;
   color: var(--mb-primary);
-  font-size: 15px;
+  font-size: 22px;
   font-style: normal;
   font-weight: 900;
   text-overflow: ellipsis;
@@ -13623,7 +13683,7 @@ button.workbench-task-row:hover {
 }
 
 .construction-profile-cache-card {
-  border: 1px solid var(--mb-border);
+  border: 1px solid var(--mb-border-strong);
   border-radius: 22px;
   background: var(--mb-surface);
   box-shadow: var(--mb-shadow-sm);
@@ -13645,9 +13705,15 @@ button.workbench-task-row:hover {
 }
 
 .construction-profile-cache-actions .ant-btn {
-  min-height: 48px;
+  min-height: 78px;
   border-radius: 16px;
   font-weight: 900;
+}
+
+.construction-profile-cache-actions .ant-btn .ant-btn-icon {
+  display: block;
+  margin: 0 0 4px;
+  font-size: 23px;
 }
 
 .construction-profile-toggle-list {
@@ -13660,11 +13726,11 @@ button.workbench-task-row:hover {
   grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  border: 1px solid var(--mb-border);
+  border: 1px solid var(--mb-border-strong);
   border-radius: 18px;
   background: var(--mb-surface);
   box-shadow: var(--mb-shadow-sm);
-  padding: 14px;
+  padding: 16px 18px;
 }
 
 .construction-profile-toggle-list .anticon {

@@ -14603,6 +14603,7 @@ button.workbench-task-row:hover {
   font-size: 24px;
 }
 
+.construction-leave-application-panel,
 .construction-leave-form-card,
 .construction-leave-history-card,
 .construction-leave-tip-card {
@@ -14613,23 +14614,81 @@ button.workbench-task-row:hover {
   box-shadow: var(--mb-shadow-sm);
 }
 
-.construction-leave-native-form {
-  display: grid;
-  gap: 14px;
+.construction-leave-application-panel {
+  border-radius: 22px;
+  padding: 18px;
 }
 
-.construction-leave-native-form label {
+.construction-leave-application-panel .construction-mobile-section-head {
+  margin-bottom: 18px;
+}
+
+.construction-leave-application-panel .construction-mobile-section-head h2 {
+  margin: 0 0 5px;
+  color: var(--mb-primary);
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 30px;
+}
+
+.construction-leave-application-panel .construction-mobile-section-head .ant-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--mb-primary-container);
+  color: var(--mb-primary);
+  font-weight: 900;
+}
+
+.construction-leave-native-form {
   display: grid;
-  gap: 7px;
+  gap: 18px;
+}
+
+.construction-leave-native-form label,
+.construction-leave-field {
+  display: grid;
+  gap: 9px;
   color: var(--mb-text-primary);
   font-size: 13px;
   font-weight: 800;
 }
 
+.construction-leave-field > span {
+  color: var(--mb-text-secondary);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.construction-leave-date-card {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--mb-border);
+  border-radius: 18px;
+  background: var(--mb-surface-alt);
+  padding: 13px 14px;
+}
+
+.construction-leave-date-card > .anticon {
+  color: var(--mb-text-secondary);
+  font-size: 22px;
+}
+
 .construction-leave-date-range {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
   gap: 8px;
+}
+
+.construction-leave-date-range em {
+  color: var(--mb-text-muted);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .construction-leave-native-form input,
@@ -14647,13 +14706,29 @@ button.workbench-task-row:hover {
 .construction-leave-native-form input,
 .construction-leave-native-form select {
   height: 42px;
-  padding: 0 12px;
+  padding: 0 10px;
+}
+
+.construction-leave-date-card input {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--mb-primary);
+  font-size: 14px;
+  font-weight: 900;
+  min-width: 0;
+  padding: 0;
+}
+
+.construction-leave-date-card input:focus {
+  box-shadow: none;
 }
 
 .construction-leave-native-form textarea {
   resize: vertical;
-  min-height: 82px;
-  padding: 10px 12px;
+  min-height: 124px;
+  background: var(--mb-surface-alt);
+  padding: 12px 14px;
   line-height: 1.5;
 }
 
@@ -14662,6 +14737,62 @@ button.workbench-task-row:hover {
 .construction-leave-native-form textarea:focus {
   border-color: var(--mb-primary);
   box-shadow: 0 0 0 3px rgba(15, 58, 95, 0.12);
+}
+
+.construction-leave-type-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.construction-leave-type-pills button {
+  min-height: 38px;
+  border: 1px solid var(--mb-border);
+  border-radius: 999px;
+  background: var(--mb-surface);
+  color: var(--mb-text-secondary);
+  cursor: pointer;
+  padding: 0 17px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.construction-leave-type-pills button.is-active {
+  border-color: var(--mb-primary);
+  background: var(--mb-primary);
+  color: var(--mb-on-primary);
+  box-shadow: 0 10px 22px rgba(15, 58, 95, 0.18);
+}
+
+.construction-leave-rule-card {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  border-radius: 16px;
+  background: var(--mb-info-container);
+  color: var(--mb-primary);
+  padding: 13px 14px;
+}
+
+.construction-leave-rule-card .anticon {
+  margin-top: 1px;
+  font-size: 18px;
+}
+
+.construction-leave-rule-card p {
+  margin: 0;
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
+}
+
+.construction-leave-application-panel .ant-btn {
+  min-height: 50px;
+  border-radius: 16px;
+  font-size: 16px;
+  font-weight: 950;
+  box-shadow: 0 14px 28px rgba(15, 58, 95, 0.18);
 }
 
 .construction-leave-history-list {

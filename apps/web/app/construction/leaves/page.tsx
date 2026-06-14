@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { App, Button, Empty, Tag, Typography } from "antd";
+import { App, Button, Empty, Tag } from "antd";
 import {
   CalendarOutlined,
   ClockCircleOutlined,
   EnvironmentOutlined,
-  FormOutlined,
+  InfoCircleOutlined,
   SendOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +19,7 @@ import { useAuthStore } from "../../../src/stores/auth-store";
 type LeaveFormValues = {
   startDate: string;
   endDate: string;
-  leaveType: "REST" | "OUTSIDE";
+  leaveType: "PERSONAL" | "SICK" | "ANNUAL" | "OTHER";
   reason: string;
 };
 
@@ -33,9 +33,11 @@ type LeaveRequestRow = {
 };
 
 const leaveTypeOptions = [
-  { value: "REST", label: "休息" },
-  { value: "OUTSIDE", label: "外出施工" }
-];
+  { value: "PERSONAL", label: "事假" },
+  { value: "SICK", label: "病假" },
+  { value: "ANNUAL", label: "年假" },
+  { value: "OTHER", label: "其他" }
+] satisfies Array<{ value: LeaveFormValues["leaveType"]; label: string }>;
 
 export default function ConstructionLeavesPage() {
   const { message } = App.useApp();
@@ -43,7 +45,7 @@ export default function ConstructionLeavesPage() {
   const [formValues, setFormValues] = useState<LeaveFormValues>({
     startDate: "",
     endDate: "",
-    leaveType: "REST",
+    leaveType: "PERSONAL",
     reason: ""
   });
   const user = useAuthStore((state) => state.user);
@@ -67,7 +69,7 @@ export default function ConstructionLeavesPage() {
       }),
     onSuccess: async () => {
       message.success("请假申请已提交");
-      setFormValues({ startDate: "", endDate: "", leaveType: "REST", reason: "" });
+      setFormValues({ startDate: "", endDate: "", leaveType: "PERSONAL", reason: "" });
       await queryClient.invalidateQueries({ queryKey: ["construction-leaves", storeId] });
     },
     onError: (error: Error) => message.error(error.message)
@@ -94,66 +96,69 @@ export default function ConstructionLeavesPage() {
   };
 
   return (
-    <ConstructionMobileShell title="请假申请" subtitle="提交休息或外出状态，方便主管派单" active="leaves">
+    <ConstructionMobileShell title="请假申请" subtitle="提交请假状态，方便主管派单" active="leaves" variant="calendar">
       <div className="construction-leave-workspace">
-        <section className="construction-leave-summary">
-          <div>
-            <Tag>本店申请</Tag>
-            <Typography.Title level={2}>{pendingCount} 条待处理</Typography.Title>
-            <p>提交后主管可在施工排班和派单时避开不可用人员。</p>
-          </div>
-          <FormOutlined />
-        </section>
-
-        <section className="construction-leave-form-card">
+        <section className="construction-leave-application-panel">
           <div className="construction-mobile-section-head">
             <div>
-              <h2>新增申请</h2>
-              <p>休息走请假申请；外出施工用于临时标记不可店内派单。</p>
+              <h2>提交请假申请</h2>
+              <p>审批通过后，请假日期会自动锁定为不可派单。</p>
             </div>
+            <Tag>{pendingCount} 待处理</Tag>
           </div>
           <form className="construction-leave-native-form" onSubmit={handleSubmit}>
-            <label>
-              <span>时间范围</span>
-              <div className="construction-leave-date-range">
-                <input
-                  type="date"
-                  value={formValues.startDate}
-                  onChange={(event) => setFormValues((current) => ({ ...current, startDate: event.target.value }))}
-                />
-                <input
-                  type="date"
-                  value={formValues.endDate}
-                  onChange={(event) => setFormValues((current) => ({ ...current, endDate: event.target.value }))}
-                />
+            <div className="construction-leave-field">
+              <span>请假时间</span>
+              <div className="construction-leave-date-card">
+                <CalendarOutlined />
+                <div className="construction-leave-date-range">
+                  <input
+                    aria-label="请假开始日期"
+                    type="date"
+                    value={formValues.startDate}
+                    onChange={(event) => setFormValues((current) => ({ ...current, startDate: event.target.value }))}
+                  />
+                  <em>至</em>
+                  <input
+                    aria-label="请假结束日期"
+                    type="date"
+                    value={formValues.endDate}
+                    onChange={(event) => setFormValues((current) => ({ ...current, endDate: event.target.value }))}
+                  />
+                </div>
               </div>
-            </label>
-            <label>
-              <span>类型</span>
-              <select
-                value={formValues.leaveType}
-                onChange={(event) =>
-                  setFormValues((current) => ({ ...current, leaveType: event.target.value as LeaveFormValues["leaveType"] }))
-                }
-              >
+            </div>
+            <div className="construction-leave-field">
+              <span>请假类型</span>
+              <div className="construction-leave-type-pills">
                 {leaveTypeOptions.map((item) => (
-                  <option key={item.value} value={item.value}>
+                  <button
+                    key={item.value}
+                    type="button"
+                    aria-pressed={formValues.leaveType === item.value}
+                    className={formValues.leaveType === item.value ? "is-active" : undefined}
+                    onClick={() => setFormValues((current) => ({ ...current, leaveType: item.value }))}
+                  >
                     {item.label}
-                  </option>
+                  </button>
                 ))}
-              </select>
-            </label>
-            <label>
-              <span>说明</span>
+              </div>
+            </div>
+            <label className="construction-leave-field">
+              <span>请假事由</span>
               <textarea
-                rows={3}
-                placeholder="例如休息原因、外出施工地址或主管沟通记录"
+                rows={4}
+                placeholder="请输入详细原因..."
                 value={formValues.reason}
                 onChange={(event) => setFormValues((current) => ({ ...current, reason: event.target.value }))}
               />
             </label>
+            <div className="construction-leave-rule-card">
+              <InfoCircleOutlined />
+              <p>审批通过后，请假日期不可派单，系统将自动锁定。</p>
+            </div>
             <Button type="primary" icon={<SendOutlined />} htmlType="submit" loading={createLeaveMutation.isPending} block>
-              提交申请
+              提交请假
             </Button>
           </form>
         </section>

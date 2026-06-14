@@ -14830,6 +14830,279 @@ button.workbench-task-row:hover {
   font-weight: 900;
 }
 
+.construction-materials-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.construction-materials-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.construction-materials-stat {
+  display: grid;
+  min-height: 84px;
+  align-content: center;
+  gap: 5px;
+  border: 1px solid var(--mb-border);
+  border-radius: 18px;
+  background: var(--mb-surface);
+  padding: 12px 8px;
+  text-align: center;
+  box-shadow: var(--mb-shadow-sm);
+}
+
+.construction-materials-stat strong {
+  color: var(--mb-primary);
+  font-size: 26px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.construction-materials-stat span {
+  color: var(--mb-text-secondary);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 16px;
+}
+
+.construction-materials-stat.is-warning strong {
+  color: var(--mb-warning);
+}
+
+.construction-materials-stat.is-success strong {
+  color: var(--mb-success);
+}
+
+.construction-materials-card {
+  overflow: hidden;
+  border: 1px solid var(--mb-border);
+  border-radius: 22px;
+  background: var(--mb-surface);
+  padding: 16px;
+  box-shadow: var(--mb-shadow-sm);
+}
+
+.construction-materials-hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  background:
+    linear-gradient(135deg, rgba(15, 58, 95, 0.97), rgba(10, 91, 130, 0.9)),
+    var(--mb-primary);
+  color: var(--mb-on-primary);
+}
+
+.construction-materials-hero-card .ant-tag {
+  width: fit-content;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.16);
+  color: var(--mb-on-primary);
+  font-weight: 900;
+}
+
+.construction-materials-hero-card h2 {
+  margin: 10px 0 6px;
+  color: var(--mb-on-primary);
+  font-size: 23px;
+  font-weight: 950;
+  line-height: 30px;
+}
+
+.construction-materials-hero-card p {
+  margin: 0;
+  color: rgb(255 255 255 / 0.76);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.construction-materials-hero-card .ant-btn {
+  min-height: 46px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--mb-surface);
+  color: var(--mb-primary);
+  font-weight: 950;
+}
+
+.construction-materials-card .construction-mobile-section-head > .anticon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: var(--mb-primary-container);
+  color: var(--mb-primary);
+  font-size: 19px;
+}
+
+.construction-materials-batch-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.construction-materials-batch {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--mb-border-subtle);
+  border-radius: 18px;
+  background: var(--mb-surface-alt);
+  padding: 13px;
+}
+
+.construction-materials-batch-main {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.construction-materials-batch-main > .anticon {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--mb-surface);
+  color: var(--mb-primary);
+  font-size: 18px;
+}
+
+.construction-materials-batch-main div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.construction-materials-batch strong {
+  overflow: hidden;
+  color: var(--mb-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.construction-materials-batch span {
+  color: var(--mb-text-primary);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 19px;
+}
+
+.construction-materials-batch em {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+  line-height: 18px;
+}
+
+.construction-materials-batch dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.construction-materials-batch dl > div {
+  min-width: 0;
+  border-radius: 12px;
+  background: var(--mb-surface);
+  padding: 9px 10px;
+}
+
+.construction-materials-batch dt,
+.construction-materials-batch dd {
+  margin: 0;
+}
+
+.construction-materials-batch dt {
+  color: var(--mb-text-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.construction-materials-batch dd {
+  overflow: hidden;
+  color: var(--mb-text-primary);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.construction-materials-batch .ant-tag {
+  width: fit-content;
+  margin: 0;
+  border-radius: 999px;
+  font-weight: 900;
+}
+
+.construction-materials-consumables {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.construction-materials-consumables span {
+  display: inline-flex;
+  min-height: 40px;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--mb-border-subtle);
+  border-radius: 14px;
+  background: var(--mb-surface-alt);
+  color: var(--mb-text-primary);
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.construction-materials-consumables .anticon {
+  color: var(--mb-success);
+}
+
+.construction-materials-actions {
+  position: sticky;
+  bottom: 86px;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  border: 1px solid var(--mb-border);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 0.94);
+  padding: 10px;
+  box-shadow: 0 -12px 28px rgba(15, 58, 95, 0.1);
+  backdrop-filter: blur(16px);
+}
+
+.construction-materials-actions .ant-btn {
+  min-height: 42px;
+  border-radius: 13px;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.construction-materials-actions .ant-btn:first-child {
+  grid-column: 1 / -1;
+}
+
 .construction-leave-summary {
   overflow: hidden;
   border-radius: 28px;

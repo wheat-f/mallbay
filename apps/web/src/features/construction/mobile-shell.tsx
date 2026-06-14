@@ -16,7 +16,7 @@ import {
 type ConstructionMobileShellProps = {
   title: string;
   subtitle?: string;
-  active: "tasks" | "schedules" | "camera" | "leaves" | "profile";
+  active: "tasks" | "schedules" | "camera" | "materials" | "leaves" | "profile";
   variant?: "hero" | "calendar" | "settings";
   badgeCount?: number;
   children: ReactNode;
@@ -46,11 +46,11 @@ const tabs: ConstructionMobileTab[] = [
     activeKeys: ["tasks"]
   },
   {
-    key: "camera",
+    key: "materials",
     label: "物料管理",
-    href: "/construction/camera",
+    href: "/construction/materials",
     icon: <InboxOutlined />,
-    activeKeys: ["camera"]
+    activeKeys: ["materials", "camera"]
   },
   {
     key: "profile",

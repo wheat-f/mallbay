@@ -37,6 +37,7 @@ test("management shell wraps business routes and excludes public and mobile rout
   assert.match(source, /"\/construction\/tasks"/);
   assert.match(source, /"\/construction\/schedules"/);
   assert.match(source, /"\/construction\/camera"/);
+  assert.match(source, /"\/construction\/materials"/);
   assert.match(source, /"\/construction\/leaves"/);
   assert.match(source, /"\/construction\/offline"/);
   assert.match(source, /"\/construction\/profile"/);

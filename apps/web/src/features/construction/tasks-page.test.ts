@@ -79,14 +79,19 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
   const tasksPageSource = readFileSync("app/construction/tasks/page.tsx", "utf8");
   const schedulesPageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
   const cameraPageSource = readFileSync("app/construction/camera/page.tsx", "utf8");
+  const materialsPagePath = "app/construction/materials/page.tsx";
   const leavesPageSource = readFileSync("app/construction/leaves/page.tsx", "utf8");
   const offlinePageSource = readFileSync("app/construction/offline/page.tsx", "utf8");
   const profilePageSource = readFileSync("app/construction/profile/page.tsx", "utf8");
   const shellSource = readFileSync("src/features/construction/mobile-shell.tsx", "utf8");
 
+  assert.equal(existsSync(materialsPagePath), true);
+  const materialsPageSource = readFileSync(materialsPagePath, "utf8");
+
   assert.match(tasksPageSource, /ConstructionMobileShell/);
   assert.match(schedulesPageSource, /constructionApi\.schedules/);
   assert.match(cameraPageSource, /active="camera"/);
+  assert.match(materialsPageSource, /active="materials"/);
   assert.match(leavesPageSource, /active="leaves"/);
   assert.match(offlinePageSource, /constructionApi\.offlineSync/);
   assert.match(profilePageSource, /active="profile"/);
@@ -97,14 +102,45 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
   assert.match(shellSource, /我的施工/);
   assert.match(shellSource, /物料管理/);
   assert.match(shellSource, /个人中心/);
-  assert.match(shellSource, /active: "tasks" \| "schedules" \| "camera" \| "leaves" \| "profile"/);
-  assert.match(shellSource, /\/construction\/camera/);
+  assert.match(shellSource, /active: "tasks" \| "schedules" \| "camera" \| "materials" \| "leaves" \| "profile"/);
+  assert.match(shellSource, /\/construction\/materials/);
   assert.match(shellSource, /\/construction\/offline/);
   assert.match(shellSource, /\/construction\/profile/);
+  assert.doesNotMatch(shellSource, /label: "物料管理"[\s\S]{0,160}href: "\/construction\/camera"/);
   assert.doesNotMatch(shellSource, /label: "拍照"/);
   assert.doesNotMatch(shellSource, /label: "请假"/);
   assert.doesNotMatch(shellSource, /href: "\/profile"/);
   assert.match(readFileSync("app/globals.css", "utf8"), /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+});
+
+test("construction materials page follows the prototype material management entry", () => {
+  const materialsPagePath = "app/construction/materials/page.tsx";
+
+  assert.equal(existsSync(materialsPagePath), true);
+
+  const pageSource = readFileSync(materialsPagePath, "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(pageSource, /title="物料管理"/);
+  assert.match(pageSource, /active="materials"/);
+  assert.match(pageSource, /construction-materials-workspace/);
+  assert.match(pageSource, /construction-materials-summary/);
+  assert.match(pageSource, /construction-materials-card/);
+  assert.match(pageSource, /construction-materials-batch/);
+  assert.match(pageSource, /construction-materials-actions/);
+  assert.match(pageSource, /待领物料/);
+  assert.match(pageSource, /批次追溯/);
+  assert.match(pageSource, /扫码核验/);
+  assert.match(pageSource, /膜箱照片/);
+  assert.match(pageSource, /膜桶照片/);
+  assert.match(pageSource, /施工耗材/);
+  assert.match(pageSource, /施工照片上传/);
+  assert.match(pageSource, /router\.push\("\/construction\/camera"\)/);
+  assert.match(cssSource, /\.construction-materials-workspace/);
+  assert.match(cssSource, /\.construction-materials-summary/);
+  assert.match(cssSource, /\.construction-materials-card/);
+  assert.match(cssSource, /\.construction-materials-batch/);
+  assert.match(cssSource, /\.construction-materials-actions/);
 });
 
 test("construction mobile camera and leave pages expose prototype quick actions", () => {

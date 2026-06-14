@@ -26,6 +26,7 @@ const mobilePrefixes = [
   "/construction/tasks",
   "/construction/schedules",
   "/construction/camera",
+  "/construction/materials",
   "/construction/leaves",
   "/construction/offline",
   "/construction/profile",

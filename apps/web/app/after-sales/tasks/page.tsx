@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Button, Empty, Tag } from "antd";
 import {
@@ -8,6 +9,7 @@ import {
   BellOutlined,
   CheckCircleOutlined,
   CustomerServiceOutlined,
+  FilterOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   SearchOutlined,
@@ -31,6 +33,11 @@ const tabs: Array<{ key: MobileAfterSaleTab; label: string; statuses: AfterSaleS
   { key: "pending", label: "待处理", statuses: ["OPEN"] },
   { key: "processing", label: "处理中", statuses: ["ASSIGNED"] },
   { key: "done", label: "已完成", statuses: ["RESOLVED", "CLOSED"] }
+];
+
+const taskImages = [
+  "https://lh3.googleusercontent.com/aida-public/AB6AXuBgT01t3zBnRNV_QlZUPVfbMJ6IYpZpB6_BOWMrNFVEY4tyztunj1ld1_AfhDGURFyQwPHqsvgLpUil8jnii02vTELzV2P18SNBEUAZL6Me9VPbtdmKhM47CEAskfg66YijhcvOEQUtBcpf3nHnXWJ-mz3oWn6QbR0kjGvFT9-GNjMMs2rvGajI80uf4OVlfqH5rCRna0eXrwhLtI1WBygZyoNyNvPYYpYQjuAJDw_fKd9S-cjX6uNa2yLW7_i5ywLMrJTOZLG3RfeK",
+  "https://lh3.googleusercontent.com/aida-public/AB6AXuCI01okt5uoCDZvrYZz85xvIDdn0BHJ3RHhDnHZV48TuM-UFLSTN86CDIXGlcos7Mxh1bAHoyiu53kvuYfq-cPr48_cdpJTvoa0L-3OiMOW0MHiRaKTF1zejaLHcYHxGChZUGIZiD9CG8jAvdFS7afEYWdCIP4cA5neoltRbtrRYQ8Ma0_oFGUeiakMJtM65cM7vigxomhyWoVJPQjNP9g6eLBTSkQHJr5Umv8GXGea4c4QtJR0cSm4744mUBxW7uEiUYWdNu8f2Y53"
 ];
 
 export default function AfterSalesMobileTasksPage() {
@@ -103,7 +110,15 @@ export default function AfterSalesMobileTasksPage() {
 
             <div className="after-sales-mobile-card-main">
               <div className="after-sales-mobile-car-thumb">
-                <ToolOutlined />
+                <Image
+                  className="after-sales-mobile-car-image"
+                  src={getAfterSalesTaskImage(item)}
+                  alt={`${getMobileAfterSaleTitle(item)} 售后现场`}
+                  width={80}
+                  height={80}
+                  sizes="80px"
+                  unoptimized
+                />
               </div>
               <div>
                 <h2>{getMobileAfterSaleTitle(item)}</h2>
@@ -126,6 +141,10 @@ export default function AfterSalesMobileTasksPage() {
           </article>
         ))}
       </section>
+
+      <button className="after-sales-mobile-filter-fab" type="button" aria-label="筛选售后任务">
+        <FilterOutlined />
+      </button>
 
       <nav className="after-sales-mobile-bottom-nav" aria-label="售后移动端导航">
         <Link href="/workbench">
@@ -150,6 +169,11 @@ export default function AfterSalesMobileTasksPage() {
       </nav>
     </main>
   );
+}
+
+function getAfterSalesTaskImage(item: AfterSaleSummary) {
+  if (item.description.includes("划痕")) return taskImages[1];
+  return taskImages[0];
 }
 
 function getMobileAfterSaleTitle(item: AfterSaleSummary) {

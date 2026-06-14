@@ -135,23 +135,33 @@ test("after-sales mobile task center follows the worker prototype", () => {
 
   const pageSource = readFileSync(pagePath, "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
+  const nextConfigSource = readFileSync("next.config.ts", "utf8");
 
   assert.match(pageSource, /售后任务中心/);
+  assert.match(pageSource, /from "next\/image"/);
+  assert.match(pageSource, /unoptimized/);
   assert.match(pageSource, /afterSalesApi\.list/);
   assert.match(pageSource, /after-sales-mobile-shell/);
   assert.match(pageSource, /after-sales-mobile-hero/);
   assert.match(pageSource, /after-sales-mobile-tabs/);
   assert.match(pageSource, /after-sales-mobile-card/);
+  assert.match(pageSource, /after-sales-mobile-car-image/);
+  assert.match(pageSource, /after-sales-mobile-filter-fab/);
   assert.match(pageSource, /after-sales-mobile-bottom-nav/);
   assert.match(pageSource, /待处理/);
   assert.match(pageSource, /处理中/);
   assert.match(pageSource, /已完成/);
   assert.match(pageSource, /立即处理/);
   assert.match(pageSource, /getAfterSaleOrderLabel/);
+  assert.match(pageSource, /getAfterSalesTaskImage/);
+  assert.match(pageSource, /description\.includes\("划痕"\)/);
   assert.match(cssSource, /\.after-sales-mobile-shell/);
   assert.match(cssSource, /\.after-sales-mobile-hero/);
   assert.match(cssSource, /\.after-sales-mobile-card/);
+  assert.match(cssSource, /\.after-sales-mobile-car-image/);
+  assert.match(cssSource, /\.after-sales-mobile-filter-fab/);
   assert.match(cssSource, /\.after-sales-mobile-bottom-nav/);
+  assert.match(nextConfigSource, /lh3\.googleusercontent\.com/);
 });
 
 test("after-sales mobile task header stays within the viewport", () => {

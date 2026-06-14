@@ -50,6 +50,30 @@ test("inventory pending order tab uses mobile cards instead of squeezing the des
 }
 );
 
+test("inventory tab tables have mobile card alternatives", () => {
+  assert.match(pageSource, /inventory-mobile-tab-switcher/);
+  assert.match(pageSource, /aria-label="库存模块导航"/);
+  assert.match(pageSource, /inventory-tab-mobile-cards inventory-allocation-mobile-cards/);
+  assert.match(pageSource, /inventory-tab-mobile-card inventory-allocation-mobile-card/);
+  assert.match(pageSource, /inventory-tab-mobile-cards inventory-supplier-tab-mobile-cards/);
+  assert.match(pageSource, /inventory-tab-mobile-card inventory-supplier-tab-mobile-card/);
+  assert.match(pageSource, /inventory-tab-mobile-cards inventory-batch-mobile-cards/);
+  assert.match(pageSource, /inventory-tab-mobile-card inventory-batch-mobile-card/);
+  assert.match(pageSource, /inventory-tab-mobile-cards inventory-purchase-requirement-mobile-cards/);
+  assert.match(pageSource, /inventory-tab-mobile-card inventory-purchase-requirement-mobile-card/);
+  assert.match(pageSource, /inventory-tab-mobile-cards inventory-purchase-order-mobile-cards/);
+  assert.match(pageSource, /inventory-tab-mobile-card inventory-purchase-order-mobile-card/);
+  assert.match(pageSource, /inventory-tab-mobile-cards inventory-movement-tab-mobile-cards/);
+  assert.match(pageSource, /inventory-tab-mobile-card inventory-movement-tab-mobile-card/);
+  assert.match(pageSource, /className="inventory-tab-desktop-table/);
+  assert.match(cssSource, /\.inventory-tab-mobile-cards\s*\{[\s\S]*display: none;/);
+  assert.match(cssSource, /\.inventory-mobile-tab-switcher\s*\{[\s\S]*display: none;/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.inventory-tab-desktop-table\s*\{[\s\S]*display: none;/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.inventory-tab-mobile-cards\s*\{[\s\S]*display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.inventory-tab-workspace-card \.ant-tabs-nav\s*\{[\s\S]*display: none;/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.inventory-mobile-tab-switcher\s*\{[\s\S]*display: grid;/);
+});
+
 test("inventory nested panels use tokenized prototype surfaces", () => {
   assert.match(pageSource, /inventory-nested-panel/);
   assert.match(pageSource, /inventory-movement-filter/);
@@ -152,6 +176,7 @@ test("inventory adjustment page follows the prototype stock adjustment layout", 
   assert.match(adjustmentSource, /调拨管理/);
   assert.match(adjustmentSource, /确认提交/);
   assert.match(adjustmentSource, /adjustment-workspace-page/);
+  assert.match(adjustmentSource, /management-page adjustment-workspace-page/);
   assert.match(adjustmentSource, /adjustment-conversion-panel/);
   assert.match(adjustmentSource, /adjustment-count-table/);
   assert.match(adjustmentSource, /adjustment-transfer-panel/);
@@ -212,6 +237,7 @@ test("inventory movement ledger page follows the prototype movement workspace", 
   assert.match(movementsSource, /近期异常提醒/);
   assert.match(movementsSource, /批次追踪/);
   assert.match(movementsSource, /movement-ledger-page/);
+  assert.match(movementsSource, /management-page movement-ledger-page/);
   assert.match(movementsSource, /movement-kpi-grid/);
   assert.match(movementsSource, /movement-filter-panel/);
   assert.match(movementsSource, /movement-ledger-table/);

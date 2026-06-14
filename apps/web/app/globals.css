@@ -4502,6 +4502,111 @@ body {
   text-align: center;
 }
 
+.inventory-tab-mobile-cards {
+  display: none;
+}
+
+.inventory-mobile-tab-switcher {
+  display: none;
+}
+
+.inventory-mobile-tab-switcher button {
+  min-width: 0;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-container-lowest);
+  color: var(--mb-text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 18px;
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.inventory-mobile-tab-switcher button.is-active {
+  border-color: var(--mb-primary);
+  background: var(--mb-primary);
+  color: var(--mb-on-primary);
+}
+
+.inventory-tab-mobile-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-lg);
+  background: var(--mb-surface-container-lowest);
+  padding: 14px;
+  box-shadow: var(--mb-shadow-sm);
+}
+
+.inventory-tab-mobile-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inventory-tab-mobile-card-head strong {
+  min-width: 0;
+  color: var(--mb-primary);
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.inventory-tab-mobile-card-fields {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+
+.inventory-tab-mobile-card-fields > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.inventory-tab-mobile-card-fields dt,
+.inventory-tab-mobile-card-fields dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.inventory-tab-mobile-card-fields dt {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.inventory-tab-mobile-card-fields dd {
+  color: var(--mb-text-primary);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.inventory-tab-mobile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inventory-tab-mobile-actions .ant-btn {
+  min-width: 0;
+}
+
+.inventory-tab-mobile-empty {
+  border: 1px dashed var(--mb-border);
+  border-radius: var(--mb-radius-lg);
+  background: var(--mb-surface-container-low);
+  color: var(--mb-text-muted);
+  padding: 28px 18px;
+  text-align: center;
+}
+
 .inventory-order-card {
   display: grid;
   width: 100%;
@@ -12580,7 +12685,28 @@ button.workbench-task-row:hover {
     display: none;
   }
 
+  .inventory-tab-desktop-table {
+    display: none;
+  }
+
+  .inventory-tab-workspace-card .ant-tabs-nav {
+    display: none !important;
+  }
+
+  .inventory-mobile-tab-switcher {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
   .inventory-mobile-order-cards {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .inventory-tab-mobile-cards {
     display: grid;
     gap: 12px;
     margin-bottom: 18px;

@@ -153,7 +153,7 @@ export default function InventoryAdjustmentsPage() {
   const adjustmentMetrics = getAdjustmentMetrics(batchRows);
 
   return (
-    <div className="adjustment-workspace-page">
+    <div className="management-page adjustment-workspace-page">
       <header className="adjustment-topbar">
         <div>
           <button type="button" aria-label="返回库存管理" onClick={() => router.push("/inventory")}>

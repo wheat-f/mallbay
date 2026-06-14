@@ -149,6 +149,16 @@ type AvailableInventoryPreviewRow = {
   availableQuantity?: number | string | null;
 };
 
+const INVENTORY_TAB_NAV_ITEMS = [
+  { key: "pending-orders", label: "待匹配订单" },
+  { key: "suppliers", label: "供应商档案" },
+  { key: "batches", label: "库存批次" },
+  { key: "purchase", label: "采购需求" },
+  { key: "movements", label: "锁库与流水" },
+  { key: "split", label: "批次拆分" },
+  { key: "stock-operations", label: "其他出入库" }
+];
+
 export default function InventoryPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -305,6 +315,8 @@ export default function InventoryPage() {
       }));
   const movementRows = (movementsQuery.data ?? []) as MovementRow[];
   const movementSummary = getInventoryMovementSummary(movementRows);
+  const supplierRows = (suppliersQuery.data ?? []) as InventorySupplierSummary[];
+  const batchRows = (batchesQuery.data ?? []) as InventoryBatchSummary[];
   const purchaseRequirementRows = (purchaseRequirementsQuery.data ?? []) as PurchaseRequirementRow[];
   const purchaseOrderRows = (purchaseOrdersQuery.data ?? []) as PurchaseOrderRow[];
   const createBatch = useMutation({
@@ -776,10 +788,22 @@ export default function InventoryPage() {
           </section>
 
           <Card className="inventory-prototype-card inventory-tab-workspace-card">
+            <div className="inventory-mobile-tab-switcher" aria-label="库存模块导航">
+              {INVENTORY_TAB_NAV_ITEMS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={activeInventoryTab === item.key ? "is-active" : undefined}
+                  onClick={() => setActiveInventoryTab(item.key)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
             <Tabs
-          activeKey={activeInventoryTab}
-          onChange={setActiveInventoryTab}
-          items={[
+              activeKey={activeInventoryTab}
+              onChange={setActiveInventoryTab}
+              items={[
             {
               key: "pending-orders",
               label: "待匹配订单",
@@ -933,6 +957,7 @@ export default function InventoryPage() {
                           </Space>
                         </div>
                         <Table
+                          className="inventory-tab-desktop-table inventory-allocation-desktop-table"
                           rowKey="id"
                           size="small"
                           pagination={false}
@@ -946,6 +971,38 @@ export default function InventoryPage() {
                             { title: "状态", render: (_, row) => <Tag>{getInventoryAllocationStatusLabel(row.status)}</Tag> }
                           ]}
                         />
+                        <div className="inventory-tab-mobile-cards inventory-allocation-mobile-cards">
+                          {allocationRows.length > 0 ? (
+                            allocationRows.map((row) => (
+                              <article key={row.id} className="inventory-tab-mobile-card inventory-allocation-mobile-card">
+                                <div className="inventory-tab-mobile-card-head">
+                                  <strong>{row.productLabel}</strong>
+                                  <Tag>{getInventoryAllocationStatusLabel(row.status)}</Tag>
+                                </div>
+                                <dl className="inventory-tab-mobile-card-fields">
+                                  <div>
+                                    <dt>批次</dt>
+                                    <dd>{row.batchLabel}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>锁定数量</dt>
+                                    <dd>{row.lockedQuantity}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>已出库</dt>
+                                    <dd>{row.outboundQuantity}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>剩余锁定</dt>
+                                    <dd>{row.remainingQuantity}</dd>
+                                  </div>
+                                </dl>
+                              </article>
+                            ))
+                          ) : (
+                            <div className="inventory-tab-mobile-empty">暂无已锁批次</div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ) : null}
@@ -978,10 +1035,53 @@ export default function InventoryPage() {
                     </Button>
                   </Form>
 
+                  <div className="inventory-tab-mobile-cards inventory-supplier-tab-mobile-cards">
+                    {supplierRows.length > 0 ? (
+                      supplierRows.map((row) => (
+                        <article key={row.id ?? row.name} className="inventory-tab-mobile-card inventory-supplier-tab-mobile-card">
+                          <div className="inventory-tab-mobile-card-head">
+                            <strong>{row.name}</strong>
+                            <Tag>{row.isActive === false ? "停用" : "启用"}</Tag>
+                          </div>
+                          <dl className="inventory-tab-mobile-card-fields">
+                            <div>
+                              <dt>联系人</dt>
+                              <dd>{row.contactName ?? "-"}</dd>
+                            </div>
+                            <div>
+                              <dt>联系电话</dt>
+                              <dd>{row.contactPhone ?? "-"}</dd>
+                            </div>
+                            <div>
+                              <dt>评级</dt>
+                              <dd>{row.rating ?? "-"}</dd>
+                            </div>
+                            <div>
+                              <dt>采购单</dt>
+                              <dd>{row.purchaseOrderCount ?? 0}</dd>
+                            </div>
+                            <div>
+                              <dt>批次数</dt>
+                              <dd>{row.batchCount ?? 0}</dd>
+                            </div>
+                          </dl>
+                          <div className="inventory-tab-mobile-actions">
+                            <Button size="small" disabled={!row.id} onClick={() => openSupplierEditor(row)}>
+                              编辑供应商
+                            </Button>
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="inventory-tab-mobile-empty">暂无供应商</div>
+                    )}
+                  </div>
+
                   <Table<InventorySupplierSummary>
+                    className="inventory-tab-desktop-table inventory-supplier-tab-desktop-table"
                     rowKey={(row) => row.id ?? row.name}
                     loading={suppliersQuery.isLoading}
-                    dataSource={suppliersQuery.data ?? []}
+                    dataSource={supplierRows}
                     columns={[
                       { title: "供应商", dataIndex: "name" },
                       { title: "联系人", render: (_, row) => row.contactName ?? "-" },
@@ -1100,10 +1200,49 @@ export default function InventoryPage() {
                     </Button>
                   </Form>
 
+                  <div className="inventory-tab-mobile-cards inventory-batch-mobile-cards">
+                    {batchRows.length > 0 ? (
+                      batchRows.map((row) => (
+                        <article key={row.id} className="inventory-tab-mobile-card inventory-batch-mobile-card">
+                          <div className="inventory-tab-mobile-card-head">
+                            <strong>{row.batchNo}</strong>
+                            <Tag>{row.availableQuantity ?? 0} 可用</Tag>
+                          </div>
+                          <dl className="inventory-tab-mobile-card-fields">
+                            <div>
+                              <dt>产品</dt>
+                              <dd>{getInventoryProductLabel(row.productId, productMap)}</dd>
+                            </div>
+                            <div>
+                              <dt>供应商</dt>
+                              <dd>{row.supplierName ?? "-"}</dd>
+                            </div>
+                            <div>
+                              <dt>总量</dt>
+                              <dd>{row.totalQuantity}</dd>
+                            </div>
+                            <div>
+                              <dt>已锁</dt>
+                              <dd>{row.lockedQuantity}</dd>
+                            </div>
+                          </dl>
+                          <div className="inventory-tab-mobile-actions">
+                            <Button size="small" onClick={() => traceBatchMovements(row)}>
+                              批次追溯
+                            </Button>
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="inventory-tab-mobile-empty">暂无库存批次</div>
+                    )}
+                  </div>
+
                   <Table<InventoryBatchSummary>
+                    className="inventory-tab-desktop-table inventory-batch-desktop-table"
                     rowKey="id"
                     loading={batchesQuery.isLoading}
-                    dataSource={batchesQuery.data ?? []}
+                    dataSource={batchRows}
                     columns={[
                       { title: "批次号", dataIndex: "batchNo" },
                       { title: "产品", render: (_, row) => getInventoryProductLabel(row.productId, productMap) },
@@ -1141,7 +1280,34 @@ export default function InventoryPage() {
                     </Button>
                   </Form>
 
+                  <div className="inventory-tab-mobile-cards inventory-purchase-requirement-mobile-cards">
+                    {purchaseRequirementRows.length > 0 ? (
+                      purchaseRequirementRows.map((row) => (
+                        <article key={row.id} className="inventory-tab-mobile-card inventory-purchase-requirement-mobile-card">
+                          <div className="inventory-tab-mobile-card-head">
+                            <strong>{getPurchaseRequirementItemsSummary(row, productMap)}</strong>
+                            <Tag>{getPurchaseRequirementStatusLabel(row.status)}</Tag>
+                          </div>
+                          <dl className="inventory-tab-mobile-card-fields">
+                            <div>
+                              <dt>来源订单</dt>
+                              <dd>{getPurchaseRequirementSourceOrderLabel(row, sourceOrderMap)}</dd>
+                            </div>
+                          </dl>
+                          <div className="inventory-tab-mobile-actions">
+                            <Button size="small" onClick={() => createPurchaseOrderFromRequirement.mutate(row.id)}>
+                              生成采购单
+                            </Button>
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="inventory-tab-mobile-empty">暂无采购需求</div>
+                    )}
+                  </div>
+
                   <Table
+                    className="inventory-tab-desktop-table inventory-purchase-requirement-desktop-table"
                     rowKey="id"
                     loading={purchaseRequirementsQuery.isLoading}
                     dataSource={purchaseRequirementRows}
@@ -1161,7 +1327,68 @@ export default function InventoryPage() {
                   />
 
                   <Typography.Title level={5} className="!mt-6">采购订单</Typography.Title>
+                  <div className="inventory-tab-mobile-cards inventory-purchase-order-mobile-cards">
+                    {purchaseOrderRows.length > 0 ? (
+                      purchaseOrderRows.map((row) => {
+                        const reminder = getPurchaseOrderArrivalReminder(row);
+                        const isRisk = reminder.includes("逾期") || reminder.includes("今日") || reminder.includes("未设置");
+                        return (
+                          <article key={row.id} className="inventory-tab-mobile-card inventory-purchase-order-mobile-card">
+                            <div className="inventory-tab-mobile-card-head">
+                              <strong>{row.orderNo}</strong>
+                              <Tag>{getPurchaseOrderStatusLabel(row.status)}</Tag>
+                            </div>
+                            <dl className="inventory-tab-mobile-card-fields">
+                              <div>
+                                <dt>供应商</dt>
+                                <dd>{row.supplierName ?? "-"}</dd>
+                              </div>
+                              <div>
+                                <dt>预计到货</dt>
+                                <dd>{row.expectedAt?.slice(0, 10) ?? "-"}</dd>
+                              </div>
+                              <div>
+                                <dt>到货提醒</dt>
+                                <dd><Tag color={isRisk ? "warning" : "default"}>{reminder}</Tag></dd>
+                              </div>
+                              <div>
+                                <dt>采购明细</dt>
+                                <dd>{row.items?.length ?? 0} 项</dd>
+                              </div>
+                            </dl>
+                            <div className="inventory-tab-mobile-actions">
+                              <Button size="small" onClick={() => router.push(`/inventory/purchase-orders/${row.id}`)}>
+                                详情
+                              </Button>
+                              {row.status === "DRAFT" ? (
+                                <Button
+                                  size="small"
+                                  loading={approvePurchaseOrder.isPending}
+                                  onClick={() => approvePurchaseOrder.mutate(row.id)}
+                                >
+                                  审批通过
+                                </Button>
+                              ) : null}
+                              {row.status === "DRAFT" || row.status === "ORDERED" ? (
+                                <Button
+                                  size="small"
+                                  danger
+                                  loading={cancelPurchaseOrder.isPending}
+                                  onClick={() => handleCancelPurchaseOrder(row.id)}
+                                >
+                                  取消采购单
+                                </Button>
+                              ) : null}
+                            </div>
+                          </article>
+                        );
+                      })
+                    ) : (
+                      <div className="inventory-tab-mobile-empty">暂无采购订单</div>
+                    )}
+                  </div>
                   <Table
+                    className="inventory-tab-desktop-table inventory-purchase-order-desktop-table"
                     rowKey="id"
                     loading={purchaseOrdersQuery.isLoading}
                     dataSource={purchaseOrderRows}
@@ -1387,7 +1614,40 @@ export default function InventoryPage() {
                     </div>
                   </div>
 
+                  <div className="inventory-tab-mobile-cards inventory-movement-tab-mobile-cards">
+                    {movementRows.length > 0 ? (
+                      movementRows.map((row) => {
+                        const batch = batchMap.get(row.batchId);
+                        return (
+                          <article key={row.id} className="inventory-tab-mobile-card inventory-movement-tab-mobile-card">
+                            <div className="inventory-tab-mobile-card-head">
+                              <strong>{getInventoryMovementTypeLabel(row.movementType)}</strong>
+                              <Tag>{row.quantity}</Tag>
+                            </div>
+                            <dl className="inventory-tab-mobile-card-fields">
+                              <div>
+                                <dt>产品</dt>
+                                <dd>{getInventoryProductLabel(row.productId, productMap)}</dd>
+                              </div>
+                              <div>
+                                <dt>批次</dt>
+                                <dd>{batch ? getInventoryBatchLabel(batch, productMap) : INVENTORY_BATCH_MISSING_LABEL}</dd>
+                              </div>
+                              <div>
+                                <dt>时间</dt>
+                                <dd>{row.createdAt?.slice(0, 19).replace("T", " ")}</dd>
+                              </div>
+                            </dl>
+                          </article>
+                        );
+                      })
+                    ) : (
+                      <div className="inventory-tab-mobile-empty">暂无库存流水</div>
+                    )}
+                  </div>
+
                   <Table<MovementRow>
+                    className="inventory-tab-desktop-table inventory-movement-tab-desktop-table"
                     rowKey="id"
                     loading={movementsQuery.isLoading}
                     dataSource={movementRows}

@@ -154,7 +154,7 @@ export default function InventoryMovementsPage() {
   };
 
   return (
-    <div className="movement-ledger-page">
+    <div className="management-page movement-ledger-page">
       <StorePageHeader title="库存流水" description="追踪入库、出库、锁库、调拨、报损和盘点调整的完整批次链路">
         <Button icon={<DownloadOutlined />}>导出报表</Button>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/inventory")}>

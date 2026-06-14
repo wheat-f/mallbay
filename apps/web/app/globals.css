@@ -13899,6 +13899,166 @@ button.workbench-task-row:hover {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding-bottom: 84px;
+}
+
+.worker-task-detail-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  min-height: 142px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 92% 20%, rgba(255, 255, 255, 0.16), transparent 26%),
+    linear-gradient(135deg, #062a46 0%, #0b3a60 100%);
+  color: var(--mb-on-primary);
+  box-shadow: 0 18px 36px rgba(15, 58, 95, 0.26);
+  padding: 20px;
+}
+
+.worker-task-detail-hero::after {
+  position: absolute;
+  right: -18px;
+  bottom: -28px;
+  color: rgb(255 255 255 / 0.08);
+  content: "✕";
+  font-size: 118px;
+  font-weight: 950;
+  line-height: 1;
+  transform: rotate(-12deg);
+}
+
+.worker-task-detail-hero > div,
+.worker-task-detail-hero .ant-tag {
+  position: relative;
+  z-index: 1;
+}
+
+.worker-task-detail-hero span {
+  color: var(--mb-primary-fixed-dim);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.worker-task-detail-hero h2 {
+  margin: 8px 0 14px;
+  color: inherit;
+  font-size: 24px;
+  font-weight: 950;
+  line-height: 1.22;
+  word-break: break-word;
+}
+
+.worker-task-detail-hero p {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--mb-primary-fixed);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.worker-task-detail-hero .ant-tag {
+  margin-inline-end: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--mb-warning-container);
+  color: var(--mb-warning);
+  font-size: 13px;
+  font-weight: 900;
+  padding: 5px 10px;
+}
+
+.worker-task-progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid var(--mb-border);
+  border-radius: 18px;
+  background: var(--mb-surface);
+  box-shadow: var(--mb-shadow-sm);
+  padding: 14px 10px;
+}
+
+.worker-task-progress > div {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  color: var(--mb-text-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.worker-task-progress > div:not(:last-child)::after {
+  position: absolute;
+  top: 15px;
+  left: calc(50% + 22px);
+  width: calc(100% - 44px);
+  height: 2px;
+  background: var(--mb-border);
+  content: "";
+}
+
+.worker-task-progress i {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--mb-border);
+  border-radius: 999px;
+  background: var(--mb-surface);
+  color: var(--mb-text-muted);
+  font-style: normal;
+}
+
+.worker-task-progress .is-active,
+.worker-task-progress .is-done {
+  color: var(--mb-primary);
+}
+
+.worker-task-progress .is-active i,
+.worker-task-progress .is-done i {
+  border-color: var(--mb-primary);
+  background: var(--mb-primary);
+  color: var(--mb-on-primary);
+}
+
+.worker-task-info-card {
+  border-radius: 22px;
+}
+
+.worker-task-sticky-actions {
+  position: static;
+  z-index: 170;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 4px 0 0;
+  border: 1px solid var(--mb-border);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 0.98);
+  box-shadow: 0 16px 40px rgba(15, 58, 95, 0.2);
+  padding: 8px;
+  backdrop-filter: blur(16px);
+}
+
+.worker-task-sticky-actions .ant-btn {
+  min-width: 0;
+  height: 50px;
+  border-radius: 14px;
+  padding-inline: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: normal;
 }
 
 .worker-task-status-hero {

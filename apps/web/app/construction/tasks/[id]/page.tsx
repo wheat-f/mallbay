@@ -123,30 +123,35 @@ export default function ConstructionMobileTaskDetailPage() {
           <Empty description="施工任务未加载" />
         ) : (
           <>
-            <section className="construction-mobile-panel construction-task-detail-card">
+            <section className="worker-task-detail-hero">
+              <div>
+                <span>订单号</span>
+                <h2>{record.order?.orderNo ?? "订单未加载"}</h2>
+                <p><ClockCircleOutlined /> {formatSchedule(record)}</p>
+              </div>
+              <Tag>{getConstructionStatusLabel(record.status)}</Tag>
+            </section>
+
+            <section className="worker-task-progress" aria-label="施工阶段进度">
+              {getTaskSteps(record.status, pendingUploads).map((step) => (
+                <div key={step.label} className={step.state === "done" ? "is-done" : step.state === "active" ? "is-active" : undefined}>
+                  <i>{step.state === "done" ? <CheckOutlined /> : step.index}</i>
+                  <span>{step.label}</span>
+                </div>
+              ))}
+            </section>
+
+            <section className="construction-mobile-panel construction-task-detail-card worker-task-info-card">
               <div className="construction-task-card-header">
                 <div>
-                  <span className="construction-task-label">订单</span>
-                  <h2>{record.order?.orderNo ?? "订单未加载"}</h2>
+                  <span className="construction-task-label">施工任务信息</span>
+                  <h2>{formatLocation(record)}</h2>
                 </div>
                 <Tag color={getStatusColor(record.status)}>{getConstructionStatusLabel(record.status)}</Tag>
               </div>
               <div className="construction-task-meta">
                 <span><ClockCircleOutlined /> {formatSchedule(record)}</span>
                 <span><EnvironmentOutlined /> {formatLocation(record)}</span>
-              </div>
-              <div className="construction-mobile-action-grid">
-                <Button icon={<PlayCircleOutlined />} onClick={() => startMutation.mutate()} loading={startMutation.isPending}>
-                  开工
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<CheckOutlined />}
-                  onClick={() => completeMutation.mutate()}
-                  loading={completeMutation.isPending}
-                >
-                  完工
-                </Button>
               </div>
             </section>
 
@@ -162,7 +167,7 @@ export default function ConstructionMobileTaskDetailPage() {
               </div>
 
               <Form form={photoForm} layout="vertical" onFinish={(values) => uploadMutation.mutate(values)}>
-                <div className="construction-mobile-upload-form">
+                <div id="task-photo-upload" className="construction-mobile-upload-form">
                   <Form.Item name="stage" label="照片阶段" rules={[{ required: true, message: "请选择照片阶段" }]}>
                     <Select
                       placeholder="选择阶段"
@@ -218,6 +223,23 @@ export default function ConstructionMobileTaskDetailPage() {
                 })}
               </div>
             </section>
+
+            <div className="worker-task-sticky-actions">
+              <Button icon={<PlayCircleOutlined />} onClick={() => startMutation.mutate()} loading={startMutation.isPending}>
+                开始验车
+              </Button>
+              <Button icon={<CameraOutlined />} onClick={() => document.getElementById("task-photo-upload")?.scrollIntoView({ behavior: "smooth" })}>
+                上传照片
+              </Button>
+              <Button
+                type="primary"
+                icon={<CheckOutlined />}
+                onClick={() => completeMutation.mutate()}
+                loading={completeMutation.isPending}
+              >
+                提交完工
+              </Button>
+            </div>
           </>
         )}
       </section>
@@ -233,6 +255,19 @@ function formatSchedule(record: TaskRecord) {
 function formatLocation(record: TaskRecord) {
   if (record.order?.constructionLocation === "OUTSIDE") return record.order.outsideAddress ?? "外出地址待补充";
   return "到店施工";
+}
+
+function getTaskSteps(status: string, pendingUploads: number) {
+  return [
+    { index: 1, label: "接单", state: "done" },
+    { index: 2, label: "施工前验车", state: status === "DISPATCHED" ? "active" : "done" },
+    {
+      index: 3,
+      label: "施工中",
+      state: status === "IN_CONSTRUCTION" ? "active" : status === "COMPLETED" ? "done" : "pending"
+    },
+    { index: 4, label: "已完成", state: status === "COMPLETED" && pendingUploads === 0 ? "done" : "pending" }
+  ];
 }
 
 function getStatusColor(status: string) {

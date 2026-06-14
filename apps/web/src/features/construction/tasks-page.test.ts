@@ -50,6 +50,12 @@ test("construction mobile task detail page covers photo upload and task actions"
   assert.match(pageSource, /ConstructionMobileShell/);
   assert.match(pageSource, /active="tasks"/);
   assert.match(pageSource, /施工任务详情/);
+  assert.match(pageSource, /worker-task-detail-hero/);
+  assert.match(pageSource, /worker-task-progress/);
+  assert.match(pageSource, /worker-task-sticky-actions/);
+  assert.match(pageSource, /开始验车/);
+  assert.match(pageSource, /上传照片/);
+  assert.match(pageSource, /提交完工/);
   assert.match(pageSource, /照片清单/);
   assert.match(pageSource, /construction-mobile-task-detail/);
   assert.match(pageSource, /construction-mobile-photo-checklist/);
@@ -62,6 +68,9 @@ test("construction mobile task detail page covers photo upload and task actions"
   assert.match(pageSource, /constructionApi\.completeOrder/);
   assert.doesNotMatch(pageSource, /params\.id<\/h1>/);
   assert.doesNotMatch(pageSource, /record\?\.order\?\.orderNo \?\? params\.id/);
+  assert.match(cssSource, /\.worker-task-detail-hero/);
+  assert.match(cssSource, /\.worker-task-progress/);
+  assert.match(cssSource, /\.worker-task-sticky-actions/);
   assert.match(cssSource, /construction-mobile-task-detail/);
   assert.match(cssSource, /construction-mobile-photo-checklist/);
 });

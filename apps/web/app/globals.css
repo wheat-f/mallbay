@@ -13901,6 +13901,109 @@ button.workbench-task-row:hover {
   gap: 12px;
 }
 
+.worker-task-status-hero {
+  display: flex;
+  min-height: 132px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0 0 22px 22px;
+  background:
+    radial-gradient(circle at 90% 16%, rgba(72, 133, 183, 0.32), transparent 34%),
+    linear-gradient(135deg, #073151 0%, #0f3a5f 58%, #0b2d4a 100%);
+  color: var(--mb-on-primary);
+  padding: 24px 16px 22px;
+  box-shadow: 0 18px 36px rgba(15, 58, 95, 0.22);
+}
+
+.worker-task-status-hero h2 {
+  margin: 0;
+  color: inherit;
+  font-size: 26px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.worker-task-status-hero p {
+  margin: 10px 0 0;
+  color: var(--mb-primary-fixed-dim);
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.worker-task-status-hero span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--mb-primary-fixed-dim);
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.worker-task-status-hero i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--mb-success);
+  box-shadow: 0 0 0 4px rgba(36, 161, 96, 0.14);
+}
+
+.construction-task-segments {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--mb-border);
+  background: rgb(246 248 251 / 0.96);
+}
+
+.construction-task-segments button {
+  position: relative;
+  min-height: 54px;
+  border: 0;
+  background: transparent;
+  color: var(--mb-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.construction-task-segments button.is-active {
+  color: var(--mb-primary);
+}
+
+.construction-task-segments button.is-active::after {
+  position: absolute;
+  right: 18px;
+  bottom: -1px;
+  left: 18px;
+  height: 4px;
+  border-radius: 999px 999px 0 0;
+  background: var(--mb-primary);
+  content: "";
+}
+
+.construction-task-segments em {
+  margin-left: 4px;
+  font-style: normal;
+}
+
+.worker-task-empty-card {
+  min-height: 260px;
+  display: grid;
+  align-items: center;
+  border: 1px solid var(--mb-border);
+  border-radius: 22px;
+  background: var(--mb-surface);
+  box-shadow: var(--mb-shadow-sm);
+  padding: 32px 16px;
+}
+
 .construction-task-list {
   display: flex;
   flex-direction: column;
@@ -13946,6 +14049,9 @@ button.workbench-task-row:hover {
 }
 
 .construction-task-location {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 12px 0 14px;
   border-radius: var(--mb-radius-md);
   background: var(--mb-surface-alt);

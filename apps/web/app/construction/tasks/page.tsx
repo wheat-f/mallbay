@@ -1,9 +1,17 @@
 "use client";
 
 import { App, Button, Empty, Space, Tag } from "antd";
-import { CalendarOutlined, CameraOutlined, CheckOutlined, ClockCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import {
+  CalendarOutlined,
+  CameraOutlined,
+  CheckOutlined,
+  ClockCircleOutlined,
+  EnvironmentOutlined,
+  PlayCircleOutlined
+} from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { getConstructionStatusLabel } from "../../../src/features/construction/display";
@@ -24,12 +32,15 @@ type TaskRow = {
   };
 };
 
+type TaskSegmentKey = "today" | "pending" | "active" | "completed";
+
 export default function ConstructionTasksPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
+  const [activeSegment, setActiveSegment] = useState<TaskSegmentKey>("today");
 
   const tasksQuery = useQuery({
     queryKey: ["construction-tasks", storeId],
@@ -57,6 +68,21 @@ export default function ConstructionTasksPage() {
 
   const rows = (tasksQuery.data ?? []) as TaskRow[];
   const activeCount = rows.filter((row) => row.status !== "COMPLETED").length;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const pendingRows = rows.filter((row) => row.status === "DISPATCHED" || row.status === "PENDING_DISPATCH");
+  const activeRows = rows.filter((row) => row.status === "IN_CONSTRUCTION");
+  const completedRows = rows.filter((row) => row.status === "COMPLETED");
+  const todayRows = rows.filter((row) => row.order?.appointmentDate?.slice(0, 10) === todayKey);
+  const taskSegments = useMemo(
+    () => [
+      { key: "today" as const, label: "今日任务", count: todayRows.length || activeCount },
+      { key: "pending" as const, label: "待接单", count: pendingRows.length },
+      { key: "active" as const, label: "施工中", count: activeRows.length },
+      { key: "completed" as const, label: "已完成", count: completedRows.length }
+    ],
+    [activeCount, activeRows.length, completedRows.length, pendingRows.length, todayRows.length]
+  );
+  const visibleRows = getVisibleRows(activeSegment, rows, todayRows, pendingRows, activeRows, completedRows);
 
   return (
     <ConstructionMobileShell
@@ -65,24 +91,40 @@ export default function ConstructionTasksPage() {
       active="tasks"
       badgeCount={activeCount}
     >
-      <section className="construction-mobile-summary">
+      <section className="worker-task-status-hero">
         <div>
-          <strong>{activeCount}</strong>
-          <span>待处理</span>
+          <h2>{getWorkerDisplayName(user)}，你好</h2>
+          <p>今天有 {activeCount} 个待办任务</p>
         </div>
-        <div>
-          <strong>{rows.length}</strong>
-          <span>全部任务</span>
-        </div>
+        <span>
+          <i />
+          在线
+        </span>
       </section>
+
+      <nav className="construction-task-segments" aria-label="施工任务状态筛选">
+        {taskSegments.map((segment) => (
+          <button
+            key={segment.key}
+            className={activeSegment === segment.key ? "is-active" : undefined}
+            type="button"
+            onClick={() => setActiveSegment(segment.key)}
+          >
+            {segment.label}
+            {segment.key !== "completed" ? <em>{segment.count}</em> : null}
+          </button>
+        ))}
+      </nav>
 
       {tasksQuery.isLoading ? (
         <div className="construction-mobile-loading">任务加载中...</div>
-      ) : rows.length === 0 ? (
-        <Empty description="暂无施工任务" />
+      ) : visibleRows.length === 0 ? (
+        <div className="worker-task-empty-card">
+          <Empty description="暂无施工任务" />
+        </div>
       ) : (
         <div className="construction-task-list">
-          {rows.map((row) => (
+          {visibleRows.map((row) => (
             <article key={row.id} className="construction-task-card">
               <div className="construction-task-card-header">
                 <div>
@@ -96,6 +138,7 @@ export default function ConstructionTasksPage() {
                 <span><ClockCircleOutlined /> {row.order?.appointmentTimeSlot ?? "时段待定"}</span>
               </div>
               <p className="construction-task-location">
+                <EnvironmentOutlined />
                 {row.order?.constructionLocation === "OUTSIDE"
                   ? row.order.outsideAddress ?? "外出地址待补充"
                   : "到店施工"}
@@ -117,6 +160,24 @@ export default function ConstructionTasksPage() {
       )}
     </ConstructionMobileShell>
   );
+}
+
+function getVisibleRows(
+  activeSegment: TaskSegmentKey,
+  rows: TaskRow[],
+  todayRows: TaskRow[],
+  pendingRows: TaskRow[],
+  activeRows: TaskRow[],
+  completedRows: TaskRow[]
+) {
+  if (activeSegment === "pending") return pendingRows;
+  if (activeSegment === "active") return activeRows;
+  if (activeSegment === "completed") return completedRows;
+  return todayRows.length > 0 ? todayRows : rows;
+}
+
+function getWorkerDisplayName(user: ReturnType<typeof useAuthStore.getState>["user"]) {
+  return user?.nickname || user?.username || "师傅";
 }
 
 function getStatusColor(status: string) {

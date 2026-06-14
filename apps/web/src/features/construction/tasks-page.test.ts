@@ -23,6 +23,22 @@ test("construction tasks page opens the mobile task detail instead of the deskto
   assert.doesNotMatch(pageSource, /router\.push\(`\/construction\/orders\/\$\{row\.orderId\}`\)/);
 });
 
+test("construction tasks page follows the prototype worker task center layout", () => {
+  const pageSource = readFileSync("app/construction/tasks/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(pageSource, /worker-task-status-hero/);
+  assert.match(pageSource, /construction-task-segments/);
+  assert.match(pageSource, /今日任务/);
+  assert.match(pageSource, /待接单/);
+  assert.match(pageSource, /施工中/);
+  assert.match(pageSource, /已完成/);
+  assert.match(pageSource, /worker-task-empty-card/);
+  assert.match(cssSource, /\.worker-task-status-hero/);
+  assert.match(cssSource, /\.construction-task-segments/);
+  assert.match(cssSource, /\.worker-task-empty-card/);
+});
+
 test("construction mobile task detail page covers photo upload and task actions", () => {
   const detailPagePath = "app/construction/tasks/[id]/page.tsx";
 

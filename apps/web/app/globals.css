@@ -14454,7 +14454,316 @@ button.workbench-task-row:hover {
   gap: 14px;
 }
 
-.construction-camera-hero,
+.construction-camera-offline-banner {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  border: 1px solid rgb(245 158 11 / 0.24);
+  border-radius: 14px;
+  background: #fff7d6;
+  padding: 10px 12px;
+  color: #6f4c00;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.construction-camera-offline-banner .anticon {
+  margin-top: 1px;
+  color: var(--mb-warning);
+  font-size: 16px;
+}
+
+.construction-camera-upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.construction-camera-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.construction-camera-section-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--mb-text-primary);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.3;
+}
+
+.construction-camera-section-head h2 span {
+  color: var(--mb-danger);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.construction-camera-section-head em {
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.construction-camera-photo-list {
+  display: grid;
+  gap: 12px;
+}
+
+.construction-camera-photo-card {
+  overflow: hidden;
+  border: 1px solid var(--mb-border);
+  border-radius: 14px;
+  background: var(--mb-surface);
+  padding: 12px;
+  box-shadow: var(--mb-shadow-sm);
+}
+
+.construction-camera-photo-card.is-failed {
+  border-color: rgb(215 25 32 / 0.2);
+  background: #fffafa;
+}
+
+.construction-camera-photo-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.construction-camera-photo-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.construction-camera-photo-head strong {
+  color: var(--mb-text-primary);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.construction-camera-photo-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.construction-camera-status.is-uploaded {
+  color: var(--mb-success);
+}
+
+.construction-camera-status.is-local,
+.construction-camera-status.is-uploading {
+  color: var(--mb-warning);
+}
+
+.construction-camera-status.is-failed {
+  color: var(--mb-danger);
+}
+
+.construction-camera-status.is-empty {
+  color: var(--mb-text-muted);
+}
+
+.construction-camera-preview {
+  position: relative;
+  display: flex;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 0;
+  border-radius: 10px;
+  background: var(--mb-surface-alt);
+  color: var(--mb-text-secondary);
+  margin-bottom: 10px;
+}
+
+.construction-camera-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.construction-camera-preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgb(0 0 0 / 0.34);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.construction-camera-preview-overlay .anticon {
+  font-size: 26px;
+}
+
+.construction-camera-preview-overlay.is-danger {
+  background: rgb(215 25 32 / 0.5);
+}
+
+.construction-camera-progress-preview {
+  flex-direction: column;
+  gap: 10px;
+  border: 1.5px dashed var(--mb-border-strong);
+}
+
+.construction-camera-progress-preview .ant-progress {
+  width: 56%;
+}
+
+.construction-camera-progress-preview span {
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+}
+
+.construction-camera-upload-placeholder {
+  flex-direction: column;
+  gap: 8px;
+  border: 1.5px dashed var(--mb-border-strong);
+  cursor: pointer;
+}
+
+.construction-camera-upload-placeholder .anticon {
+  color: var(--mb-text-muted);
+  font-size: 34px;
+}
+
+.construction-camera-upload-placeholder span {
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+}
+
+.construction-camera-card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.construction-camera-card-actions button {
+  display: inline-flex;
+  min-width: 0;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--mb-surface-alt);
+  color: var(--mb-text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.construction-camera-card-actions.is-disabled {
+  opacity: 0.48;
+}
+
+.construction-camera-card-actions button:disabled {
+  cursor: not-allowed;
+}
+
+.construction-camera-process-card {
+  padding-bottom: 14px;
+}
+
+.construction-camera-gallery {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  margin-bottom: 10px;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.construction-camera-gallery::-webkit-scrollbar {
+  display: none;
+}
+
+.construction-camera-gallery-add,
+.construction-camera-gallery-image {
+  position: relative;
+  display: flex;
+  width: 112px;
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.construction-camera-gallery-add {
+  flex-direction: column;
+  gap: 6px;
+  border: 1.5px dashed var(--mb-border-strong);
+  background: var(--mb-surface-alt);
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+}
+
+.construction-camera-gallery-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.construction-camera-gallery-image button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.48);
+  color: #fff;
+}
+
+.construction-camera-bottom-actions {
+  position: fixed;
+  right: 12px;
+  bottom: 96px;
+  left: 12px;
+  z-index: 170;
+  display: grid;
+  max-width: 430px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 10px;
+  margin: 0 auto;
+  border: 1px solid var(--mb-border);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 0.96);
+  padding: 10px;
+  box-shadow: 0 -12px 30px rgba(15, 58, 95, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.construction-camera-bottom-actions .ant-btn {
+  height: 44px;
+  border-radius: 12px;
+  font-weight: 900;
+}
+
 .construction-leave-summary {
   overflow: hidden;
   border-radius: 28px;
@@ -14466,21 +14775,18 @@ button.workbench-task-row:hover {
   box-shadow: 0 20px 48px rgba(15, 58, 95, 0.26);
 }
 
-.construction-camera-hero .ant-tag,
 .construction-leave-summary .ant-tag {
   border: 0;
   background: rgb(255 255 255 / 0.16);
   color: var(--mb-on-primary);
 }
 
-.construction-camera-hero .ant-typography,
 .construction-leave-summary .ant-typography {
   margin: 10px 0 8px;
   color: var(--mb-on-primary);
   font-size: 22px;
 }
 
-.construction-camera-hero p,
 .construction-leave-summary p {
   margin: 0 0 18px;
   color: rgb(255 255 255 / 0.74);
@@ -14488,102 +14794,17 @@ button.workbench-task-row:hover {
   line-height: 1.65;
 }
 
-.construction-camera-stage-grid {
-  display: grid;
-  gap: 10px;
-}
-
-.construction-camera-stage-grid button {
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 16px;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--mb-border);
-  border-radius: 20px;
-  background: var(--mb-surface);
-  padding: 13px;
-  color: inherit;
-  text-align: left;
-  box-shadow: var(--mb-shadow-sm);
-}
-
-.construction-camera-stage-icon {
-  display: inline-flex;
-  width: 46px;
-  height: 46px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 18px;
-  background: var(--mb-primary-container);
-  color: var(--mb-primary);
-  font-size: 20px;
-}
-
-.construction-camera-stage-grid button span:nth-child(2) {
-  display: grid;
-  gap: 4px;
-}
-
-.construction-camera-stage-grid strong,
 .construction-leave-history-item strong,
 .construction-leave-tip-card strong {
   color: var(--mb-text-primary);
   font-size: 15px;
 }
 
-.construction-camera-stage-grid em,
-.construction-camera-queue-card em,
 .construction-leave-history-item em {
   color: var(--mb-text-secondary);
   font-size: 12px;
   font-style: normal;
   line-height: 1.5;
-}
-
-.construction-camera-stage-grid .ant-tag {
-  width: fit-content;
-  margin: 0;
-  border: 0;
-  background: var(--mb-surface-alt);
-  color: var(--mb-primary);
-}
-
-.construction-camera-queue-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid rgba(15, 58, 95, 0.12);
-  border-radius: 22px;
-  background: var(--mb-primary-container);
-  padding: 14px;
-}
-
-.construction-camera-queue-card > div {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-}
-
-.construction-camera-queue-card > div > .anticon {
-  display: inline-flex;
-  width: 38px;
-  height: 38px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 15px;
-  background: var(--mb-surface);
-  color: var(--mb-primary);
-}
-
-.construction-camera-queue-card span {
-  display: grid;
-  gap: 3px;
-}
-
-.construction-camera-queue-card .ant-btn {
-  flex: 0 0 auto;
 }
 
 .construction-leave-summary {

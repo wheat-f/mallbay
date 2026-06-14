@@ -50,14 +50,22 @@ test("system settings page exposes the prototype role permission matrix", () => 
   assert.match(source, /无权限/);
   assert.match(source, /settings-matrix-legend/);
   assert.match(source, /settings-role-permission-table/);
+  assert.match(source, /settings-permission-mobile-cards/);
+  assert.match(source, /settings-permission-mobile-card/);
+  assert.match(source, /settings-permission-mobile-grid/);
   assert.match(source, /settings-matrix-cell/);
   assert.match(cssSource, /\.settings-matrix-legend/);
   assert.match(cssSource, /\.settings-role-permission-table/);
+  assert.match(cssSource, /\.settings-permission-mobile-cards/);
+  assert.match(cssSource, /\.settings-permission-mobile-card/);
+  assert.match(cssSource, /\.settings-permission-mobile-grid/);
   assert.match(cssSource, /\.settings-matrix-cell/);
   assert.match(cssSource, /grid-template-columns:\s*repeat\(auto-fit, minmax\(260px, 1fr\)\)/);
   assert.match(cssSource, /\.settings-permission-card\.ant-card\s+\.ant-card-body[\s\S]*min-width:\s*0/);
   assert.match(cssSource, /\.settings-permission-matrix[\s\S]*max-width:\s*100%/);
   assert.match(cssSource, /\.settings-role-permission-table table[\s\S]*width:\s*max-content/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.settings-role-permission-table\s*\{[\s\S]*display: none;/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.settings-permission-mobile-cards\s*\{[\s\S]*display: grid;/);
 });
 
 test("system settings page stays separate from profile account security", () => {

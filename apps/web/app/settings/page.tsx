@@ -376,6 +376,24 @@ export default function SettingsPage() {
                 </tbody>
               </table>
             </div>
+            <div className="settings-permission-mobile-cards">
+              {rolePermissionMatrixRows.map((row) => (
+                <article key={row.role} className="settings-permission-mobile-card">
+                  <div className="settings-permission-mobile-head">
+                    <strong>{row.role}</strong>
+                    <span>{rolePermissionModules.length} 个模块</span>
+                  </div>
+                  <div className="settings-permission-mobile-grid">
+                    {rolePermissionModules.map((module) => (
+                      <div key={module} className="settings-permission-mobile-item">
+                        <span>{module}</span>
+                        <PermissionBadge value={row.permissions[module]} />
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
           </Card>
 
           <div className="settings-policy-grid">

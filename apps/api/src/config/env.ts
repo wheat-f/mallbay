@@ -6,6 +6,9 @@ type EnvPathOptions = {
   moduleDir: string;
 };
 
+export const PRISMA_CLI_DATABASE_URL_PLACEHOLDER =
+  "postgresql://mallbay:mallbay@localhost:5432/mallbay?schema=public";
+
 export function getApiEnvFilePaths() {
   return buildApiEnvFilePaths({
     cwd: process.cwd(),
@@ -34,6 +37,14 @@ export function getRequiredEnvValue(key: string, envFilePaths = getApiEnvFilePat
   if (fileValue) return fileValue;
 
   throw new Error(`${key} is required; check env file loading`);
+}
+
+export function getPrismaCliDatabaseUrl(envFilePaths = getApiEnvFilePaths()) {
+  const processValue = process.env.DATABASE_URL;
+  if (processValue) return processValue;
+
+  const fileValue = readEnvValue("DATABASE_URL", envFilePaths);
+  return fileValue ?? PRISMA_CLI_DATABASE_URL_PLACEHOLDER;
 }
 
 export function readEnvValue(key: string, envFilePaths: string[]) {

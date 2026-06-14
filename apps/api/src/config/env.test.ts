@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { buildApiEnvFilePaths, readEnvValue } from "./env";
+import { buildApiEnvFilePaths, getPrismaCliDatabaseUrl, readEnvValue } from "./env";
 
 const repoRoot = "/workspace/mallbay";
 const apiDir = path.join(repoRoot, "apps/api");
@@ -40,4 +40,22 @@ test("readEnvValue reads quoted values from explicit env files", () => {
     readEnvValue("DATABASE_URL", [envFile]),
     "postgresql://postgres:postgres@localhost:55432/mallbay?schema=public"
   );
+});
+
+test("getPrismaCliDatabaseUrl falls back to a build-time placeholder when DATABASE_URL is absent", () => {
+  const previous = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+
+  try {
+    assert.equal(
+      getPrismaCliDatabaseUrl([]),
+      "postgresql://mallbay:mallbay@localhost:5432/mallbay?schema=public"
+    );
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = previous;
+    }
+  }
 });

@@ -147,6 +147,31 @@ test("construction schedules page follows the prototype weekly schedule layout",
   assert.match(cssSource, /\.construction-leave-fab/);
 });
 
+test("construction schedules page renders prototype task-style schedule cards", () => {
+  const pageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+  const shellSource = readFileSync("src/features/construction/mobile-shell.tsx", "utf8");
+
+  assert.match(pageSource, /variant="calendar"/);
+  assert.match(pageSource, /construction-schedule-task-card/);
+  assert.match(pageSource, /construction-schedule-task-section/);
+  assert.match(pageSource, /construction-schedule-task-main/);
+  assert.match(pageSource, /construction-schedule-task-meta/);
+  assert.match(pageSource, /construction-schedule-task-actions/);
+  assert.match(pageSource, /getScheduleTaskTitle/);
+  assert.match(pageSource, /getScheduleTaskMeta/);
+  assert.match(pageSource, /查看详情/);
+  assert.match(pageSource, /立即接单/);
+  assert.match(cssSource, /\.construction-schedule-task-card/);
+  assert.match(cssSource, /\.construction-schedule-task-section/);
+  assert.match(cssSource, /\.construction-schedule-task-main/);
+  assert.match(cssSource, /\.construction-schedule-task-meta/);
+  assert.match(cssSource, /\.construction-schedule-task-actions/);
+  assert.match(cssSource, /\.construction-mobile-shell-calendar/);
+  assert.match(shellSource, /variant\?: "hero" \| "calendar"/);
+  assert.match(shellSource, /construction-mobile-shell-\$\{variant\}/);
+});
+
 test("construction offline page follows the prototype upload queue layout", () => {
   const pageSource = readFileSync("app/construction/offline/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");

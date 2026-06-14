@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { App, Button, DatePicker, Empty, Form, Input, Select, Tag, Typography } from "antd";
 import {
-  CalendarOutlined,
+  ClockCircleOutlined,
   EnvironmentOutlined,
   LeftOutlined,
   PlusOutlined,
@@ -86,7 +86,7 @@ export default function ConstructionSchedulesPage() {
   };
 
   return (
-    <ConstructionMobileShell title="我的排班" subtitle="查看当日安排，提交休息或外出状态" active="schedules">
+    <ConstructionMobileShell title="我的排班" subtitle="查看当日安排，提交休息或外出状态" active="schedules" variant="calendar">
       <div className="construction-schedule-tabs" role="tablist" aria-label="排班视图">
         {scheduleViewTabs.map((tab) => (
           <button
@@ -132,7 +132,7 @@ export default function ConstructionSchedulesPage() {
       </section>
 
       {scheduleView === "schedule" ? (
-        <section className="construction-mobile-panel construction-schedule-panel">
+        <section className="construction-schedule-panel construction-schedule-task-section">
           <div className="construction-mobile-section-head">
             <div>
               <h2>当日排班 ({rows.length})</h2>
@@ -144,30 +144,38 @@ export default function ConstructionSchedulesPage() {
           <Empty description="暂无排班" />
         ) : (
           <div className="construction-schedule-card-list">
-            {rows.map((item) => (
-              <article key={item.id} className="construction-schedule-card">
-                <div className="construction-schedule-card-head">
-                  <div>
-                    <Tag className={`construction-schedule-status ${getScheduleStatusClassName(item.status)}`}>
-                      {getScheduleStatusLabel(item.status)}
-                    </Tag>
-                    <Typography.Title level={3}>{item.worker?.nickname ?? item.worker?.username ?? "施工人员"}</Typography.Title>
+            {rows.map((item) => {
+              const taskMeta = getScheduleTaskMeta(item, workerId);
+              return (
+                <article key={item.id} className="construction-schedule-card construction-schedule-task-card">
+                  <div className="construction-schedule-card-head construction-schedule-task-main">
+                    <div>
+                      <Tag className={`construction-schedule-status ${getScheduleStatusClassName(item.status)}`}>
+                        {getScheduleStatusLabel(item.status)}
+                      </Tag>
+                      <Typography.Title level={3}>{getScheduleTaskTitle(item)}</Typography.Title>
+                    </div>
+                    <span>{getScheduleTaskBadge(item, workerId)}</span>
                   </div>
-                  <span>{item.workerId === workerId ? "本人" : "同组"}</span>
-                </div>
-                <div className="construction-schedule-card-meta">
-                  <span>
-                    <CalendarOutlined /> {item.date}
-                  </span>
-                  <span>
-                    <UserOutlined /> {item.worker?.username ?? "未记录账号"}
-                  </span>
-                  <span className="construction-schedule-card-note">
-                    <EnvironmentOutlined /> {item.note ?? getScheduleStatusFallbackNote(item.status)}
-                  </span>
-                </div>
-              </article>
-            ))}
+                  <div className="construction-schedule-card-meta construction-schedule-task-meta">
+                    <span>
+                      <ClockCircleOutlined /> {taskMeta.time}
+                    </span>
+                    <span>
+                      <UserOutlined /> {taskMeta.person}
+                    </span>
+                    <span className="construction-schedule-card-note">
+                      <EnvironmentOutlined /> {taskMeta.note}
+                    </span>
+                  </div>
+                  <div className="construction-schedule-task-actions">
+                    <Button type={item.status === "OUTSIDE" ? "primary" : "default"}>
+                      {item.status === "OUTSIDE" ? "立即接单" : "查看详情"}
+                    </Button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
         </section>
@@ -250,4 +258,40 @@ function getScheduleStatusFallbackNote(status: ScheduleStatus) {
   if (status === "OUTSIDE") return "外出施工，具体地址以派单信息为准";
   if (status === "REST") return "休息或请假中";
   return "店内排班";
+}
+
+function getScheduleTaskTitle(item: ScheduleSummary) {
+  const note = item.note?.trim();
+  if (!note) return getScheduleStatusFallbackNote(item.status);
+  const firstPart = splitScheduleNote(note)[0] ?? note;
+  return firstPart.replace(/\s*\d{1,2}:\d{2}.*$/, "").trim() || note;
+}
+
+function getScheduleTaskMeta(item: ScheduleSummary, currentWorkerId?: string) {
+  const note = item.note?.trim() ?? "";
+  const parts = splitScheduleNote(note);
+  const time = parts.find((part) => /\d{1,2}:\d{2}/.test(part))?.match(/\d{1,2}:\d{2}/)?.[0]
+    ?? note.match(/\d{1,2}:\d{2}/)?.[0]
+    ?? dayjs(item.date).format("MM月DD日");
+  const person = parts.find((part) => /先生|女士|客户|车主/.test(part))
+    ?? (item.workerId === currentWorkerId ? "我的任务" : item.worker?.nickname ?? item.worker?.username ?? "同组施工");
+  const noteText = parts.find((part) => part !== person && part !== time && part !== getScheduleTaskTitle(item))
+    ?? note
+    ?? getScheduleStatusFallbackNote(item.status);
+
+  return {
+    time,
+    person,
+    note: noteText
+  };
+}
+
+function getScheduleTaskBadge(item: ScheduleSummary, currentWorkerId?: string) {
+  if (item.status === "WORKING") return item.workerId === currentWorkerId ? "施工中" : "待协作";
+  if (item.status === "OUTSIDE") return "待接单";
+  return "休息";
+}
+
+function splitScheduleNote(note: string) {
+  return note.split(/[|｜,，]/).map((part) => part.trim()).filter(Boolean);
 }

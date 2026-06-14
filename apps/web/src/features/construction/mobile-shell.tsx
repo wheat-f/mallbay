@@ -16,6 +16,7 @@ type ConstructionMobileShellProps = {
   title: string;
   subtitle?: string;
   active: "tasks" | "schedules" | "camera" | "leaves" | "profile";
+  variant?: "hero" | "calendar";
   badgeCount?: number;
   children: ReactNode;
 };
@@ -32,11 +33,12 @@ export function ConstructionMobileShell({
   title,
   subtitle,
   active,
+  variant = "hero",
   badgeCount = 0,
   children
 }: ConstructionMobileShellProps) {
   return (
-    <main className="construction-mobile-shell mobile-worker-shell">
+    <main className={`construction-mobile-shell mobile-worker-shell construction-mobile-shell-${variant}`}>
       <header className="construction-mobile-header">
         <div>
           <p className="construction-mobile-eyebrow">MallBay 施工端</p>

@@ -13339,6 +13339,11 @@ button.workbench-task-row:hover {
   padding: 18px 14px 88px;
 }
 
+.construction-mobile-shell-calendar {
+  background: var(--mb-background);
+  padding-top: 14px;
+}
+
 .construction-mobile-header {
   display: flex;
   width: 100%;
@@ -13369,6 +13374,37 @@ button.workbench-task-row:hover {
   color: var(--mb-primary-fixed) !important;
   font-size: 12px !important;
   font-weight: 800;
+}
+
+.construction-mobile-shell-calendar .construction-mobile-header {
+  align-items: center;
+  border: 1px solid var(--mb-border);
+  border-radius: 22px;
+  background: rgb(255 255 255 / 0.98);
+  box-shadow: var(--mb-shadow-sm);
+  color: var(--mb-text-primary);
+  padding: 13px 14px;
+}
+
+.construction-mobile-shell-calendar .construction-mobile-header h1 {
+  margin: 2px 0 4px;
+  color: var(--mb-primary);
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.construction-mobile-shell-calendar .construction-mobile-header p {
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+}
+
+.construction-mobile-shell-calendar .construction-mobile-eyebrow {
+  color: var(--mb-text-muted) !important;
+}
+
+.construction-mobile-shell-calendar .construction-mobile-content {
+  gap: 16px;
+  padding-bottom: 156px;
 }
 
 .construction-mobile-content {
@@ -13771,6 +13807,17 @@ button.workbench-task-row:hover {
   position: relative;
 }
 
+.construction-schedule-task-section {
+  display: grid;
+  gap: 12px;
+  padding: 2px 2px 0;
+}
+
+.construction-schedule-task-section .construction-mobile-section-head {
+  margin-bottom: 0;
+  padding: 0 2px;
+}
+
 .construction-schedule-date-tag.ant-tag {
   margin-inline-end: 0;
   border-color: transparent;
@@ -13791,6 +13838,10 @@ button.workbench-task-row:hover {
   background: var(--mb-surface);
   box-shadow: var(--mb-shadow-sm);
   padding: 16px;
+}
+
+.construction-schedule-task-card {
+  padding: 18px;
 }
 
 .construction-schedule-card-head {
@@ -13816,6 +13867,21 @@ button.workbench-task-row:hover {
   padding: 4px 9px;
   font-size: 11px;
   font-weight: 850;
+}
+
+.construction-schedule-task-main {
+  margin-bottom: 16px;
+}
+
+.construction-schedule-task-main > span {
+  background: var(--mb-warning-container);
+  color: var(--mb-warning);
+}
+
+.construction-schedule-task-main .ant-typography {
+  color: var(--mb-primary);
+  font-size: 21px;
+  line-height: 28px;
 }
 
 .construction-schedule-status.ant-tag {
@@ -13861,6 +13927,36 @@ button.workbench-task-row:hover {
 
 .construction-schedule-card-note {
   grid-column: 1 / -1;
+}
+
+.construction-schedule-task-meta {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top-color: var(--mb-border);
+  color: var(--mb-text-primary);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.construction-schedule-task-meta .construction-schedule-card-note {
+  color: var(--mb-text-secondary);
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.construction-schedule-task-actions {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--mb-border);
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.construction-schedule-task-actions .ant-btn {
+  min-width: 116px;
+  min-height: 42px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 850;
 }
 
 .construction-schedule-form-panel .ant-form-item {

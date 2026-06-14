@@ -93,12 +93,18 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
   assert.match(shellSource, /mobile-worker-shell/);
   assert.match(shellSource, /construction-mobile-tabs/);
   assert.match(shellSource, /mobile-worker-bottom-nav/);
+  assert.match(shellSource, /任务排班/);
+  assert.match(shellSource, /我的施工/);
+  assert.match(shellSource, /物料管理/);
+  assert.match(shellSource, /个人中心/);
   assert.match(shellSource, /active: "tasks" \| "schedules" \| "camera" \| "leaves" \| "profile"/);
   assert.match(shellSource, /\/construction\/camera/);
-  assert.match(shellSource, /\/construction\/leaves/);
   assert.match(shellSource, /\/construction\/offline/);
   assert.match(shellSource, /\/construction\/profile/);
+  assert.doesNotMatch(shellSource, /label: "拍照"/);
+  assert.doesNotMatch(shellSource, /label: "请假"/);
   assert.doesNotMatch(shellSource, /href: "\/profile"/);
+  assert.match(readFileSync("app/globals.css", "utf8"), /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
 });
 
 test("construction mobile camera and leave pages expose prototype quick actions", () => {

@@ -15502,40 +15502,54 @@ button.workbench-task-row:hover {
 
 .construction-mobile-tabs {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 180;
   display: grid;
   max-width: 430px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
   margin: 0 auto;
-  border: 1px solid var(--mb-border);
-  border-radius: 22px;
-  background: rgb(255 255 255 / 0.96);
-  padding: 8px;
-  box-shadow: var(--mb-shadow-md);
-  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--mb-border-strong);
+  background: rgb(255 255 255 / 0.98);
+  padding: 8px 10px 10px;
+  box-shadow: 0 -10px 26px rgb(15 58 95 / 0.1);
+  backdrop-filter: blur(18px);
 }
 
 .construction-mobile-tab {
   display: flex;
-  height: 52px;
+  position: relative;
+  height: 64px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  border-radius: 16px;
-  color: var(--mb-text-muted);
-  font-size: 12px;
-  font-weight: 700;
+  gap: 6px;
+  border-radius: 0;
+  color: var(--mb-text-secondary);
+  font-size: 13px;
+  font-weight: 850;
   text-decoration: none;
 }
 
+.construction-mobile-tab .anticon {
+  font-size: 24px;
+}
+
 .construction-mobile-tab.is-active {
-  background: var(--mb-primary-container);
   color: var(--mb-primary);
+}
+
+.construction-mobile-tab.is-active::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 12px;
+  right: 12px;
+  height: 3px;
+  border-radius: 0 0 999px 999px;
+  background: var(--mb-primary);
 }
 
 /* ─── After-sales worker mobile ─────────────────────────────── */

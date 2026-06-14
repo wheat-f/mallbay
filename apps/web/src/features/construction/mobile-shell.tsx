@@ -5,10 +5,9 @@ import Link from "next/link";
 import { Badge, Button } from "antd";
 import {
   CalendarOutlined,
-  CameraOutlined,
   CheckSquareOutlined,
   CloudSyncOutlined,
-  FormOutlined,
+  InboxOutlined,
   UserOutlined
 } from "@ant-design/icons";
 
@@ -21,12 +20,43 @@ type ConstructionMobileShellProps = {
   children: ReactNode;
 };
 
-const tabs = [
-  { key: "tasks", label: "任务", href: "/construction/tasks", icon: <CheckSquareOutlined /> },
-  { key: "schedules", label: "日程", href: "/construction/schedules", icon: <CalendarOutlined /> },
-  { key: "camera", label: "拍照", href: "/construction/camera", icon: <CameraOutlined /> },
-  { key: "leaves", label: "请假", href: "/construction/leaves", icon: <FormOutlined /> },
-  { key: "profile", label: "我的", href: "/construction/profile", icon: <UserOutlined /> }
+type ConstructionMobileTab = {
+  key: Exclude<ConstructionMobileShellProps["active"], "leaves">;
+  label: string;
+  href: string;
+  icon: ReactNode;
+  activeKeys: ConstructionMobileShellProps["active"][];
+};
+
+const tabs: ConstructionMobileTab[] = [
+  {
+    key: "schedules",
+    label: "任务排班",
+    href: "/construction/schedules",
+    icon: <CalendarOutlined />,
+    activeKeys: ["schedules", "leaves"]
+  },
+  {
+    key: "tasks",
+    label: "我的施工",
+    href: "/construction/tasks",
+    icon: <CheckSquareOutlined />,
+    activeKeys: ["tasks"]
+  },
+  {
+    key: "camera",
+    label: "物料管理",
+    href: "/construction/camera",
+    icon: <InboxOutlined />,
+    activeKeys: ["camera"]
+  },
+  {
+    key: "profile",
+    label: "个人中心",
+    href: "/construction/profile",
+    icon: <UserOutlined />,
+    activeKeys: ["profile"]
+  }
 ] as const;
 
 export function ConstructionMobileShell({
@@ -55,7 +85,7 @@ export function ConstructionMobileShell({
           <Link
             key={tab.key}
             href={tab.href}
-            className={active === tab.key ? "construction-mobile-tab is-active" : "construction-mobile-tab"}
+            className={tab.activeKeys.includes(active) ? "construction-mobile-tab is-active" : "construction-mobile-tab"}
           >
             {tab.icon}
             <span>{tab.label}</span>

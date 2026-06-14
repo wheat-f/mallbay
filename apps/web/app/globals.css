@@ -4086,6 +4086,9 @@ body {
 
 .products-mobile-card {
   display: grid;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   gap: 14px;
   border: 1px solid var(--mb-border);
   border-radius: var(--mb-radius-lg);
@@ -4095,6 +4098,7 @@ body {
 
 .products-mobile-card-head {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -4102,6 +4106,7 @@ body {
 
 .products-mobile-card-head .products-product-cell {
   flex: 1;
+  min-width: 0;
 }
 
 .products-mobile-card dl {
@@ -12014,6 +12019,29 @@ body {
 }
 
 @media (max-width: 720px) {
+  .reports-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    overflow-x: visible;
+    border-bottom: 0;
+  }
+
+  .reports-tabs button {
+    min-height: 42px;
+    border: 1px solid var(--mb-border);
+    border-radius: var(--mb-radius-md);
+    background: var(--mb-surface-container-lowest);
+    padding: 8px 10px;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .reports-tabs button.is-active {
+    border-color: rgb(15 58 95 / 0.24);
+    background: var(--mb-primary-container);
+  }
+
   .reports-data-desktop-table {
     display: none;
   }

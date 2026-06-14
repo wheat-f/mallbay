@@ -5,6 +5,13 @@ import { test } from "node:test";
 const pageSource = readFileSync("app/products/page.tsx", "utf8");
 const cssSource = readFileSync("app/globals.css", "utf8");
 
+function cssBlock(selector: string) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = cssSource.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`));
+  assert.ok(match, `Missing CSS block for ${selector}`);
+  return match[1];
+}
+
 test("products page follows the prototype product catalog layout", () => {
   assert.match(pageSource, /StorePageHeader title="产品管理"/);
   assert.match(pageSource, /products-filter-card/);
@@ -26,6 +33,15 @@ test("products page uses mobile catalog cards instead of squeezing the desktop t
   assert.match(cssSource, /\.products-mobile-cards/);
   assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.products-desktop-table/);
   assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.products-mobile-cards\s*\{[\s\S]*display: grid;/);
+});
+
+test("products mobile catalog cards can shrink within the management content column", () => {
+  const cardBlock = cssBlock(".products-mobile-card");
+  assert.match(cardBlock, /min-width:\s*0;/);
+  assert.match(cardBlock, /width:\s*100%;/);
+  assert.match(cardBlock, /max-width:\s*100%;/);
+  assert.match(cssBlock(".products-mobile-card-head"), /min-width:\s*0;/);
+  assert.match(cssBlock(".products-mobile-card-head .products-product-cell"), /min-width:\s*0;/);
 });
 
 test("products page wires catalog filters to the product list query", () => {

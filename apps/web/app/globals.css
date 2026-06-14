@@ -14557,6 +14557,7 @@ button.workbench-task-row:hover {
 /* ─── After-sales worker mobile ─────────────────────────────── */
 .after-sales-mobile-shell {
   min-height: 100vh;
+  overflow-x: clip;
   background: var(--mb-background);
   padding: 0 14px 132px;
 }
@@ -14566,7 +14567,7 @@ button.workbench-task-row:hover {
   top: 0;
   z-index: 40;
   display: flex;
-  width: calc(100% + 28px);
+  width: auto;
   max-width: 430px;
   align-items: center;
   justify-content: space-between;

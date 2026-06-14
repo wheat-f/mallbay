@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
+function cssBlock(cssSource: string, selector: string) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = cssSource.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`));
+  assert.ok(match, `Missing CSS block for ${selector}`);
+  return match[1];
+}
+
 test("after-sales page records penalty money in yuan and submits cents to API", () => {
   const pageSource = readFileSync("app/after-sales/page.tsx", "utf8");
 
@@ -145,4 +152,16 @@ test("after-sales mobile task center follows the worker prototype", () => {
   assert.match(cssSource, /\.after-sales-mobile-hero/);
   assert.match(cssSource, /\.after-sales-mobile-card/);
   assert.match(cssSource, /\.after-sales-mobile-bottom-nav/);
+});
+
+test("after-sales mobile task header stays within the viewport", () => {
+  const cssSource = readFileSync("app/globals.css", "utf8");
+  const shellBlock = cssBlock(cssSource, ".after-sales-mobile-shell");
+  const headerBlock = cssBlock(cssSource, ".after-sales-mobile-header");
+
+  assert.match(shellBlock, /overflow-x:\s*clip;/);
+  assert.match(headerBlock, /width:\s*auto;/);
+  assert.match(headerBlock, /max-width:\s*430px;/);
+  assert.match(headerBlock, /margin:\s*0 auto 18px;/);
+  assert.doesNotMatch(headerBlock, /calc\(100% \+ 28px\)/);
 });

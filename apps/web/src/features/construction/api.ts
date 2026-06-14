@@ -1,7 +1,11 @@
 import type {
   ConstructionPhotoStage,
   DailyCapacitySummary,
+  OfflineSyncOperation,
+  OfflineSyncResult,
   QualityCheckResult,
+  ScheduleStatus,
+  ScheduleSummary,
   WorkerSkillTag
 } from "@mallbay/shared";
 import { request, requestMultipart } from "../../lib/request";
@@ -51,6 +55,18 @@ export type LeaveRequestPayload = {
   startDate: string;
   endDate: string;
   reason?: string;
+};
+
+export type SchedulePayload = {
+  storeId: string;
+  workerId: string;
+  date: string;
+  status: ScheduleStatus;
+  note?: string;
+};
+
+export type OfflineSyncPayload = {
+  operations: OfflineSyncOperation[];
 };
 
 export const constructionApi = {
@@ -131,6 +147,21 @@ export const constructionApi = {
     request<unknown>(`/construction/leaves/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ status })
+    }),
+
+  schedules: (query: ConstructionListQuery) =>
+    request<ScheduleSummary[]>(`/construction/schedules${toQueryString(query)}`),
+
+  upsertSchedule: (payload: SchedulePayload) =>
+    request<ScheduleSummary>("/construction/schedules", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  offlineSync: (payload: OfflineSyncPayload) =>
+    request<OfflineSyncResult>("/construction/offline-sync", {
+      method: "POST",
+      body: JSON.stringify(payload)
     })
 };
 

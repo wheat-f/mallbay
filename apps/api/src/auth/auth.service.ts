@@ -175,8 +175,14 @@ export class AuthService {
 
   private async issueAndPersistTokens(userId: string) {
     const user = await this.prisma.user.findUniqueOrThrow({
-      where: { id: userId }
+      where: { id: userId },
+      include: {
+        storeMembers: {
+          include: { store: { select: { id: true, name: true, status: true } } }
+        }
+      }
     });
+    const member = user.storeMembers?.[0] ?? null;
 
     const payload: TokenPayload = {
       sub: user.id,
@@ -206,7 +212,12 @@ export class AuthService {
     });
 
     return {
-      user: this.toAuthUser(user),
+      user: {
+        ...this.toAuthUser(user),
+        storeMember: member
+          ? { position: member.position, store: member.store }
+          : null
+      },
       accessToken,
       refreshToken
     };

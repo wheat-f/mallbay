@@ -132,6 +132,11 @@ export class ConstructionController {
     return this.construction.upsertSchedule(req.user, dto);
   }
 
+  @Get("schedules")
+  listSchedules(@Req() req: AuthRequest, @Query() query: ListConstructionDto) {
+    return this.construction.listSchedules(req.user, query);
+  }
+
   @Post("offline-sync")
   syncOfflineOperations(@Req() req: AuthRequest, @Body() dto: OfflineSyncDto) {
     return this.construction.syncOfflineOperations(req.user, dto);

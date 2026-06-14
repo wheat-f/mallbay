@@ -33,21 +33,21 @@ export function getProductDisplayName(product: { brand?: string; name?: string; 
 }
 
 export function getProductInventorySpecLabel(product: {
-  specification?: string;
-  inventoryUnit?: ProductUnit | string;
-  salesUnit?: ProductUnit | string;
-  rollWidthMeters?: number;
-  rollLengthMeters?: number;
-  metersPerRoll?: number;
-  quantityPrecision?: number;
+  specification?: string | null;
+  inventoryUnit?: ProductUnit | string | null;
+  salesUnit?: ProductUnit | string | null;
+  rollWidthMeters?: number | null;
+  rollLengthMeters?: number | null;
+  metersPerRoll?: number | null;
+  quantityPrecision?: number | null;
 }) {
   const parts = [
     product.inventoryUnit ? `库存单位：${getProductUnitLabel(product.inventoryUnit)}` : undefined,
     product.salesUnit ? `销售单位：${getProductUnitLabel(product.salesUnit)}` : undefined,
-    product.rollWidthMeters !== undefined ? `卷宽：${formatMeter(product.rollWidthMeters)}m` : undefined,
-    product.rollLengthMeters !== undefined ? `卷长：${formatMeter(product.rollLengthMeters)}m` : undefined,
-    product.metersPerRoll !== undefined ? `1卷=${formatMeter(product.metersPerRoll)}m` : undefined,
-    product.quantityPrecision !== undefined ? `精度：${product.quantityPrecision}位小数` : undefined
+    hasNumber(product.rollWidthMeters) ? `卷宽：${formatMeter(product.rollWidthMeters)}m` : undefined,
+    hasNumber(product.rollLengthMeters) ? `卷长：${formatMeter(product.rollLengthMeters)}m` : undefined,
+    hasNumber(product.metersPerRoll) ? `1卷=${formatMeter(product.metersPerRoll)}m` : undefined,
+    hasNumber(product.quantityPrecision) ? `精度：${product.quantityPrecision}位小数` : undefined
   ].filter(Boolean);
 
   if (parts.length > 0) {
@@ -58,4 +58,8 @@ export function getProductInventorySpecLabel(product: {
 
 function formatMeter(value: number) {
   return Number.isInteger(value) ? String(value) : String(value);
+}
+
+function hasNumber(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }

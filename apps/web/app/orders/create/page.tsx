@@ -1,7 +1,7 @@
 "use client";
 
 import type { DailyCapacitySummary } from "@mallbay/shared";
-import { Alert, App, Button, Card, DatePicker, Form, Input, InputNumber, Layout, Modal, Select, Space, Switch, Tag, TimePicker, Typography } from "antd";
+import { Alert, App, Button, Card, DatePicker, Drawer, Form, Input, InputNumber, Select, Space, Switch, Tag, TimePicker, Typography } from "antd";
 import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -56,7 +56,7 @@ type NewPaymentAccountFormValues = Omit<PaymentAccountPayload, "storeId">;
 
 export default function CreateOrderPage() {
   return (
-    <Suspense fallback={<Layout className="dashboard-shell"><Layout.Content className="dashboard-content" /></Layout>}>
+    <Suspense fallback={<div className="management-page" />}>
       <CreateOrderContent />
     </Suspense>
   );
@@ -73,11 +73,11 @@ function CreateOrderContent() {
   const [referrerKeyword, setReferrerKeyword] = useState("");
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newPaymentAccountOpen, setNewPaymentAccountOpen] = useState(false);
+  const [newOrderCustomerType, setNewOrderCustomerType] = useState("PERSONAL");
   const [laborCostTouched, setLaborCostTouched] = useState(false);
   const [form] = Form.useForm<CreateOrderFormValues>();
   const [newCustomerForm] = Form.useForm<NewOrderCustomerFormValues>();
   const [newPaymentAccountForm] = Form.useForm<NewPaymentAccountFormValues>();
-  const newCustomerType = Form.useWatch("customerType", newCustomerForm) ?? "PERSONAL";
   const initialCustomerId = params.get("customerId") ?? undefined;
   const selectedCustomerId = Form.useWatch("customerId", form) ?? initialCustomerId;
   const selectedVehicleId = Form.useWatch("vehicleId", form);
@@ -204,6 +204,7 @@ function CreateOrderContent() {
         message.warning("客户已创建，但车辆创建失败，请在客户详情继续补车辆");
       }
       setNewCustomerOpen(false);
+      setNewOrderCustomerType("PERSONAL");
       newCustomerForm.resetFields();
       setCustomerKeyword("");
       setReferrerKeyword("");
@@ -237,14 +238,15 @@ function CreateOrderContent() {
 
   const defaultItems = useMemo(() => [{ quantity: 1 }], []);
 
-  const closeNewCustomerModal = () => {
+  const closeNewCustomerDrawer = () => {
     if (createCustomerMutation.isPending) return;
     setNewCustomerOpen(false);
+    setNewOrderCustomerType("PERSONAL");
     setReferrerKeyword("");
     newCustomerForm.resetFields();
   };
 
-  const closeNewPaymentAccountModal = () => {
+  const closeNewPaymentAccountDrawer = () => {
     if (createPaymentAccountMutation.isPending) return;
     setNewPaymentAccountOpen(false);
     newPaymentAccountForm.resetFields();
@@ -272,14 +274,27 @@ function CreateOrderContent() {
   }, [form, laborCostTouched, suggestedLaborCostYuan]);
 
   return (
-    <Layout className="dashboard-shell">
-      <Layout.Content className="dashboard-content">
-        <StorePageHeader title="新建订单" description="选择客户、产品、施工方式并录入费用" />
+    <>
+      <div className="management-page">
+          <StorePageHeader title="新建订单" description="选择客户、产品、施工方式并录入费用">
+            <Space className="create-order-header-actions" wrap>
+              <Button disabled={!storeId} onClick={() => storeId && router.push(getStoreWorkbenchHref(storeId))}>
+                取消
+              </Button>
+              <Button
+                type="primary"
+                loading={createMutation.isPending}
+                disabled={Boolean(selectedAppointmentDate && (capacitiesQuery.isLoading || isCapacityBlocking))}
+                onClick={() => form.submit()}
+              >
+                提交订单
+              </Button>
+            </Space>
+          </StorePageHeader>
 
-        <Form
-          form={form}
-          layout="vertical"
-          className="mt-6"
+          <Form
+            form={form}
+            layout="vertical"
           initialValues={{
             customerId: initialCustomerId,
             constructionType: "PPF",
@@ -292,7 +307,7 @@ function CreateOrderContent() {
         >
           <div className="create-order-layout">
             <div className="create-order-main">
-              <Card title="客户与车辆" className="create-order-card">
+              <Card title={<OrderStepTitle step={1} title="客户与车辆" />} className="create-order-card">
                 <div className="create-order-customer-row">
                   <Form.Item name="customerId" label="客户" rules={[{ required: true, message: "请选择客户" }]}>
                     <Select
@@ -323,54 +338,9 @@ function CreateOrderContent() {
                     placeholder={selectedCustomer ? "选择客户车辆" : "请先选择客户"}
                   />
                 </Form.Item>
-
-                {customerHistory ? (
-                  <Card size="small" className="create-order-history-card" title="客户历史记录">
-                    {customerHistory.warning ? (
-                      <Alert className="mb-3" type="warning" showIcon message={customerHistory.warning} />
-                    ) : null}
-                    <Space className="mb-3" size="large" wrap>
-                      <span>历史订单：{customerHistory.orderCount} 单</span>
-                      <span>车辆：{customerHistory.vehicleCount} 台</span>
-                      <span>累计消费：¥{customerHistory.totalAmountYuan.toFixed(2)}</span>
-                      <span>已收：¥{customerHistory.paidAmountYuan.toFixed(2)}</span>
-                      <span>未结：¥{customerHistory.outstandingAmountYuan.toFixed(2)}</span>
-                      <span>有效质保：{customerHistory.activeWarrantyCount}</span>
-                      <span>待处理售后：{customerHistory.openAfterSalesCount}</span>
-                    </Space>
-                    {customerHistory.tags.length > 0 ? (
-                      <div className="mb-3">
-                        {customerHistory.tags.map((tag) => (
-                          <Tag key={tag}>{tag}</Tag>
-                        ))}
-                      </div>
-                    ) : null}
-                    {customerHistory.latestOrder ? (
-                      <Typography.Text type="secondary">
-                        最近订单：{customerHistory.latestOrder.orderNo} / {customerHistory.latestOrder.status} /{" "}
-                        {customerHistory.latestOrder.vehicleLabel} / ¥{customerHistory.latestOrder.amountYuan.toFixed(2)}
-                      </Typography.Text>
-                    ) : (
-                      <Typography.Text type="secondary">暂无历史订单</Typography.Text>
-                    )}
-                    {customerHistory.recentConstructionRecords.length > 0 ? (
-                      <div className="mt-3">
-                        <Typography.Text strong>最近施工记录</Typography.Text>
-                        <Space className="mt-2 w-full" direction="vertical" size={4}>
-                          {customerHistory.recentConstructionRecords.map((record) => (
-                            <div key={`${record.orderNo}-${record.completedAt ?? "pending"}`} className="text-sm text-slate-600">
-                              {record.orderNo} / {record.vehicleLabel} / {record.constructionType} / {record.status} /{" "}
-                              {record.qualityResult} / 用时 {record.actualMinutes ?? "-"} 分钟
-                            </div>
-                          ))}
-                        </Space>
-                      </div>
-                    ) : null}
-                  </Card>
-                ) : null}
               </Card>
 
-              <Card title="施工预约" className="create-order-card">
+              <Card title={<OrderStepTitle step={2} title="施工预约" />} className="create-order-card">
                 <div className="create-order-field-grid">
                   <Form.Item name="constructionType" label="施工类型" rules={[{ required: true }]}>
                     <Select options={CONSTRUCTION_TYPE_OPTIONS} />
@@ -421,7 +391,7 @@ function CreateOrderContent() {
                 ) : null}
               </Card>
 
-              <Card title="产品明细" className="create-order-card">
+              <Card title={<OrderStepTitle step={3} title="产品明细" />} className="create-order-card">
                 <Form.List name="items">
                   {(fields, { add, remove }) => (
                     <>
@@ -466,26 +436,26 @@ function CreateOrderContent() {
                   )}
                 </Form.List>
 
-                <Form.Item name="laborCostYuan" label="施工人工费（元）" className="mt-4">
-                  <InputNumber
-                    className="w-full"
-                    min={0}
-                    precision={2}
-                    addonAfter={
-                      <Button
-                        type="link"
-                        size="small"
-                        onClick={() => {
-                          form.setFieldValue("laborCostYuan", suggestedLaborCostYuan);
-                          form.setFieldValue("laborCostAdjustmentReason", undefined);
-                          setLaborCostTouched(false);
-                        }}
-                      >
-                        使用建议 ¥{suggestedLaborCostYuan.toFixed(2)}
-                      </Button>
-                    }
-                    onChange={() => setLaborCostTouched(true)}
-                  />
+                <Form.Item label="施工人工费（元）" className="mt-4">
+                  <Space.Compact className="w-full">
+                    <Form.Item name="laborCostYuan" noStyle>
+                      <InputNumber
+                        className="!w-full"
+                        min={0}
+                        precision={2}
+                        onChange={() => setLaborCostTouched(true)}
+                      />
+                    </Form.Item>
+                    <Button
+                      onClick={() => {
+                        form.setFieldValue("laborCostYuan", suggestedLaborCostYuan);
+                        form.setFieldValue("laborCostAdjustmentReason", undefined);
+                        setLaborCostTouched(false);
+                      }}
+                    >
+                      使用建议 ¥{suggestedLaborCostYuan.toFixed(2)}
+                    </Button>
+                  </Space.Compact>
                 </Form.Item>
                 {hasLaborCostAdjustment ? (
                   <Form.Item
@@ -499,7 +469,7 @@ function CreateOrderContent() {
                 ) : null}
               </Card>
 
-              <Card title="收款/定金" className="create-order-card">
+              <Card title={<OrderStepTitle step={4} title="收款与备注" />} className="create-order-card">
                 <Form.Item name="shouldRecordDeposit" label="录入定金" valuePropName="checked">
                   <Switch />
                 </Form.Item>
@@ -510,7 +480,7 @@ function CreateOrderContent() {
                         className="mb-3"
                         type="warning"
                         showIcon
-                        message="无可用收款账户"
+                        title="无可用收款账户"
                         description="请先到财务管理维护收款账户，再返回创建订单录入定金。"
                         action={
                           <Space>
@@ -534,10 +504,10 @@ function CreateOrderContent() {
                           loading={paymentAccountsQuery.isLoading}
                           options={paymentAccountOptions}
                           placeholder="选择收款账户"
-                          dropdownRender={(menu) => (
+                          popupRender={(menu) => (
                             <>
                               {menu}
-                              <div className="border-t border-slate-100 p-2">
+                              <div className="create-order-select-extra">
                                 <Button type="link" icon={<PlusOutlined />} onClick={() => setNewPaymentAccountOpen(true)}>
                                   新增收款账户
                                 </Button>
@@ -579,30 +549,17 @@ function CreateOrderContent() {
                     </div>
                   </>
                 ) : null}
-              </Card>
 
-              <Card title="备注" className="create-order-card">
                 <Form.Item name="remark" label="备注">
                   <Input.TextArea rows={4} />
                 </Form.Item>
-
-                <div className="flex justify-end gap-2">
-                  <Button disabled={!storeId} onClick={() => storeId && router.push(getStoreWorkbenchHref(storeId))}>
-                    取消
-                  </Button>
-                  <Button
-                    type="primary"
-                    htmlType="submit"
-                    loading={createMutation.isPending}
-                    disabled={Boolean(selectedAppointmentDate && (capacitiesQuery.isLoading || isCapacityBlocking))}
-                  >
-                    创建订单
-                  </Button>
-                </div>
               </Card>
             </div>
 
             <aside className="create-order-aside">
+              <div className="create-order-history-panel-slot">
+                <CustomerHistoryPanel customerHistory={customerHistory} />
+              </div>
               <Card title="订单金额汇总" className="create-order-summary-card">
                 <div className="create-order-summary-row">
                   <span>产品费用</span>
@@ -629,21 +586,31 @@ function CreateOrderContent() {
           </div>
         </Form>
 
-        <Modal
+        <Drawer
+          className="create-order-customer-drawer"
           open={newCustomerOpen}
           title="新建客户并回填订单"
-          okText="创建并使用"
-          cancelText="取消"
-          confirmLoading={createCustomerMutation.isPending}
-          onCancel={closeNewCustomerModal}
-          onOk={() => newCustomerForm.submit()}
+          onClose={closeNewCustomerDrawer}
           destroyOnHidden
+          footer={
+            <div className="create-order-drawer-footer">
+              <Button onClick={closeNewCustomerDrawer}>取消</Button>
+              <Button type="primary" loading={createCustomerMutation.isPending} onClick={() => newCustomerForm.submit()}>
+                创建并使用
+              </Button>
+            </div>
+          }
         >
           <Form<NewOrderCustomerFormValues>
             form={newCustomerForm}
             layout="vertical"
-            className="mt-4"
+            className="create-order-drawer-form"
             initialValues={{ customerType: "PERSONAL", sourceType: "OFFLINE_STORE" }}
+            onValuesChange={(changedValues) => {
+              if ("customerType" in changedValues) {
+                setNewOrderCustomerType(changedValues.customerType ?? "PERSONAL");
+              }
+            }}
             onFinish={(values) => createCustomerMutation.mutate(values)}
           >
             <Form.Item name="customerType" label="客户类型" rules={[{ required: true, message: "请选择客户类型" }]}>
@@ -655,7 +622,7 @@ function CreateOrderContent() {
               />
             </Form.Item>
 
-            {newCustomerType === "COMPANY" ? (
+            {newOrderCustomerType === "COMPANY" ? (
               <>
                 <Form.Item
                   name="companyName"
@@ -768,22 +735,27 @@ function CreateOrderContent() {
               <Input maxLength={500} placeholder="车辆照片 URL，可稍后在客户档案补充" />
             </Form.Item>
           </Form>
-        </Modal>
+        </Drawer>
 
-        <Modal
+        <Drawer
+          className="create-order-payment-account-drawer"
           open={newPaymentAccountOpen}
           title="新增收款账户"
-          okText="创建并使用"
-          cancelText="取消"
-          confirmLoading={createPaymentAccountMutation.isPending}
-          onCancel={closeNewPaymentAccountModal}
-          onOk={() => newPaymentAccountForm.submit()}
+          onClose={closeNewPaymentAccountDrawer}
           destroyOnHidden
+          footer={
+            <div className="create-order-drawer-footer">
+              <Button onClick={closeNewPaymentAccountDrawer}>取消</Button>
+              <Button type="primary" loading={createPaymentAccountMutation.isPending} onClick={() => newPaymentAccountForm.submit()}>
+                创建并使用
+              </Button>
+            </div>
+          }
         >
           <Form<NewPaymentAccountFormValues>
             form={newPaymentAccountForm}
             layout="vertical"
-            className="mt-4"
+            className="create-order-drawer-form"
             initialValues={{ type: "CORPORATE", isDefault: paymentAccountOptions.length === 0 }}
             onFinish={(values) => createPaymentAccountMutation.mutate(values)}
           >
@@ -815,9 +787,98 @@ function CreateOrderContent() {
               <Switch />
             </Form.Item>
           </Form>
-        </Modal>
-      </Layout.Content>
-    </Layout>
+        </Drawer>
+        </div>
+    </>
+  );
+}
+
+function OrderStepTitle({ step, title }: { step: number; title: string }) {
+  return (
+    <div className="create-order-step-title">
+      <span className="create-order-step-index">{step}</span>
+      <span>{title}</span>
+    </div>
+  );
+}
+
+function CustomerHistoryPanel({
+  customerHistory
+}: {
+  customerHistory?: ReturnType<typeof getOrderCustomerHistorySummary>;
+}) {
+  return (
+    <Card title="客户历史记录" className="create-order-history-panel">
+      {customerHistory ? (
+        <>
+          {customerHistory.warning ? (
+            <Alert className="mb-3" type="warning" showIcon message={customerHistory.warning} />
+          ) : null}
+          <div className="create-order-history-metrics">
+            <div>
+              <span>历史订单</span>
+              <strong>{customerHistory.orderCount} 单</strong>
+            </div>
+            <div>
+              <span>客户车辆</span>
+              <strong>{customerHistory.vehicleCount} 台</strong>
+            </div>
+            <div>
+              <span>累计消费</span>
+              <strong>¥{customerHistory.totalAmountYuan.toFixed(2)}</strong>
+            </div>
+            <div>
+              <span>待收金额</span>
+              <strong>¥{customerHistory.outstandingAmountYuan.toFixed(2)}</strong>
+            </div>
+          </div>
+          <div className="create-order-history-section">
+            <Typography.Text strong>质保与售后</Typography.Text>
+            <div className="create-order-history-line">
+              有效质保 {customerHistory.activeWarrantyCount} 个，待处理售后 {customerHistory.openAfterSalesCount} 个
+            </div>
+          </div>
+          {customerHistory.tags.length > 0 ? (
+            <div className="create-order-history-tags">
+              {customerHistory.tags.map((tag) => (
+                <Tag key={tag}>{tag}</Tag>
+              ))}
+            </div>
+          ) : null}
+          <div className="create-order-history-section">
+            <Typography.Text strong>最近订单：</Typography.Text>
+            {customerHistory.latestOrder ? (
+              <div className="create-order-history-line">
+                {customerHistory.latestOrder.orderNo} / {customerHistory.latestOrder.status} /{" "}
+                {customerHistory.latestOrder.vehicleLabel} / ¥{customerHistory.latestOrder.amountYuan.toFixed(2)}
+              </div>
+            ) : (
+              <Typography.Text type="secondary">暂无历史订单</Typography.Text>
+            )}
+          </div>
+          {customerHistory.recentConstructionRecords.length > 0 ? (
+            <div className="create-order-history-section">
+              <Typography.Text strong>最近施工记录</Typography.Text>
+              <Space className="mt-2 w-full" direction="vertical" size={6}>
+                {customerHistory.recentConstructionRecords.map((record) => (
+                  <div
+                    key={`${record.orderNo}-${record.completedAt ?? "pending"}`}
+                    className="create-order-history-line"
+                  >
+                    {record.orderNo} / {record.vehicleLabel} / {record.constructionType} / {record.status} /{" "}
+                    {record.qualityResult} / 用时 {record.actualMinutes ?? "-"} 分钟
+                  </div>
+                ))}
+              </Space>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="create-order-history-empty">
+          <Typography.Text type="secondary">选择客户后显示历史订单、质保与售后提醒。</Typography.Text>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -860,7 +921,17 @@ type BirthdayParts = {
 };
 
 function BirthdaySelector({ value, onChange }: BirthdaySelectorProps) {
-  const [parts, setParts] = useState<BirthdayParts>(() => parseBirthday(value));
+  return <BirthdaySelectorFields key={value ?? "empty"} initialValue={value} onChange={onChange} />;
+}
+
+function BirthdaySelectorFields({
+  initialValue,
+  onChange
+}: {
+  initialValue?: string;
+  onChange?: (value?: string) => void;
+}) {
+  const [parts, setParts] = useState<BirthdayParts>(() => parseBirthday(initialValue));
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
     return Array.from({ length: 101 }, (_, index) => {
@@ -877,10 +948,6 @@ function BirthdaySelector({ value, onChange }: BirthdaySelectorProps) {
     return Array.from({ length: maxDay }, (_, index) => ({ label: `${index + 1} 日`, value: index + 1 }));
   }, [parts.month, parts.year]);
 
-  useEffect(() => {
-    setParts(parseBirthday(value));
-  }, [value]);
-
   const updatePart = (key: keyof BirthdayParts, nextValue?: number) => {
     const nextParts = { ...parts, [key]: nextValue };
     const maxDay = getDaysInMonth(nextParts.year, nextParts.month);
@@ -894,7 +961,7 @@ function BirthdaySelector({ value, onChange }: BirthdaySelectorProps) {
       return;
     }
 
-    if (value) {
+    if (initialValue) {
       onChange?.(undefined);
     }
   };

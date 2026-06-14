@@ -3,9 +3,10 @@
 import type { ReactNode } from "react";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { Button, Space, Typography } from "antd";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "../../stores/auth-store";
 import { getStoreWorkbenchHref } from "./navigation";
+import { shouldUseManagementShell } from "./management-shell";
 
 type StorePageHeaderProps = {
   title: ReactNode;
@@ -15,24 +16,28 @@ type StorePageHeaderProps = {
 
 export function StorePageHeader({ title, description, children }: StorePageHeaderProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const storeId = useAuthStore((state) => state.user?.storeMember?.store.id);
+  const showWorkbenchBack = !shouldUseManagementShell(pathname);
 
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className="management-page-header">
       <div>
-        <Typography.Title level={3} className="!mb-1">
+        <Typography.Title level={2} className="management-page-title">
           {title}
         </Typography.Title>
-        {description ? <Typography.Text type="secondary">{description}</Typography.Text> : null}
+        {description ? <Typography.Text className="management-page-description">{description}</Typography.Text> : null}
       </div>
       <Space wrap>
-        <Button
-          icon={<ArrowLeftOutlined />}
-          disabled={!storeId}
-          onClick={() => storeId && router.push(getStoreWorkbenchHref(storeId))}
-        >
-          返回工作台
-        </Button>
+        {showWorkbenchBack ? (
+          <Button
+            icon={<ArrowLeftOutlined />}
+            disabled={!storeId}
+            onClick={() => storeId && router.push(getStoreWorkbenchHref(storeId))}
+          >
+            返回工作台
+          </Button>
+        ) : null}
         {children}
       </Space>
     </div>

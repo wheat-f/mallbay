@@ -1,8 +1,15 @@
 "use client";
 
 import type { ConstructionType, OrderStatus } from "@mallbay/shared";
-import { Button, Card, DatePicker, Input, Layout, Select, Space, Table, Tag, Typography } from "antd";
-import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { Button, Card, DatePicker, Input, Progress, Select, Space, Table, Tag, Typography } from "antd";
+import {
+  CreditCardOutlined,
+  EyeOutlined,
+  FileTextOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SearchOutlined
+} from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -25,7 +32,11 @@ type OrderRow = {
   status: string;
   constructionType: string;
   customer?: { name?: string | null; companyName?: string | null };
+  vehicle?: { carPlate?: string | null; carModel?: string | null; carColor?: string | null } | null;
+  salesPerson?: { username?: string | null; nickname?: string | null } | null;
   amount?: { totalAmountCents: number; paidAmountCents: number; outstandingCents: number } | null;
+  appointmentDate?: string | null;
+  appointmentTimeSlot?: string | null;
   createdAt: string;
 };
 
@@ -45,7 +56,7 @@ const QUICK_STATUS_OPTIONS: Array<{ label: string; value?: OrderStatus; tone: st
 
 export default function OrdersPage() {
   return (
-    <Suspense fallback={<Layout className="dashboard-shell"><Layout.Content className="dashboard-content" /></Layout>}>
+    <Suspense fallback={<div className="management-page" />}>
       <OrdersContent />
     </Suspense>
   );
@@ -105,6 +116,25 @@ function OrdersContent() {
     router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
   };
 
+  const resetFilters = () => {
+    setQ("");
+    setStatus(undefined);
+    setConstructionType(undefined);
+    setPaymentStatus(undefined);
+    setCreatedFrom(undefined);
+    setCreatedTo(undefined);
+    setPage(1);
+    updateOrderListUrl({
+      q: undefined,
+      status: undefined,
+      constructionType: undefined,
+      paymentStatus: undefined,
+      createdFrom: undefined,
+      createdTo: undefined,
+      page: 1
+    });
+  };
+
   const ordersQuery = useQuery({
     queryKey: ["orders", storeId, q, status, constructionType, paymentStatus, createdFrom, createdTo, page, pageSize],
     queryFn: () =>
@@ -122,7 +152,7 @@ function OrdersContent() {
     enabled: Boolean(storeId)
   });
 
-  const rows = (ordersQuery.data?.items ?? []) as OrderRow[];
+  const rows = useMemo(() => (ordersQuery.data?.items ?? []) as OrderRow[], [ordersQuery.data]);
   const orderSummary = useMemo(() => {
     const totalAmount = rows.reduce((sum, row) => sum + (row.amount?.totalAmountCents ?? 0), 0);
     const outstanding = rows.reduce((sum, row) => sum + (row.amount?.outstandingCents ?? 0), 0);
@@ -139,180 +169,332 @@ function OrdersContent() {
   }, [ordersQuery.data?.total, rows]);
 
   return (
-    <Layout className="dashboard-shell">
-      <Layout.Content className="dashboard-content">
-        <StorePageHeader title="订单管理" description="查看销售订单、施工类型和收款进度">
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/orders/create")}>
-            新建订单
-          </Button>
-        </StorePageHeader>
+    <div className="management-page">
+          <StorePageHeader title="销售订单列表" description="查看销售订单、施工类型和收款进度">
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/orders/create")}>
+              新建订单
+            </Button>
+          </StorePageHeader>
 
-        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {[
-            ["订单总数", orderSummary.total, "当前筛选范围"],
-            ["订单总额", yuanCurrency(orderSummary.totalAmount), "当前页合计"],
-            ["待收金额", yuanCurrency(orderSummary.outstanding), "需持续跟进"],
-            ["履约中", orderSummary.inProgressCount, "已派工/施工中"],
-            ["异常关注", orderSummary.riskyCount, "未收或取消"]
-          ].map(([label, value, description]) => (
-            <Card key={label} size="small" className="h-full">
-              <Typography.Text type="secondary">{label}</Typography.Text>
-              <div className="mt-2 text-2xl font-semibold text-gray-900">{value}</div>
-              <Typography.Text type="secondary" className="text-xs">
-                {description}
-              </Typography.Text>
-            </Card>
-          ))}
-        </div>
+          <div className="management-kpi-grid management-kpi-grid-five">
+            {[
+              ["订单总数", orderSummary.total, "当前筛选范围"],
+              ["订单总额", yuanCurrency(orderSummary.totalAmount), "当前页合计"],
+              ["待收金额", yuanCurrency(orderSummary.outstanding), "需持续跟进"],
+              ["履约中", orderSummary.inProgressCount, "已派工/施工中"],
+              ["异常关注", orderSummary.riskyCount, "未收或取消"]
+            ].map(([label, value, description]) => (
+              <Card key={label} className="management-kpi-card">
+                <div className="management-kpi-label">{label}</div>
+                <div className="management-kpi-value">{value}</div>
+                <div className="management-kpi-desc">{description}</div>
+              </Card>
+            ))}
+          </div>
 
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          {QUICK_STATUS_OPTIONS.map((option) => {
-            const active = status === option.value || (!status && !option.value);
-            return (
-              <Button
-                key={option.label}
-                type={active ? "primary" : "default"}
-                onClick={() => {
-                  setStatus(option.value);
-                  setPage(1);
-                  updateOrderListUrl({ status: option.value, page: 1 });
-                }}
-              >
-                <Tag color={active ? undefined : option.tone} className="mr-1">
-                  {option.label}
-                </Tag>
-              </Button>
-            );
-          })}
-        </div>
+          <section className="management-filter-card orders-filter-card">
+            <div className="management-filter-actions mb-3">
+              {QUICK_STATUS_OPTIONS.map((option) => {
+                const active = status === option.value || (!status && !option.value);
+                return (
+                  <Button
+                    key={option.label}
+                    type={active ? "primary" : "default"}
+                    onClick={() => {
+                      setStatus(option.value);
+                      setPage(1);
+                      updateOrderListUrl({ status: option.value, page: 1 });
+                    }}
+                  >
+                    <Tag color={active ? undefined : option.tone} className="mr-1">
+                      {option.label}
+                    </Tag>
+                  </Button>
+                );
+              })}
+            </div>
+            <div className="management-filter-grid orders-filter-grid">
+              <div className="orders-filter-item orders-filter-wide">
+                <span className="orders-filter-label">关键词</span>
+                <Input.Search
+                  prefix={<SearchOutlined />}
+                  placeholder="订单号 / 客户 / 车牌"
+                  allowClear
+                  defaultValue={q}
+                  onSearch={(value) => {
+                    const nextQ = value.trim();
+                    setQ(nextQ);
+                    setPage(1);
+                    updateOrderListUrl({ q: nextQ || undefined, page: 1 });
+                  }}
+                />
+              </div>
+              <div className="orders-filter-item orders-filter-date">
+                <span className="orders-filter-label">下单日期</span>
+                <DatePicker.RangePicker
+                  className="w-full"
+                  format="YYYY-MM-DD"
+                  value={[createdFrom ? dayjs(createdFrom) : null, createdTo ? dayjs(createdTo) : null]}
+                  onChange={(_, dateStrings) => {
+                    const [from, to] = dateStrings;
+                    const nextCreatedFrom = from || undefined;
+                    const nextCreatedTo = to || undefined;
+                    setCreatedFrom(nextCreatedFrom);
+                    setCreatedTo(nextCreatedTo);
+                    setPage(1);
+                    updateOrderListUrl({ createdFrom: nextCreatedFrom, createdTo: nextCreatedTo, page: 1 });
+                  }}
+                />
+              </div>
+              <div className="orders-filter-item">
+                <span className="orders-filter-label">订单状态</span>
+                <Select
+                  allowClear
+                  placeholder="全部订单"
+                  value={status}
+                  onChange={(nextStatus) => {
+                    setStatus(nextStatus);
+                    setPage(1);
+                    updateOrderListUrl({ status: nextStatus, page: 1 });
+                  }}
+                  options={Object.entries(ORDER_STATUS_LABEL).map(([value, label]) => ({ value, label }))}
+                />
+              </div>
+              <div className="orders-filter-item">
+                <span className="orders-filter-label">施工类型</span>
+                <Select
+                  allowClear
+                  placeholder="全部类型"
+                  value={constructionType}
+                  onChange={(nextConstructionType) => {
+                    setConstructionType(nextConstructionType);
+                    setPage(1);
+                    updateOrderListUrl({ constructionType: nextConstructionType, page: 1 });
+                  }}
+                  options={Object.entries(CONSTRUCTION_TYPE_LABEL).map(([value, label]) => ({ value, label }))}
+                />
+              </div>
+              <div className="orders-filter-item">
+                <span className="orders-filter-label">支付状态</span>
+                <Select
+                  allowClear
+                  placeholder="全部状态"
+                  value={paymentStatus}
+                  onChange={(nextPaymentStatus) => {
+                    setPaymentStatus(nextPaymentStatus);
+                    setPage(1);
+                    updateOrderListUrl({ paymentStatus: nextPaymentStatus, page: 1 });
+                  }}
+                  options={Object.entries(PAYMENT_STATUS_LABEL).map(([value, label]) => ({ value, label }))}
+                />
+              </div>
+              <div className="orders-filter-item">
+                <span className="orders-filter-label">筛选操作</span>
+                <Button icon={<ReloadOutlined />} onClick={resetFilters}>
+                  重置
+                </Button>
+              </div>
+            </div>
+          </section>
 
-        <Space className="mb-4 rounded border border-gray-200 bg-white p-3" wrap>
-          <Input.Search
-            prefix={<SearchOutlined />}
-            placeholder="订单号 / 客户 / 车牌"
-            allowClear
-            defaultValue={q}
-            onSearch={(value) => {
-              const nextQ = value.trim();
-              setQ(nextQ);
-              setPage(1);
-              updateOrderListUrl({ q: nextQ || undefined, page: 1 });
-            }}
-            style={{ width: 280 }}
-          />
-          <Select
-            allowClear
-            placeholder="订单状态"
-            style={{ width: 180 }}
-            value={status}
-            onChange={(nextStatus) => {
-              setStatus(nextStatus);
-              setPage(1);
-              updateOrderListUrl({ status: nextStatus, page: 1 });
-            }}
-            options={Object.entries(ORDER_STATUS_LABEL).map(([value, label]) => ({ value, label }))}
-          />
-          <Select
-            allowClear
-            placeholder="施工类型"
-            style={{ width: 180 }}
-            value={constructionType}
-            onChange={(nextConstructionType) => {
-              setConstructionType(nextConstructionType);
-              setPage(1);
-              updateOrderListUrl({ constructionType: nextConstructionType, page: 1 });
-            }}
-            options={Object.entries(CONSTRUCTION_TYPE_LABEL).map(([value, label]) => ({ value, label }))}
-          />
-          <Select
-            allowClear
-            placeholder="付款状态"
-            style={{ width: 160 }}
-            value={paymentStatus}
-            onChange={(nextPaymentStatus) => {
-              setPaymentStatus(nextPaymentStatus);
-              setPage(1);
-              updateOrderListUrl({ paymentStatus: nextPaymentStatus, page: 1 });
-            }}
-            options={Object.entries(PAYMENT_STATUS_LABEL).map(([value, label]) => ({ value, label }))}
-          />
-          <DatePicker
-            format="YYYY-MM-DD"
-            placeholder="开始日期"
-            value={createdFrom ? dayjs(createdFrom) : undefined}
-            onChange={(_, dateString) => {
-              const nextCreatedFrom = typeof dateString === "string" ? dateString || undefined : undefined;
-              setCreatedFrom(nextCreatedFrom);
-              setPage(1);
-              updateOrderListUrl({ createdFrom: nextCreatedFrom, page: 1 });
-            }}
-          />
-          <DatePicker
-            format="YYYY-MM-DD"
-            placeholder="结束日期"
-            value={createdTo ? dayjs(createdTo) : undefined}
-            onChange={(_, dateString) => {
-              const nextCreatedTo = typeof dateString === "string" ? dateString || undefined : undefined;
-              setCreatedTo(nextCreatedTo);
-              setPage(1);
-              updateOrderListUrl({ createdTo: nextCreatedTo, page: 1 });
-            }}
-          />
-        </Space>
+          <Card className="management-table-card">
+            <div className="orders-mobile-cards">
+              {rows.length > 0 ? (
+                rows.map((row) => {
+                  const payment = getPaymentStatus(row);
+                  const progress = getConstructionProgress(row.status);
 
-        <Table<OrderRow>
-          rowKey="id"
-          loading={ordersQuery.isLoading}
-          dataSource={rows}
-          pagination={{
-            current: page,
-            pageSize,
-            total: ordersQuery.data?.total ?? 0,
-            showSizeChanger: true,
-            onChange: (nextPage, nextPageSize) => {
-              setPage(nextPage);
-              setPageSize(nextPageSize);
-              updateOrderListUrl({ page: nextPage, pageSize: nextPageSize });
-            }
-          }}
-          columns={[
-            { title: "订单号", dataIndex: "orderNo" },
+                  return (
+                    <article key={row.id} className="orders-mobile-card">
+                      <div className="orders-mobile-card-head">
+                        <div className="min-w-0">
+                          <Typography.Text strong className="orders-mobile-order-no">
+                            {row.orderNo}
+                          </Typography.Text>
+                          <div className="orders-mobile-customer">{getOrderCustomerName(row)}</div>
+                        </div>
+                        <Tag>{getOrderStatusLabel(row.status)}</Tag>
+                      </div>
+
+                      <div className="orders-mobile-vehicle">{getOrderVehicleSummary(row)}</div>
+
+                      <dl className="orders-mobile-fields">
+                        <div>
+                          <dt>施工类型</dt>
+                          <dd>{getConstructionTypeLabel(row.constructionType)}</dd>
+                        </div>
+                        <div>
+                          <dt>预约</dt>
+                          <dd>{formatOrderListDate(row.appointmentDate ?? row.createdAt)} {row.appointmentTimeSlot ?? ""}</dd>
+                        </div>
+                        <div>
+                          <dt>订单金额</dt>
+                          <dd><strong>{yuanCurrency(row.amount?.totalAmountCents)}</strong></dd>
+                        </div>
+                        <div>
+                          <dt>已收款</dt>
+                          <dd>{yuanCurrency(row.amount?.paidAmountCents)}</dd>
+                        </div>
+                        <div>
+                          <dt>支付状态</dt>
+                          <dd><Tag color={payment.color}>{payment.label}</Tag></dd>
+                        </div>
+                        <div>
+                          <dt>销售员</dt>
+                          <dd>{row.salesPerson?.nickname ?? row.salesPerson?.username ?? "-"}</dd>
+                        </div>
+                      </dl>
+
+                      <div className="orders-mobile-progress">
+                        <div className="orders-progress-label">
+                          <span>{progress.label}</span>
+                          <span>{progress.percent}%</span>
+                        </div>
+                        <Progress percent={progress.percent} showInfo={false} size="small" status={progress.status} />
+                      </div>
+
+                      <div className="orders-mobile-actions">
+                        <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/orders/${row.id}`)}>
+                          详情
+                        </Button>
+                        <Button size="small" icon={<CreditCardOutlined />}>
+                          收款
+                        </Button>
+                        <Button size="small" icon={<FileTextOutlined />}>
+                          发票
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <div className="orders-mobile-empty">暂无订单数据</div>
+              )}
+            </div>
+            <Table<OrderRow>
+              className="orders-desktop-table"
+              rowKey="id"
+              loading={ordersQuery.isLoading}
+              dataSource={rows}
+              scroll={{ x: 1200 }}
+              pagination={{
+                current: page,
+                pageSize,
+                total: ordersQuery.data?.total ?? 0,
+                showSizeChanger: true,
+                onChange: (nextPage, nextPageSize) => {
+                  setPage(nextPage);
+                  setPageSize(nextPageSize);
+                  updateOrderListUrl({ page: nextPage, pageSize: nextPageSize });
+                }
+              }}
+              columns={[
+            {
+              title: "订单编号",
+              dataIndex: "orderNo",
+              width: 150,
+              render: (orderNo: string) => <Typography.Text strong className="text-[var(--mb-primary)]">{orderNo}</Typography.Text>
+            },
             {
               title: "客户",
+              width: 140,
               render: (_, row) => row.customer?.companyName ?? row.customer?.name ?? "-"
             },
             {
-              title: "施工类型",
+              title: "车辆信息",
+              width: 180,
+              render: (_, row) => (
+                <Space orientation="vertical" size={0}>
+                  <Typography.Text>{row.vehicle?.carModel ?? "-"}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    {[row.vehicle?.carPlate, row.vehicle?.carColor].filter(Boolean).join(" / ") || "-"}
+                  </Typography.Text>
+                </Space>
+              )
+            },
+            {
+              title: "施工/类型",
+              width: 140,
               render: (_, row) => getConstructionTypeLabel(row.constructionType)
             },
             {
+              title: "预约日期",
+              width: 140,
+              render: (_, row) => (
+                <Space orientation="vertical" size={0}>
+                  <Typography.Text>{formatOrderListDate(row.appointmentDate ?? row.createdAt)}</Typography.Text>
+                  <Typography.Text type="secondary">{row.appointmentTimeSlot ?? "-"}</Typography.Text>
+                </Space>
+              )
+            },
+            {
+              title: "金额/已收",
+              width: 150,
+              render: (_, row) => (
+                <Space orientation="vertical" size={0}>
+                  <Typography.Text strong className="text-[var(--mb-primary)]">
+                    {yuanCurrency(row.amount?.totalAmountCents)}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">已收 {yuanCurrency(row.amount?.paidAmountCents)}</Typography.Text>
+                </Space>
+              )
+            },
+            {
+              title: "支付状态",
+              width: 110,
+              render: (_, row) => {
+                const payment = getPaymentStatus(row);
+                return <Tag color={payment.color}>{payment.label}</Tag>;
+              }
+            },
+            {
+              title: "施工进度",
+              width: 150,
+              render: (_, row) => {
+                const progress = getConstructionProgress(row.status);
+                return (
+                  <Space className="w-full" orientation="vertical" size={2}>
+                    <div className="orders-progress-label">
+                      <span>{progress.label}</span>
+                      <span>{progress.percent}%</span>
+                    </div>
+                    <Progress percent={progress.percent} showInfo={false} size="small" status={progress.status} />
+                  </Space>
+                );
+              }
+            },
+            {
+              title: "销售员",
+              width: 110,
+              render: (_, row) => row.salesPerson?.nickname ?? row.salesPerson?.username ?? "-"
+            },
+            {
               title: "状态",
+              width: 100,
               render: (_, row) => <Tag>{getOrderStatusLabel(row.status)}</Tag>
             },
             {
-              title: "金额",
-              render: (_, row) => yuanCurrency(row.amount?.totalAmountCents)
-            },
-            {
-              title: "未收",
-              render: (_, row) => yuanCurrency(row.amount?.outstandingCents)
-            },
-            {
-              title: "创建时间",
-              render: (_, row) => row.createdAt ? row.createdAt.slice(0, 10) : "-"
-            },
-            {
               title: "操作",
+              fixed: "right",
+              width: 126,
               render: (_, row) => (
-                <Button size="small" onClick={() => router.push(`/orders/${row.id}`)}>
-                  详情
-                </Button>
+                <Space size={4}>
+                  <Button
+                    size="small"
+                    type="text"
+                    title="查看详情"
+                    icon={<EyeOutlined />}
+                    onClick={() => router.push(`/orders/${row.id}`)}
+                  />
+                  <Button size="small" type="text" title="记录收款" icon={<CreditCardOutlined />} />
+                  <Button size="small" type="text" title="申请发票" icon={<FileTextOutlined />} />
+                </Space>
               )
             }
-          ]}
-        />
-      </Layout.Content>
-    </Layout>
+              ]}
+            />
+          </Card>
+        </div>
   );
 }
 
@@ -323,4 +505,49 @@ function toOptionalParam(value: string | null) {
 function toPositiveNumber(value: string | null, fallback: number) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function formatOrderListDate(value?: string | null) {
+  if (!value) return "-";
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match?.[1] ?? value;
+}
+
+function getOrderCustomerName(row: OrderRow) {
+  return row.customer?.companyName ?? row.customer?.name ?? "-";
+}
+
+function getOrderVehicleSummary(row: OrderRow) {
+  const plateAndColor = [row.vehicle?.carPlate, row.vehicle?.carColor].filter(Boolean).join(" / ");
+  return [row.vehicle?.carModel, plateAndColor].filter(Boolean).join(" · ") || "-";
+}
+
+function getPaymentStatus(row: OrderRow) {
+  const amount = row.amount;
+  if (!amount || amount.paidAmountCents <= 0) {
+    return { label: PAYMENT_STATUS_LABEL.UNPAID, color: "error" };
+  }
+  if (amount.outstandingCents <= 0) {
+    return { label: PAYMENT_STATUS_LABEL.PAID, color: "success" };
+  }
+  return { label: PAYMENT_STATUS_LABEL.PARTIAL, color: "warning" };
+}
+
+function getConstructionProgress(status: string): {
+  label: string;
+  percent: number;
+  status?: "normal" | "active" | "success" | "exception";
+} {
+  switch (status) {
+    case "COMPLETED":
+      return { label: "已完工", percent: 100, status: "success" };
+    case "IN_CONSTRUCTION":
+      return { label: "施工中", percent: 65, status: "active" };
+    case "DISPATCHED":
+      return { label: "已派工", percent: 25, status: "active" };
+    case "CANCELLED":
+      return { label: "已取消", percent: 0, status: "exception" };
+    default:
+      return { label: "待派工", percent: 0, status: "normal" };
+  }
 }

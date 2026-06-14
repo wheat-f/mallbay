@@ -19,6 +19,41 @@ test("create order page uses a grouped layout with a side amount summary", () =>
   assert.match(pageSource, /title="订单金额汇总"/);
 });
 
+test("create order page follows the prototype step card structure", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /OrderStepTitle/);
+  assert.match(pageSource, /step=\{1\} title="客户与车辆"/);
+  assert.match(pageSource, /step=\{2\} title="施工预约"/);
+  assert.match(pageSource, /step=\{3\} title="产品明细"/);
+  assert.match(pageSource, /step=\{4\} title="收款与备注"/);
+});
+
+test("create order page keeps customer history in the side rail", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /create-order-history-panel/);
+  assert.match(pageSource, /选择客户后显示历史订单、质保与售后提醒/);
+  assert.match(pageSource, /客户历史记录/);
+  assert.match(pageSource, /create-order-aside[\s\S]*create-order-history-panel[\s\S]*create-order-summary-card/);
+});
+
+test("create order page provides prototype-like top actions", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /create-order-header-actions/);
+  assert.match(pageSource, /onClick=\{\(\) => form\.submit\(\)\}/);
+  assert.match(pageSource, /提交订单/);
+});
+
+test("create order page does not duplicate primary submit actions at the bottom", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  const submitLabels = pageSource.match(/提交订单/g) ?? [];
+  assert.equal(submitLabels.length, 1);
+  assert.doesNotMatch(pageSource, /htmlType="submit"/);
+});
+
 test("create order page loads store customers before typing a search keyword", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
@@ -30,16 +65,24 @@ test("create order page loads store customers before typing a search keyword", (
 
 test("create order page can create payment accounts inline for deposits", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
 
   assert.match(pageSource, /新增收款账户/);
+  assert.match(pageSource, /create-order-payment-account-drawer/);
   assert.match(pageSource, /createPaymentAccountMutation/);
   assert.match(pageSource, /orderApi\.createPaymentAccount/);
   assert.match(pageSource, /\["payment-accounts", storeId\]/);
+  assert.match(pageSource, /create-order-select-extra/);
+  assert.doesNotMatch(pageSource, /border-slate|bg-slate|text-slate/);
+  assert.match(cssSource, /\.create-order-select-extra/);
+  assert.match(cssSource, /create-order-payment-account-drawer[\s\S]*ant-drawer-content-wrapper/);
 });
 
-test("create order new customer modal includes profile fields aligned with customer management", () => {
+test("create order new customer drawer includes profile fields aligned with customer management", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
 
+  assert.match(pageSource, /create-order-customer-drawer/);
   assert.match(pageSource, /name="gender"/);
   assert.match(pageSource, /label="性别"/);
   assert.match(pageSource, /name="birthday"/);
@@ -48,6 +91,7 @@ test("create order new customer modal includes profile fields aligned with custo
   assert.match(pageSource, /label="介绍人"/);
   assert.match(pageSource, /customerApi\.search\(storeId!, referrerKeyword\)/);
   assert.match(pageSource, /onSearch=\{setReferrerKeyword\}/);
+  assert.match(cssSource, /create-order-customer-drawer[\s\S]*ant-drawer-content-wrapper/);
 });
 
 test("create order new customer modal saves vehicle photo url", () => {
@@ -101,4 +145,29 @@ test("create order page uses a time range picker for appointment time slot inste
   assert.match(pageSource, /placeholder=\{\["开始时间", "结束时间"\]\}/);
   assert.doesNotMatch(pageSource, /<Input placeholder="09:00-12:00"/);
   assert.doesNotMatch(pageSource, /APPOINTMENT_TIME_SLOT_OPTIONS/);
+});
+
+test("create order page uses prototype drawers instead of centered modals for auxiliary creation", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /Drawer/);
+  assert.match(pageSource, /open=\{newCustomerOpen\}/);
+  assert.match(pageSource, /open=\{newPaymentAccountOpen\}/);
+  assert.match(pageSource, /创建并使用/);
+  assert.doesNotMatch(pageSource, /<Modal/);
+  assert.doesNotMatch(pageSource, /forceRender/);
+  assert.doesNotMatch(pageSource, /width=\{/);
+});
+
+test("create order page avoids deprecated Ant Design dropdownRender API", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /popupRender=\{\(menu\) =>/);
+  assert.doesNotMatch(pageSource, /dropdownRender/);
+});
+
+test("create order birthday selector avoids syncing local state inside an effect", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.doesNotMatch(pageSource, /useEffect\(\(\) => \{\s*setParts\(parseBirthday\(value\)\);/);
 });

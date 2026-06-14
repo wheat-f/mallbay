@@ -1,12 +1,21 @@
 "use client";
 
 import {
-  App, Avatar, Button, Descriptions, Divider, Form, Image, Input,
-  Layout, Modal, Spin, Tag, Typography
+  Alert, App, Avatar, Button, Card, Drawer, Form, Image, Input,
+  Spin, Tag, Typography
 } from "antd";
 import {
-  ArrowLeftOutlined, CheckOutlined, CloseOutlined,
-  LockOutlined, SearchOutlined, UnlockOutlined, UserSwitchOutlined
+  ArrowLeftOutlined,
+  AuditOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  FileSearchOutlined,
+  LockOutlined,
+  PictureOutlined,
+  SafetyCertificateOutlined,
+  SearchOutlined,
+  UnlockOutlined,
+  UserSwitchOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useParams } from "next/navigation";
@@ -20,8 +29,10 @@ const STATUS_CONFIG: Record<string, { text: string; color: string }> = {
   FROZEN: { text: "已冻结", color: "warning" }
 };
 
-// ─── 驳回 Modal ───────────────────────────────────────────────────
-function RejectModal({ open, onClose, onConfirm, loading }: {
+type StorePhoto = { id: string; url: string; isCover: boolean; order: number };
+
+// ─── 驳回抽屉 ───────────────────────────────────────────────────
+function RejectDrawer({ open, onClose, onConfirm, loading }: {
   open: boolean; onClose: () => void;
   onConfirm: (note: string) => void; loading: boolean;
 }) {
@@ -30,10 +41,19 @@ function RejectModal({ open, onClose, onConfirm, loading }: {
   const handleClose = () => { setNote(""); onClose(); };
 
   return (
-    <Modal
-      open={open} title="驳回原因" onCancel={handleClose}
-      onOk={handleOk} okText="确认驳回" cancelText="取消"
-      okButtonProps={{ danger: true, disabled: !note.trim(), loading }}
+    <Drawer
+      open={open}
+      title="驳回原因"
+      onClose={handleClose}
+      rootClassName="admin-store-reject-drawer"
+      footer={(
+        <div className="admin-store-drawer-footer">
+          <Button onClick={handleClose}>取消</Button>
+          <Button danger type="primary" disabled={!note.trim()} loading={loading} onClick={handleOk}>
+            确认驳回
+          </Button>
+        </div>
+      )}
       destroyOnHidden
     >
       <Form layout="vertical" className="mt-4">
@@ -45,12 +65,12 @@ function RejectModal({ open, onClose, onConfirm, loading }: {
           />
         </Form.Item>
       </Form>
-    </Modal>
+    </Drawer>
   );
 }
 
-// ─── 变更店长 Modal ───────────────────────────────────────────────
-function ChangeManagerModal({ open, onClose, onConfirm, loading }: {
+// ─── 变更店长抽屉 ───────────────────────────────────────────────
+function ChangeManagerDrawer({ open, onClose, onConfirm, loading }: {
   open: boolean; onClose: () => void;
   onConfirm: (userId: string) => void; loading: boolean;
 }) {
@@ -68,41 +88,54 @@ function ChangeManagerModal({ open, onClose, onConfirm, loading }: {
   const handleClose = () => { setKeyword(""); setSelected(null); onClose(); };
 
   return (
-    <Modal
-      open={open} title="变更店长" onCancel={handleClose}
-      onOk={() => selected && onConfirm(selected.id)}
-      okText="确认变更" cancelText="取消"
-      okButtonProps={{ disabled: !selected, loading }}
+    <Drawer
+      open={open}
+      title="变更店长"
+      onClose={handleClose}
+      rootClassName="admin-store-manager-drawer"
+      footer={(
+        <div className="admin-store-drawer-footer">
+          <Button onClick={handleClose}>取消</Button>
+          <Button
+            type="primary"
+            disabled={!selected}
+            loading={loading}
+            onClick={() => selected && onConfirm(selected.id)}
+          >
+            确认变更
+          </Button>
+        </div>
+      )}
       destroyOnHidden
     >
       <Form layout="vertical" className="mt-4">
         <Form.Item label="搜索新店长">
           <Input
-            prefix={<SearchOutlined className="text-slate-400" />}
+            prefix={<SearchOutlined className="text-[var(--mb-text-muted)]" />}
             value={keyword}
             onChange={(e) => { setKeyword(e.target.value); setSelected(null); }}
             placeholder="搜索用户名" allowClear
           />
           {searchQuery.isFetching && <Spin size="small" className="mt-2 block" />}
           {searchQuery.data && searchQuery.data.length > 0 && !selected && (
-            <div className="mt-1 rounded border border-slate-200 bg-white shadow-sm">
+            <div className="dashboard-user-search-results">
               {searchQuery.data.map((u) => (
                 <div key={u.id}
-                  className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-slate-50"
+                  className="dashboard-user-search-row"
                   onClick={() => { setSelected(u); setKeyword(u.username); }}
                 >
-                  <Avatar size={24} style={{ background: "#1677ff", fontSize: 12 }}>
+                  <Avatar size={24} style={{ background: "var(--mb-primary)", fontSize: 12 }}>
                     {(u.nickname ?? u.username).charAt(0).toUpperCase()}
                   </Avatar>
                   <span className="font-mono text-sm">{u.username}</span>
-                  {u.nickname && <span className="text-slate-400 text-sm">{u.nickname}</span>}
+                  {u.nickname && <span className="text-[var(--mb-text-muted)] text-sm">{u.nickname}</span>}
                 </div>
               ))}
             </div>
           )}
           {selected && (
-            <div className="mt-2 flex items-center gap-2 rounded bg-blue-50 px-3 py-2 text-sm">
-              <Avatar size={20} style={{ background: "#1677ff", fontSize: 10 }}>
+            <div className="mt-2 flex items-center gap-2 rounded bg-[var(--mb-primary-container)] px-3 py-2 text-sm">
+              <Avatar size={20} style={{ background: "var(--mb-primary)", fontSize: 10 }}>
                 {(selected.nickname ?? selected.username).charAt(0).toUpperCase()}
               </Avatar>
               <span>已选：<span className="font-mono">{selected.username}</span></span>
@@ -114,7 +147,47 @@ function ChangeManagerModal({ open, onClose, onConfirm, loading }: {
           )}
         </Form.Item>
       </Form>
-    </Modal>
+    </Drawer>
+  );
+}
+
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="admin-store-info-block">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function DiffBlock({ label, before, after, wide }: { label: string; before: string; after: string; wide?: boolean }) {
+  const changed = before !== after;
+
+  return (
+    <div className={`admin-store-diff-block${wide ? " is-wide" : ""}`}>
+      <span>{label}</span>
+      <div>
+        <p className={changed ? "is-before" : ""}>{before}</p>
+        <p className={changed ? "is-after" : "is-same"}>{changed ? after : "无变更"}</p>
+      </div>
+    </div>
+  );
+}
+
+function PhotoStrip({ photos, emptyText }: { photos: StorePhoto[]; emptyText: string }) {
+  if (photos.length === 0) {
+    return <div className="admin-store-photo-empty">{emptyText}</div>;
+  }
+
+  return (
+    <div className="admin-store-photo-strip">
+      {photos.map((photo) => (
+        <div key={photo.id} className="admin-store-photo-thumb">
+          <Image alt="门店照片" src={photo.url} width={88} height={88} style={{ objectFit: "cover" }} preview={{ mask: false }} />
+          {photo.isCover && <span>封面</span>}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -176,194 +249,204 @@ export default function AdminStorePage() {
   const statusCfg = store ? (STATUS_CONFIG[store.status] ?? { text: store.status, color: "default" }) : null;
 
   return (
-    <Layout className="dashboard-shell">
-      {/* Header */}
-      <header className="dashboard-header" style={{ position: "relative" }}>
-        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => router.push("/admin")} />
-        <Typography.Title
-          level={5} className="!mb-0 !text-slate-950"
-          style={{ position: "absolute", left: "50%", transform: "translateX(-50%)" }}
-        >
-          门店详情
-        </Typography.Title>
-        <div style={{ width: 32 }} />
-      </header>
+    <>
+      <div className="management-page admin-store-detail-page">
+        <div className="management-page-header admin-store-detail-hero">
+          <div>
+            <Typography.Title level={2} className="management-page-title">
+              门店审核详情
+            </Typography.Title>
+            <Typography.Text className="management-page-description">
+              审核门店提交、冻结异常门店并维护店长
+            </Typography.Text>
+          </div>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/admin")}>
+            返回运营管理
+          </Button>
+        </div>
 
-      <Layout.Content className="home-content" style={{ maxWidth: 720, margin: "0 auto", width: "100%" }}>
         {storeQuery.isLoading && (
           <div className="flex justify-center pt-16"><Spin size="large" /></div>
         )}
 
+        {storeQuery.isError && (
+          <Alert
+            className="workbench-data-alert"
+            type="error"
+            showIcon
+            message="无法加载门店详情"
+            description="请确认当前账号具有运营管理权限，或稍后刷新重试。"
+            action={
+              <Button size="small" onClick={() => router.push("/admin")}>
+                返回运营管理
+              </Button>
+            }
+          />
+        )}
+
         {store && (
-          <>
-            {/* ── 基本信息 ── */}
-            <section className="section-card mb-5">
-              <div className="section-card-header">
-                <div className="flex items-center gap-3">
+          <section className="admin-store-review-grid">
+            <div className="admin-store-detail-main">
+              <Card className="admin-store-profile-card">
+                <div className="admin-store-card-head">
                   <div>
-                    <div className="section-card-title" style={{ fontSize: 16 }}>{store.name}</div>
-                    <div className="section-card-subtitle">创建于 {new Date(store.createdAt).toLocaleDateString("zh-CN")}</div>
+                    <span>当前门店资料</span>
+                    <h2>{store.name}</h2>
+                    <p>创建于 {new Date(store.createdAt).toLocaleDateString("zh-CN")}</p>
                   </div>
                   {statusCfg && <Tag color={statusCfg.color}>{statusCfg.text}</Tag>}
                 </div>
-                <div className="flex gap-2">
+
+                <div className="admin-store-info-grid">
+                  <InfoBlock label="门店地址" value={store.address ?? "未填写"} />
+                  <InfoBlock label="门店简介" value={store.description ?? "未填写"} />
+                  <div className="admin-store-info-block">
+                    <span>店长</span>
+                    {store.manager ? (
+                      <div className="admin-store-manager-line">
+                        <Avatar src={store.manager.avatarUrl ?? undefined} size={28}>
+                          {!store.manager.avatarUrl && (store.manager.nickname ?? store.manager.username).charAt(0).toUpperCase()}
+                        </Avatar>
+                        <strong>{store.manager.nickname ?? store.manager.username}</strong>
+                        <em>@{store.manager.username}</em>
+                      </div>
+                    ) : (
+                      <strong>未指派</strong>
+                    )}
+                  </div>
+                </div>
+
+                <Image.PreviewGroup>
+                  <div className="admin-store-photo-review">
+                    <div className="admin-store-section-title">
+                      <PictureOutlined />
+                      <span>当前照片</span>
+                    </div>
+                    <PhotoStrip photos={store.photos} emptyText="当前门店暂无照片" />
+                  </div>
+                </Image.PreviewGroup>
+              </Card>
+
+              <Card className="admin-store-review-diff">
+                <div className="admin-store-card-head">
+                  <div>
+                    <span>待审核提交</span>
+                    <h2>{store.pendingSubmission ? store.pendingSubmission.name : "暂无待审核内容"}</h2>
+                    <p>
+                      {store.pendingSubmission
+                        ? `由 ${store.pendingSubmission.submittedBy.nickname ?? store.pendingSubmission.submittedBy.username} 提交于 ${new Date(store.pendingSubmission.createdAt).toLocaleString("zh-CN")}`
+                        : "门店没有正在等待审核的信息变更"}
+                    </p>
+                  </div>
+                </div>
+
+                {store.pendingSubmission ? (
+                  <>
+                    <div className="admin-store-section-title">
+                      <FileSearchOutlined />
+                      <span>字段对比</span>
+                    </div>
+                    <div className="admin-store-diff-grid">
+                      <DiffBlock label="门店名称" before={store.name} after={store.pendingSubmission.name} />
+                      <DiffBlock label="门店地址" before={store.address ?? "未填写"} after={store.pendingSubmission.address ?? "未填写"} />
+                      <DiffBlock label="经营简介" before={store.description ?? "未填写"} after={store.pendingSubmission.description ?? "未填写"} wide />
+                    </div>
+
+                    <div className="admin-store-section-title">
+                      <PictureOutlined />
+                      <span>照片变更</span>
+                    </div>
+                    <Image.PreviewGroup>
+                      <div className="admin-store-photo-compare">
+                        <div>
+                          <b>当前照片</b>
+                          <PhotoStrip photos={store.photos} emptyText="当前无照片" />
+                        </div>
+                        <div>
+                          <b>提交照片</b>
+                          <PhotoStrip photos={store.pendingSubmission.photos} emptyText="本次未提交照片" />
+                        </div>
+                      </div>
+                    </Image.PreviewGroup>
+                  </>
+                ) : (
+                  <div className="admin-store-empty-review">
+                    <SafetyCertificateOutlined />
+                    <strong>无需审核</strong>
+                    <span>新的门店资料提交后，字段对比和照片变更会在这里展示。</span>
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            <aside className="admin-store-actions-rail">
+              <Card className="admin-store-action-card">
+                <div className="admin-store-section-title">
+                  <AuditOutlined />
+                  <span>审核操作</span>
+                </div>
+                <div className="admin-store-action-stack">
+                  {store.pendingSubmission ? (
+                    <>
+                      <Button
+                        type="primary"
+                        icon={<CheckOutlined />}
+                        loading={approveMutation.isPending}
+                        onClick={() => approveMutation.mutate()}
+                      >
+                        通过本次提交
+                      </Button>
+                      <Button danger icon={<CloseOutlined />} onClick={() => setRejectOpen(true)}>
+                        驳回并填写原因
+                      </Button>
+                    </>
+                  ) : (
+                    <Button disabled>暂无待审核提交</Button>
+                  )}
                   {store.status === "FROZEN" ? (
-                    <Button
-                      icon={<UnlockOutlined />}
-                      loading={unfreezeMutation.isPending}
-                      onClick={() => unfreezeMutation.mutate()}
-                    >
-                      解冻
+                    <Button icon={<UnlockOutlined />} loading={unfreezeMutation.isPending} onClick={() => unfreezeMutation.mutate()}>
+                      解冻门店
                     </Button>
                   ) : store.status !== "DRAFTED" ? (
-                    <Button
-                      icon={<LockOutlined />} danger
-                      loading={freezeMutation.isPending}
-                      onClick={() => freezeMutation.mutate()}
-                    >
-                      冻结
+                    <Button danger icon={<LockOutlined />} loading={freezeMutation.isPending} onClick={() => freezeMutation.mutate()}>
+                      冻结门店
                     </Button>
                   ) : null}
-                  <Button
-                    icon={<UserSwitchOutlined />}
-                    onClick={() => setChangeManagerOpen(true)}
-                  >
+                  <Button icon={<UserSwitchOutlined />} onClick={() => setChangeManagerOpen(true)}>
                     变更店长
                   </Button>
                 </div>
-              </div>
+              </Card>
 
-              <div className="section-card-body">
-                <Descriptions column={1} size="small">
-                  <Descriptions.Item label="地址">
-                    {store.address ?? <span className="text-slate-400">未填写</span>}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="简介">
-                    {store.description ?? <span className="text-slate-400">未填写</span>}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="店长">
-                    {store.manager
-                      ? (
-                        <span className="flex items-center gap-2">
-                          <Avatar
-                            src={store.manager.avatarUrl ?? undefined}
-                            size={20}
-                            style={{ background: "#1677ff", fontSize: 10 }}
-                          >
-                            {!store.manager.avatarUrl && (store.manager.nickname ?? store.manager.username).charAt(0).toUpperCase()}
-                          </Avatar>
-                          <span className="font-mono text-sm">{store.manager.nickname ?? store.manager.username}</span>
-                          <span className="text-slate-400 text-xs">@{store.manager.username}</span>
-                        </span>
-                      )
-                      : <span className="text-slate-400">未指派</span>
-                    }
-                  </Descriptions.Item>
-                </Descriptions>
-              </div>
-
-              {/* 当前照片 */}
-              {store.photos.length > 0 && (
-                <>
-                  <Divider style={{ margin: 0 }} />
-                  <Image.PreviewGroup>
-                    <div className="photo-strip">
-                      {store.photos.map((p) => (
-                        <div key={p.id} className="photo-thumb">
-                          <Image src={p.url} width={80} height={80}
-                            style={{ objectFit: "cover" }} preview={{ mask: false }} />
-                          {p.isCover && <span className="photo-thumb-badge">封面</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </Image.PreviewGroup>
-                </>
-              )}
-            </section>
-
-            {/* ── 待审核提交 ── */}
-            {store.pendingSubmission ? (
-              <section className="submission-card">
-                <div className="submission-card-header">
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: "#1e40af" }}>待审核提交</div>
-                    <div style={{ fontSize: 12, color: "#3b82f6", marginTop: 2 }}>
-                      由{" "}
-                      <span style={{ fontFamily: "monospace" }}>
-                        {store.pendingSubmission.submittedBy.nickname ?? store.pendingSubmission.submittedBy.username}
-                      </span>{" "}
-                      提交于 {new Date(store.pendingSubmission.createdAt).toLocaleString("zh-CN")}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      type="primary" icon={<CheckOutlined />}
-                      loading={approveMutation.isPending}
-                      onClick={() => approveMutation.mutate()}
-                    >
-                      通过
-                    </Button>
-                    <Button
-                      danger icon={<CloseOutlined />}
-                      onClick={() => setRejectOpen(true)}
-                    >
-                      驳回
-                    </Button>
-                  </div>
+              <Card className="admin-store-risk-card">
+                <div className="admin-store-section-title">
+                  <SafetyCertificateOutlined />
+                  <span>操作风险提示</span>
                 </div>
-
-                <div className="submission-card-body">
-                  <Descriptions column={1} size="small">
-                    <Descriptions.Item label="门店名称">{store.pendingSubmission.name}</Descriptions.Item>
-                    <Descriptions.Item label="地址">
-                      {store.pendingSubmission.address ?? <span className="text-slate-400">未填写</span>}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="简介">
-                      {store.pendingSubmission.description ?? <span className="text-slate-400">未填写</span>}
-                    </Descriptions.Item>
-                  </Descriptions>
-
-                  {store.pendingSubmission.photos.length > 0 && (
-                    <>
-                      <Divider style={{ margin: "12px 0 8px" }} />
-                      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>提交的照片</div>
-                      <Image.PreviewGroup>
-                        <div className="flex flex-wrap gap-2">
-                          {store.pendingSubmission.photos.map((p) => (
-                            <div key={p.id} className="photo-thumb">
-                              <Image src={p.url} width={80} height={80}
-                                style={{ objectFit: "cover" }} preview={{ mask: false }} />
-                              {p.isCover && <span className="photo-thumb-badge">封面</span>}
-                            </div>
-                          ))}
-                        </div>
-                      </Image.PreviewGroup>
-                    </>
-                  )}
-                </div>
-              </section>
-            ) : (
-              <section className="section-card" style={{ textAlign: "center", padding: "28px 20px" }}>
-                <Typography.Text type="secondary">暂无待审核内容</Typography.Text>
-              </section>
-            )}
-          </>
+                <ul>
+                  <li>通过审核后，新资料会影响客户侧公开门店展示。</li>
+                  <li>冻结门店会停止该门店公开访问和运营入口。</li>
+                  <li>变更店长前请确认新店长账号已完成实名和权限配置。</li>
+                </ul>
+              </Card>
+            </aside>
+          </section>
         )}
-      </Layout.Content>
+      </div>
 
-      <RejectModal
+      <RejectDrawer
         open={rejectOpen}
         onClose={() => setRejectOpen(false)}
         onConfirm={(note) => rejectMutation.mutate(note)}
         loading={rejectMutation.isPending}
       />
 
-      <ChangeManagerModal
+      <ChangeManagerDrawer
         open={changeManagerOpen}
         onClose={() => setChangeManagerOpen(false)}
         onConfirm={(userId) => changeManagerMutation.mutate(userId)}
         loading={changeManagerMutation.isPending}
       />
-    </Layout>
+    </>
   );
 }

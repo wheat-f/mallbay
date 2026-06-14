@@ -2,9 +2,10 @@
 
 import type { RebateStatus, RebateSummary } from "@mallbay/shared";
 import type { ApplyRebatePayload } from "../../src/lib/api";
-import { App, Button, Form, Input, InputNumber, Layout, Select, Table, Tag } from "antd";
-import { CheckCircleOutlined, PayCircleOutlined, PercentageOutlined } from "@ant-design/icons";
+import { App, Button, Card, Drawer, Form, Input, InputNumber, Select, Table, Tag } from "antd";
+import { CheckCircleOutlined, PayCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { orderApi, rebatesApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -20,6 +21,13 @@ type ApplyRebateFormValues = Omit<ApplyRebatePayload, "amountCents"> & {
   amountYuan: number;
 };
 
+type RebateActionValues = {
+  id: string;
+  status?: RebateStatus;
+  note?: string;
+  payoutMode?: "CASH" | "DEDUCT";
+};
+
 type RebateOrderOption = {
   id: string;
   orderNo?: string | null;
@@ -33,8 +41,10 @@ export default function RebatesPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const [applyForm] = Form.useForm<ApplyRebateFormValues>();
-  const [reviewForm] = Form.useForm<{ id: string; status: RebateStatus; note?: string }>();
-  const [payForm] = Form.useForm<{ id: string; note?: string }>();
+  const [rebateActionForm] = Form.useForm<RebateActionValues>();
+  const [selectedRebateId, setSelectedRebateId] = useState<string>();
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [applicationDrawerOpen, setApplicationDrawerOpen] = useState(false);
 
   const rebatesQuery = useQuery({
     queryKey: ["rebates", storeId],
@@ -54,12 +64,30 @@ export default function RebatesPage() {
       order.vehicle?.plateNo
     ].filter(Boolean).join(" / ")
   }));
-  const rebateOptions = (rebatesQuery.data ?? []).map((rebate) => ({
+  const rebateRows = useMemo(() => rebatesQuery.data ?? [], [rebatesQuery.data]);
+  const rebateOptions = rebateRows.map((rebate) => ({
     value: rebate.id,
     label: getRebateBusinessLabel(rebate)
   }));
+  const activeRebateId = selectedRebateId ?? rebateRows[0]?.id;
+  const selectedRebate = useMemo(
+    () => rebateRows.find((rebate) => rebate.id === activeRebateId) ?? rebateRows[0],
+    [activeRebateId, rebateRows]
+  );
+  const filteredRebateRows =
+    statusFilter === "ALL" ? rebateRows : rebateRows.filter((rebate) => rebate.status === statusFilter);
   const rebateReviewOptions = getRebateReviewOptionsForRole(user?.storeMember?.position, user?.isAuditor);
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["rebates", storeId] });
+
+  useEffect(() => {
+    rebateActionForm.resetFields();
+    if (selectedRebate) {
+      rebateActionForm.setFieldsValue({
+        id: selectedRebate.id,
+        payoutMode: "DEDUCT"
+      });
+    }
+  }, [rebateActionForm, selectedRebate]);
 
   const applyRebate = useMutation({
     mutationFn: (values: ApplyRebateFormValues) =>
@@ -68,114 +96,281 @@ export default function RebatesPage() {
         amountCents: yuanToCents(values.amountYuan),
         reason: values.reason
       }),
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       message.success("返利申请已提交");
       applyForm.resetFields();
+      setApplicationDrawerOpen(false);
+      setSelectedRebateId(created.id);
       await invalidate();
     },
     onError: (error: Error) => message.error(error.message)
   });
   const reviewRebate = useMutation({
-    mutationFn: (values: { id: string; status: RebateStatus; note?: string }) =>
-      rebatesApi.review(values.id, { status: values.status, note: values.note }),
+    mutationFn: (values: RebateActionValues) => rebatesApi.review(values.id, { status: values.status!, note: values.note }),
     onSuccess: async () => {
       message.success("返利审核已更新");
-      reviewForm.resetFields();
       await invalidate();
     },
     onError: (error: Error) => message.error(error.message)
   });
   const payRebate = useMutation({
-    mutationFn: (values: { id: string; note?: string }) => rebatesApi.pay(values.id, values.note),
+    mutationFn: (values: RebateActionValues) => rebatesApi.pay(values.id, values.note),
     onSuccess: async () => {
       message.success("返利已发放");
-      payForm.resetFields();
       await invalidate();
     },
     onError: (error: Error) => message.error(error.message)
   });
 
-  return (
-    <Layout className="dashboard-shell">
-      <Layout.Content className="dashboard-content">
-        <StorePageHeader title="返利管理" description="已完工且已收款订单的返利申请、审核、审批和发放" />
+  const handleReview = async (status?: RebateStatus) => {
+    const values = await rebateActionForm.validateFields(status ? ["id", "note"] : ["id", "status", "note"]);
+    reviewRebate.mutate({ ...(values as RebateActionValues), status: status ?? (values as RebateActionValues).status });
+  };
+  const handlePay = async () => {
+    const values = await rebateActionForm.validateFields(["id", "note"]);
+    payRebate.mutate(values as RebateActionValues);
+  };
 
-        <Form form={applyForm} layout="inline" className="mb-4" onFinish={(values) => applyRebate.mutate(values)}>
-          <Form.Item name="orderId" rules={[{ required: true, message: "请选择返利订单" }]}>
+  return (
+    <div className="management-page">
+      <StorePageHeader title="返利管理" description="已完工且已收款订单的返利申请、审核、审批和发放" />
+
+      <div className="rebate-tabs">
+        {["返利申请", "返利审核", "财务审批", "返利发放", "返利报表"].map((item, index) => (
+          <button key={item} className={index === 0 ? "is-active" : ""} type="button">
+            {item}
+          </button>
+        ))}
+      </div>
+
+      <section className="rebate-workspace">
+        <div className="rebate-main-column">
+          <Card className="rebate-rules-card">
+            <h2>申请规则说明</h2>
+            <p>关联订单必须处于已完成且已收款状态，返利金额必须大于 0，并填写明确的返利原因。</p>
+          </Card>
+
+          <Card
+            className="rebate-application-list"
+            title="返利申请列表"
+            extra={
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setApplicationDrawerOpen(true)}>
+                新建申请
+              </Button>
+            }
+          >
+            <div className="rebate-filter-row">
+              <span>状态</span>
+              <Select
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={[
+                  { value: "ALL", label: "全部" },
+                  { value: "APPLIED", label: "待审核" },
+                  { value: "REVIEWED", label: "待审批" },
+                  { value: "APPROVED", label: "待发放" },
+                  { value: "REJECTED", label: "已驳回" },
+                  { value: "PAID", label: "已发放" }
+                ]}
+              />
+              <Button onClick={() => setStatusFilter("ALL")}>清除过滤</Button>
+            </div>
+
+            <div className="rebate-mobile-cards">
+              {filteredRebateRows.length > 0 ? (
+                filteredRebateRows.map((rebate) => (
+                  <article
+                    key={rebate.id}
+                    className={`rebate-mobile-card${rebate.id === selectedRebate?.id ? " is-selected" : ""}`}
+                    onClick={() => setSelectedRebateId(rebate.id)}
+                  >
+                    <div className="rebate-mobile-card-head">
+                      <div>
+                        <strong>{getRebateBusinessLabel(rebate)}</strong>
+                        <span>{getRebateOrderLabel(rebate)}</span>
+                      </div>
+                      <Tag>{getRebateStatusLabel(rebate.status)}</Tag>
+                    </div>
+                    <dl className="rebate-mobile-card-fields">
+                      <div>
+                        <dt>金额</dt>
+                        <dd>{formatCentsAsYuan(rebate.amountCents)}</dd>
+                      </div>
+                      <div>
+                        <dt>状态</dt>
+                        <dd>{getRebateStatusLabel(rebate.status)}</dd>
+                      </div>
+                      <div className="rebate-mobile-card-reason">
+                        <dt>原因</dt>
+                        <dd>{rebate.reason}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))
+              ) : (
+                <div className="rebate-mobile-empty">暂无返利申请</div>
+              )}
+            </div>
+
+            <Table<RebateSummary>
+              className="rebate-desktop-table"
+              rowKey="id"
+              loading={rebatesQuery.isLoading}
+              dataSource={filteredRebateRows}
+              pagination={{ pageSize: 8 }}
+              onRow={(row) => ({
+                onClick: () => setSelectedRebateId(row.id)
+              })}
+              rowClassName={(row) => (row.id === selectedRebate?.id ? "rebate-selected-row" : "")}
+              columns={[
+                { title: "返利", render: (_, row) => getRebateBusinessLabel(row) },
+                { title: "订单", render: (_, row) => getRebateOrderLabel(row) },
+                { title: "金额", render: (_, row) => formatCentsAsYuan(row.amountCents) },
+                { title: "原因", dataIndex: "reason" },
+                { title: "状态", render: (_, row) => <Tag>{getRebateStatusLabel(row.status)}</Tag> }
+              ]}
+            />
+          </Card>
+        </div>
+
+        <Card className="rebate-review-panel">
+          <div className="rebate-review-head">
+            <div>
+              <h2>审核详情</h2>
+              <p>{selectedRebate ? getRebateBusinessLabel(selectedRebate) : "选择左侧返利申请后进行审核和发放"}</p>
+            </div>
+            <Tag color={selectedRebate?.status === "PAID" ? "success" : "processing"}>
+              {getRebateStatusLabel(selectedRebate?.status)}
+            </Tag>
+          </div>
+
+          <div className="rebate-summary-box">
+            <div>
+              <span>关联订单</span>
+              <strong>{selectedRebate ? getRebateOrderLabel(selectedRebate) : "-"}</strong>
+            </div>
+            <div>
+              <span>申请返利金额</span>
+              <strong>{selectedRebate ? formatCentsAsYuan(selectedRebate.amountCents) : "-"}</strong>
+            </div>
+            <div className="rebate-summary-full">
+              <span>返利原因</span>
+              <strong>{selectedRebate?.reason ?? "-"}</strong>
+            </div>
+          </div>
+
+          <Form form={rebateActionForm} layout="vertical" className="rebate-action-form">
+            <Form.Item name="id" label="返利申请" rules={[{ required: true, message: "请选择返利申请" }]}>
+              <Select
+                showSearch
+                optionFilterProp="label"
+                loading={rebatesQuery.isLoading}
+                placeholder="选择返利申请"
+                options={rebateOptions}
+                onChange={(value) => setSelectedRebateId(value)}
+              />
+            </Form.Item>
+            <Form.Item name="status" label="审核结果" rules={[{ required: true, message: "请选择结果" }]}>
+              <Select placeholder="审核结果" options={rebateReviewOptions} />
+            </Form.Item>
+
+            <div className="rebate-payout-card">
+              <h3>期望发放方式</h3>
+              <Form.Item name="payoutMode">
+                <Select
+                  options={[
+                    { value: "DEDUCT", label: "抵扣返利" },
+                    { value: "CASH", label: "现金返利" }
+                  ]}
+                />
+              </Form.Item>
+            </div>
+
+            <div className="rebate-payout-preview">
+              <h3>发放操作预设</h3>
+              <p>审批通过后可上传转账凭证或抵扣确认单；当前版本先记录发放备注。</p>
+            </div>
+
+            <Form.Item name="note" label="审核 / 发放备注">
+              <Input.TextArea rows={3} placeholder="填写审核意见、驳回原因或打款备注" />
+            </Form.Item>
+
+            <div className="rebate-action-buttons">
+              <Button
+                icon={<CheckCircleOutlined />}
+                loading={reviewRebate.isPending}
+                disabled={!selectedRebate}
+                onClick={() => handleReview()}
+              >
+                审核
+              </Button>
+              <Button danger disabled={!selectedRebate} onClick={() => handleReview("REJECTED")}>
+                驳回
+              </Button>
+              <Button
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                loading={reviewRebate.isPending}
+                disabled={!selectedRebate}
+                onClick={() => handleReview("APPROVED")}
+              >
+                审核通过
+              </Button>
+              <Button
+                icon={<PayCircleOutlined />}
+                loading={payRebate.isPending}
+                disabled={!selectedRebate}
+                onClick={handlePay}
+              >
+                发放返利
+              </Button>
+            </div>
+          </Form>
+        </Card>
+      </section>
+
+      <Drawer
+        title="返利申请"
+        placement="right"
+        open={applicationDrawerOpen}
+        rootClassName="rebate-application-drawer"
+        onClose={() => setApplicationDrawerOpen(false)}
+        footer={
+          <div className="rebate-drawer-footer">
+            <Button onClick={() => setApplicationDrawerOpen(false)}>取消</Button>
+            <Button type="primary" icon={<PlusOutlined />} loading={applyRebate.isPending} onClick={() => applyForm.submit()}>
+              提交返利申请
+            </Button>
+          </div>
+        }
+      >
+        <div className="rebate-drawer-rule-note">
+          <strong>申请规则</strong>
+          <span>仅支持已完成且已收款订单；返利原因会进入审核流和后续财务发放记录。</span>
+        </div>
+        <Form
+          form={applyForm}
+          layout="vertical"
+          className="rebate-apply-form rebate-drawer-form"
+          onFinish={(values) => applyRebate.mutate(values)}
+        >
+          <Form.Item name="orderId" label="返利订单" rules={[{ required: true, message: "请选择返利订单" }]}>
             <Select
               showSearch
               optionFilterProp="label"
               loading={rebateOrdersQuery.isLoading}
               placeholder="选择返利订单"
               options={rebateOrderOptions}
-              style={{ width: 300 }}
             />
           </Form.Item>
-          <Form.Item name="amountYuan" rules={[{ required: true, message: "请输入金额" }]}>
-            <InputNumber min={0.01} precision={2} placeholder="金额（元）" />
+          <Form.Item name="amountYuan" label="金额（元）" rules={[{ required: true, message: "请输入金额" }]}>
+            <InputNumber className="w-full" min={0.01} precision={2} placeholder="金额（元）" />
           </Form.Item>
-          <Form.Item name="reason" rules={[{ required: true, message: "请输入返利原因" }]}>
-            <Input placeholder="返利原因" />
+          <Form.Item name="reason" label="返利原因" rules={[{ required: true, message: "请输入返利原因" }]}>
+            <Input.TextArea rows={4} placeholder="说明客户返利、抵扣或补贴原因" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" icon={<PercentageOutlined />} loading={applyRebate.isPending}>
-            申请
-          </Button>
         </Form>
-
-        <Form form={reviewForm} layout="inline" className="mb-4" onFinish={(values) => reviewRebate.mutate(values)}>
-          <Form.Item name="id" rules={[{ required: true, message: "请选择返利申请" }]}>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              loading={rebatesQuery.isLoading}
-              placeholder="选择返利申请"
-              options={rebateOptions}
-              style={{ width: 260 }}
-            />
-          </Form.Item>
-          <Form.Item name="status" rules={[{ required: true, message: "请选择结果" }]}>
-            <Select placeholder="审核结果" style={{ width: 140 }} options={rebateReviewOptions} />
-          </Form.Item>
-          <Form.Item name="note">
-            <Input placeholder="备注" />
-          </Form.Item>
-          <Button htmlType="submit" icon={<CheckCircleOutlined />} loading={reviewRebate.isPending}>
-            审核
-          </Button>
-        </Form>
-
-        <Form form={payForm} layout="inline" className="mb-4" onFinish={(values) => payRebate.mutate(values)}>
-          <Form.Item name="id" rules={[{ required: true, message: "请选择返利申请" }]}>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              loading={rebatesQuery.isLoading}
-              placeholder="选择返利申请"
-              options={rebateOptions}
-              style={{ width: 260 }}
-            />
-          </Form.Item>
-          <Form.Item name="note">
-            <Input placeholder="打款备注" />
-          </Form.Item>
-          <Button htmlType="submit" icon={<PayCircleOutlined />} loading={payRebate.isPending}>
-            发放
-          </Button>
-        </Form>
-
-        <Table<RebateSummary>
-          rowKey="id"
-          loading={rebatesQuery.isLoading}
-          dataSource={rebatesQuery.data ?? []}
-          columns={[
-            { title: "返利", render: (_, row) => getRebateBusinessLabel(row) },
-            { title: "订单", render: (_, row) => getRebateOrderLabel(row) },
-            { title: "金额", render: (_, row) => formatCentsAsYuan(row.amountCents) },
-            { title: "原因", dataIndex: "reason" },
-            { title: "状态", render: (_, row) => <Tag>{getRebateStatusLabel(row.status)}</Tag> }
-          ]}
-        />
-      </Layout.Content>
-    </Layout>
+      </Drawer>
+    </div>
   );
 }

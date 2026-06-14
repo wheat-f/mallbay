@@ -5,6 +5,7 @@ import { createApiError } from "./api-error";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 const AUTH_PATH = "/auth";
 const REFRESH_PATH = "/auth/refresh";
+let pendingRefreshSession: Promise<boolean> | null = null;
 
 export type ApiOptions = RequestInit & {
   auth?: boolean;
@@ -36,6 +37,7 @@ async function requestWithAuthRetry<T>(
   buildAuthHeaders: (token: string | null) => Record<string, string>
 ): Promise<T> {
   const { auth = true, headers, ...init } = options;
+  await restoreSessionBeforeFirstRequest(path, auth);
   const response = await fetchWithAuth(path, init, headers, auth, buildAuthHeaders);
 
   if (!response.ok) {
@@ -57,6 +59,18 @@ async function requestWithAuthRetry<T>(
   }
 
   return response.json() as Promise<T>;
+}
+
+async function restoreSessionBeforeFirstRequest(path: string, auth: boolean) {
+  if (!auth || path === REFRESH_PATH) return;
+
+  const { accessToken, user } = useAuthStore.getState();
+  if (accessToken || !user) return;
+
+  pendingRefreshSession ??= refreshSession().finally(() => {
+    pendingRefreshSession = null;
+  });
+  await pendingRefreshSession;
 }
 
 function fetchWithAuth(

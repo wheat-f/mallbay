@@ -28,3 +28,65 @@ test("orders page preserves pagination in the URL", () => {
   assert.match(pageSource, /total: ordersQuery\.data\?\.total/);
   assert.match(pageSource, /updateOrderListUrl\(\{ page: nextPage, pageSize: nextPageSize \}\)/);
 });
+
+test("orders page follows the prototype operations-list structure", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+
+  assert.match(pageSource, /title="销售订单列表"/);
+  assert.match(pageSource, /management-kpi-grid management-kpi-grid-five/);
+  assert.match(pageSource, /orders-filter-card/);
+  assert.match(pageSource, /DatePicker\.RangePicker/);
+  assert.match(pageSource, /订单编号/);
+  assert.match(pageSource, /车辆信息/);
+  assert.match(pageSource, /预约日期/);
+  assert.match(pageSource, /金额\/已收/);
+  assert.match(pageSource, /支付状态/);
+  assert.match(pageSource, /施工进度/);
+  assert.match(pageSource, /销售员/);
+  assert.match(pageSource, /scroll=\{\{ x: 1200 \}\}/);
+});
+
+test("orders page exposes compact icon actions like the prototype", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+
+  assert.match(pageSource, /EyeOutlined/);
+  assert.match(pageSource, /CreditCardOutlined/);
+  assert.match(pageSource, /FileTextOutlined/);
+  assert.match(pageSource, /title="查看详情"/);
+  assert.match(pageSource, /title="记录收款"/);
+  assert.match(pageSource, /title="申请发票"/);
+});
+
+test("orders page keeps the wide table inside the management canvas", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(pageSource, /className="management-table-card"/);
+  assert.match(pageSource, /scroll=\{\{ x: 1200 \}\}/);
+  assert.match(cssSource, /\.management-table-card\.ant-card[\s\S]*max-width: 100%/);
+  assert.match(cssSource, /\.management-table-card \.ant-card-body[\s\S]*overflow: hidden/);
+  assert.match(cssSource, /\.management-table-card \.ant-table-wrapper[\s\S]*max-width: 100%/);
+  assert.match(cssSource, /\.management-table-card \.ant-table-content[\s\S]*contain: layout paint/);
+  assert.match(cssSource, /\.management-main[\s\S]*overflow-x: clip/);
+  assert.match(cssSource, /\.management-content[\s\S]*overflow-x: clip/);
+});
+
+test("orders page uses mobile order cards instead of squeezing the desktop table", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(pageSource, /orders-mobile-cards/);
+  assert.match(pageSource, /orders-mobile-card/);
+  assert.match(pageSource, /orders-desktop-table/);
+  assert.match(cssSource, /\.orders-mobile-cards/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.orders-desktop-table/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.orders-mobile-cards\s*\{[\s\S]*display: grid;/);
+});
+
+test("orders page formats appointment dates for table scanning", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+
+  assert.match(pageSource, /formatOrderListDate/);
+  assert.match(pageSource, /formatOrderListDate\(row\.appointmentDate \?\? row\.createdAt\)/);
+  assert.doesNotMatch(pageSource, /row\.appointmentDate \?\? row\.createdAt\?\.slice/);
+});

@@ -388,6 +388,29 @@ export class ConstructionService {
     });
   }
 
+  async listSchedules(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
+    const actor = await this.withStoreMember(user);
+    if (!PermissionPolicy.canViewStoreData(actor, query.storeId)) {
+      throw new ForbiddenException("无权限");
+    }
+
+    const position = actor.storeMember?.position;
+    const isWorker = position === StorePosition.CONSTRUCTION || position === StorePosition.APPRENTICE;
+    if (!isWorker && !PermissionPolicy.canDispatchConstruction(actor, query.storeId)) {
+      throw new ForbiddenException("无权限");
+    }
+
+    return this.prisma.schedule.findMany({
+      where: {
+        storeId: query.storeId,
+        date: buildDateRange(query.from, query.to),
+        workerId: isWorker && !actor.isAuditor ? actor.id : undefined
+      },
+      orderBy: { date: "asc" },
+      include: { worker: { select: { username: true, nickname: true } } }
+    });
+  }
+
   async syncOfflineOperations(user: AuthenticatedConstructionUser, dto: OfflineSyncDto) {
     const items = [];
     for (const operation of dto.operations) {

@@ -7,10 +7,8 @@ import {
   Dropdown,
   Empty,
   Input,
-  Layout,
   Pagination,
   Skeleton,
-  Tag,
   Typography
 } from "antd";
 import {
@@ -21,52 +19,62 @@ import {
   TeamOutlined,
   UserOutlined
 } from "@ant-design/icons";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { authApi, storeApi } from "../src/lib/api";
-import { useAuthStore } from "../src/stores/auth-store";
 import { NotificationBell } from "../src/components/NotificationBell";
+import { useAuthStore } from "../src/stores/auth-store";
 
 const POSITION_LABEL: Record<string, string> = {
-  MANAGER: "店长", SALES: "销售", PURCHASING: "采购",
-  FINANCE: "财务", SCHEDULER: "排班员", CONSTRUCTION: "施工员", APPRENTICE: "学徒"
+  MANAGER: "店长",
+  SALES: "销售",
+  PURCHASING: "采购",
+  FINANCE: "财务",
+  SCHEDULER: "排班员",
+  CONSTRUCTION: "施工员",
+  APPRENTICE: "学徒"
 };
 
-// ─── 门店卡片 ─────────────────────────────────────────────────────
-function StoreCard({ store }: { store: { id: string; name: string; address: string | null; description: string | null; coverUrl: string | null } }) {
+type StoreLobbyCardProps = {
+  store: {
+    id: string;
+    name: string;
+    address: string | null;
+    description: string | null;
+    coverUrl: string | null;
+  };
+};
+
+function StoreLobbyCard({ store }: StoreLobbyCardProps) {
   const router = useRouter();
+
   return (
-    <div
-      className="store-card"
-      onClick={() => router.push(`/stores/${store.id}`)}
-    >
-      <div className="store-card-cover">
+    <button className="store-lobby-card" type="button" onClick={() => router.push(`/stores/${store.id}`)}>
+      <div className="store-lobby-cover">
         {store.coverUrl ? (
-          <img src={store.coverUrl} alt={store.name} className="store-card-img" />
+          <img src={store.coverUrl} alt={store.name} />
         ) : (
-          <div className="store-card-placeholder">
-            <ShopOutlined style={{ fontSize: 32, color: "#cbd5e1" }} />
+          <div className="store-lobby-cover-placeholder">
+            <ShopOutlined />
           </div>
         )}
       </div>
-      <div className="store-card-body">
-        <div className="store-card-name">{store.name}</div>
+      <div className="store-lobby-card-body">
+        <div className="store-lobby-card-kicker">公开门店</div>
+        <h2>{store.name}</h2>
         {store.address && (
-          <div className="store-card-address">
-            <EnvironmentOutlined className="mr-1 text-slate-400" />
-            {store.address}
-          </div>
+          <p className="store-lobby-card-address">
+            <EnvironmentOutlined />
+            <span>{store.address}</span>
+          </p>
         )}
-        {store.description && (
-          <div className="store-card-desc">{store.description}</div>
-        )}
+        <p className="store-lobby-card-desc">{store.description ?? "门店暂未填写简介，点击查看公开资料。"}</p>
       </div>
-    </div>
+    </button>
   );
 }
 
-// ─── 主页面 ───────────────────────────────────────────────────────
 export default function HomePage() {
   const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const user = useAuthStore((state) => state.user);
@@ -74,18 +82,16 @@ export default function HomePage() {
   const clearSession = useAuthStore((state) => state.clearSession);
   const router = useRouter();
   const { message } = App.useApp();
-
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
-  // 拉取最新用户信息（含 storeMember）
   const meQuery = useQuery({
     queryKey: ["me"],
     queryFn: authApi.me,
-    enabled: hasHydrated && !!user,
-    staleTime: 0          // 每次挂载都重新拉，保证 storeMember 始终最新
+    enabled: hasHydrated && Boolean(user),
+    staleTime: 0
   });
 
   useEffect(() => {
@@ -99,7 +105,6 @@ export default function HomePage() {
     }
   }, [meQuery.data, setSession]);
 
-  // 公开门店列表
   const storesQuery = useQuery({
     queryKey: ["stores", query, page],
     queryFn: () => storeApi.list({ q: query || undefined, page, pageSize: 12 }),
@@ -119,40 +124,50 @@ export default function HomePage() {
     setQuery(search.trim());
   };
 
-  const isLoggedIn = hasHydrated && !!user?.username;
+  const clearSearch = () => {
+    setSearch("");
+    setQuery("");
+    setPage(1);
+  };
+
+  const isLoggedIn = hasHydrated && Boolean(user?.username);
   const displayName = user ? (user.nickname ?? user.username) : "";
   const storeMember = user?.storeMember;
 
-  // 右上角下拉菜单项
   const dropdownItems = [
-    // 运营入口
-    ...(user?.isAuditor ? [{
-      key: "auditor",
-      label: (
-        <span className="flex items-center gap-2">
-          <AuditOutlined />
-          运营管理
-        </span>
-      ),
-      onClick: () => router.push("/admin")
-    }] : []),
-    // 门店员工入口
-    ...(storeMember ? [{
-      key: "workbench",
-      label: (
-        <span className="flex items-center gap-2">
-          <TeamOutlined />
-          <span>
-            {storeMember.store.name}
-            <span className="ml-1 text-xs text-slate-400">
-              · {POSITION_LABEL[storeMember.position] ?? storeMember.position}
-            </span>
-          </span>
-        </span>
-      ),
-      onClick: () => router.push(`/workbench/${storeMember.store.id}`)
-    }] : []),
-    // 分割线（有角色入口时）
+    ...(user?.isAuditor
+      ? [
+          {
+            key: "auditor",
+            label: (
+              <span className="home-lobby-menu-item">
+                <AuditOutlined />
+                运营管理
+              </span>
+            ),
+            onClick: () => router.push("/admin")
+          }
+        ]
+      : []),
+    ...(storeMember
+      ? [
+          {
+            key: "workbench",
+            label: (
+              <span className="home-lobby-menu-item">
+                <TeamOutlined />
+                <span>
+                  {storeMember.store.name}
+                  <small className="home-lobby-menu-meta">
+                    · {POSITION_LABEL[storeMember.position] ?? storeMember.position}
+                  </small>
+                </span>
+              </span>
+            ),
+            onClick: () => router.push(`/workbench/${storeMember.store.id}`)
+          }
+        ]
+      : []),
     ...((user?.isAuditor || storeMember) ? [{ type: "divider" as const }] : []),
     { key: "profile", label: "个人设置", icon: <UserOutlined />, onClick: () => router.push("/profile") },
     { type: "divider" as const },
@@ -165,38 +180,22 @@ export default function HomePage() {
   ];
 
   return (
-    <Layout className="home-shell">
-      {/* Header */}
-      <header className="home-header">
-        <div className="home-brand" onClick={() => router.push("/")}>
-          <Typography.Title level={4} className="!mb-0 !text-slate-950 cursor-pointer">
-            MallBay
-          </Typography.Title>
-        </div>
+    <main className="home-lobby-shell">
+      <header className="home-lobby-topbar">
+        <button className="home-lobby-brand" type="button" onClick={() => router.push("/")}>
+          <span>MallBay</span>
+          <small>Automotive SaaS</small>
+        </button>
 
-        <div className="home-search">
-          <Input
-            prefix={<SearchOutlined className="text-slate-400" />}
-            placeholder="搜索门店名称或地址"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onPressEnter={handleSearch}
-            allowClear
-            onClear={() => { setSearch(""); setQuery(""); setPage(1); }}
-          />
-        </div>
-
-        <div className="home-header-right">
-          {isLoggedIn && (
-            <NotificationBell onJoined={() => queryClient.invalidateQueries({ queryKey: ["me"] })} />
-          )}
+        <div className="home-lobby-actions">
+          {isLoggedIn && <NotificationBell onJoined={() => queryClient.invalidateQueries({ queryKey: ["me"] })} />}
           {!hasHydrated ? null : isLoggedIn ? (
             <Dropdown menu={{ items: dropdownItems }} placement="bottomRight" trigger={["click"]}>
               <button className="dashboard-avatar-btn" aria-label="菜单">
                 {user?.avatarUrl ? (
                   <Avatar src={user.avatarUrl} size={36} />
                 ) : (
-                  <Avatar size={36} style={{ background: "#1677ff", cursor: "pointer" }}>
+                  <Avatar size={36} style={{ background: "var(--mb-primary)", cursor: "pointer" }}>
                     {displayName.charAt(0).toUpperCase()}
                   </Avatar>
                 )}
@@ -210,49 +209,85 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* 搜索结果提示 */}
-      {query && (
-        <div className="home-search-tip">
-          <Typography.Text className="text-slate-500 text-sm">
-            搜索「{query}」，共 {storesQuery.data?.total ?? 0} 个结果
-          </Typography.Text>
-          <Button type="link" size="small" onClick={() => { setSearch(""); setQuery(""); setPage(1); }}>
-            清除
+      <section className="home-lobby-hero">
+        <div>
+          <div className="home-lobby-kicker">
+            <span />
+            门店大厅
+          </div>
+          <Typography.Title className="home-lobby-title">
+            查找可信赖的漆面保护膜服务门店
+          </Typography.Title>
+          <Typography.Paragraph className="home-lobby-subtitle">
+            浏览公开门店资料，进入门店详情查看地址、照片和服务状态；员工可从右上角快速进入自己的门店工作台。
+          </Typography.Paragraph>
+        </div>
+
+        <div className="home-lobby-toolbar">
+          <Input
+            prefix={<SearchOutlined />}
+            placeholder="搜索门店名称或地址"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onPressEnter={handleSearch}
+            allowClear
+            onClear={clearSearch}
+          />
+          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+            搜索门店
           </Button>
         </div>
+      </section>
+
+      {query && (
+        <section className="home-lobby-query">
+          <span>搜索「{query}」，共 {storesQuery.data?.total ?? 0} 个结果</span>
+          <Button type="link" size="small" onClick={clearSearch}>
+            清除
+          </Button>
+        </section>
       )}
 
-      {/* 门店列表 */}
-      <Layout.Content className="home-content">
+      <section className="home-lobby-store-section">
+        <div className="home-lobby-section-head">
+          <div>
+            <span>Public Stores</span>
+            <h2>公开门店</h2>
+          </div>
+          <Typography.Text>{storesQuery.data?.total ?? 0} 家</Typography.Text>
+        </div>
+
         {storesQuery.isLoading ? (
-          <div className="store-grid">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} active className="store-card-skeleton" />
+          <div className="store-lobby-grid">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <Skeleton key={index} active className="store-lobby-skeleton" />
             ))}
           </div>
         ) : storesQuery.data?.items.length === 0 ? (
-          <Empty description={query ? "没有找到匹配的门店" : "暂无公开门店"} className="mt-20" />
+          <div className="home-lobby-empty">
+            <Empty description={query ? "没有找到匹配的门店" : "暂无公开门店"} />
+          </div>
         ) : (
           <>
-            <div className="store-grid">
+            <div className="store-lobby-grid">
               {storesQuery.data?.items.map((store) => (
-                <StoreCard key={store.id} store={store} />
+                <StoreLobbyCard key={store.id} store={store} />
               ))}
             </div>
             {(storesQuery.data?.total ?? 0) > 12 && (
-              <div className="home-pagination">
+              <div className="home-lobby-pagination">
                 <Pagination
                   current={page}
                   total={storesQuery.data?.total ?? 0}
                   pageSize={12}
-                  onChange={(p) => setPage(p)}
+                  onChange={(nextPage) => setPage(nextPage)}
                   showSizeChanger={false}
                 />
               </div>
             )}
           </>
         )}
-      </Layout.Content>
-    </Layout>
+      </section>
+    </main>
   );
 }

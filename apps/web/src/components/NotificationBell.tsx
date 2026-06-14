@@ -88,13 +88,13 @@ function InvitationCard({ inv, onDone }: {
   const inviterName = inv.invitedBy.nickname ?? inv.invitedBy.username;
 
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50 p-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100">
-        <ShopOutlined style={{ color: "#1677ff", fontSize: 14 }} />
+    <div className="flex items-start gap-3 rounded-lg border border-[var(--mb-primary-fixed-dim)] bg-[var(--mb-primary-container)] p-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--mb-primary-fixed)]">
+        <ShopOutlined style={{ color: "var(--mb-primary)", fontSize: 14 }} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-slate-800">{inv.store.name}</div>
-        <div className="mt-0.5 text-xs text-slate-500">
+        <div className="text-sm font-medium text-[var(--mb-text-primary)]">{inv.store.name}</div>
+        <div className="mt-0.5 text-xs text-[var(--mb-text-muted)]">
           {inviterName} 邀请你以「{POSITION_LABEL[inv.position] ?? inv.position}」加入
         </div>
         <div className="mt-2 flex gap-2">
@@ -182,7 +182,7 @@ export function NotificationBell({ onJoined }: { onJoined?: () => void }) {
                   <span style={{
                     marginLeft: 5, display: "inline-flex", alignItems: "center", justifyContent: "center",
                     minWidth: 16, height: 16, padding: "0 4px", borderRadius: 999,
-                    background: "#1677ff", color: "#fff", fontSize: 10, fontWeight: 600, lineHeight: 1
+                    background: "var(--mb-primary)", color: "#fff", fontSize: 10, fontWeight: 600, lineHeight: 1
                   }}>
                     {invitations.length}
                   </span>
@@ -195,7 +195,7 @@ export function NotificationBell({ onJoined }: { onJoined?: () => void }) {
                   <div className="flex justify-center py-6"><Spin size="small" /></div>
                 )}
                 {!invitationsQuery.isLoading && invitations.length === 0 && (
-                  <div style={{ padding: "32px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+                  <div style={{ padding: "32px 0", textAlign: "center", color: "var(--mb-text-muted)", fontSize: 13 }}>
                     暂无待处理邀请
                   </div>
                 )}
@@ -221,7 +221,7 @@ export function NotificationBell({ onJoined }: { onJoined?: () => void }) {
                   <div className="flex justify-center py-6"><Spin size="small" /></div>
                 )}
                 {!notifQuery.isLoading && notifications.length === 0 && (
-                  <div style={{ padding: "32px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+                  <div style={{ padding: "32px 0", textAlign: "center", color: "var(--mb-text-muted)", fontSize: 13 }}>
                     暂无通知
                   </div>
                 )}
@@ -240,7 +240,7 @@ export function NotificationBell({ onJoined }: { onJoined?: () => void }) {
                     {!n.isRead && (
                       <span style={{
                         marginTop: 5, width: 6, height: 6, borderRadius: "50%",
-                        background: "#1677ff", flexShrink: 0
+                        background: "var(--mb-primary)", flexShrink: 0
                       }} />
                     )}
                     <div style={{ marginLeft: !n.isRead ? 0 : 14 }}>
@@ -250,7 +250,7 @@ export function NotificationBell({ onJoined }: { onJoined?: () => void }) {
                       <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2, lineHeight: 1.5 }}>
                         {notifSummary(n.type, n.payload)}
                       </div>
-                      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
+                      <div style={{ fontSize: 11, color: "var(--mb-text-muted)", marginTop: 4 }}>
                         {new Date(n.createdAt).toLocaleString("zh-CN", {
                           month: "numeric", day: "numeric",
                           hour: "2-digit", minute: "2-digit"

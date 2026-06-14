@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { OrderStatus, QualityCheckResult, StorePosition } from "@prisma/client";
+import { OrderStatus, QualityCheckResult, ScheduleStatus, StorePosition } from "@prisma/client";
 import { ConstructionService } from "./construction.service";
 
 test("ConstructionService assigns one to three available workers and dispatches the order", async () => {
@@ -96,6 +96,87 @@ test("ConstructionService limits sales assignment list to their own orders", asy
     storeId: "store-1",
     order: { salesPersonId: "sales-1" }
   });
+});
+
+test("ConstructionService lists store schedules for construction dispatchers", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    schedule: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [{ id: "schedule-1", workerId: "worker-1", status: ScheduleStatus.WORKING }];
+      }
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  const result = await service.listSchedules(
+    {
+      id: "scheduler-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
+    },
+    { storeId: "store-1", from: "2026-06-01", to: "2026-06-07" }
+  );
+
+  assert.deepEqual(result, [{ id: "schedule-1", workerId: "worker-1", status: ScheduleStatus.WORKING }]);
+  assert.deepEqual((calls[0] as { where: unknown }).where, {
+    storeId: "store-1",
+    date: {
+      gte: new Date("2026-06-01T00:00:00.000Z"),
+      lte: new Date("2026-06-07T00:00:00.000Z")
+    },
+    workerId: undefined
+  });
+  assert.deepEqual((calls[0] as { include: unknown }).include, {
+    worker: { select: { username: true, nickname: true } }
+  });
+});
+
+test("ConstructionService limits worker schedules to their own rows", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    schedule: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [];
+      }
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  await service.listSchedules(
+    {
+      id: "worker-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+    },
+    { storeId: "store-1" }
+  );
+
+  assert.deepEqual((calls[0] as { where: unknown }).where, {
+    storeId: "store-1",
+    date: undefined,
+    workerId: "worker-1"
+  });
+});
+
+test("ConstructionService rejects schedule lists for unrelated store roles", async () => {
+  const service = new ConstructionService({ storeMember: { findUnique: async () => null } } as never, {} as never);
+
+  await assert.rejects(
+    () => service.listSchedules(
+      {
+        id: "sales-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.SALES }
+      },
+      { storeId: "store-1" }
+    ),
+    /无权限/
+  );
 });
 
 test("ConstructionService starts completes and quality checks assigned tasks", async () => {

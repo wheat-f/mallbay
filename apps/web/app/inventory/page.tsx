@@ -8,14 +8,14 @@ import type {
   CreateSupplierRatingHistoryPayload,
   UpdateSupplierPayload
 } from "../../src/lib/api";
-import { Alert, App, Button, Card, Form, Input, InputNumber, Layout, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
-import { InboxOutlined, LockOutlined, ShoppingCartOutlined } from "@ant-design/icons";
+import { App, Button, Card, Drawer, Form, Input, InputNumber, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
+import { InboxOutlined, LockOutlined, SearchOutlined, ShoppingCartOutlined } from "@ant-design/icons";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { inventoryApi, orderApi, productApi, userApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
-import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import {
   getInventoryBatchLabel,
   getInventoryAllocationStatusLabel,
@@ -123,23 +123,6 @@ type MovementOperatorRow = {
   nickname: string | null;
 };
 
-type OrderMatchResult = {
-  items: Array<{
-    orderItem: {
-      id: string;
-      productId: string;
-      quantity: number;
-      product?: { unit?: ProductUnit; brand?: string; name?: string; model?: string };
-      inventoryAllocations?: Array<{
-        lockedQuantity?: number | string;
-        outboundQuantity?: number | string;
-        status?: string;
-      }>;
-    };
-    availableBatches: InventoryBatchSummary[];
-  }>;
-};
-
 type SplitBatchResult = InventoryBatchSummary;
 
 type LastSplitResult = {
@@ -158,6 +141,14 @@ type MovementFilterValues = {
   createdById?: string;
 };
 
+type AvailableInventoryPreviewRow = {
+  id: string;
+  productLabel: string;
+  unit?: ProductUnit;
+  batchNo?: string;
+  availableQuantity?: number | string | null;
+};
+
 export default function InventoryPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -166,7 +157,6 @@ export default function InventoryPage() {
   const storeId = user?.storeMember?.store.id;
   const [batchForm] = Form.useForm<CreateInventoryBatchPayload>();
   const [supplierForm] = Form.useForm<SupplierFormValues>();
-  const [editSupplierForm] = Form.useForm<SupplierEditFormValues>();
   const [purchaseForm] = Form.useForm<{ productId: string; quantity: number }>();
   const [orderForm] = Form.useForm<{ orderId: string }>();
   const [movementFilterForm] = Form.useForm<MovementFilterValues>();
@@ -175,6 +165,7 @@ export default function InventoryPage() {
   const [stockForm] = Form.useForm<{ batchId: string; movementType: "COUNT_IN" | "COUNT_OUT" | "DAMAGE_OUT" | "TRANSFER_IN" | "TRANSFER_OUT" | "RETURN_IN" | "RETURN_OUT"; quantity: number; note?: string }>();
   const [selectedOrderId, setSelectedOrderId] = useState<string>();
   const [activeInventoryTab, setActiveInventoryTab] = useState("pending-orders");
+  const [inventorySearch, setInventorySearch] = useState("");
   const [batchSearchByOrderItem, setBatchSearchByOrderItem] = useState<Record<string, string>>({});
   const [movementFilters, setMovementFilters] = useState<MovementFilterValues>({});
   const [operatorKeyword, setOperatorKeyword] = useState("");
@@ -227,13 +218,8 @@ export default function InventoryPage() {
     queryFn: () => inventoryApi.pendingMatchOrders(storeId!),
     enabled: Boolean(storeId)
   });
-  const orderMatchQuery = useQuery({
-    queryKey: ["inventory-order-match", selectedOrderId],
-    queryFn: () => inventoryApi.orderMatch(selectedOrderId!),
-    enabled: Boolean(selectedOrderId)
-  });
 
-  const productItems = (productsQuery.data?.items ?? []) as ProductOption[];
+  const productItems = useMemo(() => (productsQuery.data?.items ?? []) as ProductOption[], [productsQuery.data]);
   const productMap = useMemo(
     () => new Map(productItems.map((product) => [product.id, product])),
     [productItems]
@@ -269,28 +255,58 @@ export default function InventoryPage() {
     value: operator.id,
     label: [operator.nickname, `@${operator.username}`].filter(Boolean).join(" ")
   }));
+  const pendingMatchRows = useMemo(
+    () => (pendingOrdersQuery.data ?? []) as PendingMatchOrderRow[],
+    [pendingOrdersQuery.data]
+  );
+  const firstPendingOrderId = pendingMatchRows[0]?.id;
+  const activeSelectedOrderId = selectedOrderId ?? firstPendingOrderId;
+  const orderMatchQuery = useQuery({
+    queryKey: ["inventory-order-match", activeSelectedOrderId],
+    queryFn: () => inventoryApi.orderMatch(activeSelectedOrderId!),
+    enabled: Boolean(activeSelectedOrderId)
+  });
+  const filteredPendingMatchRows = useMemo(() => {
+    const keyword = inventorySearch.trim().toLowerCase();
+    if (!keyword) return pendingMatchRows;
+    return pendingMatchRows.filter((order) =>
+      [
+        order.orderNo,
+        getInventoryOrderCustomerLabel(order),
+        getInventoryOrderVehicleLabel(order),
+        getInventoryOrderItemsSummary(order)
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(keyword)
+    );
+  }, [inventorySearch, pendingMatchRows]);
   const matchRows = buildInventoryMatchRows(orderMatchQuery.data as InventoryMatchInput | undefined);
   const allocationRows = buildInventoryAllocationRows(orderMatchQuery.data as InventoryMatchInput | undefined);
   const shortageRows = matchRows.filter((row) => row.shortageQuantity > 0);
+  const selectedOrder = pendingMatchRows.find((order) => order.id === activeSelectedOrderId);
+
+  const availableInventoryRows: AvailableInventoryPreviewRow[] = activeSelectedOrderId
+    ? matchRows.flatMap((row) =>
+        row.availableBatches.map((batch) => ({
+          id: `${row.orderItemId}-${batch.id}`,
+          productLabel: row.productLabel,
+          unit: row.unit,
+          batchNo: batch.batchNo,
+          availableQuantity: batch.availableQuantity
+        }))
+      )
+    : (batchesQuery.data ?? []).slice(0, 5).map((batch) => ({
+        id: batch.id,
+        productLabel: getInventoryProductLabel(batch.productId, productMap),
+        unit: undefined,
+        batchNo: batch.batchNo,
+        availableQuantity: batch.availableQuantity
+      }));
   const movementRows = (movementsQuery.data ?? []) as MovementRow[];
   const movementSummary = getInventoryMovementSummary(movementRows);
   const purchaseRequirementRows = (purchaseRequirementsQuery.data ?? []) as PurchaseRequirementRow[];
   const purchaseOrderRows = (purchaseOrdersQuery.data ?? []) as PurchaseOrderRow[];
-  const pendingMatchRows = (pendingOrdersQuery.data ?? []) as PendingMatchOrderRow[];
-  const pendingPurchaseRequirementCount = purchaseRequirementRows.filter((row) => row.status !== "CONVERTED").length;
-  const purchaseArrivalRiskCount = purchaseOrderRows.filter((row) => {
-    const reminder = getPurchaseOrderArrivalReminder(row);
-    return reminder.includes("逾期") || reminder.includes("今日") || reminder.includes("未设置");
-  }).length;
-  const inventoryWorkflowCards = [
-    { key: "pending-orders", title: "库存匹配", value: pendingMatchRows.length, desc: "订单产品需求、批次锁定和出库", color: "processing" },
-    { key: "suppliers", title: "供应商", value: suppliersQuery.data?.length ?? 0, desc: "联系人、评级和采购历史", color: "default" },
-    { key: "batches", title: "库存批次", value: batchesQuery.data?.length ?? 0, desc: "批次入库、可用量和追溯", color: "success" },
-    { key: "purchase", title: "采购处理", value: pendingPurchaseRequirementCount, desc: "采购需求、采购单和到货入库", color: "warning" },
-    { key: "movements", title: "库存流水", value: movementSummary.totalRows, desc: "锁库、出库、释放和调整记录", color: "default" },
-    { key: "split", title: "单位拆分", value: lastSplitResult ? 1 : 0, desc: "卷/米换算和子批次生成", color: "default" }
-  ];
-
   const createBatch = useMutation({
     mutationFn: (values: CreateInventoryBatchPayload) => inventoryApi.createBatch({ ...values, storeId: storeId! }),
     onSuccess: async () => {
@@ -319,7 +335,6 @@ export default function InventoryPage() {
     onSuccess: async () => {
       message.success("供应商已更新");
       setEditingSupplier(null);
-      editSupplierForm.resetFields();
       await queryClient.invalidateQueries({ queryKey: ["inventory-suppliers", storeId] });
     },
     onError: (error: Error) => message.error(error.message)
@@ -355,14 +370,6 @@ export default function InventoryPage() {
 
   const openSupplierEditor = (supplier: InventorySupplierSummary) => {
     setEditingSupplier(supplier);
-    editSupplierForm.setFieldsValue({
-      name: supplier.name,
-      contactName: supplier.contactName ?? undefined,
-      contactPhone: supplier.contactPhone ?? undefined,
-      rating: supplier.rating ?? undefined,
-      note: supplier.note ?? undefined,
-      isActive: supplier.isActive ?? true
-    });
   };
 
   const createPurchaseRequirement = useMutation({
@@ -389,11 +396,11 @@ export default function InventoryPage() {
 
   const createShortagePurchaseRequirement = useMutation({
     mutationFn: () => {
-      if (!storeId || !selectedOrderId || shortageRows.length === 0) {
+      if (!storeId || !activeSelectedOrderId || shortageRows.length === 0) {
         throw new Error("当前订单没有缺货明细");
       }
       return inventoryApi.createPurchaseRequirement(
-        buildPurchaseRequirementFromShortages(storeId, selectedOrderId, matchRows)
+        buildPurchaseRequirementFromShortages(storeId, activeSelectedOrderId, matchRows)
       );
     },
     onSuccess: async () => {
@@ -485,11 +492,11 @@ export default function InventoryPage() {
   });
 
   const outboundSelectedOrder = useMutation({
-    mutationFn: () => inventoryApi.outboundOrder(selectedOrderId!),
+    mutationFn: () => inventoryApi.outboundOrder(activeSelectedOrderId!),
     onSuccess: async () => {
       message.success("订单库存已出库");
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-order-match", selectedOrderId] }),
+        queryClient.invalidateQueries({ queryKey: ["inventory-order-match", activeSelectedOrderId] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
       ]);
@@ -498,11 +505,11 @@ export default function InventoryPage() {
   });
 
   const releaseSelectedOrder = useMutation({
-    mutationFn: () => inventoryApi.releaseOrder(selectedOrderId!),
+    mutationFn: () => inventoryApi.releaseOrder(activeSelectedOrderId!),
     onSuccess: async () => {
       message.success("订单锁定库存已释放");
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-order-match", selectedOrderId] }),
+        queryClient.invalidateQueries({ queryKey: ["inventory-order-match", activeSelectedOrderId] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
       ]);
@@ -534,7 +541,7 @@ export default function InventoryPage() {
 
   const createOrderAllocations = useMutation({
     mutationFn: (values: { allocations: Array<{ batchId: string; quantity: number }> }) => {
-      return inventoryApi.createOrderAllocations(selectedOrderId!, {
+      return inventoryApi.createOrderAllocations(activeSelectedOrderId!, {
         allocations: values.allocations.map((allocation, index) => ({
           orderItemId: matchRows[index].orderItemId,
           batchId: allocation.batchId,
@@ -546,7 +553,7 @@ export default function InventoryPage() {
       message.success("批次已锁定");
       allocationForm.resetFields();
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-order-match", selectedOrderId] }),
+        queryClient.invalidateQueries({ queryKey: ["inventory-order-match", activeSelectedOrderId] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
       ]);
@@ -594,40 +601,182 @@ export default function InventoryPage() {
   });
 
   return (
-    <Layout className="dashboard-shell">
-      <Layout.Content className="dashboard-content">
-        <StorePageHeader title="库存采购" description="管理产品批次、采购需求、订单锁库和库存流水" />
+    <>
+      <div className="management-page inventory-fulfillment-shell">
+          <section className="inventory-workspace-grid inventory-fulfillment-board">
+            <div className="inventory-board-rail inventory-rail-stack">
+              <Card
+                className="inventory-prototype-card inventory-workspace-card"
+                title="待匹配订单"
+                extra={<Tag color="warning">{filteredPendingMatchRows.length} 笔等待</Tag>}
+              >
+                <Space orientation="vertical" className="w-full" size="middle">
+                  <Input
+                    prefix={<SearchOutlined />}
+                    allowClear
+                    placeholder="搜索订单、批次或客户..."
+                    value={inventorySearch}
+                    onChange={(event) => setInventorySearch(event.target.value)}
+                  />
+                  {filteredPendingMatchRows.length > 0 ? (
+                    <Space orientation="vertical" className="w-full" size="small">
+                      {filteredPendingMatchRows.slice(0, 4).map((order) => (
+                        <button
+                          key={order.id}
+                          type="button"
+                          className={order.id === activeSelectedOrderId ? "inventory-order-card is-active" : "inventory-order-card"}
+                          onClick={() => handleSelectedOrderChange(order.id)}
+                        >
+                          <span className="inventory-order-title">{order.orderNo}</span>
+                          <span>{getInventoryOrderCustomerLabel(order)}</span>
+                          <span>{getInventoryOrderVehicleLabel(order)}</span>
+                          <small>{getInventoryOrderItemsSummary(order)}</small>
+                        </button>
+                      ))}
+                    </Space>
+                  ) : (
+                    <Typography.Text type="secondary">暂无待匹配订单</Typography.Text>
+                  )}
+                </Space>
+              </Card>
 
-        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {inventoryWorkflowCards.map((card) => (
-            <Card
-              key={card.key}
-              size="small"
-              className="cursor-pointer transition hover:border-blue-300 hover:shadow-sm"
-              onClick={() => setActiveInventoryTab(card.key)}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <Typography.Text strong>{card.title}</Typography.Text>
-                  <div className="mt-1 text-xs text-gray-500">{card.desc}</div>
+              <Card className="inventory-prototype-card inventory-workspace-card inventory-demand-card" title="订单产品需求">
+                <Space orientation="vertical" className="w-full" size="middle">
+                  <Typography.Text type="secondary">
+                    当前订单：{selectedOrder?.orderNo ?? "请选择左侧待匹配订单"}
+                  </Typography.Text>
+                  {selectedOrder ? (
+                    <div className="inventory-demand-box">
+                      {(selectedOrder.items ?? []).map((item) => (
+                        <div key={`${item.productId}-${item.quantity}`} className="inventory-demand-row">
+                          <span>产品</span>
+                          <strong>{item.product ? getProductDisplayName(item.product) : item.productId}</strong>
+                          <span>需求量</span>
+                          <strong>{item.quantity ?? 0}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="inventory-demand-empty">选择订单后显示产品、规格、需求量和库存建议。</div>
+                  )}
+                  <div className={shortageRows.length > 0 ? "inventory-demand-hint is-warning" : "inventory-demand-hint"}>
+                    {shortageRows.length > 0 ? `存在 ${shortageRows.length} 项缺货，可生成采购需求单。` : "库存匹配结果会优先提示可出库批次。"}
+                  </div>
+                </Space>
+              </Card>
+            </div>
+
+            <div className="inventory-board-center inventory-main-stack">
+              <Card
+                className="inventory-prototype-card inventory-workspace-card inventory-match-card"
+                title="可用库存匹配"
+                extra={<Tag color={shortageRows.length > 0 ? "warning" : "success"}>{shortageRows.length > 0 ? "需采购" : "充足"}</Tag>}
+              >
+                <Table
+                  rowKey="id"
+                  size="small"
+                  pagination={false}
+                  loading={activeSelectedOrderId ? orderMatchQuery.isLoading : batchesQuery.isLoading}
+                  dataSource={availableInventoryRows}
+                  columns={[
+                    { title: "批次号", dataIndex: "batchNo" },
+                    { title: "产品", dataIndex: "productLabel" },
+                    {
+                      title: "可用",
+                      render: (_, row) => (
+                        <Tag color={Number(row.availableQuantity) > 0 ? "success" : "default"}>
+                          {row.availableQuantity}
+                          {row.unit ? ` ${getProductUnitLabel(row.unit)}` : ""}
+                        </Tag>
+                      )
+                    }
+                  ]}
+                />
+              </Card>
+
+              <Card className="inventory-prototype-card inventory-workspace-card inventory-board-aside inventory-outbound-card" title="出库操作">
+                <div className="inventory-outbound-grid">
+                  <div className="inventory-outbound-form">
+                    <div className="inventory-current-order-strip">
+                      <span>当前订单</span>
+                      <strong>{selectedOrder?.orderNo ?? "请选择左侧待匹配订单"}</strong>
+                      <small>{selectedOrder ? `${getInventoryOrderCustomerLabel(selectedOrder)} · ${getInventoryOrderVehicleLabel(selectedOrder)}` : "先从左侧订单队列选择需要匹配库存的订单"}</small>
+                    </div>
+                    <span className="orders-filter-label">批次追溯</span>
+                    <Select
+                      allowClear
+                      showSearch
+                      optionFilterProp="label"
+                      placeholder="选择批次查看流水"
+                      options={batchOptions}
+                      onChange={(batchId) => {
+                        const batch = batchMap.get(batchId);
+                        if (batch) traceBatchMovements(batch);
+                      }}
+                    />
+                    <div className="inventory-outbound-actions">
+                      <Button
+                        type="primary"
+                        disabled={!activeSelectedOrderId || allocationRows.length === 0}
+                        loading={outboundSelectedOrder.isPending}
+                        onClick={() => outboundSelectedOrder.mutate()}
+                      >
+                        锁定库存并出库
+                      </Button>
+                      <Button
+                        disabled={!activeSelectedOrderId || shortageRows.length === 0}
+                        loading={createShortagePurchaseRequirement.isPending}
+                        onClick={() => createShortagePurchaseRequirement.mutate()}
+                      >
+                        生成采购需求单
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="inventory-outbound-summary">
+                    <span>当前订单</span>
+                    <strong>{selectedOrder?.orderNo ?? "未选择"}</strong>
+                    <span>已锁批次</span>
+                    <strong>{allocationRows.length} 个</strong>
+                    <span>缺货明细</span>
+                    <strong>{shortageRows.length} 项</strong>
+                  </div>
                 </div>
-                <Tag color={card.color}>{card.value}</Tag>
-              </div>
-            </Card>
-          ))}
-        </div>
+                <div className="inventory-inline-shortcuts">
+                  {[
+                    { label: "批次入库", tab: "batches", description: "采购到货或手工入库" },
+                    { label: "采购入库", tab: "purchase", description: "采购需求、采购单、到货" },
+                    { label: "批次拆分", tab: "split", description: "卷与米换算、生成子批次" },
+                    { label: "其他出入库", tab: "stock-operations", description: "盘点、报损、调拨、退货" }
+                  ].map((item) => (
+                    <button
+                      key={item.tab}
+                      type="button"
+                      className="inventory-shortcut"
+                      onClick={() => setActiveInventoryTab(item.tab)}
+                    >
+                      <strong>{item.label}</strong>
+                      <span>{item.description}</span>
+                    </button>
+                  ))}
+                  <Link href="/inventory/adjustments" className="inventory-shortcut">
+                    <strong>库存调整工作台</strong>
+                    <span>单位转换、盘点报损、调拨</span>
+                  </Link>
+                  <Link href="/inventory/movements" className="inventory-shortcut">
+                    <strong>库存流水</strong>
+                    <span>入库、出库、调拨与异常追踪</span>
+                  </Link>
+                  <Link href="/inventory/suppliers" className="inventory-shortcut">
+                    <strong>供应商档案</strong>
+                    <span>联系人、评级与批次历史</span>
+                  </Link>
+                </div>
+              </Card>
+            </div>
+          </section>
 
-        {(pendingMatchRows.length > 0 || pendingPurchaseRequirementCount > 0 || purchaseArrivalRiskCount > 0) ? (
-          <Alert
-            className="mb-4"
-            type="warning"
-            showIcon
-            message="库存采购待处理"
-            description={`待匹配订单 ${pendingMatchRows.length} 个，待处理采购需求 ${pendingPurchaseRequirementCount} 个，到货提醒/风险 ${purchaseArrivalRiskCount} 个。`}
-          />
-        ) : null}
-
-        <Tabs
+          <Card className="inventory-prototype-card inventory-tab-workspace-card">
+            <Tabs
           activeKey={activeInventoryTab}
           onChange={setActiveInventoryTab}
           items={[
@@ -636,7 +785,48 @@ export default function InventoryPage() {
               label: "待匹配订单",
               children: (
                 <>
+                  <div className="inventory-mobile-order-cards">
+                    {pendingMatchRows.length > 0 ? (
+                      pendingMatchRows.map((row) => (
+                        <article key={row.id} className="inventory-mobile-order-card">
+                          <div className="inventory-mobile-order-head">
+                            <strong>{row.orderNo}</strong>
+                            <Tag>{getOrderStatusLabel(row.status)}</Tag>
+                          </div>
+                          <dl>
+                            <div>
+                              <dt>客户</dt>
+                              <dd>{getInventoryOrderCustomerLabel(row)}</dd>
+                            </div>
+                            <div>
+                              <dt>车辆</dt>
+                              <dd>{getInventoryOrderVehicleLabel(row)}</dd>
+                            </div>
+                            <div>
+                              <dt>产品</dt>
+                              <dd>{getInventoryOrderItemsSummary(row)}</dd>
+                            </div>
+                            <div>
+                              <dt>预约</dt>
+                              <dd>{row.appointmentDate?.slice(0, 10) ?? "-"}</dd>
+                            </div>
+                          </dl>
+                          <div className="inventory-mobile-order-actions">
+                            <Button size="small" onClick={() => lockOrder.mutate({ orderId: row.id })} loading={lockOrder.isPending}>
+                              匹配库存
+                            </Button>
+                            <Button size="small" onClick={() => handleSelectedOrderChange(row.id)}>
+                              选择批次
+                            </Button>
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="inventory-mobile-empty">暂无待匹配订单</div>
+                    )}
+                  </div>
                   <Table<PendingMatchOrderRow>
+                    className="inventory-desktop-table"
                     rowKey="id"
                     loading={pendingOrdersQuery.isLoading}
                     dataSource={pendingMatchRows}
@@ -662,7 +852,7 @@ export default function InventoryPage() {
                       }
                     ]}
                   />
-                  {selectedOrderId ? (
+                  {activeSelectedOrderId ? (
                     <div className="mt-6">
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <Typography.Title level={5} className="!mb-0">批次锁定</Typography.Title>
@@ -677,7 +867,7 @@ export default function InventoryPage() {
                       </div>
                       <Form form={allocationForm} layout="vertical" onFinish={(values) => createOrderAllocations.mutate(values)}>
                         {matchRows.map((row, index) => (
-                          <div key={row.orderItemId} className="mb-4 rounded border border-gray-200 bg-white p-3">
+                          <div key={row.orderItemId} className="inventory-nested-panel">
                             <div className="mb-3 flex flex-wrap items-center gap-2">
                               <Typography.Text strong>{row.productLabel}</Typography.Text>
                               <Tag>需求 {row.requiredQuantity} {getProductUnitLabel(row.unit)}</Tag>
@@ -814,9 +1004,9 @@ export default function InventoryPage() {
                     expandable={{
                       expandedRowRender: (row) => row.id ? (
                         <div className="grid gap-4 md:grid-cols-2">
-                          <div className="rounded border border-gray-200 bg-white p-3">
+                          <div className="inventory-nested-panel">
                             <Typography.Title level={5} className="!mt-0">联系人档案</Typography.Title>
-                            <Space direction="vertical" className="mb-3 w-full">
+                            <Space orientation="vertical" className="mb-3 w-full">
                               {(row.contacts ?? []).map((contact) => (
                                 <Typography.Text key={contact.id}>
                                   {contact.isPrimary ? "主要 · " : ""}
@@ -850,9 +1040,9 @@ export default function InventoryPage() {
                               </Button>
                             </Form>
                           </div>
-                          <div className="rounded border border-gray-200 bg-white p-3">
+                          <div className="inventory-nested-panel">
                             <Typography.Title level={5} className="!mt-0">评级历史</Typography.Title>
-                            <Space direction="vertical" className="mb-3 w-full">
+                            <Space orientation="vertical" className="mb-3 w-full">
                               {(row.ratingHistory ?? []).map((history) => (
                                 <Typography.Text key={history.id}>
                                   {history.rating} 星
@@ -1030,11 +1220,11 @@ export default function InventoryPage() {
                     ]}
                     expandable={{
                       expandedRowRender: (row: PurchaseOrderRow) => (
-                        <Space direction="vertical" className="w-full" size="middle">
+                        <Space orientation="vertical" className="w-full" size="middle">
                           {(row.items ?? []).map((item) => {
                             const details = getPurchaseInboundItemDetails(item);
                             return (
-                              <div key={item.id} className="rounded border border-gray-200 bg-white p-3">
+                              <div key={item.id} className="inventory-nested-panel">
                                 <div className="mb-2 grid gap-2 md:grid-cols-2">
                                   <Typography.Text><strong>产品：</strong>{details.product}</Typography.Text>
                                   <Typography.Text><strong>类别：</strong>{details.category}</Typography.Text>
@@ -1116,7 +1306,7 @@ export default function InventoryPage() {
                   <Form
                     form={movementFilterForm}
                     layout="vertical"
-                    className="mb-4 rounded border border-gray-200 bg-white p-4"
+                    className="inventory-movement-filter"
                     onFinish={(values) => setMovementFilters(values)}
                   >
                     <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -1180,7 +1370,7 @@ export default function InventoryPage() {
 
                   <div className="mb-4">
                     <Typography.Title level={5}>流水统计</Typography.Title>
-                    <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                    <div className="inventory-summary-grid">
                       {[
                         ["入库合计", movementSummary.inbound],
                         ["出库合计", movementSummary.outbound],
@@ -1189,9 +1379,9 @@ export default function InventoryPage() {
                         ["调整合计", movementSummary.adjustments],
                         ["流水条数", movementSummary.totalRows]
                       ].map(([label, value]) => (
-                        <div key={label} className="rounded border border-gray-200 bg-white px-3 py-2">
+                        <div key={label} className="inventory-summary-tile">
                           <Typography.Text type="secondary">{label}</Typography.Text>
-                          <div className="mt-1 text-lg font-semibold text-gray-900">{value}</div>
+                          <div className="inventory-summary-value">{value}</div>
                         </div>
                       ))}
                     </div>
@@ -1236,7 +1426,7 @@ export default function InventoryPage() {
                     </Button>
                   </Form>
                   {lastSplitResult ? (
-                    <div className="mt-4 rounded border border-blue-100 bg-blue-50 p-4">
+                    <div className="mt-4 rounded border border-[var(--mb-primary-fixed-dim)] bg-[var(--mb-primary-container)] p-4">
                       <Typography.Title level={5} className="!mt-0">最近拆分结果</Typography.Title>
                       {Object.values(getInventoryBatchSplitSummary(lastSplitResult)).map((line) => (
                         <Typography.Paragraph key={line} className="!mb-1">
@@ -1284,37 +1474,66 @@ export default function InventoryPage() {
               )
             }
           ]}
-        />
-        <Modal
+            />
+          </Card>
+        </div>
+        <Drawer
           title="编辑供应商"
           open={Boolean(editingSupplier)}
-          onCancel={() => setEditingSupplier(null)}
-          onOk={() => editSupplierForm.submit()}
-          confirmLoading={updateSupplier.isPending}
+          onClose={() => setEditingSupplier(null)}
           destroyOnHidden
+          rootClassName="inventory-supplier-drawer"
+          className="inventory-supplier-panel"
+          footer={
+            <div className="inventory-supplier-footer">
+              <Button onClick={() => setEditingSupplier(null)}>取消</Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                form="inventory-supplier-edit-form"
+                loading={updateSupplier.isPending}
+              >
+                保存
+              </Button>
+            </div>
+          }
         >
-          <Form form={editSupplierForm} layout="vertical" onFinish={(values) => updateSupplier.mutate(values)}>
-            <Form.Item name="name" label="供应商名称" rules={[{ required: true, message: "请输入供应商名称" }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="contactName" label="联系人">
-              <Input />
-            </Form.Item>
-            <Form.Item name="contactPhone" label="联系电话">
-              <Input />
-            </Form.Item>
-            <Form.Item name="rating" label="评级">
-              <InputNumber min={1} max={5} className="w-full" />
-            </Form.Item>
-            <Form.Item name="note" label="备注">
-              <Input />
-            </Form.Item>
-            <Form.Item name="isActive" label="启用" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-          </Form>
-        </Modal>
-      </Layout.Content>
-    </Layout>
+          {editingSupplier ? (
+            <Form
+              key={editingSupplier.id}
+              id="inventory-supplier-edit-form"
+              layout="vertical"
+              initialValues={{
+                name: editingSupplier.name,
+                contactName: editingSupplier.contactName ?? undefined,
+                contactPhone: editingSupplier.contactPhone ?? undefined,
+                rating: editingSupplier.rating ?? undefined,
+                note: editingSupplier.note ?? undefined,
+                isActive: editingSupplier.isActive ?? true
+              }}
+              onFinish={(values) => updateSupplier.mutate(values)}
+            >
+              <Form.Item name="name" label="供应商名称" rules={[{ required: true, message: "请输入供应商名称" }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="contactName" label="联系人">
+                <Input />
+              </Form.Item>
+              <Form.Item name="contactPhone" label="联系电话">
+                <Input />
+              </Form.Item>
+              <Form.Item name="rating" label="评级">
+                <InputNumber min={1} max={5} className="w-full" />
+              </Form.Item>
+              <Form.Item name="note" label="备注">
+                <Input />
+              </Form.Item>
+              <Form.Item name="isActive" label="启用" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </Form>
+          ) : null}
+        </Drawer>
+    </>
   );
 }

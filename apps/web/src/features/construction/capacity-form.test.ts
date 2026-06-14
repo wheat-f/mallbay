@@ -45,11 +45,11 @@ test("construction capacity page uses an interactive DatePicker as the date form
   const pageSource = readFileSync("app/construction/capacities/page.tsx", "utf8");
 
   assert.equal(pageSource.includes("normalize={formatCapacityDateValue}"), false);
-  assert.equal(pageSource.includes("Calendar"), false);
+  assert.equal(pageSource.includes("<Calendar"), false);
   assert.equal(pageSource.includes("readOnly"), false);
   assert.match(pageSource, /DatePicker/);
   assert.match(pageSource, /format="YYYY-MM-DD"/);
-  assert.match(pageSource, /date:\s*toCapacityDatePickerValue\(formatDate\(row\.date\)\)/);
+  assert.match(pageSource, /date:\s*toCapacityDatePickerValue\(cell\.date\)/);
 });
 
 test("create order capacity warning links to capacity maintenance with selected appointment date", () => {
@@ -65,7 +65,8 @@ test("construction capacity page pre-fills date from the navigation query string
   const pageSource = readFileSync("app/construction/capacities/page.tsx", "utf8");
 
   assert.match(pageSource, /window\.location\.search/);
-  assert.match(pageSource, /form\.setFieldValue\("date",\s*toCapacityDatePickerValue\(dateFromQuery\)\)/);
+  assert.match(pageSource, /form\.setFieldValue\("date",\s*date\)/);
+  assert.match(pageSource, /setVisibleMonth\(dayjs\(dateFromQuery\)\.startOf\("month"\)\)/);
 });
 
 test("construction capacity page shows return-to-order action when opened from order creation", () => {
@@ -84,13 +85,21 @@ test("construction capacity page keeps date and capacity fields in a vertical fo
   assert.match(pageSource, /capacity-form-grid/);
 });
 
-test("construction capacity page presents the maintenance form in a compact panel layout", () => {
+test("construction capacity page presents calendar and maintenance panels in a prototype layout", () => {
   const pageSource = readFileSync("app/construction/capacities/page.tsx", "utf8");
 
-  assert.match(pageSource, /capacity-page-layout/);
+  assert.match(pageSource, /capacity-shell/);
+  assert.match(pageSource, /capacity-calendar-card/);
+  assert.match(pageSource, /capacity-calendar-grid/);
   assert.match(pageSource, /capacity-editor-card/);
+  assert.match(pageSource, /capacity-side-panel/);
+  assert.match(pageSource, /capacity-tips-card/);
   assert.match(pageSource, /capacity-number-grid/);
-  assert.match(pageSource, /title="设置每日容量"/);
+  assert.match(pageSource, /title="批量产能设置"/);
+  assert.match(pageSource, /buildCapacityCalendar/);
+  assert.doesNotMatch(pageSource, /StorePageHeader/);
+  assert.doesNotMatch(pageSource, /management-kpi-grid/);
+  assert.doesNotMatch(pageSource, /management-table-card/);
 });
 
 test("global popups are mounted to document body for reliable overlay rendering", () => {

@@ -55,6 +55,7 @@ export class OrdersService {
         include: {
           customer: { select: { id: true, name: true, companyName: true, contactPerson: true } },
           vehicle: { select: { id: true, carPlate: true, carModel: true, carColor: true } },
+          salesPerson: { select: { id: true, username: true, nickname: true } },
           amount: true
         }
       })

@@ -31,8 +31,8 @@ test("reports page renders sales users as personal performance instead of store 
   const source = readFileSync("app/reports/page.tsx", "utf8");
 
   assert.match(source, /const isSalesReport = user\?\.storeMember\?\.position === "SALES"/);
-  assert.match(source, /title=\{isSalesReport \? "我的业绩" : "经营报表"\}/);
-  assert.match(source, /description=\{isSalesReport \? "查看自己的订单、回款、发票、返利和销售提成" : "销售、收款、施工、售后、发票和返利的门店经营汇总"\}/);
+  assert.match(source, /title=\{isSalesReport \? "我的业绩" : "分析报表中心"\}/);
+  assert.match(source, /description=\{isSalesReport \? "查看自己的订单、回款、发票、返利和销售提成" : "销售、收款、施工、售后、发票和返利的门店经营分析"\}/);
   assert.match(source, /buildSalesPerformanceRows\(summary\)/);
   assert.match(source, /buildSalesPerformanceInsightRows\(summary\)/);
 });
@@ -40,10 +40,48 @@ test("reports page renders sales users as personal performance instead of store 
 test("reports page hides store operation trend sections for sales performance view", () => {
   const source = readFileSync("app/reports/page.tsx", "utf8");
 
-  assert.match(source, /if \(isSalesReport\) \{/);
-  assert.match(source, /return \(\s*<Layout/);
-  assert.match(source, /title="我的销售提成"/);
+  assert.match(source, /isSalesReport \? SALES_REPORT_TABS : STORE_REPORT_TABS/);
+  assert.match(source, /isSalesReport \? \(/);
+  assert.doesNotMatch(source, /dashboard-shell/);
+  assert.doesNotMatch(source, /dashboard-content/);
+  assert.match(source, /我的销售提成/);
   assert.match(source, /销售提成金额/);
+});
+
+test("reports page follows prototype report-center layout", () => {
+  const source = readFileSync("app/reports/page.tsx", "utf8");
+
+  assert.match(source, /reports-filter-card/);
+  assert.match(source, /reports-tabs/);
+  assert.match(source, /分析与建议 \(AI 洞察\)/);
+  assert.match(source, /reports-bento-grid/);
+  assert.match(source, /销售趋势分析/);
+  assert.match(source, /按施工类型统计/);
+  assert.match(source, /reports-detail-card/);
+  assert.match(source, /导出数据/);
+});
+
+test("reports page uses mobile cards instead of dense report tables on small screens", () => {
+  const source = readFileSync("app/reports/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+  const tableViewCount = source.match(/<ReportDataView/g)?.length ?? 0;
+  const rawTableCount = source.match(/<Table</g)?.length ?? 0;
+  const baseHiddenIndex = cssSource.indexOf(".reports-data-mobile-cards {\n  display: none");
+  const desktopTableIndex = cssSource.indexOf(".reports-data-desktop-table");
+  const mobileDisplayIndex = cssSource.indexOf(".reports-data-mobile-cards", desktopTableIndex);
+
+  assert.match(source, /function ReportDataView/);
+  assert.match(source, /reports-data-mobile-cards/);
+  assert.match(source, /reports-data-mobile-card/);
+  assert.match(source, /reports-data-desktop-table/);
+  assert.equal(tableViewCount, 12);
+  assert.equal(rawTableCount, 1);
+  assert.match(cssSource, /\.reports-data-mobile-cards\s*\{[\s\S]*display: none;/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.reports-data-desktop-table\s*\{[\s\S]*display: none;/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.reports-data-mobile-cards\s*\{[\s\S]*display: grid;/);
+  assert.ok(baseHiddenIndex >= 0, "base hidden rule must exist");
+  assert.ok(desktopTableIndex > baseHiddenIndex, "mobile breakpoint must come after the base hidden rule");
+  assert.ok(mobileDisplayIndex > baseHiddenIndex, "mobile display override must come after the base hidden rule");
 });
 
 test("reports page exposes after-sale trend table", () => {

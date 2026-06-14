@@ -130,6 +130,37 @@ test("OrdersService list applies construction date and payment filters", async (
   ]);
 });
 
+test("OrdersService list includes vehicle amount and sales person summaries for operations tables", async () => {
+  let capturedFindManyArgs: unknown;
+  const prisma = {
+    order: {
+      count: async () => 0,
+      findMany: async (args: unknown) => {
+        capturedFindManyArgs = args;
+        return [];
+      }
+    },
+    storeMember: { findUnique: async () => null }
+  };
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+
+  await service.list(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    { storeId: "store-1", page: 1, pageSize: 20 } as never
+  );
+
+  assert.deepEqual((capturedFindManyArgs as { include: unknown }).include, {
+    customer: { select: { id: true, name: true, companyName: true, contactPerson: true } },
+    vehicle: { select: { id: true, carPlate: true, carModel: true, carColor: true } },
+    salesPerson: { select: { id: true, username: true, nickname: true } },
+    amount: true
+  });
+});
+
 test("OrdersService list includes VIN hash condition for 17 character vehicle searches", async () => {
   const capturedWhere: unknown[] = [];
   const prisma = {

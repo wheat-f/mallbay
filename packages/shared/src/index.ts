@@ -55,6 +55,40 @@ export type QualityCheckResult = "PASS" | "REWORK_REQUIRED";
 
 export type WorkerSkillTag = "PPF" | "COLOR_FILM" | "HEAT_FILM" | "MODIFICATION" | "INSPECTION" | "OUTSIDE";
 
+export type ScheduleStatus = "WORKING" | "REST" | "OUTSIDE";
+
+export type ScheduleSummary = {
+  id: string;
+  storeId: string;
+  workerId: string;
+  date: string;
+  status: ScheduleStatus;
+  note?: string | null;
+  worker?: {
+    username?: string | null;
+    nickname?: string | null;
+  } | null;
+};
+
+export type OfflineSyncOperationType = "PHOTO_UPLOAD" | "TASK_STATUS" | "LEAVE_REQUEST";
+
+export type OfflineSyncOperation = {
+  clientOperationId: string;
+  type: OfflineSyncOperationType;
+  payload: Record<string, unknown>;
+};
+
+export type OfflineSyncItemResult = {
+  clientOperationId: string;
+  status: "SYNCED" | "FAILED";
+  message?: string;
+  result?: unknown;
+};
+
+export type OfflineSyncResult = {
+  items: OfflineSyncItemResult[];
+};
+
 export type InventoryMovementType =
   | "PURCHASE_IN"
   | "ORDER_LOCK"
@@ -345,7 +379,7 @@ export type AuthUser = {
   wechatOpenId: string | null;
   alipayUserId: string | null;
   isAuditor: boolean;
-  // 仅 /auth/me 返回，登录/刷新时为 undefined
+  // 登录、刷新和 /auth/me 均返回当前默认门店身份；无门店身份时为 null
   storeMember?: {
     position: StorePosition;
     store: { id: string; name: string; status: StoreStatus };

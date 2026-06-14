@@ -35,6 +35,57 @@ test("issueAndPersistTokens fails fast when JWT secrets are missing", async () =
   );
 });
 
+test("issueAndPersistTokens includes the first store membership in the session user", async () => {
+  const prisma = {
+    user: {
+      findUniqueOrThrow: async () => ({
+        id: "user-1",
+        username: "owner",
+        nickname: "店长",
+        avatarUrl: null,
+        email: null,
+        phone: null,
+        wechatOpenId: null,
+        alipayUserId: null,
+        isAuditor: false,
+        storeMembers: [
+          {
+            position: "MANAGER",
+            store: {
+              id: "store-1",
+              name: "长沙1号",
+              status: "PUBLISHED"
+            }
+          }
+        ]
+      }),
+      update: async () => ({})
+    }
+  };
+  const jwt = {
+    signAsync: async (payload: { jti?: string }) => (payload.jti ? "refresh-token" : "access-token")
+  };
+  const config = {
+    get: (key: string) => {
+      if (key === "JWT_ACCESS_SECRET") return "access-secret";
+      if (key === "JWT_REFRESH_SECRET") return "refresh-secret";
+      return undefined;
+    }
+  };
+  const service = new AuthService(prisma as never, jwt as never, config as never);
+
+  const session = await service["issueAndPersistTokens"]("user-1");
+
+  assert.deepEqual(session.user.storeMember, {
+    position: "MANAGER",
+    store: {
+      id: "store-1",
+      name: "长沙1号",
+      status: "PUBLISHED"
+    }
+  });
+});
+
 test("login failure increments observability metric without sensitive labels", async () => {
   const increments: Array<{ name: string; labels: Record<string, string> }> = [];
   const prisma = {

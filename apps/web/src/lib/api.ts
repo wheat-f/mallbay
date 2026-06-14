@@ -17,7 +17,12 @@ export { warrantiesApi } from "../features/warranties/api";
 export type { CreateCustomerPayload, CustomerListQuery } from "../features/customers/api";
 export type { CreateAfterSalePayload, JudgeAfterSalePayload } from "../features/after-sales/api";
 export type { CreateSalesCommissionRulePayload, GenerateWorkerCommissionsPayload } from "../features/commissions/api";
-export type { CapacityPayload, ConstructionListQuery } from "../features/construction/api";
+export type {
+  CapacityPayload,
+  ConstructionListQuery,
+  OfflineSyncPayload,
+  SchedulePayload
+} from "../features/construction/api";
 export type {
   CreateInventoryBatchPayload,
   CreatePurchaseOrderPayload,

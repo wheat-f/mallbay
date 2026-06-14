@@ -1,0 +1,59 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+
+test("customer detail page follows the prototype customer profile workspace", () => {
+  const pageSource = readFileSync("app/customers/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /customer-detail-hero/);
+  assert.match(pageSource, /customer-detail-hero-summary/);
+  assert.match(pageSource, /customer-detail-workspace/);
+  assert.match(pageSource, /customer-profile-card/);
+  assert.match(pageSource, /customer-vehicle-grid/);
+  assert.match(pageSource, /customer-history-card/);
+  assert.match(pageSource, /customer-timeline-card/);
+  assert.match(pageSource, /customer-warranty-card/);
+  assert.match(pageSource, /customer-notes-card/);
+  assert.match(pageSource, /编辑资料/);
+  assert.match(pageSource, /新建订单/);
+  assert.doesNotMatch(pageSource, /StorePageHeader/);
+  assert.doesNotMatch(pageSource, /customer-detail-metrics/);
+  assert.doesNotMatch(pageSource, /detail-layout/);
+});
+
+test("customer detail edit actions use prototype right-side drawers", () => {
+  const pageSource = readFileSync("app/customers/[id]/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(pageSource, /import \{[^}]*Drawer[^}]*\} from "antd"/s);
+  assert.match(pageSource, /customer-detail-edit-drawer/);
+  assert.match(pageSource, /customer-detail-vehicle-drawer/);
+  assert.match(pageSource, /customer-detail-drawer-footer/);
+  assert.doesNotMatch(pageSource, /Modal\.confirm/);
+  assert.doesNotMatch(pageSource, /openEditModal/);
+  assert.doesNotMatch(pageSource, /openVehicleModal/);
+  assert.match(cssSource, /\.customer-detail-edit-drawer \.ant-drawer-content-wrapper/);
+  assert.match(cssSource, /\.customer-detail-vehicle-drawer \.ant-drawer-content-wrapper/);
+  assert.match(cssSource, /\.customer-detail-drawer-footer/);
+});
+
+test("customer detail page replaces nested tables with mobile record cards", () => {
+  const pageSource = readFileSync("app/customers/[id]/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+  const baseHiddenIndex = cssSource.indexOf(".customer-record-mobile-cards {\n  display: none");
+  const desktopTableIndex = cssSource.indexOf(".customer-record-desktop-table");
+  const mobileDisplayIndex = cssSource.indexOf(".customer-record-mobile-cards", desktopTableIndex);
+
+  assert.match(pageSource, /customer-record-mobile-cards/);
+  assert.match(pageSource, /customer-record-mobile-card/);
+  assert.match(pageSource, /customer-record-desktop-table/);
+  assert.match(pageSource, /customer-order-mobile-card/);
+  assert.match(pageSource, /customer-warranty-mobile-card/);
+  assert.match(pageSource, /customer-after-sale-mobile-card/);
+  assert.match(cssSource, /\.customer-record-mobile-cards\s*\{[\s\S]*display: none;/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.customer-record-desktop-table\s*\{[\s\S]*display: none;/);
+  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.customer-record-mobile-cards\s*\{[\s\S]*display: grid;/);
+  assert.ok(baseHiddenIndex >= 0, "base hidden rule must exist");
+  assert.ok(desktopTableIndex > baseHiddenIndex, "mobile breakpoint must come after the base hidden rule");
+  assert.ok(mobileDisplayIndex > baseHiddenIndex, "mobile display override must come after the base hidden rule");
+});

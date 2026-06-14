@@ -1,7 +1,19 @@
 "use client";
 
-import { App, Button, Card, Descriptions, Form, Input, InputNumber, Layout, List, Modal, Select, Skeleton, Space, Tag, Typography } from "antd";
-import { CheckCircleOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
+import { App, Button, Card, Checkbox, Drawer, Form, Input, InputNumber, Select, Skeleton, Tag, Typography } from "antd";
+import {
+  ArrowLeftOutlined,
+  CarOutlined,
+  CheckCircleOutlined,
+  CreditCardOutlined,
+  EditOutlined,
+  FileTextOutlined,
+  InboxOutlined,
+  MinusCircleOutlined,
+  PlusOutlined,
+  ToolOutlined,
+  UserOutlined
+} from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -16,7 +28,6 @@ import {
   yuanCurrency
 } from "../../../src/features/orders/order-display";
 import { getAuditActorLabel } from "../../../src/features/audit/display";
-import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 
 type OrderDetail = {
   id: string;
@@ -63,6 +74,7 @@ export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [commercialsOpen, setCommercialsOpen] = useState(false);
+  const [fulfillmentDrawerOpen, setFulfillmentDrawerOpen] = useState(false);
   const [commercialsForm] = Form.useForm<CommercialsFormValues>();
   const orderQuery = useQuery({
     queryKey: ["order-detail", params.id],
@@ -105,8 +117,9 @@ export default function OrderDetailPage() {
   }));
   const canEditCommercials = order?.status === "PENDING_DISPATCH";
   const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH";
+  const orderSteps = getOrderSteps(order?.status);
 
-  const openCommercialsModal = () => {
+  const openCommercialsDrawer = () => {
     if (!order) return;
     commercialsForm.setFieldsValue({
       items: (order.items ?? []).map((item) => ({
@@ -121,163 +134,229 @@ export default function OrderDetailPage() {
     setCommercialsOpen(true);
   };
 
-  return (
-    <Layout className="dashboard-shell">
-      <Layout.Content className="dashboard-content">
-        <StorePageHeader title={order?.orderNo ?? "订单详情"}>
-          {order && <Tag>{getOrderStatusLabel(order.status)}</Tag>}
-          {canEditCommercials ? (
-            <Button icon={<EditOutlined />} onClick={openCommercialsModal}>
-              修改明细
-            </Button>
-          ) : null}
-        </StorePageHeader>
+  const openFulfillmentDrawer = () => {
+    setFulfillmentDrawerOpen(true);
+  };
 
+  return (
+    <>
+      <div className="management-page">
         {orderQuery.isLoading ? (
           <Skeleton active />
         ) : (
           <>
-            {shouldShowFulfillmentConfirmation ? (
-              <Card
-                className="mb-4"
-                title="确认提交派工与库房匹配"
-                extra={<Tag color="processing">待派工</Tag>}
-              >
-                <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-                  <div>
-                    <Typography.Paragraph type="secondary">
-                      订单创建后需要先核对客户、车辆、产品和施工要求，再进入库房匹配与施工派工。当前页面只做确认提示和流程入口，状态流转仍由库存与施工模块控制。
-                    </Typography.Paragraph>
-                    <List
-                      size="small"
-                      dataSource={[
-                        "已核对客户信息、车辆信息和施工要求",
-                        "已确认产品型号、数量、单价和施工人工费",
-                        "已告知客户施工时间、交车流程和注意事项"
-                      ]}
-                      renderItem={(item) => (
-                        <List.Item>
-                          <Space>
-                            <CheckCircleOutlined className="text-green-600" />
-                            <Typography.Text>{item}</Typography.Text>
-                          </Space>
-                        </List.Item>
-                      )}
-                    />
-                  </div>
-                  <Card size="small" title="下一步">
-                    <Space direction="vertical" className="w-full">
-                      <Button block onClick={() => router.push("/inventory")}>
-                        进入库房匹配
-                      </Button>
-                      <Button block onClick={() => router.push("/construction/assignments")}>
-                        进入施工派工
-                      </Button>
-                    </Space>
-                  </Card>
+            <section className="order-detail-hero">
+              <div className="order-detail-title-row">
+                <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/orders")}>
+                  返回订单
+                </Button>
+                <div>
+                  <span className="order-detail-eyebrow">销售订单详情</span>
+                  <h1>
+                    订单 {order?.orderNo ?? "-"}
+                    {order ? <Tag>{getOrderStatusLabel(order.status)}</Tag> : null}
+                  </h1>
+                  <p>
+                    {[
+                      getCustomerName(order),
+                      getVehicleLabel(order),
+                      order?.appointmentDate ? `预约 ${formatDateOnly(order.appointmentDate)}` : undefined
+                    ].filter(Boolean).join(" / ") || "客户、车辆和预约信息待完善"}
+                  </p>
                 </div>
-              </Card>
-            ) : null}
+              </div>
+              <div className="order-detail-actions">
+                {canEditCommercials ? (
+                  <Button icon={<EditOutlined />} onClick={openCommercialsDrawer}>
+                    修改订单
+                  </Button>
+                ) : null}
+                <Button type="primary" icon={<CreditCardOutlined />}>记录收款</Button>
+                <Button icon={<FileTextOutlined />}>申请发票</Button>
+              </div>
+            </section>
 
-            <Descriptions bordered column={2} className="mb-4">
-              <Descriptions.Item label="客户">
-                {order?.customer?.companyName ?? order?.customer?.name ?? "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="车辆">
-                {order?.vehicle?.carPlate ?? order?.vehicle?.carModel ?? "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="施工类型">{getConstructionTypeLabel(order?.constructionType)}</Descriptions.Item>
-              <Descriptions.Item label="施工地点">{getConstructionLocationLabel(order?.constructionLocation)}</Descriptions.Item>
-              <Descriptions.Item label="预约日期">{order?.appointmentDate ?? "-"}</Descriptions.Item>
-              <Descriptions.Item label="预约时段">{order?.appointmentTimeSlot ?? "-"}</Descriptions.Item>
-              <Descriptions.Item label="产品费用">
-                {yuanCurrency(order?.amount?.productAmountCents)}
-              </Descriptions.Item>
-              <Descriptions.Item label="施工人工费">
-                {yuanCurrency(order?.amount?.laborCostCents)}
-              </Descriptions.Item>
-              <Descriptions.Item label="建议人工费">
-                {order?.amount?.suggestedLaborCostCents === null || order?.amount?.suggestedLaborCostCents === undefined
-                  ? "-"
-                  : yuanCurrency(order.amount.suggestedLaborCostCents)}
-              </Descriptions.Item>
-              <Descriptions.Item label="最终人工费">
-                {yuanCurrency(order?.amount?.laborCostCents)}
-              </Descriptions.Item>
-              <Descriptions.Item label="人工费调整原因">
-                {order?.amount?.laborCostAdjustmentReason ?? "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="订单总额">
-                {yuanCurrency(order?.amount?.totalAmountCents)}
-              </Descriptions.Item>
-              <Descriptions.Item label="已收金额">
-                {yuanCurrency(order?.amount?.paidAmountCents)}
-              </Descriptions.Item>
-              <Descriptions.Item label="未收金额">
-                {yuanCurrency(order?.amount?.outstandingCents)}
-              </Descriptions.Item>
-            </Descriptions>
+            <section className="order-detail-stepper">
+              {orderSteps.map((step, index) => (
+                <div key={step.label} className={`order-step-item ${step.state}`}>
+                  {index < orderSteps.length - 1 ? <div className="order-step-line" /> : null}
+                  <div className="order-step-dot">
+                    {step.state === "done" ? <CheckCircleOutlined /> : index + 1}
+                  </div>
+                  <strong>{step.label}</strong>
+                  <span>{step.description}</span>
+                </div>
+              ))}
+            </section>
 
-            <Typography.Title level={4}>产品明细</Typography.Title>
-            <List
-              bordered
-              dataSource={order?.items ?? []}
-              renderItem={(item) => (
-                <List.Item>
-                  <List.Item.Meta
-                    title={`${item.product?.brand ?? ""} ${item.product?.name ?? ""}`}
-                    description={`${item.product?.model ?? ""} x ${item.quantity}`}
-                  />
-                  <div>{yuanCurrency(item.amountCents)}</div>
-                </List.Item>
-              )}
-            />
+            <section className="management-kpi-grid">
+              {[
+                ["产品费用", yuanCurrency(order?.amount?.productAmountCents), `${order?.items?.length ?? 0} 项产品`],
+                ["施工人工费", yuanCurrency(order?.amount?.laborCostCents), "按订单最终金额计"],
+                ["已收金额", yuanCurrency(order?.amount?.paidAmountCents), "定金与收款累计"],
+                ["待收金额", yuanCurrency(order?.amount?.outstandingCents), "交付前需核对"]
+              ].map(([label, value, description]) => (
+                <Card key={label} className="management-kpi-card">
+                  <div className="management-kpi-label">{label}</div>
+                  <div className="management-kpi-value">{value}</div>
+                  <div className="management-kpi-desc">{description}</div>
+                </Card>
+              ))}
+            </section>
 
-            <Typography.Title level={4} className="!mt-6">收款记录</Typography.Title>
-            <List
-              bordered
-              dataSource={order?.payments ?? []}
-              locale={{ emptyText: "暂无收款" }}
-              renderItem={(payment) => (
-                <List.Item>
-                  <List.Item.Meta
-                    title={`${getPaymentTypeLabel(payment.paymentType)} / ${payment.account?.name ?? "-"}`}
-                    description={payment.paidAt}
-                  />
-                  <div>{yuanCurrency(payment.amountCents)}</div>
-                </List.Item>
-              )}
-            />
+            <section className="order-detail-bento">
+              <div className="order-bento-column">
+                <Card className="order-detail-card order-customer-card" title={<><UserOutlined />客户信息</>}>
+                  <div className="order-info-grid">
+                    <span>客户</span><strong>{getCustomerName(order)}</strong>
+                    <span>车辆</span><strong>{getVehicleLabel(order)}</strong>
+                    <span>施工类型</span><strong>{getConstructionTypeLabel(order?.constructionType)}</strong>
+                    <span>施工地点</span><strong>{getConstructionLocationLabel(order?.constructionLocation)}</strong>
+                    <span>预约日期</span><strong>{formatDateOnly(order?.appointmentDate)}</strong>
+                    <span>预约时段</span><strong>{order?.appointmentTimeSlot ?? "-"}</strong>
+                  </div>
+                  <div className="order-vehicle-strip">
+                    <span><CarOutlined /></span>
+                    <div>
+                      <strong>{order?.vehicle?.carPlate ?? "车辆待完善"}</strong>
+                      <p>{[order?.vehicle?.carModel, order?.vehicle?.carColor].filter(Boolean).join(" / ") || "车型颜色待完善"}</p>
+                    </div>
+                  </div>
+                </Card>
 
-            <Typography.Title level={4} className="!mt-6">变更审计</Typography.Title>
-            <List<OrderAuditEvent>
-              bordered
-              loading={auditEventsQuery.isLoading}
-              dataSource={auditEventsQuery.data ?? []}
-              locale={{ emptyText: "暂无变更记录" }}
-              renderItem={(event) => (
-                <List.Item>
-                  <List.Item.Meta
-                    title={getOrderAuditActionLabel(event.action)}
-                    description={[
-                      formatAuditCreatedAt(event.createdAt),
-                      getAuditReason(event.metadata),
-                      `操作人：${getAuditActorLabel(event)}`
-                    ].filter(Boolean).join(" / ")}
-                  />
-                </List.Item>
-              )}
-            />
+                <Card className="order-detail-card order-product-card" title={<><InboxOutlined />商品清单</>}>
+                  <div className="order-product-list">
+                    {(order?.items ?? []).map((item) => (
+                      <div key={item.id} className="order-product-row">
+                        <div>
+                          <strong>{`${item.product?.brand ?? ""} ${item.product?.name ?? ""}`.trim() || "未命名产品"}</strong>
+                          <p>{`${item.product?.model ?? ""} x ${item.quantity}`}</p>
+                        </div>
+                        <b>{yuanCurrency(item.amountCents)}</b>
+                      </div>
+                    ))}
+                    {(order?.items ?? []).length === 0 ? <Typography.Text type="secondary">暂无产品明细</Typography.Text> : null}
+                  </div>
+                  <div className="order-total-panel">
+                    <div><span>商品小计</span><strong>{yuanCurrency(order?.amount?.productAmountCents)}</strong></div>
+                    <div><span>工时费</span><strong>{yuanCurrency(order?.amount?.laborCostCents)}</strong></div>
+                    <div><span>订单总计</span><strong>{yuanCurrency(order?.amount?.totalAmountCents)}</strong></div>
+                  </div>
+                </Card>
+              </div>
+
+              <div className="order-bento-column">
+                <Card className="order-detail-card order-construction-card" title={<><ToolOutlined />施工详情</>}>
+                  <div className="order-info-grid">
+                    <span>施工类型</span><strong>{getConstructionTypeLabel(order?.constructionType)}</strong>
+                    <span>施工地点</span><strong>{getConstructionLocationLabel(order?.constructionLocation)}</strong>
+                    <span>建议人工费</span>
+                    <strong>
+                      {order?.amount?.suggestedLaborCostCents === null || order?.amount?.suggestedLaborCostCents === undefined
+                        ? "-"
+                        : yuanCurrency(order.amount.suggestedLaborCostCents)}
+                    </strong>
+                    <span>最终人工费</span><strong>{yuanCurrency(order?.amount?.laborCostCents)}</strong>
+                    <span>人工费调整原因</span><strong>{order?.amount?.laborCostAdjustmentReason ?? "-"}</strong>
+                    <span>备注</span><strong>{order?.remark ?? "-"}</strong>
+                  </div>
+                  {shouldShowFulfillmentConfirmation ? (
+                    <div className="order-fulfillment-panel">
+                      <Tag color="processing">待派工</Tag>
+                      <h3>确认提交派工与库房匹配</h3>
+                      <p>订单创建后需要核对客户、车辆、产品和施工要求，再进入库房匹配与施工派工。</p>
+                      {[
+                        "客户、车辆和施工要求已核对",
+                        "产品、数量、单价和人工费已确认",
+                        "施工时间、交车流程和注意事项已告知"
+                      ].map((item) => (
+                        <div key={item} className="order-check-row">
+                          <CheckCircleOutlined />
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                      <div className="order-next-actions">
+                        <Button block type="primary" icon={<CheckCircleOutlined />} onClick={openFulfillmentDrawer}>
+                          打开确认流转
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </Card>
+              </div>
+
+              <div className="order-bento-column">
+                <Card className="order-detail-card order-payment-card" title={<><CreditCardOutlined />收款记录</>}>
+                  <div className="order-payment-summary">
+                    <div>
+                      <span>待收尾款</span>
+                      <strong>{yuanCurrency(order?.amount?.outstandingCents)}</strong>
+                    </div>
+                    <div>
+                      <span>已收金额</span>
+                      <strong>{yuanCurrency(order?.amount?.paidAmountCents)}</strong>
+                    </div>
+                  </div>
+                  <div className="order-product-list">
+                    {(order?.payments ?? []).map((payment) => (
+                      <div key={payment.id} className="order-payment-row">
+                        <span><CreditCardOutlined /></span>
+                        <div>
+                          <strong>{`${getPaymentTypeLabel(payment.paymentType)} / ${payment.account?.name ?? "-"}`}</strong>
+                          <p>{payment.paidAt}</p>
+                        </div>
+                        <b>{yuanCurrency(payment.amountCents)}</b>
+                      </div>
+                    ))}
+                    {(order?.payments ?? []).length === 0 ? <Typography.Text type="secondary">暂无收款</Typography.Text> : null}
+                  </div>
+                </Card>
+
+                <Card className="order-detail-card order-audit-card" title={<><FileTextOutlined />变更审计</>}>
+                  <div className="order-audit-timeline">
+                    {auditEventsQuery.isLoading ? <Typography.Text type="secondary">加载中...</Typography.Text> : null}
+                    {(auditEventsQuery.data ?? []).map((event: OrderAuditEvent) => (
+                      <div key={event.id}>
+                        <i />
+                        <strong>{getOrderAuditActionLabel(event.action)}</strong>
+                        <span>
+                          {[
+                            formatAuditCreatedAt(event.createdAt),
+                            getAuditReason(event.metadata),
+                            `操作人：${getAuditActorLabel(event)}`
+                          ].filter(Boolean).join(" / ")}
+                        </span>
+                      </div>
+                    ))}
+                    {!auditEventsQuery.isLoading && (auditEventsQuery.data ?? []).length === 0 ? (
+                      <Typography.Text type="secondary">暂无变更记录</Typography.Text>
+                    ) : null}
+                  </div>
+                </Card>
+              </div>
+            </section>
           </>
         )}
+      </div>
 
-        <Modal
+        <Drawer
           title="修改订单明细"
           open={commercialsOpen}
-          onCancel={() => setCommercialsOpen(false)}
-          onOk={() => commercialsForm.submit()}
-          confirmLoading={updateCommercialsMutation.isPending}
+          onClose={() => setCommercialsOpen(false)}
+          rootClassName="order-commercials-drawer"
           destroyOnHidden
+          footer={(
+            <div className="order-commercials-drawer-footer">
+              <Button onClick={() => setCommercialsOpen(false)}>取消</Button>
+              <Button
+                type="primary"
+                loading={updateCommercialsMutation.isPending}
+                onClick={() => commercialsForm.submit()}
+              >
+                保存变更
+              </Button>
+            </div>
+          )}
         >
           <Form
             form={commercialsForm}
@@ -290,7 +369,7 @@ export default function OrderDetailPage() {
                   {fields.map((field) => {
                     const { key, ...fieldProps } = field;
                     return (
-                      <Space key={key} align="baseline" className="mb-2 flex">
+                      <div key={key} className="order-commercials-item-grid">
                         <Form.Item
                           {...fieldProps}
                           name={[field.name, "productId"]}
@@ -310,7 +389,7 @@ export default function OrderDetailPage() {
                           label="数量"
                           rules={[{ required: true, message: "请输入数量" }]}
                         >
-                          <InputNumber min={1} />
+                          <InputNumber min={1} className="w-full" />
                         </Form.Item>
                         <Form.Item
                           {...fieldProps}
@@ -318,10 +397,10 @@ export default function OrderDetailPage() {
                           label="单价（元）"
                           rules={[{ required: true, message: "请输入单价" }]}
                         >
-                          <InputNumber min={0} precision={2} />
+                          <InputNumber min={0} precision={2} className="w-full" />
                         </Form.Item>
                         <Button icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} />
-                      </Space>
+                      </div>
                     );
                   })}
                   <Button icon={<PlusOutlined />} onClick={() => add({ quantity: 1, unitPriceYuan: 0 })}>
@@ -348,9 +427,109 @@ export default function OrderDetailPage() {
               <Input.TextArea rows={3} placeholder="说明本次修改产品、数量或金额的原因" />
             </Form.Item>
           </Form>
-        </Modal>
-      </Layout.Content>
-    </Layout>
+        </Drawer>
+
+        <Drawer
+          title={<span className="order-fulfillment-drawer-title"><CheckCircleOutlined />确认提交派工与库房匹配</span>}
+          open={fulfillmentDrawerOpen}
+          onClose={() => setFulfillmentDrawerOpen(false)}
+          rootClassName="order-fulfillment-drawer"
+          destroyOnHidden
+          footer={(
+            <div className="order-fulfillment-drawer-footer">
+              <Button onClick={() => {
+                message.info("已暂存本次核对草稿");
+                setFulfillmentDrawerOpen(false);
+              }}>
+                暂存草稿
+              </Button>
+              <Button onClick={() => router.push("/inventory")}>进入库房匹配</Button>
+              <Button onClick={() => router.push("/construction/assignments")}>进入施工派工</Button>
+              <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => router.push("/construction/assignments")}>
+                确认提交，进入派工流转
+              </Button>
+            </div>
+          )}
+        >
+          <div className="order-fulfillment-drawer-body">
+            <section className="order-fulfillment-drawer-section">
+              <div className="order-fulfillment-section-head">
+                <i />
+                <h3>订单概览</h3>
+              </div>
+              <div className="order-fulfillment-summary-grid">
+                <div>
+                  <span>订单号</span>
+                  <strong>{order?.orderNo ?? "-"}</strong>
+                </div>
+                <div>
+                  <span>客户姓名</span>
+                  <strong>{getCustomerName(order)}</strong>
+                </div>
+                <div>
+                  <span>车型</span>
+                  <strong>{getVehicleLabel(order)}</strong>
+                </div>
+                <div>
+                  <span>施工类型</span>
+                  <strong>{getConstructionTypeLabel(order?.constructionType)}</strong>
+                </div>
+                <div className="order-fulfillment-summary-wide">
+                  <span>预约施工日期</span>
+                  <strong>{[formatDateOnly(order?.appointmentDate), order?.appointmentTimeSlot].filter(Boolean).join(" ") || "-"}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="order-fulfillment-drawer-section">
+              <div className="order-fulfillment-section-head order-fulfillment-section-between">
+                <span><i /> <h3>货品匹配预检</h3></span>
+                <b>共 {order?.items?.length ?? 0} 项货品</b>
+              </div>
+              <div className="order-fulfillment-product-list">
+                {(order?.items ?? []).map((item) => (
+                  <div key={item.id} className="order-fulfillment-product-row">
+                    <span><InboxOutlined /></span>
+                    <div>
+                      <strong>{`${item.product?.brand ?? ""} ${item.product?.name ?? ""}`.trim() || "未命名产品"}</strong>
+                      <p>{item.product?.model ?? "型号待完善"}</p>
+                    </div>
+                    <b>x{item.quantity}</b>
+                    <Tag color="processing">待库房匹配</Tag>
+                  </div>
+                ))}
+                {(order?.items ?? []).length === 0 ? <Typography.Text type="secondary">暂无产品明细，提交前请先补齐商品清单。</Typography.Text> : null}
+              </div>
+            </section>
+
+            <section className="order-fulfillment-drawer-section order-fulfillment-checklist">
+              <Checkbox>
+                <strong>已核对客户信息及施工要求</strong>
+                <span>确认施工部位、产品型号、特殊工艺和客户偏好已完成沟通。</span>
+              </Checkbox>
+              <Checkbox>
+                <strong>已告知客户施工时间及注意事项</strong>
+                <span>包含工期预估、车辆交接流程以及施工期间的必要提醒。</span>
+              </Checkbox>
+              <Checkbox>
+                <strong>产品、数量、单价和人工费已确认</strong>
+                <span>提交后将进入库房备货与施工派工，请确保价格和数量准确。</span>
+              </Checkbox>
+            </section>
+
+            <section className="order-fulfillment-drawer-section">
+              <div className="order-fulfillment-section-head">
+                <i />
+                <h3>给库房/施工主管的补充建议</h3>
+              </div>
+              <Input.TextArea
+                rows={5}
+                placeholder="例如：客户要求特别注意前保险杠合缝处、需库房优先调配 A 库物料等..."
+              />
+            </section>
+          </div>
+        </Drawer>
+    </>
   );
 }
 
@@ -359,6 +538,34 @@ function getOrderAuditActionLabel(action: string) {
     ORDER_COMMERCIALS_UPDATED: "订单明细和金额变更"
   };
   return labels[action] ?? action;
+}
+
+function getCustomerName(order?: OrderDetail) {
+  return order?.customer?.companyName ?? order?.customer?.name ?? order?.customer?.contactPerson ?? "-";
+}
+
+function getVehicleLabel(order?: OrderDetail) {
+  const vehicle = order?.vehicle;
+  return [vehicle?.carPlate, vehicle?.carModel, vehicle?.carColor].filter(Boolean).join(" / ") || "-";
+}
+
+function formatDateOnly(value?: string | null) {
+  if (!value) return "-";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 10);
+}
+
+function getOrderSteps(status?: string) {
+  const statuses = ["PENDING_DISPATCH", "DISPATCHED", "IN_CONSTRUCTION", "COMPLETED", "WARRANTIED"];
+  const labels = ["待派单", "已派单", "施工中", "已完工", "已质保"];
+  const currentIndex = Math.max(0, statuses.indexOf(status ?? "PENDING_DISPATCH"));
+  return labels.map((label, index) => ({
+    label,
+    description: index < currentIndex ? "已完成" : index === currentIndex ? "当前阶段" : "待处理",
+    state: index < currentIndex ? "done" : index === currentIndex ? "active" : "pending"
+  }));
 }
 
 function getAuditReason(metadata?: Record<string, unknown>) {

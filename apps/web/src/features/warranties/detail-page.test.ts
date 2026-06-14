@@ -20,3 +20,28 @@ test("warranty detail page shows warranty core information and traceability entr
   assert.match(detailSource, /title="原材料溯源"/);
   assert.match(detailSource, /title="施工影像存证"/);
 });
+
+test("warranty detail page follows the prototype traceability workspace layout", () => {
+  const detailSource = readFileSync("app/warranties/[id]/page.tsx", "utf8");
+
+  assert.match(detailSource, /warranty-detail-hero/);
+  assert.match(detailSource, /warranty-detail-summary/);
+  assert.match(detailSource, /warranty-detail-workspace/);
+  assert.match(detailSource, /warranty-core-card/);
+  assert.match(detailSource, /warranty-order-card/);
+  assert.match(detailSource, /warranty-trace-banner/);
+  assert.match(detailSource, /warranty-photo-evidence/);
+  assert.match(detailSource, /warranty-life-card/);
+  assert.match(detailSource, /下载电子质保卡/);
+  assert.doesNotMatch(detailSource, /detail-layout/);
+});
+
+test("warranty detail trace banner keeps action button readable on dark background", () => {
+  const cssSource = readFileSync("app/globals.css", "utf8");
+  const buttonRule = cssSource.match(/\.warranty-trace-banner \.ant-btn\s*{[^}]*}/s)?.[0] ?? "";
+  const buttonSpanRule = cssSource.match(/\.warranty-trace-banner \.ant-btn span\s*{[^}]*}/s)?.[0] ?? "";
+
+  assert.match(buttonRule, /color: var\(--mb-primary\)/);
+  assert.match(buttonRule, /font-weight: 800/);
+  assert.match(buttonSpanRule, /color: var\(--mb-primary\)/);
+});

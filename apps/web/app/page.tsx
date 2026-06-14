@@ -53,6 +53,7 @@ function StoreLobbyCard({ store }: StoreLobbyCardProps) {
     <button className="store-lobby-card" type="button" onClick={() => router.push(`/stores/${store.id}`)}>
       <div className="store-lobby-cover">
         {store.coverUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img src={store.coverUrl} alt={store.name} />
         ) : (
           <div className="store-lobby-cover-placeholder">
@@ -184,7 +185,7 @@ export default function HomePage() {
       <header className="home-lobby-topbar">
         <button className="home-lobby-brand" type="button" onClick={() => router.push("/")}>
           <span>MallBay</span>
-          <small>Automotive SaaS</small>
+          <small>门店运营系统</small>
         </button>
 
         <div className="home-lobby-actions">
@@ -251,7 +252,7 @@ export default function HomePage() {
       <section className="home-lobby-store-section">
         <div className="home-lobby-section-head">
           <div>
-            <span>Public Stores</span>
+            <span>公开门店</span>
             <h2>公开门店</h2>
           </div>
           <Typography.Text>{storesQuery.data?.total ?? 0} 家</Typography.Text>

@@ -11,8 +11,7 @@ import {
   SafetyCertificateOutlined,
   SettingOutlined,
   ShopOutlined,
-  SyncOutlined,
-  UserOutlined
+  SyncOutlined
 } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { ConstructionMobileShell } from "../../../src/features/construction/mobile-shell";
@@ -49,9 +48,13 @@ export default function ConstructionProfilePage() {
   );
 
   useEffect(() => {
-    const queue = window.localStorage.getItem(queueStorageKey) ?? "[]";
-    setCacheUsedMb(queue.length / 1024 / 1024);
-    setLastSyncAt(window.localStorage.getItem(lastSyncStorageKey) ?? "暂无记录");
+    const timeoutId = window.setTimeout(() => {
+      const queue = window.localStorage.getItem(queueStorageKey) ?? "[]";
+      setCacheUsedMb(queue.length / 1024 / 1024);
+      setLastSyncAt(window.localStorage.getItem(lastSyncStorageKey) ?? "暂无记录");
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   return (
@@ -177,8 +180,8 @@ export default function ConstructionProfilePage() {
       </section>
 
       <footer className="construction-profile-version">
-        <span>MallBay Worker v4.2.1-dev</span>
-        <span>MallBay Workplace Solutions</span>
+        <span>MallBay 施工端 v4.2.1-dev</span>
+        <span>门店施工协同解决方案</span>
       </footer>
     </ConstructionMobileShell>
   );

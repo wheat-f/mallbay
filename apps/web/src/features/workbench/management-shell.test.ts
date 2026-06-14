@@ -26,6 +26,8 @@ test("management shell wraps business routes and excludes public and mobile rout
   const source = readFileSync("src/features/workbench/management-shell.tsx", "utf8");
 
   assert.match(source, /shouldUseManagementShell/);
+  assert.match(source, /门店运营系统/);
+  assert.doesNotMatch(source, /Automotive SaaS/);
   assert.match(source, /management-mobile-nav/);
   assert.match(source, /mobileMenuItems/);
   assert.match(source, /key: "profile"/);

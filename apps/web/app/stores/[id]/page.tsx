@@ -40,7 +40,7 @@ export default function StoreDetailPage() {
       <header className="store-public-topbar">
         <button className="store-public-brand" type="button" onClick={() => router.push("/")}>
           <span>MallBay</span>
-          <small>Automotive SaaS</small>
+          <small>门店运营系统</small>
         </button>
         <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/")}>
           返回门店大厅
@@ -89,6 +89,7 @@ export default function StoreDetailPage() {
 
             <div className="store-public-cover">
               {coverPhoto ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={coverPhoto.url} alt={store.name} />
               ) : (
                 <div className="store-public-cover-placeholder">
@@ -125,7 +126,7 @@ export default function StoreDetailPage() {
             <section className="store-public-gallery">
               <div className="store-public-section-head">
                 <div>
-                  <span>Gallery</span>
+                  <span>门店影像</span>
                   <h2>门店照片</h2>
                 </div>
                 <Typography.Text>{galleryPhotos.length} 张</Typography.Text>

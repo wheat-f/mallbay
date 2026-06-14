@@ -97,7 +97,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
       <aside className="management-sidebar">
         <button className="management-brand" type="button" onClick={() => router.push(storeMember ? `/workbench/${storeMember.store.id}` : "/")}>
           <span className="management-brand-title">MallBay</span>
-          <span className="management-brand-subtitle">Automotive SaaS</span>
+          <span className="management-brand-subtitle">门店运营系统</span>
         </button>
 
         <nav className="management-nav" aria-label="主导航">

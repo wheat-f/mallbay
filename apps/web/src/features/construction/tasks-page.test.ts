@@ -149,7 +149,9 @@ test("construction profile page follows the prototype account and connection cen
   assert.match(pageSource, /construction-profile-config-list/);
   assert.match(pageSource, /construction-profile-cache-card/);
   assert.match(pageSource, /construction-profile-toggle-list/);
-  assert.match(pageSource, /MallBay Worker/);
+  assert.match(pageSource, /MallBay 施工端/);
+  assert.match(pageSource, /门店施工协同解决方案/);
+  assert.doesNotMatch(pageSource, /MallBay Worker|Workplace Solutions/);
   assert.match(pageSource, /NEXT_PUBLIC_API_URL/);
   assert.match(cssSource, /\.construction-profile-hero/);
   assert.match(cssSource, /\.construction-profile-status-card/);

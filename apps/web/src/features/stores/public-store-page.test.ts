@@ -9,6 +9,9 @@ test("public store detail page uses the prototype public shell instead of the le
   assert.doesNotMatch(pageSource, /dashboard-header/);
   assert.doesNotMatch(pageSource, /<Layout/);
   assert.doesNotMatch(pageSource, /Layout\.Content/);
+  assert.doesNotMatch(pageSource, /Automotive SaaS|Gallery/);
+  assert.match(pageSource, /门店运营系统/);
+  assert.match(pageSource, /门店影像/);
   assert.match(pageSource, /store-public-shell/);
   assert.match(pageSource, /store-public-hero/);
   assert.match(pageSource, /store-public-cover/);

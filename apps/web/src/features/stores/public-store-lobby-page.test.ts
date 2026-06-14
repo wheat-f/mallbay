@@ -10,6 +10,9 @@ test("public store lobby uses the prototype public shell instead of the legacy h
   assert.doesNotMatch(pageSource, /Layout\.Content/);
   assert.doesNotMatch(pageSource, /home-shell/);
   assert.doesNotMatch(pageSource, /text-slate/);
+  assert.doesNotMatch(pageSource, /Automotive SaaS|Public Stores/);
+  assert.match(pageSource, /门店运营系统/);
+  assert.match(pageSource, /公开门店/);
   assert.match(pageSource, /home-lobby-shell/);
   assert.match(pageSource, /home-lobby-hero/);
   assert.match(pageSource, /home-lobby-toolbar/);

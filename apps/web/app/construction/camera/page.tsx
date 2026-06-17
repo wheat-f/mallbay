@@ -31,16 +31,11 @@ type PhotoItem = {
 };
 
 const photoAssets = {
-  inspection:
-    "https://lh3.googleusercontent.com/aida-public/AB6AXuChQCgKHt0_ndgbNHmpW3N5R6jGtM_8nDa8KbL09KQqhcCR75_ed36nnpuodlce9ux7ayR15RGC6owpa_8wllYu2UX8iRYD57oO0ptaOZuvMqkY_-Vl0G9u1q5F3UTJ4JcHBmSSe7upxHRMZaeqq8ZLdZuALd_XS4AlvTlFv_u0mOYCU3dwEf5oVyjFqJ1AjR5NHOAj_o8Jt8bGCsjMzkzXA4_jFZcbql3EORs1zwjPLI0dKhWvcVmD2Yd-k_u8WAmkNkzFQUtdmslG",
-  filmBox:
-    "https://lh3.googleusercontent.com/aida-public/AB6AXuC-p1tkbMwIs0_U9F-XLxbeZiAgnQSCeDzIBYCPcKHVwkVpvPA72YbivS963f6yRhIREpYPSdZC5_78zg0vzYL3x2B15ZMdI7fQGiYV4Dcgbq1lFdlyACOQMeSVlFvlQtOT1IMUeQFjsQa05cd-yUx2JHsAS7R339ENZWccr6nzaZd6djVcqkilmxMLBYLMz8KfoIrIG-7QiYmRkK7C6OIqZ5wJyKodnZ_c-z9SZS93ngdyKfvqUhPs4G33ll9UoWstmKVYgg_z4N4i",
-  processA:
-    "https://lh3.googleusercontent.com/aida-public/AB6AXuBoW3-RIzdmprFSSIuxbHoOF0t358peAV5uOLsxs-n2YHsY2o3pGFkM06TwCIb7X9wG4sxRk4VaplpxvlSEkHSUtRGo-YDqqJv1mKAFfhmPnFSHpy1yg--4tFQKooKqlziqwBAvPbASZpqsqavNrQRkdYDjR7ycaI_ph33vJaGL1vKxg_NcdwDx3S52rfY9fFWZNVNYHqYEBaw2loTKQ5O5bW71wOyVRXodHpCZ73nUUmZ5ND6c0wxqyqA1H9eR_VSibPitqdFY1z9G",
-  processB:
-    "https://lh3.googleusercontent.com/aida-public/AB6AXuB4UNvKI0FfgQ1YtrEAQ6IvWiL7BHUhdZjSqwgRUSTv4Q_2oQgBmvCcPo2Npdl-v3BSxEQp5ymY9rkur9mKqATdxVdU2PsvYc7QiJj1cRvYPxL4Ww_G20bLpVjvhO2N-4v0gxpNRePNe_gSS-jjwui17vGTs0hV-r3CvGiDACyLubaAetY30g8VgHlWEQFOvSXu9TjpJgXOU4s3umtz4L7KIHrnn95eUEm3Z4Q3JtfeUM2e-XX9h1n1vs2bSUcSVuvNKW8Dp297D1jt",
-  completed:
-    "https://lh3.googleusercontent.com/aida-public/AB6AXuDHYyMAGN8f1U6ZBI6LbtcFpd16viwHJ_jO_Oe0jLmn6x0mBy5X3ufvpRftnNGiI57jZReREb6jonXhR9EIFGDQ2vrSB5XfrIAo0811KhMByjoN4c-8IRJ7mRLvnn9LTT_mIOU9I_JO6Ty04O1OWKMYoO6bExGozVxTgieYcoRWslOVLwAs3mNx46eS8mRsH5fuV0sM8pxySyKyCObQxlT4s5Sed9r5IPwktTCyUtbZ-KxTiHG1rL6rCCNaKBQzsH6HqEPAdFYeUE1h"
+  inspection: "/prototype-assets/construction-camera-inspection.png",
+  filmBox: "/prototype-assets/construction-camera-film-box.png",
+  processA: "/prototype-assets/construction-camera-process-a.png",
+  processB: "/prototype-assets/construction-camera-process-b.png",
+  completed: "/prototype-assets/construction-camera-completed.png"
 };
 
 const beforePhotos: PhotoItem[] = [
@@ -99,6 +94,7 @@ export default function ConstructionCameraPage() {
       active="camera"
       variant="calendar"
       badgeCount={2}
+      desktopHref="/construction/assignments"
     >
       <div className="construction-camera-workspace">
         <div className="construction-camera-offline-banner">

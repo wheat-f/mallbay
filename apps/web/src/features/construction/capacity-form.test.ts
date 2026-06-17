@@ -77,6 +77,13 @@ test("construction capacity page shows return-to-order action when opened from o
   assert.match(pageSource, /router\.push\(returnTo\)/);
 });
 
+test("construction capacity page guards capacity saving when no store is selected", () => {
+  const pageSource = readFileSync("app/construction/capacities/page.tsx", "utf8");
+
+  assert.match(pageSource, /if \(!storeId\) throw new Error\("当前账号未加入门店"\);/);
+  assert.doesNotMatch(pageSource, /buildCapacityPayload\(storeId!, values\)/);
+});
+
 test("construction capacity page keeps date and capacity fields in a vertical form grid", () => {
   const pageSource = readFileSync("app/construction/capacities/page.tsx", "utf8");
 
@@ -88,6 +95,8 @@ test("construction capacity page keeps date and capacity fields in a vertical fo
 test("construction capacity page presents calendar and maintenance panels in a prototype layout", () => {
   const pageSource = readFileSync("app/construction/capacities/page.tsx", "utf8");
 
+  assert.match(pageSource, /DownloadOutlined/);
+  assert.match(pageSource, /导出报表/);
   assert.match(pageSource, /capacity-shell/);
   assert.match(pageSource, /capacity-calendar-card/);
   assert.match(pageSource, /capacity-calendar-grid/);
@@ -100,6 +109,15 @@ test("construction capacity page presents calendar and maintenance panels in a p
   assert.doesNotMatch(pageSource, /StorePageHeader/);
   assert.doesNotMatch(pageSource, /management-kpi-grid/);
   assert.doesNotMatch(pageSource, /management-table-card/);
+});
+
+test("construction capacity calendar becomes readable cards on phone widths", () => {
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.capacity-calendar-grid\s*\{\n {4}grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.capacity-weekday\s*\{\n {4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.capacity-day\s*\{[\s\S]*min-height: auto;/);
+  assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.capacity-day-body span\s*\{[\s\S]*white-space: normal;/);
 });
 
 test("global popups are mounted to document body for reliable overlay rendering", () => {

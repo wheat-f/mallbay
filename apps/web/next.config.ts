@@ -7,14 +7,6 @@ const webConfigDir = path.dirname(fileURLToPath(import.meta.url));
 const nextConfig: NextConfig = {
   output: "standalone",
   transpilePackages: ["@mallbay/shared"],
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "lh3.googleusercontent.com"
-      }
-    ]
-  },
   turbopack: {
     root: path.resolve(webConfigDir, "../..")
   },

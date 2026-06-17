@@ -15,7 +15,7 @@ import { storeApi } from "../../../src/lib/api";
 const STORE_STATUS_LABEL: Record<string, string> = {
   DRAFTED: "筹办中",
   PENDING_REVIEW: "审核中",
-  PUBLISHED: "公开营业",
+  PUBLISHED: "公开状态",
   FROZEN: "暂停访问"
 };
 
@@ -39,7 +39,7 @@ export default function StoreDetailPage() {
     <main className="store-public-shell">
       <header className="store-public-topbar">
         <button className="store-public-brand" type="button" onClick={() => router.push("/")}>
-          <span>MallBay</span>
+          <span>mallbay</span>
           <small>门店运营系统</small>
         </button>
         <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/")}>
@@ -71,12 +71,16 @@ export default function StoreDetailPage() {
             <div className="store-public-copy">
               <div className="store-public-kicker">
                 <Tag>{STORE_STATUS_LABEL[store.status] ?? store.status}</Tag>
-                <span>门店展示页</span>
+                <span>认证服务门店</span>
               </div>
               <Typography.Title className="store-public-title">{store.name}</Typography.Title>
               <Typography.Paragraph className="store-public-subtitle">
                 {store.description ?? "该门店暂未填写简介。您可以查看门店位置、照片，并返回大厅浏览更多公开门店。"}
               </Typography.Paragraph>
+              <div className="store-public-meta">
+                <span>认证技师: 已认证团队</span>
+                <span>工位: 以门店详情为准</span>
+              </div>
               <div className="store-public-actions">
                 <Button type="primary" icon={<ShopOutlined />} onClick={() => router.push("/")}>
                   浏览更多门店

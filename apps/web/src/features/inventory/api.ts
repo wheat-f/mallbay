@@ -8,6 +8,8 @@ export type InventoryListQuery = {
   orderId?: string;
   movementType?: InventoryMovementType;
   createdById?: string;
+  createdFrom?: string;
+  createdTo?: string;
 };
 
 export type CreateInventoryBatchPayload = {
@@ -239,6 +241,86 @@ export const inventoryApi = {
 
   createStockOperation: (payload: CreateStockOperationPayload) =>
     request<unknown>("/inventory/stock-operations", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    })
+};
+
+export const purchaseApi = {
+  overview: (storeId: string) =>
+    request<unknown>(`/purchases/overview${toQueryString({ storeId })}`),
+
+  requirements: (storeId: string) =>
+    request<unknown[]>(`/purchases/requirements${toQueryString({ storeId })}`),
+
+  createRequirement: (payload: CreatePurchaseRequirementPayload) =>
+    request<unknown>("/purchases/requirements", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  createPurchaseOrderFromRequirement: (id: string, payload: CreatePurchaseOrderFromRequirementPayload) =>
+    request<unknown>(`/purchases/requirements/${id}/orders`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  orders: (storeId: string) =>
+    request<unknown[]>(`/purchases/orders${toQueryString({ storeId })}`),
+
+  order: (id: string) =>
+    request<unknown>(`/purchases/orders/${id}`),
+
+  createOrder: (payload: CreatePurchaseOrderPayload) =>
+    request<unknown>("/purchases/orders", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  approveOrder: (id: string) =>
+    request<unknown>(`/purchases/orders/${id}/approve`, { method: "POST" }),
+
+  cancelOrder: (id: string, payload: CancelPurchaseOrderPayload) =>
+    request<unknown>(`/purchases/orders/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  receiveOrderItem: (id: string, payload: ReceivePurchaseItemPayload) =>
+    request<unknown>(`/purchases/orders/items/${id}/receive`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  receiveOrderItemBatches: (id: string, payloads: ReceivePurchaseItemPayload[]) =>
+    request<ReceivePurchaseItemBatchesResult>(`/purchases/orders/items/${id}/receive-batches`, {
+      method: "POST",
+      body: JSON.stringify({ batches: payloads })
+    }),
+
+  suppliers: (storeId: string) =>
+    request<InventorySupplierSummary[]>(`/purchases/suppliers${toQueryString({ storeId })}`),
+
+  createSupplier: (payload: CreateSupplierPayload) =>
+    request<InventorySupplierSummary>("/purchases/suppliers", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  updateSupplier: (id: string, payload: UpdateSupplierPayload) =>
+    request<InventorySupplierSummary>(`/purchases/suppliers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+
+  createSupplierContact: (id: string, payload: CreateSupplierContactPayload) =>
+    request<unknown>(`/purchases/suppliers/${id}/contacts`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  createSupplierRatingHistory: (id: string, payload: CreateSupplierRatingHistoryPayload) =>
+    request<unknown>(`/purchases/suppliers/${id}/rating-history`, {
       method: "POST",
       body: JSON.stringify(payload)
     })

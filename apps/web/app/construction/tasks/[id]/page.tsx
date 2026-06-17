@@ -94,7 +94,7 @@ export default function ConstructionMobileTaskDetailPage() {
 
   const uploadMutation = useMutation({
     mutationFn: (values: { stage: PhotoStage; url?: string }) => {
-      if (!record) throw new Error("施工任务未加载");
+      if (!record) throw new Error("未找到该施工任务");
       return constructionApi.uploadPhoto(record.id, values);
     },
     onSuccess: async () => {
@@ -111,6 +111,7 @@ export default function ConstructionMobileTaskDetailPage() {
       subtitle="按节点拍照、开工、完工并同步离线队列"
       active="tasks"
       badgeCount={pendingUploads}
+      desktopHref={`/construction/orders/${params.id}`}
     >
       <section className="construction-mobile-task-detail">
         <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/construction/tasks")}>
@@ -120,13 +121,13 @@ export default function ConstructionMobileTaskDetailPage() {
         {taskQuery.isLoading ? (
           <div className="construction-mobile-loading">任务详情加载中...</div>
         ) : !record ? (
-          <Empty description="施工任务未加载" />
+          <Empty description="未找到该施工任务" />
         ) : (
           <>
             <section className="worker-task-detail-hero">
               <div>
                 <span>订单号</span>
-                <h2>{record.order?.orderNo ?? "订单未加载"}</h2>
+                <h2>{record.order?.orderNo ?? "订单信息待确认"}</h2>
                 <p><ClockCircleOutlined /> {formatSchedule(record)}</p>
               </div>
               <Tag>{getConstructionStatusLabel(record.status)}</Tag>
@@ -174,8 +175,8 @@ export default function ConstructionMobileTaskDetailPage() {
                       options={photoRequirements.map((item) => ({ label: item.title, value: item.stage }))}
                     />
                   </Form.Item>
-                  <Form.Item name="url" label="图片 URL">
-                    <Input placeholder="粘贴图片 URL，或使用下方拍照上传" />
+                  <Form.Item name="url" label="施工照片链接">
+                    <Input placeholder="粘贴施工照片链接，或使用下方拍照上传" />
                   </Form.Item>
                   <Button htmlType="submit" type="primary" icon={<UploadOutlined />} loading={uploadMutation.isPending} block>
                     保存照片

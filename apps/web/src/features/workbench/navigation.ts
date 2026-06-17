@@ -36,14 +36,15 @@ const managerExtraActions: WorkbenchAction[] = [
   { label: "产品管理", description: "维护可下单产品、价格和状态", href: "/products" },
   { label: "施工容量", description: "维护每日施工容量和预约上限", href: "/construction/capacities" },
   { label: "施工派单", description: "处理待派工订单和施工进度", href: "/construction/assignments" },
-  { label: "库存采购", description: "管理产品批次、锁库和采购需求", href: "/inventory" },
+  { label: "库存管理", description: "查看库存健康、批次、锁库出库和库存流水", href: "/inventory" },
+  { label: "采购管理", description: "处理采购需求、采购订单、到货验收和供应商", href: "/purchases" },
   { label: "质保管理", description: "从已完工订单生成和查询质保", href: "/warranties" },
   { label: "售后管理", description: "售后申请、派单和责任判断", href: "/after-sales" },
   { label: "提成管理", description: "销售和师傅提成规则与快照", href: "/commissions" },
   { label: "财务管理", description: "费用、报销、流水和打款", href: "/finance" },
   { label: "发票管理", description: "发票申请、开具、作废和重开", href: "/invoices" },
   { label: "返利管理", description: "返利申请、审核和发放", href: "/rebates" },
-  { label: "经营报表", description: "查看门店经营关键指标", href: "/reports" }
+  { label: "报表分析", description: "查看门店经营关键指标", href: "/reports" }
 ];
 
 export function getWorkbenchSections(position: StorePosition, storeId: string): WorkbenchSection[] {
@@ -54,8 +55,8 @@ export function getWorkbenchSections(position: StorePosition, storeId: string): 
   if (position === "MANAGER") {
     return [
       { title: "销售工作", description: "客户、订单和产品", items: [...salesActions, { label: "产品管理", description: "维护可下单产品、价格和状态", href: "/products" }] },
-      { title: "门店履约", description: "施工、库存、质保和售后", items: managerExtraActions.filter((item) => !["产品管理", "财务管理", "发票管理", "返利管理", "经营报表"].includes(item.label)) },
-      { title: "经营管理", description: "财务、返利、发票和报表", items: managerExtraActions.filter((item) => ["财务管理", "发票管理", "返利管理", "经营报表"].includes(item.label)) }
+      { title: "门店履约", description: "施工、库存、质保和售后", items: managerExtraActions.filter((item) => !["产品管理", "提成管理", "财务管理", "发票管理", "返利管理", "报表分析"].includes(item.label)) },
+      { title: "经营管理", description: "财务、返利、发票和报表", items: managerExtraActions.filter((item) => ["提成管理", "财务管理", "发票管理", "返利管理", "报表分析"].includes(item.label)) }
     ];
   }
 
@@ -67,7 +68,8 @@ export function getWorkbenchSections(position: StorePosition, storeId: string): 
         { label: "客户管理", description: "维护客户档案、车辆和沟通记录", href: "/customers", primary: true },
         { label: "订单管理", description: "查看本店订单并跟进收款和履约", href: "/orders" },
         { label: "新建订单", description: "为客户选择产品、施工方式并录入费用", href: "/orders/create" },
-        { label: "库存采购", description: "按订单匹配库存、锁定批次或生成采购需求", href: "/inventory" },
+        { label: "库存管理", description: "只读查看库存匹配、批次和库存流水", href: "/inventory" },
+        { label: "采购管理", description: "只读查看采购需求、采购订单和供应商", href: "/purchases" },
         { label: "质保管理", description: "从已完工订单生成和查询质保", href: "/warranties" },
         { label: "售后管理", description: "售后申请、派单协同和责任跟进", href: "/after-sales" },
         { label: "返利管理", description: "为订单提交返利申请并查看进度", href: "/rebates" }
@@ -92,17 +94,18 @@ export function getWorkbenchSections(position: StorePosition, storeId: string): 
     return [{
       title: "施工任务",
       description: "查看分配给自己的任务并上传施工照片",
-      items: [{ label: "我的施工任务", description: "开工、完工和施工拍照", href: "/construction/tasks", primary: true }]
+      items: [{ label: "我的施工任务", description: "在 Web 后台查看施工任务和派工记录", href: "/construction/assignments", primary: true }]
     }];
   }
 
   if (position === "PURCHASING") {
     return [{
       title: "采购库存",
-      description: "库存、采购和相关费用",
+      description: "产品档案、库存流程和相关费用",
       items: [
-        { label: "库存采购", description: "管理产品批次、锁库和采购需求", href: "/inventory", primary: true },
-        { label: "产品管理", description: "查看产品基础资料", href: "/products" },
+        { label: "产品管理", description: "维护产品主数据、库存单位和规格换算", href: "/products", primary: true },
+        { label: "库存管理", description: "处理批次库存、订单匹配、锁库出库和流水追踪", href: "/inventory" },
+        { label: "采购管理", description: "处理采购需求、采购订单、到货验收和供应商", href: "/purchases" },
         { label: "财务管理", description: "提交费用和报销申请", href: "/finance" }
       ]
     }];
@@ -115,9 +118,10 @@ export function getWorkbenchSections(position: StorePosition, storeId: string): 
       items: [
         { label: "订单管理", description: "查看订单收款状态", href: "/orders" },
         { label: "财务管理", description: "费用、报销、流水和打款", href: "/finance", primary: true },
+        { label: "提成管理", description: "佣金规则、提成生成和结算", href: "/commissions" },
         { label: "发票管理", description: "发票申请、开具、作废和重开", href: "/invoices" },
         { label: "返利管理", description: "返利审核和发放", href: "/rebates" },
-        { label: "经营报表", description: "查看门店经营关键指标", href: "/reports" }
+        { label: "报表分析", description: "查看门店经营关键指标", href: "/reports" }
       ]
     }];
   }

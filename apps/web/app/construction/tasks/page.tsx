@@ -90,6 +90,7 @@ export default function ConstructionTasksPage() {
       subtitle="查看派工、开工、拍照和完工"
       active="tasks"
       badgeCount={activeCount}
+      desktopHref="/construction/assignments"
     >
       <section className="worker-task-status-hero">
         <div>
@@ -129,7 +130,7 @@ export default function ConstructionTasksPage() {
               <div className="construction-task-card-header">
                 <div>
                   <span className="construction-task-label">订单</span>
-                  <h2>{row.order?.orderNo ?? "订单未加载"}</h2>
+                  <h2>{row.order?.orderNo ?? "订单信息待确认"}</h2>
                 </div>
                 <Tag color={getStatusColor(row.status)}>{getConstructionStatusLabel(row.status)}</Tag>
               </div>

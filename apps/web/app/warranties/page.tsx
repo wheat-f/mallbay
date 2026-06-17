@@ -60,7 +60,7 @@ export default function WarrantiesPage() {
   const completedOrderOptions = ((completedOrdersQuery.data?.items ?? []) as CompletedOrderOption[]).map((order) => ({
     value: order.id,
     label: [
-      order.orderNo ?? order.id,
+      order.orderNo ?? "未编号订单",
       order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name,
       order.vehicle?.plateNo
     ].filter(Boolean).join(" / ")
@@ -93,7 +93,7 @@ export default function WarrantiesPage() {
 
   return (
     <div className="management-page">
-      <StorePageHeader title="质保管理" description="电子质保登记、客户查询、到期提醒和售后追溯" />
+      <StorePageHeader title="质保登记台" description="电子质保登记、客户查询、到期提醒和售后追溯" />
 
       <section className="warranty-command-bar">
         <div className="warranty-command-copy">
@@ -136,7 +136,7 @@ export default function WarrantiesPage() {
           <span>快速搜索</span>
           <Input.Search
             prefix={<SearchOutlined />}
-            placeholder="质保ID / 质保编号 / 客户 / 车牌"
+            placeholder="质保编号 / 客户 / 车牌 / VIN"
             allowClear
             onSearch={setWarrantyNo}
           />
@@ -147,7 +147,7 @@ export default function WarrantiesPage() {
             placeholder="全部状态"
             allowClear
             options={[
-              { value: "ACTIVE", label: "有效" },
+              { value: "ACTIVE", label: "生效中" },
               { value: "EXPIRED", label: "已过期" },
               { value: "VOIDED", label: "已作废" }
             ]}
@@ -175,7 +175,7 @@ export default function WarrantiesPage() {
         <div className="warranty-main-column">
           <Card
             className="warranty-record-list"
-            title="质保订单列表"
+            title="已完工待质保订单"
             extra={
               <div className="warranty-table-actions">
                 <Button size="small" icon={<DownloadOutlined />}>导出</Button>
@@ -246,8 +246,8 @@ export default function WarrantiesPage() {
                     return <Tag color={reminder.color}>{reminder.label}</Tag>;
                   }
                 },
-                { title: "开始", width: 110, render: (_, row) => row.startDate?.slice(0, 10) },
-                { title: "结束", width: 110, render: (_, row) => row.endDate?.slice(0, 10) },
+                { title: "开始", width: 110, render: (_, row) => formatWarrantyDate(row.startDate) },
+                { title: "结束", width: 110, render: (_, row) => formatWarrantyDate(row.endDate) },
                 {
                   title: "操作",
                   width: 90,
@@ -296,14 +296,74 @@ export default function WarrantiesPage() {
                   options={completedOrderOptions}
                 />
               </Form.Item>
-              <Form.Item name="scope" label="质保范围" rules={[{ required: true, message: "请输入质保范围" }]}>
+              <div className="warranty-parameter-card">
+                <div className="warranty-parameter-card-title">系统自动提取信息 (来自工单)</div>
+                <div className="warranty-parameter-grid">
+                  <label>
+                    <span>客户姓名</span>
+                    <Input value="选择订单后自动带入" disabled />
+                  </label>
+                  <label>
+                    <span>联系电话</span>
+                    <Input value="选择订单后自动带入" disabled />
+                  </label>
+                  <label>
+                    <span>车牌号</span>
+                    <Input value="选择订单后自动带入" disabled />
+                  </label>
+                  <label>
+                    <span>车架号 VIN</span>
+                    <Input value="选择订单后自动带入" disabled />
+                  </label>
+                </div>
+              </div>
+              <div className="warranty-proof-grid">
+                {[
+                  ["膜桶标签照片 (自动归档)", "扫码核验膜卷批次、序列号和施工记录"],
+                  ["完工车辆照片 (自动归档)", "留存完工交付影像，售后追溯时可直接调阅"]
+                ].map(([label, description]) => (
+                  <div key={label} className="warranty-proof-card">
+                    <div className="warranty-proof-thumb">
+                      <FileProtectOutlined />
+                    </div>
+                    <strong>{label}</strong>
+                    <span>{description}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="warranty-parameter-card">
+                <div className="warranty-parameter-card-title">质保参数配置</div>
+                <div className="warranty-parameter-grid">
+                  <label>
+                    <span>质保编号 (系统生成)</span>
+                    <Input value="提交后自动生成" disabled />
+                  </label>
+                  <label>
+                    <span>产品型号 (自动匹配)</span>
+                    <Input value="依据订单产品自动匹配" disabled />
+                  </label>
+                  <label>
+                    <span>质保年限</span>
+                    <Select
+                      value="5 年"
+                      disabled
+                      options={[{ value: "5 年", label: "5 年" }]}
+                    />
+                  </label>
+                  <label>
+                    <span>质保到期日期 (自动计算)</span>
+                    <Input value="按起始日期自动计算" disabled />
+                  </label>
+                </div>
+              </div>
+              <Form.Item name="scope" label="质保范围 (依据厂家标准)" rules={[{ required: true, message: "请输入质保范围" }]}>
                 <Input placeholder="黄变 / 开裂 / 脱胶 / 起泡" />
               </Form.Item>
               <Form.Item name="startDate" label="起始日期">
                 <Input placeholder="默认使用施工完工日期" />
               </Form.Item>
               <Button type="primary" htmlType="submit" block icon={<FileProtectOutlined />} loading={createWarranty.isPending}>
-                生成电子质保
+                提交生成质保
               </Button>
             </Form>
           </Card>
@@ -311,11 +371,11 @@ export default function WarrantiesPage() {
           <Card className="warranty-preview-panel" title="电子质保卡预览">
             <div className="warranty-card-preview">
               <div className="warranty-card-topline">
-                <span>MallBay Warranty</span>
+                <span>mallbay</span>
                 <SafetyCertificateOutlined />
               </div>
               <strong>{lookupQuery.data?.warrantyNo ?? "输入编号后预览"}</strong>
-              <p>{lookupQuery.data ? getWarrantyOrderLabel(lookupQuery.data) : "客户、车辆、施工范围将在生成或查询后展示"}</p>
+              <p>{lookupQuery.data ? getWarrantyOrderLabel(lookupQuery.data) : "生成或查询后显示客户、车辆和施工范围"}</p>
               <Tag color={lookupQuery.data?.status === "ACTIVE" ? "success" : "default"}>
                 {lookupQuery.data ? getWarrantyStatusLabel(lookupQuery.data.status) : "待查询"}
               </Tag>
@@ -336,6 +396,9 @@ export default function WarrantiesPage() {
                 </div>
               ))}
             </div>
+            <Button icon={<DownloadOutlined />} block>
+              下载电子质保卡
+            </Button>
           </Card>
         </aside>
       </section>
@@ -344,5 +407,7 @@ export default function WarrantiesPage() {
 }
 
 function formatWarrantyDate(value?: string | null) {
-  return value?.slice(0, 10) ?? "-";
+  if (!value) return "-";
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match?.[1] ?? "质保日期待确认";
 }

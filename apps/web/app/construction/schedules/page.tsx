@@ -12,6 +12,7 @@ import {
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
+import { useRouter } from "next/navigation";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { ConstructionMobileShell } from "../../../src/features/construction/mobile-shell";
@@ -35,6 +36,7 @@ const weekLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
 export default function ConstructionSchedulesPage() {
   const { message } = App.useApp();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [date, setDate] = useState(dayjs());
   const [scheduleView, setScheduleView] = useState<ScheduleView>("schedule");
@@ -86,7 +88,7 @@ export default function ConstructionSchedulesPage() {
   };
 
   return (
-    <ConstructionMobileShell title="我的排班" subtitle="查看当日安排，提交休息或外出状态" active="schedules" variant="calendar">
+    <ConstructionMobileShell title="我的排班" subtitle="查看当日安排，提交休息或外出状态" active="schedules" variant="calendar" desktopHref="/construction/capacities">
       <div className="construction-schedule-tabs" role="tablist" aria-label="排班视图">
         {scheduleViewTabs.map((tab) => (
           <button
@@ -169,7 +171,7 @@ export default function ConstructionSchedulesPage() {
                     </span>
                   </div>
                   <div className="construction-schedule-task-actions">
-                    <Button type={item.status === "OUTSIDE" ? "primary" : "default"}>
+                    <Button type={item.status === "OUTSIDE" ? "primary" : "default"} onClick={() => router.push("/construction/tasks")}>
                       {item.status === "OUTSIDE" ? "立即接单" : "查看详情"}
                     </Button>
                   </div>
@@ -186,7 +188,7 @@ export default function ConstructionSchedulesPage() {
           <div className="construction-mobile-section-head">
             <div>
               <h2>请假申请</h2>
-              <p>当前阶段以休息排班记录请假意向，审批流后续接入。</p>
+              <p>提交后将同步到当日排班，店长可据此安排任务。</p>
             </div>
           </div>
         <Form
@@ -216,7 +218,7 @@ export default function ConstructionSchedulesPage() {
           <div className="construction-mobile-section-head">
             <div>
               <h2>历史记录</h2>
-              <p>先展示当前选择日期的排班记录，完整历史筛选后续接入。</p>
+              <p>按当前日期展示排班记录，便于复盘当天出勤与任务安排。</p>
             </div>
           </div>
           {rows.length === 0 ? (
@@ -245,7 +247,7 @@ export default function ConstructionSchedulesPage() {
 }
 
 function getScheduleStatusLabel(status: ScheduleStatus) {
-  return scheduleStatusOptions.find((item) => item.value === status)?.label ?? status;
+  return scheduleStatusOptions.find((item) => item.value === status)?.label ?? "排班状态待确认";
 }
 
 function getScheduleStatusClassName(status: ScheduleStatus) {
@@ -257,7 +259,8 @@ function getScheduleStatusClassName(status: ScheduleStatus) {
 function getScheduleStatusFallbackNote(status: ScheduleStatus) {
   if (status === "OUTSIDE") return "外出施工，具体地址以派单信息为准";
   if (status === "REST") return "休息或请假中";
-  return "店内排班";
+  if (status === "WORKING") return "店内排班";
+  return "排班说明待确认";
 }
 
 function getScheduleTaskTitle(item: ScheduleSummary) {

@@ -337,7 +337,7 @@ export default function ProfilePage() {
     <div className="management-page profile-security-workspace">
       <section className="profile-security-hero">
         <div>
-          <div className="profile-security-kicker">ACCOUNT CENTER</div>
+          <div className="profile-security-kicker">个人中心</div>
           <Typography.Title level={2} className="management-page-title">
             账号安全
           </Typography.Title>
@@ -419,14 +419,14 @@ export default function ProfilePage() {
               label="微信"
               value={user.wechatOpenId ? <Tag color="success">已绑定</Tag> : <Tag>未绑定</Tag>}
               action="绑定"
-              onAction={() => message.info("微信绑定功能即将开放")}
+              onAction={() => message.info("微信绑定请联系门店管理员处理")}
             />
 
             <InfoRow
               label="支付宝"
               value={user.alipayUserId ? <Tag color="processing">已绑定</Tag> : <Tag>未绑定</Tag>}
               action="绑定"
-              onAction={() => message.info("支付宝绑定功能即将开放")}
+              onAction={() => message.info("支付宝绑定请联系门店管理员处理")}
             />
           </Card>
         </div>
@@ -496,7 +496,7 @@ export default function ProfilePage() {
               <span />
               <div>
                 <strong>登录凭据保护</strong>
-                <em>密码不会明文提交到后端</em>
+                <em>密码全程加密保护</em>
               </div>
             </div>
             <div className="profile-timeline-item">

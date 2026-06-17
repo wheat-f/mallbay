@@ -28,7 +28,7 @@ test("parseInboundScanLines reports invalid scanned lines without dropping valid
 });
 
 test("inventory page exposes batch scan inbound on purchase order items", () => {
-  const pageSource = readFileSync("app/inventory/page.tsx", "utf8");
+  const pageSource = readFileSync("app/purchases/orders/[id]/page.tsx", "utf8");
 
   assert.match(pageSource, /parseInboundScanLines/);
   assert.match(pageSource, /receivePurchaseItemBatches/);

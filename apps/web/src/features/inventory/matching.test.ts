@@ -102,7 +102,7 @@ test("buildInventoryMatchRows does not expose technical product ids when product
     ]
   });
 
-  assert.equal(rows[0]?.productLabel, "产品未加载");
+  assert.equal(rows[0]?.productLabel, "产品信息待确认");
 });
 
 test("buildInventoryAllocationRows formats locked allocation batch trace", () => {
@@ -178,8 +178,8 @@ test("buildInventoryAllocationRows does not expose technical batch ids when batc
     ]
   });
 
-  assert.equal(rows[0]?.productLabel, "产品未加载");
-  assert.equal(rows[0]?.batchLabel, "批次未加载");
+  assert.equal(rows[0]?.productLabel, "产品信息待确认");
+  assert.equal(rows[0]?.batchLabel, "批次信息待确认");
 });
 
 test("filterInventoryBatches filters candidate batches by scanned batch number", () => {

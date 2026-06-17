@@ -5,8 +5,8 @@ import "./globals.css";
 import { AppProviders } from "../src/providers/app-providers";
 
 export const metadata: Metadata = {
-  title: "MallBay",
-  description: "Store SaaS operating system"
+  title: "mallbay",
+  description: "漆面保护膜门店运营系统"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

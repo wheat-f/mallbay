@@ -4,7 +4,7 @@ export { getAuditActorLabel } from "../audit/display";
 export const FINANCE_APPROVAL_STATUS_LABELS: Record<string, string> = {
   PENDING: "待审批",
   APPROVED: "已通过",
-  REJECTED: "已拒绝",
+  REJECTED: "已驳回",
   PAID: "已打款",
   CANCELLED: "已取消"
 };
@@ -37,7 +37,7 @@ export const FINANCE_AUDIT_ACTION_LABELS: Record<string, string> = {
 
 export function getFinanceApprovalStatusLabel(status?: string | null) {
   if (!status) return "-";
-  return FINANCE_APPROVAL_STATUS_LABELS[status] ?? status;
+  return FINANCE_APPROVAL_STATUS_LABELS[status] ?? "状态待确认";
 }
 
 type FinanceApplicationLike = {
@@ -69,7 +69,7 @@ export function getFinanceApplicationLabel(application: FinanceApplicationLike) 
     application.status ? getFinanceApprovalStatusLabel(application.status) : undefined
   ].filter(Boolean);
 
-  return parts.join(" / ") || application.id || "-";
+  return parts.join(" / ") || "申请信息待确认";
 }
 
 export function getPaymentRecordSourceLabel(record: PaymentRecordSourceInput, lookup: PaymentRecordSourceLookup) {
@@ -78,22 +78,22 @@ export function getPaymentRecordSourceLabel(record: PaymentRecordSourceInput, lo
   const application = applications?.find((item) => item.id === sourceId);
 
   if (application) return getFinanceApplicationLabel(application);
-  return record.note || (sourceId ? "来源未加载" : "-");
+  return record.note || (sourceId ? "关联来源待确认" : "-");
 }
 
 export function getPaymentRecordTypeLabel(type?: string | null) {
   if (!type) return "-";
-  return PAYMENT_RECORD_TYPE_LABELS[type] ?? type;
+  return PAYMENT_RECORD_TYPE_LABELS[type] ?? "流水类型待确认";
 }
 
 export function getPaymentAccountTypeLabel(type?: string | null) {
   if (!type) return "-";
-  return PAYMENT_ACCOUNT_TYPE_LABELS[type] ?? type;
+  return PAYMENT_ACCOUNT_TYPE_LABELS[type] ?? "账户类型待确认";
 }
 
 export function getFinanceAuditActionLabel(action?: string | null) {
   if (!action) return "-";
-  return FINANCE_AUDIT_ACTION_LABELS[action] ?? action;
+  return FINANCE_AUDIT_ACTION_LABELS[action] ?? "操作记录待确认";
 }
 
 export function getAuditReasonText(metadata?: Record<string, unknown> | null) {

@@ -8,10 +8,10 @@ import {
 } from "./display";
 
 test("getWarrantyStatusLabel formats warranty statuses", () => {
-  assert.equal(getWarrantyStatusLabel("ACTIVE"), "有效");
+  assert.equal(getWarrantyStatusLabel("ACTIVE"), "生效中");
   assert.equal(getWarrantyStatusLabel("EXPIRED"), "已过期");
   assert.equal(getWarrantyStatusLabel("VOIDED"), "已作废");
-  assert.equal(getWarrantyStatusLabel("UNKNOWN"), "UNKNOWN");
+  assert.equal(getWarrantyStatusLabel("UNKNOWN"), "状态待确认");
 });
 
 test("getWarrantyExpiryReminder warns expiring and expired warranties", () => {
@@ -52,7 +52,7 @@ test("getWarrantyCardRows formats electronic warranty card fields", () => {
     }),
     [
       { label: "质保编号", value: "WAR202606060001" },
-      { label: "状态", value: "有效" },
+      { label: "状态", value: "生效中" },
       { label: "质保范围", value: "整车漆面保护膜" },
       { label: "开始日期", value: "2026/6/1" },
       { label: "到期日期", value: "2031/6/1" },
@@ -76,5 +76,5 @@ test("getWarrantyOrderLabel formats order business fields", () => {
 });
 
 test("getWarrantyOrderLabel does not expose technical order ids when order summary is missing", () => {
-  assert.equal(getWarrantyOrderLabel({ orderId: "cm-order-technical-id", order: null }), "订单未加载");
+  assert.equal(getWarrantyOrderLabel({ orderId: "cm-order-technical-id", order: null }), "关联订单待确认");
 });

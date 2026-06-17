@@ -18,7 +18,6 @@ import { useAuthStore } from "../../../src/stores/auth-store";
 const queueStorageKey = "mallbay-construction-offline-queue";
 const lastSyncStorageKey = "mallbay-construction-last-sync-at";
 const maxCacheSizeMb = 200;
-const apiEndpoint = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 export default function ConstructionProfilePage() {
   const router = useRouter();
@@ -44,7 +43,7 @@ export default function ConstructionProfilePage() {
   }, []);
 
   return (
-    <ConstructionMobileShell title="连接与离线设置" subtitle="管理施工端网络、终端和本地缓存" active="profile" variant="settings">
+    <ConstructionMobileShell title="连接与离线设置" subtitle="管理施工端网络、终端和本地缓存" active="profile" variant="settings" desktopHref="/profile">
       <section className="construction-profile-status-card">
         <div>
           <span>当前网络状态</span>
@@ -78,16 +77,16 @@ export default function ConstructionProfilePage() {
           >
             <ShopOutlined />
             <span>
-              <strong>门店 ID</strong>
-              <em>{storeMember?.store.id ?? "未加入门店"}</em>
+              <strong>门店名称</strong>
+              <em>{storeMember?.store.name ?? "未加入门店"}</em>
             </span>
             <b>{storeMember ? "修改" : "待邀请"}</b>
           </button>
           <button type="button" className="construction-profile-setting-row" onClick={() => router.push("/construction/offline")}>
             <ApiOutlined />
             <span>
-              <strong>API 终端地址</strong>
-              <em>{apiEndpoint}</em>
+              <strong>云端服务</strong>
+              <em>已加密连接，点击查看离线同步队列</em>
             </span>
             <SafetyCertificateOutlined />
           </button>
@@ -127,7 +126,7 @@ export default function ConstructionProfilePage() {
       </section>
 
       <footer className="construction-profile-version">
-        <span>MallBay 施工端 v4.2.1-dev</span>
+        <span>mallbay 施工端</span>
         <span>门店施工协同解决方案</span>
       </footer>
     </ConstructionMobileShell>

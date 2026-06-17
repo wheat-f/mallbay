@@ -2,7 +2,7 @@
 
 import type { DailyCapacitySummary } from "@mallbay/shared";
 import { App, Button, Card, DatePicker, Form, InputNumber, Space, Typography } from "antd";
-import { ArrowLeftOutlined, SaveOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, DownloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -29,11 +29,14 @@ export default function ConstructionCapacitiesPage() {
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const dateFromQuery = searchParams.get("date");
-    setReturnTo(getSafeReturnTo(searchParams.get("returnTo")));
-    if (!dateFromQuery) return;
-    const date = toCapacityDatePickerValue(dateFromQuery);
-    form.setFieldValue("date", date);
-    setVisibleMonth(dayjs(dateFromQuery).startOf("month"));
+    const safeReturnTo = getSafeReturnTo(searchParams.get("returnTo"));
+    queueMicrotask(() => {
+      setReturnTo(safeReturnTo);
+      if (!dateFromQuery) return;
+      const date = toCapacityDatePickerValue(dateFromQuery);
+      form.setFieldValue("date", date);
+      setVisibleMonth(dayjs(dateFromQuery).startOf("month"));
+    });
   }, [form]);
 
   const capacitiesQuery = useQuery({
@@ -41,12 +44,15 @@ export default function ConstructionCapacitiesPage() {
     queryFn: () => constructionApi.capacities({ storeId: storeId! }),
     enabled: Boolean(storeId)
   });
-  const capacityRows = capacitiesQuery.data ?? [];
+  const capacityRows = useMemo(() => capacitiesQuery.data ?? [], [capacitiesQuery.data]);
   const hasTodayCapacity = capacityRows.some((row) => formatDate(row.date) === dayjs().format("YYYY-MM-DD"));
   const calendarCells = useMemo(() => buildCapacityCalendar(visibleMonth, capacityRows), [capacityRows, visibleMonth]);
 
   const saveMutation = useMutation({
-    mutationFn: (values: CapacityFormValues) => constructionApi.upsertCapacity(buildCapacityPayload(storeId!, values)),
+    mutationFn: (values: CapacityFormValues) => {
+      if (!storeId) throw new Error("当前账号未加入门店");
+      return constructionApi.upsertCapacity(buildCapacityPayload(storeId, values));
+    },
     onSuccess: async () => {
       message.success("施工容量已保存");
       form.resetFields();
@@ -70,6 +76,7 @@ export default function ConstructionCapacitiesPage() {
                   返回订单
                 </Button>
               ) : null}
+              <Button icon={<DownloadOutlined />}>导出报表</Button>
               <Button onClick={() => setVisibleMonth((current) => current.subtract(1, "month"))}>上月</Button>
               <Typography.Title level={4} className="!mb-0">
                 {visibleMonth.format("YYYY年 MM月")}

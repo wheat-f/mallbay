@@ -3,25 +3,28 @@
 import type { InventoryBatchSummary, InventoryMovementType, ProductUnit } from "@mallbay/shared";
 import {
   AlertOutlined,
+  ArrowLeftOutlined,
   ArrowDownOutlined,
   ArrowUpOutlined,
   DatabaseOutlined,
   DownloadOutlined,
-  PlusOutlined,
   SearchOutlined
 } from "@ant-design/icons";
-import { Button, Card, DatePicker, Form, Input, Select, Table, Typography } from "antd";
+import { Button, Card, DatePicker, Form, Select, Table, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { inventoryApi, productApi, userApi } from "../../../src/lib/api";
+import { inventoryApi, orderApi, productApi, userApi } from "../../../src/lib/api";
 import {
   getInventoryBatchLabel,
+  getInventoryOrderCustomerLabel,
+  getInventoryOrderItemsSummary,
   getInventoryMovementSummary,
   getInventoryMovementTypeLabel,
   getInventoryProductLabel,
   INVENTORY_BATCH_MISSING_LABEL,
-  INVENTORY_MOVEMENT_TYPE_LABEL
+  INVENTORY_MOVEMENT_TYPE_LABEL,
+  type InventoryOrderLike
 } from "../../../src/features/inventory/display";
 import { getProductDisplayName, getProductUnitLabel } from "../../../src/features/products/display";
 import { useAuthStore } from "../../../src/stores/auth-store";
@@ -44,6 +47,8 @@ type OperatorOption = {
   username: string;
   nickname?: string | null;
 };
+
+type MovementFilterOrderRow = InventoryOrderLike;
 
 type MovementRow = {
   id: string;
@@ -87,13 +92,15 @@ type MovementFilterValues = {
   movementType?: InventoryMovementType;
   orderId?: string;
   createdById?: string;
+  createdFrom?: string;
+  createdTo?: string;
   dateRange?: unknown;
 };
 
 export default function InventoryMovementsPage() {
-  const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
+  const currentStoreName = user?.storeMember?.store.name ?? "当前门店";
   const [filterForm] = Form.useForm<MovementFilterValues>();
   const [movementFilters, setMovementFilters] = useState<Omit<MovementFilterValues, "dateRange">>({});
   const [operatorKeyword, setOperatorKeyword] = useState("");
@@ -111,6 +118,11 @@ export default function InventoryMovementsPage() {
   const movementsQuery = useQuery({
     queryKey: ["inventory-movements", storeId, movementFilters],
     queryFn: () => inventoryApi.movements({ storeId: storeId!, ...movementFilters }),
+    enabled: Boolean(storeId)
+  });
+  const movementOrdersQuery = useQuery({
+    queryKey: ["inventory-movement-ledger-orders", storeId],
+    queryFn: () => orderApi.list({ storeId: storeId!, pageSize: 100 }),
     enabled: Boolean(storeId)
   });
   const movementOperatorsQuery = useQuery({
@@ -135,7 +147,7 @@ export default function InventoryMovementsPage() {
       brand: product.brand ?? undefined,
       name: product.name ?? undefined,
       model: product.model ?? undefined
-    }) || product.id
+    }) || "未命名产品"
   }));
   const batchOptions = batchRows.map((batch) => ({
     value: batch.id,
@@ -144,22 +156,32 @@ export default function InventoryMovementsPage() {
   const movementTypeOptions = (Object.entries(INVENTORY_MOVEMENT_TYPE_LABEL) as Array<[InventoryMovementType, string]>).map(
     ([value, label]) => ({ value, label })
   );
+  const movementOrderOptions = ((movementOrdersQuery.data?.items ?? []) as MovementFilterOrderRow[]).map((order) => ({
+    value: order.id,
+    label: `${order.orderNo} · ${getInventoryOrderCustomerLabel(order)} · ${getInventoryOrderItemsSummary(order)}`
+  }));
   const movementOperatorOptions = ((movementOperatorsQuery.data ?? []) as OperatorOption[]).map((operator) => ({
     value: operator.id,
-    label: [operator.nickname, `@${operator.username}`].filter(Boolean).join(" ")
+    label: [operator.nickname, `@${operator.username}`].filter(Boolean).join(" ") || "未知操作人"
   }));
 
-  const applyFilters = ({ dateRange: _dateRange, ...values }: MovementFilterValues) => {
-    setMovementFilters(removeEmptyFilters(values));
+  const applyFilters = ({ dateRange, ...values }: MovementFilterValues) => {
+    const { createdFrom, createdTo } = formatMovementDateRange(dateRange);
+    setMovementFilters(removeEmptyFilters({ ...values, createdFrom, createdTo }));
   };
 
   return (
     <div className="management-page movement-ledger-page">
+      <div className="movement-ledger-breadcrumb">
+        <Link href="/inventory">库存管理</Link>
+        <span>/</span>
+        <span>库存流水</span>
+      </div>
       <StorePageHeader title="库存流水" description="追踪入库、出库、锁库、调拨、报损和盘点调整的完整批次链路">
-        <Button icon={<DownloadOutlined />}>导出报表</Button>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/inventory")}>
-          新增入库
+        <Button href="/inventory" aria-label="返回库存总览" icon={<ArrowLeftOutlined />}>
+          返回库存总览
         </Button>
+        <Button icon={<DownloadOutlined />}>导出报表</Button>
       </StorePageHeader>
 
       <section className="movement-kpi-grid">
@@ -192,6 +214,9 @@ export default function InventoryMovementsPage() {
       <Card className="movement-filter-panel">
         <Form form={filterForm} layout="vertical" onFinish={applyFilters}>
           <div className="movement-filter-grid">
+            <Form.Item label="门店">
+              <Select disabled value={currentStoreName} />
+            </Form.Item>
             <Form.Item name="productId" label="产品名称 / 规格">
               <Select allowClear showSearch optionFilterProp="label" placeholder="输入关键字搜索..." options={productOptions} />
             </Form.Item>
@@ -205,7 +230,14 @@ export default function InventoryMovementsPage() {
               <Select allowClear showSearch optionFilterProp="label" placeholder="输入完整批次号" options={batchOptions} />
             </Form.Item>
             <Form.Item name="orderId" label="关联单号">
-              <Input placeholder="输入订单号或采购单号" />
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                loading={movementOrdersQuery.isLoading}
+                placeholder="输入Order/Purchase ID"
+                options={movementOrderOptions}
+              />
             </Form.Item>
             <Form.Item name="createdById" label="操作人">
               <Select
@@ -214,7 +246,7 @@ export default function InventoryMovementsPage() {
                 filterOption={false}
                 loading={movementOperatorsQuery.isLoading}
                 onSearch={setOperatorKeyword}
-                placeholder="搜索操作人"
+                placeholder="全部操作人"
                 options={movementOperatorOptions}
               />
             </Form.Item>
@@ -437,6 +469,24 @@ function removeEmptyFilters(values: Omit<MovementFilterValues, "dateRange">) {
   ) as Omit<MovementFilterValues, "dateRange">;
 }
 
+function formatMovementDateRange(dateRange: unknown) {
+  if (!Array.isArray(dateRange)) return {};
+  const [from, to] = dateRange;
+  return {
+    createdFrom: formatMovementDateValue(from),
+    createdTo: formatMovementDateValue(to)
+  };
+}
+
+function formatMovementDateValue(value: unknown) {
+  if (!value) return undefined;
+  if (typeof value === "string") return value.slice(0, 10);
+  if (typeof value === "object" && "format" in value && typeof value.format === "function") {
+    return value.format("YYYY-MM-DD");
+  }
+  return undefined;
+}
+
 function getMovementProductLabel(row: MovementRow, productMap: Map<string, ProductOption>) {
   if (row.product) {
     return getProductDisplayName({
@@ -452,7 +502,7 @@ function getMovementProductSpec(row: MovementRow, productMap: Map<string, Produc
   const product = row.productId ? productMap.get(row.productId) : undefined;
   const specification = row.product?.specification ?? product?.specification;
   const unit = row.product?.inventoryUnit ?? row.product?.unit ?? product?.inventoryUnit ?? product?.unit;
-  return [specification, unit ? getProductUnitLabel(unit) : undefined].filter(Boolean).join(" / ") || "规格未加载";
+  return [specification, unit ? getProductUnitLabel(unit) : undefined].filter(Boolean).join(" / ") || "规格待确认";
 }
 
 function getMovementBatchNo(row: MovementRow, batchMap: Map<string, InventoryBatchSummary>) {
@@ -473,14 +523,14 @@ function getMovementUnitLabel(
 }
 
 function getMovementSourceLabel(row: MovementRow) {
-  return row.order?.orderNo ?? row.sourceOrderNo ?? row.sourceNo ?? (row.orderId ? "关联单据未加载" : "手工调整");
+  return row.order?.orderNo ?? row.sourceOrderNo ?? row.sourceNo ?? (row.orderId ? "关联单据待确认" : "手工调整");
 }
 
 function getMovementOperatorLabel(row: MovementRow) {
   if (row.createdBy) {
     return [row.createdBy.nickname, row.createdBy.username ? `@${row.createdBy.username}` : undefined].filter(Boolean).join(" ");
   }
-  return row.createdById ? "操作人未加载" : "系统";
+  return row.createdById ? "操作人待确认" : "系统";
 }
 
 function formatDateTime(value?: string | null) {

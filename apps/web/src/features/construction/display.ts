@@ -26,17 +26,17 @@ export const CONSTRUCTION_QUALITY_RESULT_LABELS: Record<string, string> = {
 
 export function getConstructionStatusLabel(status?: string | null) {
   if (!status) return "-";
-  return CONSTRUCTION_STATUS_LABELS[status] ?? status;
+  return CONSTRUCTION_STATUS_LABELS[status] ?? "施工状态待确认";
 }
 
 export function getConstructionQualityResultLabel(result?: string | null) {
   if (!result) return "-";
-  return CONSTRUCTION_QUALITY_RESULT_LABELS[result] ?? result;
+  return CONSTRUCTION_QUALITY_RESULT_LABELS[result] ?? "质检结果待确认";
 }
 
 export function getConstructionPhotoStageLabel(stage?: string | null) {
   if (!stage) return "-";
-  return CONSTRUCTION_PHOTO_STAGE_LABELS[stage] ?? stage;
+  return CONSTRUCTION_PHOTO_STAGE_LABELS[stage] ?? "照片阶段待确认";
 }
 
 export function getConstructionWorkerLabel(worker?: ConstructionWorkerLike | string | null) {
@@ -50,5 +50,5 @@ export function getConstructionWorkerLabel(worker?: ConstructionWorkerLike | str
 
 function formatWorkerIdFallback(userId?: string | null) {
   if (!userId) return "-";
-  return "施工人员未加载";
+  return "待确认施工人员";
 }

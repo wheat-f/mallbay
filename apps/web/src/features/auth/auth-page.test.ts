@@ -8,6 +8,8 @@ test("auth page follows the prototype split-screen SaaS login layout", () => {
 
   assert.match(pageSource, /auth-prototype-shell/);
   assert.match(pageSource, /auth-hero-panel/);
+  assert.match(pageSource, /aria-label="mallbay 平台介绍"/);
+  assert.doesNotMatch(pageSource, /aria-label="MallBay 平台介绍"/);
   assert.match(pageSource, /auth-hero-media/);
   assert.match(pageSource, /auth-hero-overlay/);
   assert.match(pageSource, /auth-hero-content/);

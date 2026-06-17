@@ -1,14 +1,14 @@
 import type { BusinessOrderSummary } from "@mallbay/shared";
 
 export const WARRANTY_STATUS_LABELS: Record<string, string> = {
-  ACTIVE: "有效",
+  ACTIVE: "生效中",
   EXPIRED: "已过期",
   VOIDED: "已作废"
 };
 
 export function getWarrantyStatusLabel(status?: string | null) {
   if (!status) return "-";
-  return WARRANTY_STATUS_LABELS[status] ?? status;
+  return WARRANTY_STATUS_LABELS[status] ?? "状态待确认";
 }
 
 export type WarrantyLike = {
@@ -57,10 +57,10 @@ export function getWarrantyCardRows(warranty: WarrantyLike) {
 
 export function getWarrantyOrderLabel(warranty: Pick<WarrantyLike, "order" | "orderId">) {
   const order = warranty.order;
-  if (!order) return "订单未加载";
+  if (!order) return "关联订单待确认";
   return [order.orderNo, getBusinessCustomerLabel(order.customer), getBusinessVehicleLabel(order.vehicle)]
     .filter(Boolean)
-    .join(" / ") || "订单未加载";
+    .join(" / ") || "关联订单待确认";
 }
 
 function getBusinessCustomerLabel(orderCustomer?: BusinessOrderSummary["customer"]) {

@@ -106,6 +106,38 @@ test("ProductsService persists structured inventory conversion fields", async ()
   });
 });
 
+test("ProductsService allows purchasing to manage products", async () => {
+  const writes: unknown[] = [];
+  const service = new ProductsService({
+    product: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "product-1" };
+      }
+    }
+  } as never);
+
+  const result = await service.create(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    {
+      storeId: "store-1",
+      brand: "龙膜",
+      name: "漆面保护膜",
+      model: "L-100",
+      category: ProductCategory.PPF,
+      unit: ProductUnit.ROLL,
+      basePriceCents: 4200000
+    }
+  );
+
+  assert.deepEqual(result, { id: "product-1" });
+  assert.equal((writes[0] as { data: { storeId: string } }).data.storeId, "store-1");
+});
+
 test("ProductsService rejects product updates from sales", async () => {
   const service = new ProductsService({
     product: {
@@ -124,6 +156,43 @@ test("ProductsService rejects product updates from sales", async () => {
         "product-1",
         { name: "新名称" }
       ),
+    { name: "ForbiddenException" }
+  );
+});
+
+test("ProductsService rejects customer service product mutations", async () => {
+  const service = new ProductsService({
+    product: {
+      findUnique: async () => ({ id: "product-1", storeId: "store-1" }),
+      create: async () => {
+        throw new Error("customer service should not create products");
+      },
+      update: async () => {
+        throw new Error("customer service should not update products");
+      }
+    }
+  } as never);
+  const user = {
+    id: "customer-service-1",
+    isAuditor: false,
+    storeMember: { storeId: "store-1", position: "CUSTOMER_SERVICE" as StorePosition }
+  };
+
+  await assert.rejects(
+    () =>
+      service.create(user, {
+        storeId: "store-1",
+        brand: "3M",
+        name: "漆面保护膜",
+        model: "PPF-100",
+        category: ProductCategory.PPF,
+        unit: ProductUnit.ROLL,
+        basePriceCents: 5000000
+      }),
+    { name: "ForbiddenException" }
+  );
+  await assert.rejects(
+    () => service.update(user, "product-1", { name: "新名称" }),
     { name: "ForbiddenException" }
   );
 });

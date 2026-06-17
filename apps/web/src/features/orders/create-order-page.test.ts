@@ -42,8 +42,16 @@ test("create order page provides prototype-like top actions", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
   assert.match(pageSource, /create-order-header-actions/);
+  assert.match(pageSource, /保存草稿/);
   assert.match(pageSource, /onClick=\{\(\) => form\.submit\(\)\}/);
   assert.match(pageSource, /提交订单/);
+});
+
+test("create order page blocks submit with a business-safe message when no store is selected", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /if \(!storeId\) throw new Error\("当前账号尚未加入门店"\);/);
+  assert.doesNotMatch(pageSource, /toCreateOrderPayload\(values, storeId!\)/);
 });
 
 test("create order page does not duplicate primary submit actions at the bottom", () => {
@@ -91,6 +99,8 @@ test("create order new customer drawer includes profile fields aligned with cust
   assert.match(pageSource, /label="介绍人"/);
   assert.match(pageSource, /customerApi\.search\(storeId!, referrerKeyword\)/);
   assert.match(pageSource, /onSearch=\{setReferrerKeyword\}/);
+  assert.doesNotMatch(pageSource, /customer\.companyName \?\? customer\.name \?\? customer\.contactPerson \?\? customer\.id/);
+  assert.match(pageSource, /customer\.companyName \?\? customer\.name \?\? customer\.contactPerson \?\? "未命名客户"/);
   assert.match(cssSource, /create-order-customer-drawer[\s\S]*ant-drawer-content-wrapper/);
 });
 
@@ -99,6 +109,8 @@ test("create order new customer modal saves vehicle photo url", () => {
 
   assert.match(pageSource, /name="photoUrl"/);
   assert.match(pageSource, /label="车辆照片"/);
+  assert.match(pageSource, /车辆照片链接，可稍后在客户档案补充/);
+  assert.doesNotMatch(pageSource, /车辆照片 URL/);
   assert.match(pageSource, /photoUrl: trimOptional\(photoUrl\)/);
 });
 

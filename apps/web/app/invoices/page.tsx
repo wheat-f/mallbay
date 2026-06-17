@@ -2,7 +2,7 @@
 
 import type { InvoiceSummary } from "@mallbay/shared";
 import type { ApplyInvoicePayload } from "../../src/lib/api";
-import { App, Button, Card, Drawer, Form, Input, InputNumber, Select, Table, Tag } from "antd";
+import { App, Button, Card, Drawer, Form, Input, InputNumber, Radio, Select, Table, Tag } from "antd";
 import {
   DownloadOutlined,
   EyeOutlined,
@@ -22,12 +22,19 @@ import { formatCentsAsYuan, yuanToCents } from "../../src/features/finance/displ
 import {
   getInvoiceBusinessLabel,
   getInvoiceFileDisplay,
+  getInvoiceOrderPaymentStatus,
   getInvoiceOrderLabel,
   getInvoiceStatusLabel
 } from "../../src/features/invoices/display";
 
 type ApplyInvoiceFormValues = Omit<ApplyInvoicePayload, "amountCents"> & {
   amountYuan: number;
+  invoiceType?: "SPECIAL" | "NORMAL";
+  recipientName?: string;
+  recipientPhone?: string;
+  recipientEmail?: string;
+  mailingAddress?: string;
+  applicationNote?: string;
 };
 
 type InvoiceProcessValues = {
@@ -57,6 +64,8 @@ export default function InvoicesPage() {
   const sendForm = invoiceProcessForm;
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>();
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [orderStatusFilter, setOrderStatusFilter] = useState<string>("ALL");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("ALL");
   const [applicationDrawerOpen, setApplicationDrawerOpen] = useState(false);
 
   const invoicesQuery = useQuery({
@@ -66,14 +75,14 @@ export default function InvoicesPage() {
   });
   const invoiceOrdersQuery = useQuery({
     queryKey: ["invoices", "orders", storeId],
-    queryFn: () => orderApi.list({ storeId: storeId!, status: "COMPLETED", page: 1, pageSize: 100 }),
+    queryFn: () => orderApi.list({ storeId: storeId!, status: "COMPLETED", paymentStatus: "PAID", page: 1, pageSize: 100 }),
     enabled: Boolean(storeId)
   });
 
   const invoiceOrderOptions = ((invoiceOrdersQuery.data?.items ?? []) as InvoiceOrderOption[]).map((order) => ({
     value: order.id,
     label: [
-      order.orderNo ?? order.id,
+      order.orderNo ?? "未编号订单",
       order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name,
       order.vehicle?.plateNo
     ].filter(Boolean).join(" / ")
@@ -88,8 +97,12 @@ export default function InvoicesPage() {
     () => invoiceRows.find((invoice) => invoice.id === activeInvoiceId),
     [activeInvoiceId, invoiceRows]
   );
-  const filteredInvoiceRows =
-    statusFilter === "ALL" ? invoiceRows : invoiceRows.filter((invoice) => invoice.status === statusFilter);
+  const filteredInvoiceRows = invoiceRows.filter((invoice) => {
+    const matchesInvoiceStatus = statusFilter === "ALL" || invoice.status === statusFilter;
+    const matchesOrderStatus = orderStatusFilter === "ALL" || invoice.order?.status === orderStatusFilter;
+    const matchesPaymentStatus = paymentStatusFilter === "ALL" || getInvoiceOrderPaymentStatus(invoice) === paymentStatusFilter;
+    return matchesInvoiceStatus && matchesOrderStatus && matchesPaymentStatus;
+  });
   const invoiceSummary = {
     total: invoiceRows.length,
     applied: invoiceRows.filter((invoice) => invoice.status === "APPLIED").length,
@@ -136,7 +149,7 @@ export default function InvoicesPage() {
     mutationFn: (values: InvoiceProcessValues) =>
       invoicesApi.issue(values.id, { invoiceNo: values.invoiceNo!, fileUrl: values.fileUrl, note: values.note }),
     onSuccess: async () => {
-      message.success("发票已开具");
+      message.success("发票已开票");
       await invalidate();
     },
     onError: (error: Error) => message.error(error.message)
@@ -153,7 +166,7 @@ export default function InvoicesPage() {
     mutationFn: (values: InvoiceProcessValues) =>
       invoicesApi.reissue(values.id, { invoiceNo: values.invoiceNo!, fileUrl: values.fileUrl, note: values.note }),
     onSuccess: async () => {
-      message.success("发票已重开");
+      message.success("重新开票已完成");
       await invalidate();
     },
     onError: (error: Error) => message.error(error.message)
@@ -187,20 +200,12 @@ export default function InvoicesPage() {
 
   return (
     <div className="management-page">
-      <StorePageHeader title="发票管理" description="管理客户发票申请，处理开票、发送、作废和重开流程" />
-
-      <div className="invoice-command-bar">
-        <div>
-          <span>开票中心</span>
-          <strong>已完工订单到发票交付的完整流转</strong>
-        </div>
-        <div className="invoice-command-actions">
-          <Button icon={<DownloadOutlined />}>导出报表</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setApplicationDrawerOpen(true)}>
-            新增开票申请
-          </Button>
-        </div>
-      </div>
+      <StorePageHeader title="发票管理" description="管理客户发票申请，处理开票、发送、作废和重开流程">
+        <Button icon={<DownloadOutlined />}>导出报表</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setApplicationDrawerOpen(true)}>
+          新增开票申请
+        </Button>
+      </StorePageHeader>
 
       <div className="invoice-metric-grid">
         {[
@@ -218,6 +223,27 @@ export default function InvoicesPage() {
 
       <Card className="invoice-filter-panel management-filter-card">
         <div className="invoice-filter-row">
+          <span>订单状态</span>
+          <Select
+            value={orderStatusFilter}
+            onChange={setOrderStatusFilter}
+            options={[
+              { value: "ALL", label: "全部" },
+              { value: "COMPLETED", label: "已完成" },
+              { value: "WARRANTIED", label: "已质保" }
+            ]}
+          />
+          <span>收款状态</span>
+          <Select
+            value={paymentStatusFilter}
+            onChange={setPaymentStatusFilter}
+            options={[
+              { value: "ALL", label: "全部" },
+              { value: "UNPAID", label: "未收款" },
+              { value: "PARTIAL", label: "部分到款" },
+              { value: "PAID", label: "已到款" }
+            ]}
+          />
           <span>发票状态</span>
           <Select
             value={statusFilter}
@@ -225,17 +251,25 @@ export default function InvoicesPage() {
             options={[
               { value: "ALL", label: "全部" },
               { value: "APPLIED", label: "未开票 / 待开票" },
-              { value: "ISSUED", label: "已开具" },
+              { value: "ISSUED", label: "已开票" },
               { value: "VOIDED", label: "已作废" },
-              { value: "REISSUED", label: "已重开" }
+              { value: "REISSUED", label: "已开票" }
             ]}
           />
-          <Button onClick={() => setStatusFilter("ALL")}>清除过滤</Button>
+          <Button
+            onClick={() => {
+              setOrderStatusFilter("ALL");
+              setPaymentStatusFilter("ALL");
+              setStatusFilter("ALL");
+            }}
+          >
+            清除过滤
+          </Button>
         </div>
       </Card>
 
       <section className="invoice-workspace">
-        <Card className="invoice-record-list" title="发票记录">
+        <Card className="invoice-record-list" title="发票列表">
           <div className="invoice-mobile-cards">
             {filteredInvoiceRows.length > 0 ? (
               filteredInvoiceRows.map((invoice) => {
@@ -296,7 +330,7 @@ export default function InvoicesPage() {
                 );
               })
             ) : (
-              <div className="invoice-mobile-empty">暂无发票记录</div>
+              <div className="invoice-mobile-empty">暂无发票列表数据</div>
             )}
           </div>
 
@@ -392,8 +426,8 @@ export default function InvoicesPage() {
               <Form.Item name="invoiceNo" label="发票号" rules={[{ required: true, message: "请输入发票号" }]}>
                 <Input placeholder="发票号" />
               </Form.Item>
-              <Form.Item name="fileUrl" label="电子文件 URL">
-                <Input placeholder="电子文件 URL" />
+              <Form.Item name="fileUrl" label="电子发票文件链接">
+                <Input placeholder="粘贴电子发票文件链接" />
               </Form.Item>
             </div>
 
@@ -469,26 +503,59 @@ export default function InvoicesPage() {
           form={applyForm}
           layout="vertical"
           className="invoice-apply-form invoice-drawer-form"
+          initialValues={{ invoiceType: "SPECIAL" }}
           onFinish={(values) => applyInvoice.mutate(values)}
         >
-          <Form.Item name="orderId" label="可开票订单" rules={[{ required: true, message: "请选择可开票订单" }]}>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              loading={invoiceOrdersQuery.isLoading}
-              placeholder="选择可开票订单"
-              options={invoiceOrderOptions}
-            />
-          </Form.Item>
-          <Form.Item name="title" label="发票抬头" rules={[{ required: true, message: "请输入发票抬头" }]}>
-            <Input placeholder="客户公司或个人抬头" />
-          </Form.Item>
-          <Form.Item name="taxNo" label="统一社会信用代码 / 税号">
-            <Input placeholder="企业税号，个人发票可留空" />
-          </Form.Item>
-          <Form.Item name="amountYuan" label="金额（元）" rules={[{ required: true, message: "请输入金额" }]}>
-            <InputNumber className="w-full" min={0.01} precision={2} placeholder="金额（元）" />
-          </Form.Item>
+          <section className="invoice-drawer-section">
+            <h3>抬头信息</h3>
+            <Form.Item name="invoiceType" label="发票类型" rules={[{ required: true, message: "请选择发票类型" }]}>
+              <Radio.Group
+                options={[
+                  { value: "SPECIAL", label: "增值税专用发票" },
+                  { value: "NORMAL", label: "增值税普通发票" }
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="orderId" label="可开票订单" rules={[{ required: true, message: "请选择可开票订单" }]}>
+              <Select
+                showSearch
+                optionFilterProp="label"
+                loading={invoiceOrdersQuery.isLoading}
+                placeholder="选择可开票订单"
+                options={invoiceOrderOptions}
+              />
+            </Form.Item>
+            <Form.Item name="title" label="发票抬头" rules={[{ required: true, message: "请输入发票抬头" }]}>
+              <Input placeholder="客户公司或个人抬头" />
+            </Form.Item>
+            <Form.Item name="taxNo" label="统一社会信用代码 / 税号">
+              <Input placeholder="企业税号，个人发票可留空" />
+            </Form.Item>
+            <Form.Item name="amountYuan" label="金额（元）" rules={[{ required: true, message: "请输入金额" }]}>
+              <InputNumber className="w-full" min={0.01} precision={2} placeholder="金额（元）" />
+            </Form.Item>
+          </section>
+
+          <section className="invoice-drawer-section">
+            <h3>收票信息</h3>
+            <div className="invoice-recipient-grid">
+              <Form.Item name="recipientName" label="收票人">
+                <Input placeholder="请输入收票人" />
+              </Form.Item>
+              <Form.Item name="recipientPhone" label="联系电话">
+                <Input placeholder="请输入联系电话" />
+              </Form.Item>
+            </div>
+            <Form.Item name="recipientEmail" label="接收邮箱 (电子发票必填)">
+              <Input placeholder="finance@example.com" />
+            </Form.Item>
+            <Form.Item name="mailingAddress" label="邮寄地址 (纸质发票必填)">
+              <Input placeholder="填写纸质发票邮寄地址" />
+            </Form.Item>
+            <Form.Item name="applicationNote" label="备注">
+              <Input.TextArea rows={3} placeholder="填写开票、寄送或客户要求备注" />
+            </Form.Item>
+          </section>
         </Form>
       </Drawer>
     </div>

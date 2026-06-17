@@ -11,7 +11,7 @@ import {
   TruckOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useMemo } from "react";
 import { inventoryApi, productApi } from "../../../src/lib/api";
 import { getInventoryBatchLabel, getInventoryProductLabel } from "../../../src/features/inventory/display";
@@ -55,9 +55,11 @@ type TransferFormValues = {
 export default function InventoryAdjustmentsPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
+  const canManageInventory = user?.isAuditor === true ||
+    user?.storeMember?.position === "MANAGER" ||
+    user?.storeMember?.position === "PURCHASING";
   const [conversionForm] = Form.useForm<ConversionFormValues>();
   const [splitForm] = Form.useForm<SplitFormValues>();
   const [stockForm] = Form.useForm<StockOperationFormValues>();
@@ -156,17 +158,17 @@ export default function InventoryAdjustmentsPage() {
     <div className="management-page adjustment-workspace-page">
       <header className="adjustment-topbar">
         <div>
-          <button type="button" aria-label="返回库存管理" onClick={() => router.push("/inventory")}>
+          <Link href="/inventory" aria-label="返回库存总览" className="adjustment-overview-back">
             <ArrowLeftOutlined />
-          </button>
+            <span>返回库存总览</span>
+          </Link>
           <div>
             <h1>库存调整操作</h1>
             <span>库存管理 / 单位转换与调整</span>
           </div>
         </div>
         <div>
-          <Button onClick={() => router.push("/inventory")}>取消操作</Button>
-          <Button type="primary" icon={<CheckOutlined />} onClick={() => stockForm.submit()}>
+          <Button type="primary" icon={<CheckOutlined />} disabled={!canManageInventory} onClick={() => stockForm.submit()}>
             确认提交
           </Button>
         </div>
@@ -214,7 +216,7 @@ export default function InventoryAdjustmentsPage() {
                   <span>米</span>
                 </span>
               </Form.Item>
-              <Button htmlType="submit" icon={<SwapOutlined />} loading={convertBatch.isPending}>
+              <Button htmlType="submit" icon={<SwapOutlined />} loading={convertBatch.isPending} disabled={!canManageInventory}>
                 添加转换记录
               </Button>
             </Form>
@@ -237,7 +239,7 @@ export default function InventoryAdjustmentsPage() {
               <Form.Item label="新批次后缀">
                 <Input value="-S01" disabled />
               </Form.Item>
-              <Button type="primary" htmlType="submit" icon={<ScissorOutlined />} loading={splitBatch.isPending}>
+              <Button type="primary" htmlType="submit" icon={<ScissorOutlined />} loading={splitBatch.isPending} disabled={!canManageInventory}>
                 添加拆分记录
               </Button>
             </Form>
@@ -257,7 +259,7 @@ export default function InventoryAdjustmentsPage() {
                     <strong>{row.batchNo}</strong>
                     <span>{getInventoryProductLabel(row.productId, productMap)}</span>
                   </div>
-                  <Button type="text" danger icon={<DeleteOutlined />} />
+                  <Button type="text" danger icon={<DeleteOutlined />} disabled={!canManageInventory} />
                 </div>
                 <dl className="adjustment-count-mobile-card-fields">
                   <div>
@@ -344,7 +346,7 @@ export default function InventoryAdjustmentsPage() {
               {
                 title: "操作",
                 render: () => (
-                  <Button type="text" danger icon={<DeleteOutlined />} />
+                  <Button type="text" danger icon={<DeleteOutlined />} disabled={!canManageInventory} />
                 )
               }
             ]}
@@ -377,7 +379,7 @@ export default function InventoryAdjustmentsPage() {
             <Form.Item name="note">
               <Input placeholder="原因说明" />
             </Form.Item>
-            <Button htmlType="submit" type="primary" loading={createStockOperation.isPending}>
+            <Button htmlType="submit" type="primary" loading={createStockOperation.isPending} disabled={!canManageInventory}>
               提交盘点差异
             </Button>
           </Form>
@@ -418,7 +420,7 @@ export default function InventoryAdjustmentsPage() {
             <Form.Item name="quantity" label="调拨数量" rules={[{ required: true, message: "请输入调拨数量" }]}>
               <InputNumber min={0.001} placeholder="数量" className="w-full" />
             </Form.Item>
-            <Button type="primary" htmlType="submit" icon={<TruckOutlined />} loading={createTransferOperation.isPending}>
+            <Button type="primary" htmlType="submit" icon={<TruckOutlined />} loading={createTransferOperation.isPending} disabled={!canManageInventory}>
               提交调拨
             </Button>
           </Form>

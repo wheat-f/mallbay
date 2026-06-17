@@ -6,12 +6,15 @@ test("rebates page uses business selectors instead of manual ids", () => {
   const pageSource = readFileSync("app/rebates/page.tsx", "utf8");
 
   assert.match(pageSource, /orderApi\.list\(\{/);
+  assert.match(pageSource, /paymentStatus: "PAID"/);
   assert.match(pageSource, /const rebateOrderOptions =/);
   assert.match(pageSource, /const rebateOptions =/);
   assert.match(pageSource, /placeholder="选择返利订单"/);
   assert.match(pageSource, /options=\{rebateOrderOptions\}/);
   assert.match(pageSource, /placeholder="选择返利申请"/);
   assert.match(pageSource, /options=\{rebateOptions\}/);
+  assert.doesNotMatch(pageSource, /order\.orderNo \?\? order\.id/);
+  assert.match(pageSource, /order\.orderNo \?\? "未编号订单"/);
   assert.doesNotMatch(pageSource, /<Input placeholder="订单 ID"/);
   assert.doesNotMatch(pageSource, /<Input placeholder="返利 ID"/);
 });
@@ -21,25 +24,57 @@ test("rebates page table uses business labels instead of technical id columns", 
 
   assert.match(pageSource, /getRebateBusinessLabel/);
   assert.match(pageSource, /getRebateOrderLabel/);
+  assert.match(pageSource, /title: "返利单号"/);
+  assert.match(pageSource, /title: "关联订单"/);
+  assert.match(pageSource, /title: "返利金额"/);
+  assert.doesNotMatch(pageSource, /title: "返利"/);
   assert.doesNotMatch(pageSource, /title: "返利 ID"/);
+  assert.doesNotMatch(pageSource, /title: "订单"/);
+  assert.doesNotMatch(pageSource, /title: "金额"/);
   assert.doesNotMatch(pageSource, /dataIndex: "orderId"/);
 });
 
 test("rebates page follows the prototype review workspace layout", () => {
   const pageSource = readFileSync("app/rebates/page.tsx", "utf8");
 
+  assert.match(pageSource, /StorePageHeader title="返利管理"/);
+  assert.doesNotMatch(pageSource, /已完工且已收款订单的返利申请、审核、审批和发放/);
   assert.match(pageSource, /rebate-tabs/);
   assert.match(pageSource, /rebate-rules-card/);
+  assert.match(pageSource, /InfoCircleOutlined/);
+  assert.match(pageSource, /<ul className="rebate-rules-list">/);
+  assert.match(pageSource, /关联订单必须处于「已完成」且「全额付款」状态。/);
+  assert.doesNotMatch(pageSource, /金额付款/);
+  assert.doesNotMatch(pageSource, /已收款订单/);
+  assert.match(pageSource, /返利金额必须 &gt; 0，且必须填写明确的返利原因。/);
   assert.match(pageSource, /rebate-workspace/);
   assert.match(pageSource, /rebate-application-list/);
   assert.match(pageSource, /rebate-review-panel/);
   assert.match(pageSource, /rebate-application-drawer/);
   assert.match(pageSource, /返利申请列表/);
   assert.match(pageSource, /审核详情/);
+  assert.match(pageSource, /客户信息/);
+  assert.match(pageSource, /getRebateCustomerLabel/);
   assert.match(pageSource, /发放操作预设/);
   assert.match(pageSource, /提交返利申请/);
   assert.doesNotMatch(pageSource, /management-kpi-grid/);
   assert.doesNotMatch(pageSource, /rebate-apply-card/);
+});
+
+test("rebates workflow tabs jump to the matching workspace sections", () => {
+  const pageSource = readFileSync("app/rebates/page.tsx", "utf8");
+
+  assert.match(pageSource, /REBATE_WORKFLOW_TABS/);
+  assert.match(pageSource, /rebateSectionRefs/);
+  assert.match(pageSource, /scrollRebateSectionIntoView/);
+  assert.match(pageSource, /activeRebateSection/);
+  assert.match(pageSource, /ref=\{rebateRulesSectionRef\}/);
+  assert.match(pageSource, /ref=\{rebateReviewSectionRef\}/);
+  assert.match(pageSource, /ref=\{rebatePayoutSectionRef\}/);
+  assert.match(pageSource, /aria-pressed=\{activeRebateSection === item\.key\}/);
+  assert.match(pageSource, /onClick=\{\(\) => scrollRebateSectionIntoView\(item\.key\)\}/);
+  assert.doesNotMatch(pageSource, /\["返利申请", "返利审核", "财务审批", "返利发放", "返利报表"\]\.map\(\(item, index\)/);
+  assert.doesNotMatch(pageSource, /className=\{index === 0 \? "is-active" : ""\}/);
 });
 
 test("rebates page combines review and payout actions in one side panel", () => {
@@ -48,9 +83,30 @@ test("rebates page combines review and payout actions in one side panel", () => 
   assert.match(pageSource, /selectedRebateId/);
   assert.match(pageSource, /rebateActionForm/);
   assert.match(pageSource, /期望发放方式/);
+  assert.match(pageSource, /<span>客户信息<\/span>/);
+  assert.match(pageSource, /财务审批后核对转账凭证或抵扣确认单，再记录发放备注。/);
   assert.match(pageSource, /审核通过/);
   assert.match(pageSource, /发放返利/);
+  assert.doesNotMatch(pageSource, /当前版本先记录发放备注/);
   assert.doesNotMatch(pageSource, /operation-action-grid/);
+});
+
+test("rebates review panel mirrors the prototype amount adjustment context", () => {
+  const pageSource = readFileSync("app/rebates/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(pageSource, /rebate-review-amount-field/);
+  assert.match(pageSource, /rebate-drawer-amount-field/);
+  assert.match(pageSource, /style=\{\{ width: "100%" \}\}/);
+  assert.match(pageSource, /申请返利金额/);
+  assert.doesNotMatch(pageSource, /label="金额（元）"/);
+  assert.doesNotMatch(pageSource, /placeholder="金额（元）"/);
+  assert.match(pageSource, /value=\{selectedRebate \? selectedRebate\.amountCents \/ 100 : undefined\}/);
+  assert.match(pageSource, /原订单金额:/);
+  assert.match(pageSource, /推荐比例 10%/);
+  assert.match(cssSource, /\.rebate-review-amount-field/);
+  assert.match(cssSource, /\.rebate-drawer-amount-field\s*\{[\s\S]*width: 100%;/);
+  assert.match(cssSource, /\.rebate-review-amount-help/);
 });
 
 test("rebates page derives the active rebate without sync setState effects", () => {
@@ -70,6 +126,13 @@ test("rebates page uses mobile rebate cards instead of squeezing the desktop tab
   assert.match(pageSource, /rebate-mobile-card/);
   assert.match(pageSource, /rebate-desktop-table/);
   assert.match(cssSource, /\.rebate-mobile-cards/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.rebate-desktop-table/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.rebate-mobile-cards\s*\{[\s\S]*display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\)[\s\S]*\.rebate-desktop-table/);
+  assert.match(cssSource, /@media \(max-width: 900px\)[\s\S]*\.rebate-mobile-cards\s*\{[\s\S]*display: grid;/);
+});
+
+test("rebates payout preference keeps the prototype recommended deduction wording", () => {
+  const pageSource = readFileSync("app/rebates/page.tsx", "utf8");
+
+  assert.match(pageSource, /抵扣返利 \(推荐\)/);
+  assert.doesNotMatch(pageSource, /\{ value: "DEDUCT", label: "抵扣返利" \}/);
 });

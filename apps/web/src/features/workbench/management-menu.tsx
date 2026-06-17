@@ -5,10 +5,7 @@ import React from "react";
 import {
   AppstoreOutlined,
   AuditOutlined,
-  CalendarOutlined,
-  ContainerOutlined,
   DashboardOutlined,
-  DollarOutlined,
   FileDoneOutlined,
   FileProtectOutlined,
   GiftOutlined,
@@ -47,18 +44,17 @@ export const managementMenuItems: ManagementMenuItem[] = [
   { key: "workbench", label: "工作台", href: "/workbench", icon: <AppstoreOutlined />, positions: storePositions },
   { key: "customers", label: "客户管理", href: "/customers", icon: <TeamOutlined />, positions: ["MANAGER", "SALES", "CUSTOMER_SERVICE"] },
   { key: "orders", label: "销售订单", href: "/orders", icon: <ShoppingCartOutlined />, positions: ["MANAGER", "SALES", "CUSTOMER_SERVICE", "FINANCE"] },
-  { key: "products", label: "产品管理", href: "/products", icon: <ContainerOutlined />, positions: ["MANAGER", "PURCHASING"] },
+  { key: "products", label: "产品管理", href: "/products", icon: <ShopOutlined />, positions: ["MANAGER", "PURCHASING"] },
   { key: "construction", label: "施工管理", href: "/construction/assignments", icon: <ToolOutlined />, positions: ["MANAGER", "SCHEDULER"] },
-  { key: "capacity", label: "施工容量", href: "/construction/capacities", icon: <CalendarOutlined />, positions: ["MANAGER", "SCHEDULER"] },
-  { key: "inventory", label: "库存管理", href: "/inventory", icon: <ShopOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "PURCHASING"] },
+  { key: "inventory", label: "库存管理", href: "/inventory", icon: <AppstoreOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "PURCHASING"] },
+  { key: "purchases", label: "采购管理", href: "/purchases", icon: <FileDoneOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "PURCHASING"] },
   { key: "warranties", label: "质保管理", href: "/warranties", icon: <FileProtectOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "SCHEDULER"] },
   { key: "after-sales", label: "售后管理", href: "/after-sales", icon: <ReconciliationOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "SCHEDULER"] },
+  { key: "members", label: "人员管理", href: "/members", icon: <IdcardOutlined />, positions: ["MANAGER"] },
   { key: "finance", label: "财务管理", href: "/finance", icon: <WalletOutlined />, positions: ["MANAGER", "FINANCE", "PURCHASING"] },
+  { key: "reports", label: "报表分析", href: "/reports", icon: <DashboardOutlined />, positions: ["MANAGER", "SALES", "FINANCE"] },
   { key: "invoices", label: "发票管理", href: "/invoices", icon: <FileDoneOutlined />, positions: ["MANAGER", "FINANCE"] },
   { key: "rebates", label: "返利管理", href: "/rebates", icon: <GiftOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "FINANCE"] },
-  { key: "commissions", label: "提成管理", href: "/commissions", icon: <DollarOutlined />, positions: ["MANAGER", "FINANCE"] },
-  { key: "reports", label: "数据报表", href: "/reports", icon: <DashboardOutlined />, positions: ["MANAGER", "SALES", "FINANCE"] },
-  { key: "members", label: "人员管理", href: "/members", icon: <IdcardOutlined />, positions: ["MANAGER"] },
   { key: "admin", label: "门店审核", href: "/admin", icon: <AuditOutlined />, auditorOnly: true },
   { key: "settings", label: "系统设置", href: "/settings", icon: <SettingOutlined />, positions: ["MANAGER"], auditorOnly: true }
 ];
@@ -86,15 +82,15 @@ export function getActiveManagementMenuKey(pathname: string) {
   if (pathname.startsWith("/customers")) return "customers";
   if (pathname.startsWith("/orders")) return "orders";
   if (pathname.startsWith("/products")) return "products";
-  if (pathname.startsWith("/construction/capacities")) return "capacity";
   if (pathname.startsWith("/construction")) return "construction";
   if (pathname.startsWith("/inventory")) return "inventory";
+  if (pathname.startsWith("/purchases")) return "purchases";
   if (pathname.startsWith("/warranties")) return "warranties";
   if (pathname.startsWith("/after-sales")) return "after-sales";
   if (pathname.startsWith("/finance")) return "finance";
   if (pathname.startsWith("/invoices")) return "invoices";
   if (pathname.startsWith("/rebates")) return "rebates";
-  if (pathname.startsWith("/commissions")) return "commissions";
+  if (pathname.startsWith("/commissions")) return "finance";
   if (pathname.startsWith("/reports")) return "reports";
   if (pathname.startsWith("/members")) return "members";
   if (pathname.startsWith("/admin")) return "admin";

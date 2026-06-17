@@ -125,8 +125,8 @@ test("getCustomerProfileNotes separates preference requirement and communication
 });
 
 test("customer status display helpers format warranty and after-sale labels", () => {
-  assert.equal(getWarrantyStatusLabel("ACTIVE"), "有效");
+  assert.equal(getWarrantyStatusLabel("ACTIVE"), "生效中");
   assert.equal(getWarrantyStatusLabel("EXPIRED"), "已过期");
-  assert.equal(getAfterSaleStatusLabel("ASSIGNED"), "已派单");
-  assert.equal(getAfterSaleResponsibilityLabel("CONSTRUCTION"), "施工责任");
+  assert.equal(getAfterSaleStatusLabel("ASSIGNED"), "处理中");
+  assert.equal(getAfterSaleResponsibilityLabel("CONSTRUCTION"), "施工");
 });

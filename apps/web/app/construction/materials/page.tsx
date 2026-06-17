@@ -51,6 +51,7 @@ export default function ConstructionMaterialsPage() {
       active="materials"
       variant="calendar"
       badgeCount={2}
+      desktopHref="/inventory"
     >
       <div className="construction-materials-workspace">
         <section className="construction-materials-summary" aria-label="物料状态概览">
@@ -113,7 +114,7 @@ export default function ConstructionMaterialsPage() {
           <div className="construction-mobile-section-head">
             <div>
               <h2>施工耗材</h2>
-              <p>开工前确认耗材齐备，异常损耗后续进入库存流水。</p>
+              <p>开工前确认耗材齐备，异常损耗记录后同步库存流水。</p>
             </div>
             <ToolOutlined />
           </div>

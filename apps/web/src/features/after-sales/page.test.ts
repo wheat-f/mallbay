@@ -27,6 +27,8 @@ test("after-sales page creates after-sale requests by selecting an order", () =>
   assert.match(pageSource, /const orderOptions =/);
   assert.match(pageSource, /<Select[\s\S]*placeholder="选择订单"/);
   assert.match(pageSource, /options=\{orderOptions\}/);
+  assert.doesNotMatch(pageSource, /order\.orderNo \?\? order\.id/);
+  assert.match(pageSource, /order\.orderNo \?\? "未编号订单"/);
   assert.doesNotMatch(pageSource, /<Input placeholder="订单 ID"/);
 });
 
@@ -50,6 +52,8 @@ test("after-sales page table uses business labels instead of technical id column
 
   assert.match(pageSource, /getAfterSaleBusinessLabel/);
   assert.match(pageSource, /getAfterSaleOrderLabel/);
+  assert.match(pageSource, /title: "售后单号"/);
+  assert.doesNotMatch(pageSource, /title: "售后"/);
   assert.doesNotMatch(pageSource, /title: "售后 ID"/);
   assert.doesNotMatch(pageSource, /dataIndex: "orderId"/);
 });
@@ -58,6 +62,8 @@ test("after-sales page follows the prototype work-order workspace layout", () =>
   const pageSource = readFileSync("app/after-sales/page.tsx", "utf8");
 
   assert.match(pageSource, /after-sales-filter-card/);
+  assert.match(pageSource, /质保单号 \/ 车牌号 \/ VIN \/ 客户电话/);
+  assert.doesNotMatch(pageSource, /车牌号 \/ 客户电话 \/ 订单号 \/ 售后问题/);
   assert.match(pageSource, /after-sales-workspace/);
   assert.match(pageSource, /after-sales-ticket-list/);
   assert.match(pageSource, /after-sales-process-panel/);
@@ -65,6 +71,25 @@ test("after-sales page follows the prototype work-order workspace layout", () =>
   assert.match(pageSource, /售后工单处理/);
   assert.match(pageSource, /新建售后单/);
   assert.match(pageSource, /保存并派单/);
+  assert.match(pageSource, /\["处理中", afterSaleSummary\.assigned, "师傅处理中"\]/);
+  assert.match(pageSource, /\["已完成", afterSaleSummary\.resolved, "已归档售后记录"\]/);
+  assert.doesNotMatch(pageSource, /\["已派单", afterSaleSummary\.assigned/);
+  assert.doesNotMatch(pageSource, /\["已解决", afterSaleSummary\.resolved/);
+});
+
+test("after-sales page exposes the prototype split filter fields", () => {
+  const pageSource = readFileSync("app/after-sales/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(pageSource, /after-sales-prototype-filters/);
+  assert.match(pageSource, /车架号 \(VIN\)/);
+  assert.match(pageSource, /placeholder="输入VIN"/);
+  assert.match(pageSource, /客户电话/);
+  assert.match(pageSource, /placeholder="输入手机号"/);
+  assert.match(pageSource, /质保单号/);
+  assert.match(pageSource, /placeholder="输入质保单号"/);
+  assert.match(pageSource, />重置</);
+  assert.match(cssSource, /\.after-sales-prototype-filters/);
 });
 
 test("after-sales page uses mobile ticket cards instead of squeezing the desktop table", () => {
@@ -75,8 +100,8 @@ test("after-sales page uses mobile ticket cards instead of squeezing the desktop
   assert.match(pageSource, /after-sales-ticket-mobile-card/);
   assert.match(pageSource, /after-sales-ticket-desktop-table/);
   assert.match(cssSource, /\.after-sales-ticket-mobile-cards/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.after-sales-ticket-desktop-table/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.after-sales-ticket-mobile-cards\s*\{[\s\S]*display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{\n\s{2}\.after-sales-ticket-desktop-table \{\n\s{4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.after-sales-ticket-mobile-cards \{\n\s{4}display: grid;/);
 });
 
 test("after-sales page exposes inline responsibility and penalty handling", () => {
@@ -108,11 +133,27 @@ test("after-sales detail page follows the prototype detail penalty layout", () =
 
   assert.match(pageSource, /afterSalesApi\.list/);
   assert.match(pageSource, /售后工单详情与责任判罚/);
+  assert.match(pageSource, /返回售后列表/);
+  assert.doesNotMatch(pageSource, /返回售后管理/);
+  assert.doesNotMatch(pageSource, /StorePageHeader/);
+  assert.match(pageSource, /after-sale-detail-hero/);
+  assert.match(pageSource, /after-sale-detail-actions/);
   assert.match(pageSource, /原订单摘要/);
+  assert.doesNotMatch(pageSource, /工单ID: \$\{afterSale\.orderId\}/);
+  assert.doesNotMatch(pageSource, /value=\{getAfterSaleOrderLabel\(afterSale\)\} hint=\{`工单ID:/);
   assert.match(pageSource, /问题描述与取证/);
   assert.match(pageSource, /售后处理对比/);
   assert.match(pageSource, /责任判定/);
   assert.match(pageSource, /惩罚处理/);
+  assert.match(pageSource, /客户信息待确认/);
+  assert.match(pageSource, /车辆信息待确认/);
+  assert.doesNotMatch(pageSource, /客户未加载/);
+  assert.doesNotMatch(pageSource, /车辆未加载/);
+  assert.match(pageSource, /本月累计售后/);
+  assert.match(pageSource, /工艺二次培训或降级处理/);
+  assert.match(pageSource, /处罚金额在处理面板录入后自动沉淀到售后记录/);
+  assert.doesNotMatch(pageSource, /处罚金额将在处理面板录入后自动沉淀到售后记录/);
+  assert.doesNotMatch(pageSource, /摘要接口未返回/);
   assert.match(pageSource, /处理日志/);
   assert.match(pageSource, /确认判罚并归档/);
   assert.match(pageSource, /getAfterSaleDetailTimeline/);
@@ -122,6 +163,8 @@ test("after-sales detail page follows the prototype detail penalty layout", () =
   assert.match(pageSource, /after-sale-penalty-panel/);
 
   assert.match(cssSource, /\.after-sale-detail-page/);
+  assert.match(cssSource, /\.after-sale-detail-hero/);
+  assert.match(cssSource, /\.after-sale-detail-actions/);
   assert.match(cssSource, /\.after-sale-detail-grid/);
   assert.match(cssSource, /\.after-sale-evidence-grid/);
   assert.match(cssSource, /\.after-sale-penalty-panel/);
@@ -148,20 +191,30 @@ test("after-sales mobile task center follows the worker prototype", () => {
   assert.match(pageSource, /after-sales-mobile-car-image/);
   assert.match(pageSource, /after-sales-mobile-filter-fab/);
   assert.match(pageSource, /after-sales-mobile-bottom-nav/);
+  assert.match(pageSource, /href="\/dashboard"/);
+  assert.doesNotMatch(pageSource, /href="\/workbench"/);
   assert.match(pageSource, /待处理/);
   assert.match(pageSource, /处理中/);
   assert.match(pageSource, /已完成/);
   assert.match(pageSource, /立即处理/);
+  assert.match(pageSource, /href=\{`\/after-sales\/\$\{item\.id\}`\}/);
+  assert.doesNotMatch(pageSource, /<Button href="\/after-sales">查看详情<\/Button>/);
+  assert.doesNotMatch(pageSource, /href="\/after-sales"[\s\S]{0,120}立即处理/);
   assert.match(pageSource, /getAfterSaleOrderLabel/);
   assert.match(pageSource, /getAfterSalesTaskImage/);
   assert.match(pageSource, /description\.includes\("划痕"\)/);
+  assert.match(pageSource, /item\.warrantyId \? "已关联质保单" : "质保单待关联"/);
+  assert.doesNotMatch(pageSource, /`质保单：\$\{item\.warrantyId\}`/);
   assert.match(cssSource, /\.after-sales-mobile-shell/);
   assert.match(cssSource, /\.after-sales-mobile-hero/);
   assert.match(cssSource, /\.after-sales-mobile-card/);
   assert.match(cssSource, /\.after-sales-mobile-car-image/);
   assert.match(cssSource, /\.after-sales-mobile-filter-fab/);
   assert.match(cssSource, /\.after-sales-mobile-bottom-nav/);
-  assert.match(nextConfigSource, /lh3\.googleusercontent\.com/);
+  assert.match(pageSource, /\/prototype-assets\/after-sales-task-1\.png/);
+  assert.match(pageSource, /\/prototype-assets\/after-sales-task-2\.png/);
+  assert.doesNotMatch(pageSource, /lh3\.googleusercontent\.com/);
+  assert.doesNotMatch(nextConfigSource, /lh3\.googleusercontent\.com/);
 });
 
 test("after-sales mobile task header stays within the viewport", () => {

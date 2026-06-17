@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { App, Button, Progress } from "antd";
 import {
   ArrowLeftOutlined,
@@ -16,6 +16,7 @@ import { useMutation } from "@tanstack/react-query";
 import type { OfflineSyncOperation, OfflineSyncResult } from "@mallbay/shared";
 import { useRouter } from "next/navigation";
 import { constructionApi } from "../../../src/lib/api";
+import { ConstructionMobileBottomNav } from "../../../src/features/construction/mobile-shell";
 
 const queueStorageKey = "mallbay-construction-offline-queue";
 const lastSyncStorageKey = "mallbay-construction-last-sync-at";
@@ -38,9 +39,9 @@ type OfflineQueueRow = {
 };
 
 const offlinePreviewImages = [
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuC-6okr_UT3DNtnh231wQs9LyxCZ7lzuX7nCdvJ-GSOli-HU38V-lyFNEIvFRTKxkXOCH4EbkK6iAqeQs6nxZrKfrRPBjSxirjnCkvrd_IGkeVDZAch-DDag1R1J2P8MO0nzzgmb67WvrkXVXQcp5nDy1h8Ly68bkAOuy4c6Nfh3f6XIvpjftWSBhljHjWZ-GPHBW6JglCdzq8Dz3s0HI9lqSninbD95TKWcY2UXWzxOgUfOHgoT2L-wqyFJHOLw76Z7w_6JSvFw6y1",
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuBGHk1LCI05eXAdIRiSvZOh-et0nEgYyiHKOEsFCAxALX_L2qNn-6bMs8Y3SOr4ZvO0KGHZHu_UyKGGow5otZLPno2hUwCuHF6KyKDIKI21mB9hQhaKRkIzRjL6cVG8RWMZ_73ZQ92Xd4tXgHTaIK8fk8GlPAXuPsCjVgRl1AJ7Old9qVmwbAtfMT_hmoRuOZ5o79_bTlYHjK-bO3SZtVRADh69mfgvY9-J1eS0b37qo-mm7i52gu6S1R2Frdf-2TOheizCHWqkDJGY",
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuCrccep2z2BnczHSuVcd-a_E_AVFkUjs_FFhEQyjMtkpCat2kWwsx6Bu1RUnG0dEgJo39MN6GiJylBTzDFqWnCG5mSn-LmYPO4Wd3z0dllvTZpzENGeku15_jWX1gtpccgx72Vk5KNkqruJIieqVcepqxrsVW4aolSXZauS9-vtx5LXAVZGVW7WGFZCnR5Gtx_SqnHQUUnSUFwd5cPRAWfa-YPjrhMyYOj4_UjAw6tqb21wrVwg7j5yURZVhM3XzL23Agcu7U5jr_u-"
+  "/prototype-assets/construction-offline-1.png",
+  "/prototype-assets/construction-offline-2.png",
+  "/prototype-assets/construction-offline-3.png"
 ];
 
 const offlinePreviewQueue: OfflineQueueRow[] = [
@@ -106,6 +107,13 @@ export default function ConstructionOfflinePage() {
   const cacheUsedMb = operations.length > 0 ? getApproxCacheSizeMb(operations) : 45.2;
   const syncProgress = queueRows.length > 0 ? Math.round((syncedCount / queueRows.length) * 100) : 0;
 
+  useEffect(() => {
+    const desktopQuery = window.matchMedia("(min-width: 901px)");
+    if (desktopQuery.matches) {
+      router.replace("/construction/assignments");
+    }
+  }, [router]);
+
   const syncMutation = useMutation({
     mutationFn: () => constructionApi.offlineSync({ operations }),
     onMutate: () => {
@@ -146,7 +154,7 @@ export default function ConstructionOfflinePage() {
   };
 
   return (
-    <main className="construction-offline-mobile-shell">
+    <main className="construction-mobile-shell construction-offline-mobile-shell">
       <header className="construction-offline-appbar">
         <button type="button" aria-label="返回" onClick={() => router.back()}>
           <ArrowLeftOutlined />
@@ -234,6 +242,7 @@ export default function ConstructionOfflinePage() {
         </div>
         <Progress percent={syncProgress || 33} showInfo />
       </footer>
+      <ConstructionMobileBottomNav active="profile" />
     </main>
   );
 }
@@ -286,7 +295,7 @@ function mapOperationToQueueRow(operation: QueuedOperation, index: number): Offl
   const payload = operation.payload;
   return {
     clientOperationId: operation.clientOperationId,
-    orderNo: getPayloadString(payload, "orderNo") ?? getPayloadString(payload, "orderId") ?? "待关联订单",
+    orderNo: getPayloadString(payload, "orderNo") ?? "待关联订单",
     title: getPayloadString(payload, "title") ?? getPayloadString(payload, "stage") ?? getOperationTypeLabel(operation.type),
     capturedAt: getPayloadString(payload, "capturedAt") ?? getPayloadString(payload, "createdAt") ?? "本地暂存",
     sizeLabel: getPayloadString(payload, "sizeLabel") ?? "待计算",

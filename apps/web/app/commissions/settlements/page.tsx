@@ -1,6 +1,7 @@
 "use client";
 
-import { App, Button, Card, Input, Select, Table, Tag } from "antd";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { App, Button, Card, Drawer, Input, Select, Space, Table, Tag } from "antd";
 import {
   AuditOutlined,
   CalculatorOutlined,
@@ -35,6 +36,7 @@ type ConstructionRecordSource = {
 
 type SettlementSourceRow = {
   id: string;
+  displayNo: string;
   source: string;
   role: string;
   period: string;
@@ -47,17 +49,28 @@ type SettlementSourceRow = {
   note: string;
 };
 
+type CommissionSettlementTabKey = "log" | "pending";
+
+const COMMISSION_SETTLEMENT_TABS: Array<{ key: CommissionSettlementTabKey; label: string }> = [
+  { key: "log", label: "提成结算日志" },
+  { key: "pending", label: "待结算提成" }
+];
+
 function currentMonthValue() {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function getCustomerLabel(order: CommissionOrderSource) {
-  return order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name ?? "客户未加载";
+  return order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name ?? "客户信息待确认";
 }
 
 function getOrderLabel(order: CommissionOrderSource) {
-  return [order.orderNo ?? "订单未加载", getCustomerLabel(order), order.vehicle?.plateNo].filter(Boolean).join(" / ");
+  return [order.orderNo ?? "订单信息待确认", getCustomerLabel(order), order.vehicle?.plateNo].filter(Boolean).join(" / ");
+}
+
+function getSettlementDisplayNo(row: SettlementSourceRow) {
+  return row.displayNo;
 }
 
 export default function CommissionSettlementsPage() {
@@ -90,8 +103,9 @@ export default function CommissionSettlementsPage() {
   const orderRows = ((ordersQuery.data?.items ?? []) as CommissionOrderSource[]).slice(0, 3);
   const constructionRecordRows = ((constructionRecordsQuery.data ?? []) as ConstructionRecordSource[]).slice(0, 3);
   const settlementRows: SettlementSourceRow[] = [
-    ...orderRows.map((order) => ({
+    ...orderRows.map((order, index) => ({
       id: `sales-${order.id}`,
+      displayNo: `SALE-${settlementMonth.replace("-", "")}-${index + 1}`,
       source: "销售提成",
       role: "销售顾问",
       period: settlementMonth,
@@ -103,18 +117,19 @@ export default function CommissionSettlementsPage() {
       status: "待结算",
       note: getOrderLabel(order)
     })),
-    ...constructionRecordRows.map((record) => ({
+    ...constructionRecordRows.map((record, index) => ({
       id: `worker-${record.id}`,
+      displayNo: `WORK-${settlementMonth.replace("-", "")}-${index + 1}`,
       source: "师傅提成",
       role: "施工师傅",
       period: settlementMonth,
       relatedCount: 1,
       baseAmount: "需录入",
       rewardAmount: "按施工记录生成",
-      penaltyAmount: "售后扣减待接入",
+      penaltyAmount: "售后扣减待确认",
       payableAmount: "待生成",
       status: "待结算",
-      note: [record.order?.orderNo ?? "订单未加载", getConstructionStatusLabel(record.status)].filter(Boolean).join(" / ")
+      note: [record.order?.orderNo ?? "订单信息待确认", getConstructionStatusLabel(record.status)].filter(Boolean).join(" / ")
     }))
   ];
   const availableSourceCount = (ordersQuery.data?.items?.length ?? 0) + (constructionRecordsQuery.data?.length ?? 0);
@@ -122,16 +137,42 @@ export default function CommissionSettlementsPage() {
     (summaryQuery.data?.salesCommissionAmountCents ?? 0) + (summaryQuery.data?.workerCommissionAmountCents ?? 0);
   const latestTrend = summaryQuery.data?.commissionTrend?.at(-1);
   const isSettlementLoading = ordersQuery.isLoading || constructionRecordsQuery.isLoading || rulesQuery.isLoading;
+  const [selectedSettlementRow, setSelectedSettlementRow] = useState<SettlementSourceRow | null>(null);
+  const [activeCommissionSettlementTab, setActiveCommissionSettlementTab] = useState<CommissionSettlementTabKey>("log");
+  const settlementLogSectionRef = useRef<HTMLElement | null>(null);
+  const pendingSettlementSectionRef = useRef<HTMLElement | null>(null);
+  const commissionSettlementSectionRefs = useMemo(
+    () => ({
+      log: settlementLogSectionRef,
+      pending: pendingSettlementSectionRef
+    }),
+    []
+  );
+  const scrollCommissionSettlementSectionIntoView = useCallback(
+    (tabKey: CommissionSettlementTabKey) => {
+      setActiveCommissionSettlementTab(tabKey);
+      commissionSettlementSectionRefs[tabKey].current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    },
+    [commissionSettlementSectionRefs]
+  );
 
   return (
     <div className="management-page commission-settlement-page">
-      <StorePageHeader title="提成结算" description="按原型整理销售和施工提成的生成、审核与发放工作台" />
+      <StorePageHeader title="财务管理 / 提成结算" />
 
       <div className="commission-settlement-tabs" role="tablist" aria-label="提成结算视图">
-        <button className="is-active" type="button">
-          提成结算日志
-        </button>
-        <button type="button">待结算提成</button>
+        {COMMISSION_SETTLEMENT_TABS.map((item) => (
+          <button
+            key={item.key}
+            className={activeCommissionSettlementTab === item.key ? "is-active" : ""}
+            type="button"
+            role="tab"
+            aria-selected={activeCommissionSettlementTab === item.key}
+            onClick={() => scrollCommissionSettlementSectionIntoView(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
         <Button href="/commissions" icon={<ProfileOutlined />}>
           佣金规则配置
         </Button>
@@ -193,7 +234,6 @@ export default function CommissionSettlementsPage() {
               defaultValue="ALL"
               options={[
                 { label: "全部状态", value: "ALL" },
-                { label: "待结算", value: "PENDING" },
                 { label: "已生成", value: "GENERATED" },
                 { label: "已审核", value: "APPROVED" },
                 { label: "已发放", value: "PAID" }
@@ -209,14 +249,14 @@ export default function CommissionSettlementsPage() {
         </div>
       </section>
 
-      <section className="commission-settlement-table">
+      <section className="commission-settlement-table" ref={settlementLogSectionRef}>
         <div className="commission-settlement-table-head">
           <div>
             <h2>结算日志明细</h2>
-            <p>当前版本展示可结算来源，不伪造已结算流水</p>
+            <p>按生成记录核对结算周期、岗位和实发金额</p>
           </div>
           <div>
-            <Button icon={<DownloadOutlined />} onClick={() => message.info("提成报表导出将在结算流水接口完成后接入")}>
+            <Button icon={<DownloadOutlined />} onClick={() => message.info("请先确认结算明细后再导出报表")}>
               导出报表
             </Button>
             <Button type="primary" icon={<CalculatorOutlined />} onClick={() => message.info("请先在佣金规则配置页按订单或施工记录生成提成")}>
@@ -230,12 +270,16 @@ export default function CommissionSettlementsPage() {
               <article className="commission-settlement-log-mobile-card" key={row.id}>
                 <div className="commission-settlement-log-mobile-card-head">
                   <div>
-                    <strong>{row.source}</strong>
-                    <span>{row.note}</span>
+                    <strong>{getSettlementDisplayNo(row)}</strong>
+                    <span>{row.source} · {row.note}</span>
                   </div>
                   <Tag color="processing">{row.status}</Tag>
                 </div>
                 <dl className="commission-settlement-log-mobile-card-fields">
+                  <div>
+                    <dt>结算单号</dt>
+                    <dd>{getSettlementDisplayNo(row)}</dd>
+                  </div>
                   <div>
                     <dt>姓名/岗位</dt>
                     <dd>{row.role}</dd>
@@ -265,13 +309,19 @@ export default function CommissionSettlementsPage() {
                     <dd>{row.payableAmount}</dd>
                   </div>
                 </dl>
-                <Button type="link" href="/commissions">
-                  去生成
-                </Button>
+                <Space className="commission-settlement-log-mobile-actions">
+                  <Button type="link" onClick={() => setSelectedSettlementRow(row)}>
+                    查看详情
+                  </Button>
+                  <Button type="link" href="/commissions">
+                    去生成
+                  </Button>
+                </Space>
               </article>
             ))
           ) : (
             <div className="commission-settlement-log-mobile-empty">
+              <span>结算单号 · 姓名/岗位 · 结算周期 · 实发金额</span>
               {isSettlementLoading ? "正在加载结算来源..." : "暂无结算日志"}
             </div>
           )}
@@ -283,6 +333,7 @@ export default function CommissionSettlementsPage() {
           dataSource={settlementRows}
           pagination={false}
           columns={[
+            { title: "结算单号", render: (_, row) => getSettlementDisplayNo(row) },
             { title: "结算来源", dataIndex: "source" },
             { title: "姓名/岗位", dataIndex: "role" },
             { title: "结算周期", dataIndex: "period" },
@@ -294,17 +345,22 @@ export default function CommissionSettlementsPage() {
             { title: "状态", dataIndex: "status", render: (status) => <Tag color="processing">{status}</Tag> },
             {
               title: "操作",
-              render: () => (
-                <Button type="link" href="/commissions">
-                  去生成
-                </Button>
+              render: (_, row) => (
+                <Space>
+                  <Button type="link" onClick={() => setSelectedSettlementRow(row)}>
+                    查看详情
+                  </Button>
+                  <Button type="link" href="/commissions">
+                    去生成
+                  </Button>
+                </Space>
               )
             }
           ]}
         />
       </section>
 
-      <section className="commission-settlement-queue">
+      <section className="commission-settlement-queue" ref={pendingSettlementSectionRef}>
         <div>
           <FileSearchOutlined />
           <span>可结算来源</span>
@@ -318,9 +374,62 @@ export default function CommissionSettlementsPage() {
         <div>
           <AuditOutlined />
           <span>审核/发放流水</span>
-          <strong>待后端接入</strong>
+          <strong>待确认</strong>
         </div>
       </section>
+
+      <Drawer
+        className="commission-settlement-detail-drawer"
+        title="结算明细"
+        size="large"
+        open={Boolean(selectedSettlementRow)}
+        onClose={() => setSelectedSettlementRow(null)}
+      >
+        {selectedSettlementRow ? (
+          <div className="commission-settlement-detail">
+            <div className="commission-settlement-detail-heading">
+              <span>{selectedSettlementRow.source}</span>
+              <strong>{selectedSettlementRow.note}</strong>
+              <small>单据号：{getSettlementDisplayNo(selectedSettlementRow)} | 周期：{selectedSettlementRow.period}</small>
+              <Tag color="processing">{selectedSettlementRow.status}</Tag>
+            </div>
+            <div className="commission-settlement-detail-grid">
+              <div>
+                <span>姓名/岗位</span>
+                <strong>{selectedSettlementRow.role}</strong>
+              </div>
+              <div>
+                <span>结算周期</span>
+                <strong>{selectedSettlementRow.period}</strong>
+              </div>
+              <div>
+                <span>关联订单</span>
+                <strong>{selectedSettlementRow.relatedCount} 单</strong>
+              </div>
+              <div>
+                <span>提成底薪</span>
+                <strong>{selectedSettlementRow.baseAmount}</strong>
+              </div>
+              <div>
+                <span>绩效奖励</span>
+                <strong>{selectedSettlementRow.rewardAmount}</strong>
+              </div>
+              <div>
+                <span>售后罚款</span>
+                <strong>{selectedSettlementRow.penaltyAmount}</strong>
+              </div>
+              <div>
+                <span>实发金额</span>
+                <strong>{selectedSettlementRow.payableAmount}</strong>
+              </div>
+            </div>
+            <div className="commission-settlement-detail-note">
+              <FileSearchOutlined />
+              <span>当前抽屉展示可结算来源明细。正式结算单、审核和发放流水会在结算确认后统一归档。</span>
+            </div>
+          </div>
+        ) : null}
+      </Drawer>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
   Typography
 } from "antd";
 import {
+  ArrowLeftOutlined,
   CarOutlined,
   EditOutlined,
   FileTextOutlined,
@@ -318,6 +319,9 @@ export default function CustomerDetailPage() {
               </div>
             </div>
             <div className="customer-detail-actions">
+              <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/customers")}>
+                返回客户列表
+              </Button>
               <Button icon={<EditOutlined />} disabled={!customer} onClick={openEditDrawer}>
                 编辑资料
               </Button>
@@ -455,7 +459,7 @@ export default function CustomerDetailPage() {
                       <article className="customer-record-mobile-card customer-warranty-mobile-card" key={warranty.id}>
                         <div className="customer-record-mobile-card-head">
                           <div>
-                            <strong>{warranty.warrantyNo ?? warranty.id}</strong>
+                            <strong>{warranty.warrantyNo ?? "未生成质保编号"}</strong>
                             <span>质保编号</span>
                           </div>
                           <Tag>{getWarrantyStatusLabel(warranty.status)}</Tag>
@@ -481,7 +485,7 @@ export default function CustomerDetailPage() {
                     dataSource={customer.warranties ?? []}
                     locale={{ emptyText: "暂无质保记录" }}
                     columns={[
-                      { title: "质保编号", render: (_, warranty) => warranty.warrantyNo ?? warranty.id },
+                      { title: "质保编号", render: (_, warranty) => warranty.warrantyNo ?? "未生成质保编号" },
                       {
                         title: "状态",
                         render: (_, warranty) => <Tag>{getWarrantyStatusLabel(warranty.status)}</Tag>
@@ -767,8 +771,8 @@ export default function CustomerDetailPage() {
               <Form.Item name="carColor" label="车身颜色">
                 <Input maxLength={50} />
               </Form.Item>
-              <Form.Item name="photoUrl" label="车辆照片 URL">
-                <Input placeholder="可粘贴已上传的车辆照片地址" />
+              <Form.Item name="photoUrl" label="车辆照片链接">
+                <Input placeholder="粘贴已上传的车辆照片链接" />
               </Form.Item>
             </Form>
           </Drawer>

@@ -15,21 +15,22 @@ export const PRODUCT_UNIT_OPTIONS: Array<{ label: string; value: ProductUnit }> 
 ];
 
 export function getProductCategoryLabel(category: ProductCategory | string) {
-  return PRODUCT_CATEGORY_OPTIONS.find((option) => option.value === category)?.label ?? category;
+  return PRODUCT_CATEGORY_OPTIONS.find((option) => option.value === category)?.label ?? "产品分类待确认";
 }
 
 export function getProductUnitLabel(unit: ProductUnit | string) {
-  return PRODUCT_UNIT_OPTIONS.find((option) => option.value === unit)?.label ?? unit;
+  return PRODUCT_UNIT_OPTIONS.find((option) => option.value === unit)?.label ?? "单位待确认";
 }
 
 export function getProductDisplayName(product: { brand?: string; name?: string; model?: string }) {
-  return [
+  const label = [
     product.brand ? `品牌：${product.brand}` : undefined,
     product.name ? `名称：${product.name}` : undefined,
     product.model ? `型号：${product.model}` : undefined
   ]
     .filter(Boolean)
     .join(" / ");
+  return label || "未命名产品";
 }
 
 export function getProductInventorySpecLabel(product: {

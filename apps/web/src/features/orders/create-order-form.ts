@@ -108,13 +108,13 @@ export function getOrderCustomerLabel(customer: OrderCustomer) {
     customer.name ??
     customer.contactPerson ??
     customer.phone ??
-    customer.id
+    "未命名客户"
   );
 }
 
 export function getOrderVehicleLabel(vehicle: OrderVehicle) {
   const labelParts = [vehicle.carPlate, vehicle.carModel, vehicle.carColor].filter(Boolean);
-  return labelParts.length > 0 ? labelParts.join(" / ") : vehicle.id;
+  return labelParts.length > 0 ? labelParts.join(" / ") : "未登记车辆";
 }
 
 export function getOrderProductLabel(product: OrderProduct) {
@@ -329,7 +329,7 @@ function getConstructionStatusLabel(value?: string | null) {
     IN_CONSTRUCTION: "施工中",
     COMPLETED: "已完工"
   };
-  return value ? labels[value] ?? value : "-";
+  return value ? labels[value] ?? "施工状态待确认" : "-";
 }
 
 function getQualityResultLabel(value?: string | null) {
@@ -337,7 +337,7 @@ function getQualityResultLabel(value?: string | null) {
     PASS: "质检通过",
     REWORK_REQUIRED: "需返工"
   };
-  return value ? labels[value] ?? value : "-";
+  return value ? labels[value] ?? "质检结果待确认" : "-";
 }
 
 function roundMoney(value: number) {

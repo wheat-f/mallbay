@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { inventoryApi } from "./api";
+import { inventoryApi, purchaseApi } from "./api";
 
 test("inventoryApi.createBatch posts JSON to /inventory/batches", async () => {
   const calls: unknown[] = [];
@@ -83,12 +83,14 @@ test("inventoryApi queries inventory movements with advanced filters", async () 
       batchId: "batch-1",
       orderId: "order-1",
       movementType: "ORDER_LOCK",
-      createdById: "user-1"
+      createdById: "user-1",
+      createdFrom: "2026-06-01",
+      createdTo: "2026-06-10"
     });
 
     assert.equal(
       (calls[0] as { input: string }).input,
-      "http://localhost:3001/inventory/movements?storeId=store-1&productId=product-1&batchId=batch-1&orderId=order-1&movementType=ORDER_LOCK&createdById=user-1"
+      "http://localhost:3001/inventory/movements?storeId=store-1&productId=product-1&batchId=batch-1&orderId=order-1&movementType=ORDER_LOCK&createdById=user-1&createdFrom=2026-06-01&createdTo=2026-06-10"
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -110,6 +112,33 @@ test("inventoryApi creates purchase order from purchase requirement", async () =
 
     assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/purchase-requirements/pr-1/purchase-orders");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("purchaseApi uses the purchases boundary for purchase requirements and orders", async () => {
+  const calls: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    calls.push({ input, init });
+    return new Response(JSON.stringify({ id: "ok" }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  try {
+    await purchaseApi.requirements("store-1");
+    await purchaseApi.createPurchaseOrderFromRequirement("pr-1", { supplierName: "3M" });
+    await purchaseApi.orders("store-1");
+    await purchaseApi.approveOrder("po-1");
+    await purchaseApi.suppliers("store-1");
+
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/purchases/requirements?storeId=store-1");
+    assert.equal((calls[1] as { input: string }).input, "http://localhost:3001/purchases/requirements/pr-1/orders");
+    assert.equal((calls[2] as { input: string }).input, "http://localhost:3001/purchases/orders?storeId=store-1");
+    assert.equal((calls[3] as { input: string }).input, "http://localhost:3001/purchases/orders/po-1/approve");
+    assert.equal((calls[4] as { input: string }).input, "http://localhost:3001/purchases/suppliers?storeId=store-1");
   } finally {
     globalThis.fetch = originalFetch;
   }

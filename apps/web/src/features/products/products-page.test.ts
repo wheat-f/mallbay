@@ -13,7 +13,16 @@ function cssBlock(selector: string) {
 }
 
 test("products page follows the prototype product catalog layout", () => {
-  assert.match(pageSource, /StorePageHeader title="产品管理"/);
+  assert.match(pageSource, /StorePageHeader title="产品档案管理"/);
+  assert.match(pageSource, /管理并维护车膜产品的核心参数、规格及换算规则/);
+  assert.match(pageSource, /批量导入/);
+  assert.match(pageSource, /新增产品档案/);
+  assert.match(pageSource, /总档案数/);
+  assert.match(pageSource, /分类数量/);
+  assert.match(pageSource, /库存预警/);
+  assert.match(pageSource, /本月新增/);
+  assert.doesNotMatch(pageSource, /启用产品/);
+  assert.doesNotMatch(pageSource, /质保产品/);
   assert.match(pageSource, /products-filter-card/);
   assert.match(pageSource, /products-filter-grid/);
   assert.match(pageSource, /快速搜索/);
@@ -26,13 +35,18 @@ test("products page follows the prototype product catalog layout", () => {
   assert.match(pageSource, /基础价/);
 });
 
+test("products page avoids implementation-phase import copy", () => {
+  assert.match(pageSource, /请按产品模板整理品牌、型号、价格和单位换算后再导入/);
+  assert.doesNotMatch(pageSource, /批量导入将在产品模板校验完成后接入/);
+});
+
 test("products page uses mobile catalog cards instead of squeezing the desktop table", () => {
   assert.match(pageSource, /products-mobile-cards/);
   assert.match(pageSource, /products-mobile-card/);
   assert.match(pageSource, /products-desktop-table/);
   assert.match(cssSource, /\.products-mobile-cards/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.products-desktop-table/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.products-mobile-cards\s*\{[\s\S]*display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{\n\s{2}\.products-desktop-table \{\n\s{4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.products-mobile-cards \{\n\s{4}display: grid;/);
 });
 
 test("products mobile catalog cards can shrink within the management content column", () => {
@@ -44,12 +58,23 @@ test("products mobile catalog cards can shrink within the management content col
   assert.match(cssBlock(".products-mobile-card-head .products-product-cell"), /min-width:\s*0;/);
 });
 
+test("products page uses business-safe product display labels", () => {
+  assert.match(pageSource, /getProductDisplayName/);
+  assert.doesNotMatch(pageSource, /row\.brand\} \/ \{row\.name/);
+  assert.doesNotMatch(pageSource, /型号：\{row\.model\}/);
+});
+
 test("products page wires catalog filters to the product list query", () => {
   assert.match(pageSource, /productApi\.list\(\{\s*storeId: storeId!,\s*page: 1,\s*pageSize: 100,\s*q: search/);
   assert.match(pageSource, /category: categoryFilter/);
   assert.match(pageSource, /status: statusFilter/);
   assert.match(pageSource, /const rows = useMemo\(/);
   assert.match(pageSource, /\[productsQuery\.data\]/);
+});
+
+test("products page guards product saving when no store is selected", () => {
+  assert.match(pageSource, /if \(!storeId\) throw new Error\("当前账号未加入门店"\);/);
+  assert.doesNotMatch(pageSource, /toProductPayload\(storeId!, values\)/);
 });
 
 test("products page uses a prototype right-side drawer for create and edit forms", () => {

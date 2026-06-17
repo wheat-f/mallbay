@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { getInvoiceBusinessLabel, getInvoiceFileDisplay, getInvoiceOrderLabel, getInvoiceStatusLabel } from "./display";
+import {
+  getInvoiceBusinessLabel,
+  getInvoiceFileDisplay,
+  getInvoiceOrderLabel,
+  getInvoiceOrderPaymentStatus,
+  getInvoiceStatusLabel
+} from "./display";
 
 test("getInvoiceStatusLabel formats invoice statuses", () => {
-  assert.equal(getInvoiceStatusLabel("APPLIED"), "已申请");
-  assert.equal(getInvoiceStatusLabel("ISSUED"), "已开具");
+  assert.equal(getInvoiceStatusLabel("APPLIED"), "待开票");
+  assert.equal(getInvoiceStatusLabel("ISSUED"), "已开票");
   assert.equal(getInvoiceStatusLabel("VOIDED"), "已作废");
-  assert.equal(getInvoiceStatusLabel("REISSUED"), "已重开");
-  assert.equal(getInvoiceStatusLabel("UNKNOWN"), "UNKNOWN");
+  assert.equal(getInvoiceStatusLabel("REISSUED"), "已开票");
+  assert.equal(getInvoiceStatusLabel("UNKNOWN"), "状态待确认");
 });
 
 test("getInvoiceFileDisplay formats electronic invoice file state", () => {
@@ -19,6 +25,13 @@ test("getInvoiceFileDisplay formats electronic invoice file state", () => {
     getInvoiceFileDisplay(null),
     { label: "未上传", href: undefined, available: false }
   );
+});
+
+test("getInvoiceOrderPaymentStatus derives payment filters from order amount summary", () => {
+  assert.equal(getInvoiceOrderPaymentStatus({ order: { amount: { paidAmountCents: 0, outstandingCents: 120000 } } }), "UNPAID");
+  assert.equal(getInvoiceOrderPaymentStatus({ order: { amount: { paidAmountCents: 50000, outstandingCents: 70000 } } }), "PARTIAL");
+  assert.equal(getInvoiceOrderPaymentStatus({ order: { amount: { paidAmountCents: 120000, outstandingCents: 0 } } }), "PAID");
+  assert.equal(getInvoiceOrderPaymentStatus({ order: null }), "UNKNOWN");
 });
 
 test("invoice display helpers use invoice number and order business fields", () => {
@@ -38,5 +51,9 @@ test("invoice display helpers use invoice number and order business fields", () 
 });
 
 test("getInvoiceOrderLabel does not expose technical order ids when order summary is missing", () => {
-  assert.equal(getInvoiceOrderLabel({ orderId: "cm-order-technical-id", order: null }), "订单未加载");
+  assert.equal(getInvoiceOrderLabel({ orderId: "cm-order-technical-id", order: null }), "关联订单待确认");
+});
+
+test("getInvoiceBusinessLabel does not expose invoice technical ids", () => {
+  assert.equal(getInvoiceBusinessLabel({ id: "cm-invoice-technical-id" }), "发票信息待确认");
 });

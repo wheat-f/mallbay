@@ -214,16 +214,20 @@ export default function AdminStorePage() {
     queryClient.invalidateQueries({ queryKey: ["admin-store", storeId] });
     queryClient.invalidateQueries({ queryKey: ["admin-stores"] });
   };
+  const getPendingSubmissionId = () => {
+    if (!store?.pendingSubmission?.id) throw new Error("暂无待审核提交");
+    return store.pendingSubmission.id;
+  };
 
   const approveMutation = useMutation({
-    mutationFn: () => storeApi.reviewSubmission(store!.pendingSubmission!.id, { action: "APPROVE" }),
+    mutationFn: () => storeApi.reviewSubmission(getPendingSubmissionId(), { action: "APPROVE" }),
     onSuccess: () => { message.success("审核通过"); invalidate(); },
     onError: (e: Error) => message.error(e.message)
   });
 
   const rejectMutation = useMutation({
     mutationFn: (note: string) =>
-      storeApi.reviewSubmission(store!.pendingSubmission!.id, { action: "REJECT", reviewNote: note }),
+      storeApi.reviewSubmission(getPendingSubmissionId(), { action: "REJECT", reviewNote: note }),
     onSuccess: () => { message.success("已驳回"); setRejectOpen(false); invalidate(); },
     onError: (e: Error) => message.error(e.message)
   });
@@ -261,7 +265,7 @@ export default function AdminStorePage() {
             </Typography.Text>
           </div>
           <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/admin")}>
-            返回运营管理
+            返回门店列表
           </Button>
         </div>
 
@@ -278,7 +282,7 @@ export default function AdminStorePage() {
             description="请确认当前账号具有运营管理权限，或稍后刷新重试。"
             action={
               <Button size="small" onClick={() => router.push("/admin")}>
-                返回运营管理
+                返回门店列表
               </Button>
             }
           />

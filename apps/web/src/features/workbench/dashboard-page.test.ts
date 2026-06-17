@@ -46,3 +46,26 @@ test("dashboard entry page follows the prototype account landing workspace", () 
   assert.match(cssSource, /\.dashboard-entry-grid/);
   assert.match(cssSource, /\.dashboard-action-card/);
 });
+
+test("dashboard keeps profile access consolidated in the avatar menu", () => {
+  assert.doesNotMatch(dashboardSource, /router\.push\("\/profile"\)/);
+  assert.doesNotMatch(dashboardSource, /label: "个人中心"/);
+  assert.doesNotMatch(dashboardSource, />账号安全</);
+  assert.doesNotMatch(dashboardSource, />个人中心</);
+});
+
+test("dashboard customer entry returns to the public store lobby", () => {
+  assert.match(dashboardSource, /浏览门店/);
+  assert.equal(dashboardSource.includes('router.push("/")'), true);
+  assert.equal(dashboardSource.includes('router.push("/stores")'), false);
+});
+
+test("dashboard exposes customer management as a direct store-member entry", () => {
+  assert.match(dashboardSource, /客户管理/);
+  assert.match(dashboardSource, /router\.push\("\/customers"\)/);
+});
+
+test("dashboard store creation guards manager selection with business-safe copy", () => {
+  assert.match(dashboardSource, /请先选择店长/);
+  assert.doesNotMatch(dashboardSource, /managerId: selectedUser!\.id/);
+});

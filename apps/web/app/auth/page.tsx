@@ -64,7 +64,7 @@ export default function AuthPage() {
 
   return (
     <main className="auth-shell auth-prototype-shell">
-      <section className="auth-hero-panel" aria-label="MallBay 平台介绍">
+      <section className="auth-hero-panel" aria-label="mallbay 平台介绍">
         <div className="auth-hero-media" aria-hidden="true" />
         <div className="auth-hero-overlay" aria-hidden="true" />
         <div className="auth-hero-content">

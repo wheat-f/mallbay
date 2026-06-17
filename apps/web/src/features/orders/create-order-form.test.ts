@@ -21,6 +21,7 @@ import {
 test("getOrderCustomerLabel prefers company name then personal name", () => {
   assert.equal(getOrderCustomerLabel({ id: "customer-1", companyName: "MallBay", name: "小明" }), "MallBay");
   assert.equal(getOrderCustomerLabel({ id: "customer-2", name: "小明" }), "小明");
+  assert.equal(getOrderCustomerLabel({ id: "cm-customer-technical-id" }), "未命名客户");
 });
 
 test("buildOrderCustomerOptions includes the selected customer before search results", () => {
@@ -45,6 +46,13 @@ test("buildOrderVehicleOptions formats customer vehicles for selection", () => {
       ]
     }),
     [{ label: "湘A12345 / Model 3 / 白色", value: "vehicle-1" }]
+  );
+  assert.deepEqual(
+    buildOrderVehicleOptions({
+      id: "customer-2",
+      vehicles: [{ id: "cm-vehicle-technical-id" }]
+    }),
+    [{ label: "未登记车辆", value: "cm-vehicle-technical-id" }]
   );
 });
 
@@ -82,10 +90,10 @@ test("getOrderCustomerHistorySummary formats customer archive for order creation
             {
               orderNo: "MB202602100001",
               constructionType: "PPF",
-              status: "COMPLETED",
+              status: "UNKNOWN_STATUS",
               completedAt: "2026-02-10T08:00:00.000Z",
               actualMinutes: 360,
-              qualityResult: "PASS",
+              qualityResult: "UNKNOWN_RESULT",
               vehicleLabel: "湘A12345 / Model 3 / 白色"
             }
           ]
@@ -113,10 +121,10 @@ test("getOrderCustomerHistorySummary formats customer archive for order creation
         {
           orderNo: "MB202602100001",
           constructionType: "漆面保护膜",
-          status: "已完工",
+          status: "施工状态待确认",
           completedAt: "2026-02-10T08:00:00.000Z",
           actualMinutes: 360,
-          qualityResult: "质检通过",
+          qualityResult: "质检结果待确认",
           vehicleLabel: "湘A12345 / Model 3 / 白色"
         }
       ],

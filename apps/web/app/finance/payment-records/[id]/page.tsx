@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, Empty, Skeleton, Tag } from "antd";
+import { Button, Card, Empty, Input, Skeleton, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   AuditOutlined,
@@ -22,7 +22,6 @@ import {
   getPaymentRecordSourceLabel,
   getPaymentRecordTypeLabel
 } from "../../../../src/features/finance/display";
-import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 
 type PaymentRecordDetail = {
@@ -57,6 +56,7 @@ export default function PaymentRecordDetailPage() {
   const recordId = params.id;
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
+  const storeName = user?.storeMember?.store.name;
 
   const recordsQuery = useQuery({
     queryKey: ["finance-payment-records", storeId],
@@ -72,17 +72,28 @@ export default function PaymentRecordDetailPage() {
 
   return (
     <div className="management-page finance-record-detail-page">
-      <StorePageHeader
-        title="财务流水详情"
-        description={record ? `${getPaymentRecordTypeLabel(record.type)} / ${formatCentsAsYuan(record.amountCents)}` : "查看交易摘要、账户状态、关联单据和审核流轨迹"}
-      >
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/finance")}>
-          返回财务管理
-        </Button>
-        <Button icon={<DownloadOutlined />} disabled={!record}>
-          导出凭证
-        </Button>
-      </StorePageHeader>
+      <section className="finance-record-detail-hero">
+        <div>
+          <div className="finance-record-detail-breadcrumb">
+            <span>财务管理</span>
+            <span>/</span>
+            <span>{record ? getPaymentRecordTypeLabel(record.type) : "流水详情"}</span>
+          </div>
+          <div className="finance-record-detail-title-row">
+            <h1>财务流水详情</h1>
+            {record ? <Tag color={record.amountCents && record.amountCents >= 0 ? "success" : "error"}>{getDirectionLabel(record)}</Tag> : null}
+          </div>
+          <p>{record ? `${getPaymentRecordTypeLabel(record.type)} / ${formatCentsAsYuan(record.amountCents)}` : "查看交易摘要、账户状态、关联单据和审核流轨迹"}</p>
+        </div>
+        <div className="finance-record-detail-actions">
+          <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/finance")}>
+            返回收支流水
+          </Button>
+          <Button icon={<DownloadOutlined />} disabled={!record}>
+            导出凭证
+          </Button>
+        </div>
+      </section>
 
       {recordsQuery.isLoading ? (
         <Card className="finance-record-detail-loading">
@@ -115,9 +126,9 @@ export default function PaymentRecordDetailPage() {
                 </div>
                 <div className="finance-record-info-grid">
                   <InfoItem label="交易类型" value={getPaymentRecordTypeLabel(record.type)} />
-                  <InfoItem label="流水编号" value={record.id} />
-                  <InfoItem label="经办人" value={record.createdById ? "已记录经办人" : "经办人未加载"} />
-                  <InfoItem label="门店" value={record.storeId ?? storeId ?? "-"} />
+                  <InfoItem label="流水摘要" value={getPaymentRecordSummaryLabel(record)} />
+                  <InfoItem label="经办人" value={record.createdById ? "已记录经办人" : "待确认经办人"} />
+                  <InfoItem label="门店" value={storeName ?? "当前门店"} />
                 </div>
               </Card>
 
@@ -145,8 +156,8 @@ export default function PaymentRecordDetailPage() {
                     <strong>{getPaymentRecordSourceLabel(record, {})}</strong>
                   </div>
                   <div>
-                    <span>来源 ID</span>
-                    <strong>{record.sourceId ?? record.referenceId ?? "未关联来源单据"}</strong>
+                    <span>关联状态</span>
+                    <strong>{record.sourceId || record.referenceId ? "已关联来源单据" : "未关联来源单据"}</strong>
                   </div>
                 </div>
               </Card>
@@ -159,12 +170,12 @@ export default function PaymentRecordDetailPage() {
                   <h2>账户/状态</h2>
                 </div>
                 <div className="finance-record-account-box">
-                  <strong>{record.account?.name ?? "账户未加载"}</strong>
+                  <strong>{getPaymentAccountLabel(record)}</strong>
                   <span>{getPaymentAccountTypeLabel(record.account?.type)} / {maskAccountNo(record.account?.accountNo)}</span>
                 </div>
                 <div className="finance-record-actions">
-                  <Button type="primary">确认核销</Button>
-                  <Button danger>发起复核</Button>
+                  <Button type="primary">批准拨款</Button>
+                  <Button danger>驳回申请</Button>
                 </div>
               </Card>
 
@@ -191,11 +202,39 @@ export default function PaymentRecordDetailPage() {
                   <PaperClipOutlined />
                   <h2>附件凭证</h2>
                 </div>
+                <div className="finance-record-voucher-panel">
+                  <div className="finance-record-voucher-head">
+                    <div>
+                      <span>打款详情与凭证</span>
+                      <strong>{getPaymentRecordTypeLabel(record.type)}</strong>
+                    </div>
+                    <Tag color={(record.amountCents ?? 0) >= 0 ? "success" : "warning"}>{getDirectionLabel(record)}</Tag>
+                  </div>
+                  <div className="finance-record-voucher-summary">
+                    <span>打款金额</span>
+                    <strong>{formatCentsAsYuan(record.amountCents)}</strong>
+                  </div>
+                  <div className="finance-record-upload-box">
+                    <PaperClipOutlined />
+                    <strong>上传银行凭证</strong>
+                    <span>支持 PNG、JPG 或 PDF 格式，凭证归档后可随流水导出。</span>
+                  </div>
+                  <label className="finance-record-voucher-note">
+                    <span>财务备注</span>
+                    <Input.TextArea rows={3} value={record.note ?? ""} placeholder="输入相关备注信息" readOnly />
+                  </label>
+                  <div className="finance-record-voucher-time">
+                    <span>记录时间: {formatRecordDateTime(record.createdAt)}</span>
+                  </div>
+                  <Button type="primary" block disabled>
+                    提交并标记已打款
+                  </Button>
+                </div>
                 <div className="finance-record-attachment">
                   <SafetyCertificateOutlined />
                   <div>
                     <strong>凭证待补充</strong>
-                    <span>当前接口未返回附件文件，后续接入 OSS 后展示合同、发票或支付回单。</span>
+                    <span>支持上传银行回单、合同、发票或付款截图，归档后可随流水导出。</span>
                   </div>
                 </div>
               </Card>
@@ -238,19 +277,19 @@ export function getPaymentRecordDetailTimeline(record?: PaymentRecordDetail): Fi
     {
       key: "source",
       title: "关联业务单据",
-      description: record.sourceId ?? record.referenceId ? `来源单据：${record.sourceId ?? record.referenceId}` : "当前流水未关联来源单据。",
+      description: record.sourceId || record.referenceId ? "已关联来源单据。" : "当前流水未关联来源单据。",
       tone: record.sourceId || record.referenceId ? "success" : "muted"
     },
     {
       key: "settlement",
       title: (record.amountCents ?? 0) >= 0 ? "收入入账" : "支出核销",
-      description: (record.amountCents ?? 0) >= 0 ? "收入已进入财务流水，可用于经营报表统计。" : "支出已进入财务流水，需保留审批和付款凭证。",
+      description: (record.amountCents ?? 0) >= 0 ? "收入已进入财务流水，可用于报表分析统计。" : "支出已进入财务流水，需保留审批和付款凭证。",
       tone: (record.amountCents ?? 0) >= 0 ? "success" : "warning"
     },
     {
       key: "attachment",
       title: "附件归档",
-      description: "附件凭证字段待后续接口补齐。",
+      description: "附件凭证待归档。",
       tone: "muted"
     }
   ];
@@ -258,8 +297,12 @@ export function getPaymentRecordDetailTimeline(record?: PaymentRecordDetail): Fi
 
 function getPaymentAccountLabel(record: PaymentRecordDetail) {
   if (record.account?.name) return record.account.name;
-  if (record.accountId) return "账户信息未加载";
-  return "未绑定账户";
+  if (record.accountId) return "待确认账户信息";
+  return "账户待绑定";
+}
+
+function getPaymentRecordSummaryLabel(record: PaymentRecordDetail) {
+  return record.note || `${getPaymentRecordTypeLabel(record.type)} / ${formatRecordDateTime(record.createdAt)}`;
 }
 
 function getDirectionLabel(record: PaymentRecordDetail) {
@@ -271,7 +314,7 @@ function getAmountTone(record: PaymentRecordDetail) {
 }
 
 function maskAccountNo(value?: string | null) {
-  if (!value) return "账号未加载";
+  if (!value) return "账号待补录";
   return value.length <= 4 ? "****" : `****${value.slice(-4)}`;
 }
 

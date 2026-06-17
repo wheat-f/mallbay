@@ -6,7 +6,9 @@ test("order detail audit events render actor business labels", () => {
   const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
 
   assert.match(pageSource, /getAuditActorLabel/);
+  assert.match(pageSource, /订单操作记录/);
   assert.doesNotMatch(pageSource, /操作人：\$\{event\.actorId\}/);
+  assert.doesNotMatch(pageSource, /return labels\[action\] \?\? action/);
 });
 
 test("order detail renders suggested and final labor cost with adjustment reason", () => {
@@ -23,6 +25,9 @@ test("order detail exposes pending dispatch confirmation and fulfillment links",
   const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
 
   assert.match(pageSource, /shouldShowFulfillmentConfirmation/);
+  assert.match(pageSource, /确认派工流转/);
+  assert.match(pageSource, /router\.push\("\/finance"\)/);
+  assert.match(pageSource, /router\.push\("\/invoices"\)/);
   assert.match(pageSource, /确认提交派工与库房匹配/);
   assert.match(pageSource, /openFulfillmentDrawer/);
   assert.match(pageSource, /打开确认流转/);
@@ -59,6 +64,13 @@ test("order detail follows the prototype stepper and bento workspace layout", ()
 
   assert.match(pageSource, /order-detail-hero/);
   assert.match(pageSource, /order-detail-stepper/);
+  assert.match(pageSource, /getOrderWorkflowIndex/);
+  assert.match(pageSource, /订单确认/);
+  assert.match(pageSource, /库房匹配/);
+  assert.match(pageSource, /施工派工/);
+  assert.match(pageSource, /施工交付/);
+  assert.match(pageSource, /质保售后/);
+  assert.doesNotMatch(pageSource, /const labels = \["待派单", "已派单", "施工中", "已完工", "已质保"\]/);
   assert.match(pageSource, /order-detail-bento/);
   assert.match(pageSource, /order-customer-card/);
   assert.match(pageSource, /order-product-card/);
@@ -66,6 +78,27 @@ test("order detail follows the prototype stepper and bento workspace layout", ()
   assert.match(pageSource, /order-payment-card/);
   assert.match(pageSource, /order-audit-card/);
   assert.doesNotMatch(pageSource, /detail-layout/);
+});
+
+test("order detail exposes prototype related document shortcuts", () => {
+  const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /order-related-card/);
+  assert.match(pageSource, /相关单据/);
+  assert.match(pageSource, /发票记录/);
+  assert.match(pageSource, /电子质保单/);
+  assert.match(pageSource, /售后记录/);
+  assert.match(pageSource, /router\.push\("\/invoices"\)/);
+  assert.match(pageSource, /router\.push\("\/warranties"\)/);
+  assert.match(pageSource, /router\.push\("\/after-sales"\)/);
+});
+
+test("order detail returns to the order list instead of the workbench", () => {
+  const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /返回订单列表/);
+  assert.match(pageSource, /router\.push\("\/orders"\)/);
+  assert.doesNotMatch(pageSource, /返回工作台/);
 });
 
 test("order detail commercial editor uses a prototype right-side drawer", () => {

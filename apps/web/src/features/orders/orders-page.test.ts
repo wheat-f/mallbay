@@ -79,8 +79,8 @@ test("orders page uses mobile order cards instead of squeezing the desktop table
   assert.match(pageSource, /orders-mobile-card/);
   assert.match(pageSource, /orders-desktop-table/);
   assert.match(cssSource, /\.orders-mobile-cards/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.orders-desktop-table/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.orders-mobile-cards\s*\{[\s\S]*display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{\n\s{2}\.orders-desktop-table \{\n\s{4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.orders-mobile-cards \{\n\s{4}display: grid;/);
 });
 
 test("orders page formats appointment dates for table scanning", () => {
@@ -88,5 +88,7 @@ test("orders page formats appointment dates for table scanning", () => {
 
   assert.match(pageSource, /formatOrderListDate/);
   assert.match(pageSource, /formatOrderListDate\(row\.appointmentDate \?\? row\.createdAt\)/);
+  assert.match(pageSource, /日期待确认/);
   assert.doesNotMatch(pageSource, /row\.appointmentDate \?\? row\.createdAt\?\.slice/);
+  assert.doesNotMatch(pageSource, /match\?\.\[1\] \?\? value/);
 });

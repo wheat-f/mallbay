@@ -3,7 +3,7 @@
 import type { CreateProductPayload } from "../../src/lib/api";
 import type { ProductCategory, ProductStatus, ProductUnit } from "@mallbay/shared";
 import { App, Button, Card, Drawer, Form, Input, InputNumber, Select, Space, Table, Tag, Tooltip } from "antd";
-import { EditOutlined, PlusOutlined, SearchOutlined, StopOutlined } from "@ant-design/icons";
+import { EditOutlined, PlusOutlined, SearchOutlined, StopOutlined, UploadOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { productApi } from "../../src/lib/api";
@@ -11,6 +11,7 @@ import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import {
   getProductCategoryLabel,
+  getProductDisplayName,
   getProductInventorySpecLabel,
   getProductUnitLabel,
   PRODUCT_CATEGORY_OPTIONS,
@@ -56,7 +57,8 @@ export default function ProductsPage() {
 
   const saveMutation = useMutation({
     mutationFn: (values: ProductFormValues) => {
-      const payload = toProductPayload(storeId!, values);
+      if (!storeId) throw new Error("当前账号未加入门店");
+      const payload = toProductPayload(storeId, values);
       return editing ? productApi.update(editing.id, payload) : productApi.create(payload);
     },
     onSuccess: async () => {
@@ -87,23 +89,27 @@ export default function ProductsPage() {
     [inventoryUnitFilter, rows]
   );
   const productSummary = useMemo(() => {
-    const ppfCount = rows.filter((row) => row.category === "PPF").length;
-    const heatFilmCount = rows.filter((row) => row.category === "HEAT_FILM").length;
-    const rollCount = rows.filter((row) => row.unit === "ROLL" || row.inventoryUnit === "ROLL").length;
-    const warrantyCount = rows.filter((row) => (row.warrantyYears ?? 0) > 0).length;
+    const categoryCount = new Set(rows.map((row) => row.category)).size;
+    const inventoryWarningCount = rows.filter((row) => !row.inventoryUnit || !row.salesUnit).length;
     return {
-      activeCount: rows.filter((row) => row.status === "ACTIVE").length,
-      ppfCount,
-      heatFilmCount,
-      rollCount,
-      warrantyCount
+      totalCount: rows.length,
+      categoryCount,
+      inventoryWarningCount,
+      monthNewCount: 0
     };
   }, [rows]);
 
   return (
     <>
       <div className="management-page">
-        <StorePageHeader title="产品管理" description="维护可下单产品、价格、规格和质保年限">
+        <StorePageHeader title="产品档案管理" description="管理并维护车膜产品的核心参数、规格及换算规则。">
+          <Button
+            icon={<UploadOutlined />}
+            disabled={!storeId}
+            onClick={() => message.info("请按产品模板整理品牌、型号、价格和单位换算后再导入")}
+          >
+            批量导入
+          </Button>
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -114,17 +120,16 @@ export default function ProductsPage() {
               setOpen(true);
             }}
           >
-            新建产品
+            新增产品档案
           </Button>
         </StorePageHeader>
 
-        <div className="management-kpi-grid management-kpi-grid-five">
+        <div className="management-kpi-grid">
           {[
-            ["启用产品", productSummary.activeCount, "当前可用于下单"],
-            ["漆面保护膜", productSummary.ppfCount, "PPF 产品档案"],
-            ["玻璃膜", productSummary.heatFilmCount, "玻璃膜产品档案"],
-            ["卷材规格", productSummary.rollCount, "支持库存单位换算"],
-            ["质保产品", productSummary.warrantyCount, "已配置质保年限"]
+            ["总档案数", productSummary.totalCount, "当前产品主数据"],
+            ["分类数量", productSummary.categoryCount, "已覆盖产品分类"],
+            ["库存预警", productSummary.inventoryWarningCount, "单位换算待完善"],
+            ["本月新增", productSummary.monthNewCount, "新增产品档案"]
           ].map(([label, value, description]) => (
             <Card key={label} className="management-kpi-card">
               <div className="management-kpi-label">{label}</div>
@@ -192,8 +197,7 @@ export default function ProductsPage() {
                     <div className="products-product-cell">
                       <div className="products-product-icon">{row.brand.slice(0, 1).toUpperCase()}</div>
                       <div className="min-w-0">
-                        <div className="products-product-name">{row.brand} / {row.name}</div>
-                        <div className="products-product-model">型号：{row.model}</div>
+                        <div className="products-product-name">{getProductDisplayName(row)}</div>
                       </div>
                     </div>
                     <Tag color={row.status === "ACTIVE" ? "success" : "default"}>
@@ -268,8 +272,7 @@ export default function ProductsPage() {
                   <div className="products-product-cell">
                     <div className="products-product-icon">{row.brand.slice(0, 1).toUpperCase()}</div>
                     <div className="min-w-0">
-                      <div className="products-product-name">{row.brand} / {row.name}</div>
-                      <div className="products-product-model">型号：{row.model}</div>
+                      <div className="products-product-name">{getProductDisplayName(row)}</div>
                     </div>
                   </div>
                 )

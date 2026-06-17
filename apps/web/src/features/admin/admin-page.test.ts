@@ -13,6 +13,10 @@ test("admin page follows the prototype store review command center layout", () =
   assert.match(pageSource, /admin-operation-guide/);
   assert.match(pageSource, /admin-store-table-card/);
   assert.match(pageSource, /mallbay 门店审核与管理/);
+  assert.match(pageSource, /审核队列/);
+  assert.match(pageSource, /门店状态/);
+  assert.doesNotMatch(pageSource, /Review Queue/);
+  assert.doesNotMatch(pageSource, /Store Status/);
   assert.match(pageSource, /待处理信息变更/);
   assert.match(pageSource, /门店状态分布/);
   assert.match(pageSource, /本周处理审核量/);
@@ -48,15 +52,24 @@ test("admin store list switches from desktop table to mobile cards on small scre
 
   const desktopTableIndex = cssSource.indexOf(".admin-store-desktop-table");
   const mobileCardsIndex = cssSource.indexOf(".admin-store-mobile-cards");
-  const mediaIndex = cssSource.indexOf("@media (max-width: 720px)");
+  const storeListBreakpoint = cssSource.match(
+    /@media \(max-width: (\d+)px\) \{\s*\.admin-store-table-card\.ant-card \.ant-card-body\s*\{[\s\S]*?\.admin-store-desktop-table\s*\{\s*display: none;\s*\}\s*\.admin-store-mobile-cards\s*\{\s*display: grid;/
+  );
   const mediaDesktopIndex = cssSource.indexOf(".admin-store-desktop-table", desktopTableIndex + 1);
   const mediaCardsIndex = cssSource.indexOf(".admin-store-mobile-cards", mobileCardsIndex + 1);
 
   assert.notEqual(desktopTableIndex, -1);
   assert.notEqual(mobileCardsIndex, -1);
-  assert.notEqual(mediaIndex, -1);
+  assert.equal(storeListBreakpoint?.[1], "900");
   assert.notEqual(mediaDesktopIndex, -1);
   assert.notEqual(mediaCardsIndex, -1);
   assert.ok(mobileCardsIndex < mediaCardsIndex);
   assert.ok(desktopTableIndex < mediaDesktopIndex);
+});
+
+test("admin store creation guards manager selection with business-safe copy", () => {
+  const pageSource = readFileSync("app/admin/page.tsx", "utf8");
+
+  assert.match(pageSource, /请先选择店长/);
+  assert.doesNotMatch(pageSource, /managerId: selectedUser!\.id/);
 });

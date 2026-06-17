@@ -1,9 +1,9 @@
 "use client";
 
 import { App, Button, Card, Form, Input, Select, Tag, Typography, Upload } from "antd";
-import { CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, UploadOutlined, UsergroupAddOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, UploadOutlined, UsergroupAddOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { constructionApi } from "../../../../src/lib/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 import {
@@ -51,6 +51,7 @@ export default function ConstructionOrderDetailPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const [photoForm] = Form.useForm<{ stage: PhotoStage; url?: string }>();
@@ -73,7 +74,12 @@ export default function ConstructionOrderDetailPage() {
   const orderDisplayNo = record?.order?.orderNo ?? "订单待派工";
 
   const uploadMutation = useMutation({
-    mutationFn: (values: { stage: PhotoStage; url?: string }) => constructionApi.uploadPhoto(record!.id, values),
+    mutationFn: (values: { stage: PhotoStage; url?: string }) => {
+      if (!record) {
+        throw new Error("施工记录待生成，暂不能上传照片");
+      }
+      return constructionApi.uploadPhoto(record.id, values);
+    },
     onSuccess: async () => {
       message.success("施工照片已保存");
       photoForm.resetFields();
@@ -83,8 +89,12 @@ export default function ConstructionOrderDetailPage() {
   });
 
   const qualityMutation = useMutation({
-    mutationFn: (values: { result: "PASS" | "REWORK_REQUIRED"; note?: string }) =>
-      constructionApi.qualityCheck(record!.id, values),
+    mutationFn: (values: { result: "PASS" | "REWORK_REQUIRED"; note?: string }) => {
+      if (!record) {
+        throw new Error("施工记录待生成，暂不能保存质检结果");
+      }
+      return constructionApi.qualityCheck(record.id, values);
+    },
     onSuccess: async () => {
       message.success("质检结果已保存");
       qualityForm.resetFields();
@@ -98,7 +108,14 @@ export default function ConstructionOrderDetailPage() {
       <section className="construction-detail-shell">
         <section className="construction-detail-hero">
           <div className="construction-detail-hero-copy">
-            <span>施工记录</span>
+            <Button
+              className="construction-detail-back"
+              icon={<ArrowLeftOutlined />}
+              onClick={() => router.push("/construction/assignments")}
+            >
+              返回施工派单
+            </Button>
+            <span>施工质检 & 提成审核</span>
             <h1>{record?.order?.orderNo ?? "施工记录待生成"}</h1>
             <p>跟踪施工团队、照片完整度、完工用时与质检结论，作为质保和售后追溯依据。</p>
           </div>
@@ -154,8 +171,8 @@ export default function ConstructionOrderDetailPage() {
                       options={photoStages.map((stage) => ({ label: stage.title, value: stage.value }))}
                     />
                   </Form.Item>
-                  <Form.Item name="url" label="图片 URL">
-                    <Input placeholder="粘贴图片 URL，或在下方阶段卡直接上传" />
+                  <Form.Item name="url" label="施工照片链接">
+                    <Input placeholder="粘贴施工照片链接，或在下方阶段卡直接上传" />
                   </Form.Item>
                   <Button htmlType="submit" type="primary" icon={<UploadOutlined />} disabled={!record}>
                     保存照片
@@ -192,7 +209,7 @@ export default function ConstructionOrderDetailPage() {
                         customRequest={async ({ file, onError, onSuccess }) => {
                           try {
                             if (!record) {
-                              throw new Error("施工记录未加载");
+                              throw new Error("施工记录待生成，暂不能上传照片");
                             }
                             await constructionApi.uploadPhoto(record.id, { stage: stage.value, file: file as File });
                             message.success(`${stage.title}照片已上传`);

@@ -1,1799 +1,240 @@
 "use client";
 
-import type { InventoryBatchSummary, InventoryMovementType, InventorySupplierSummary, ProductUnit } from "@mallbay/shared";
-import type {
-  CreateInventoryBatchPayload,
-  CreateSupplierContactPayload,
-  CreateSupplierPayload,
-  CreateSupplierRatingHistoryPayload,
-  UpdateSupplierPayload
-} from "../../src/lib/api";
-import { App, Button, Card, Drawer, Form, Input, InputNumber, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
-import { InboxOutlined, LockOutlined, SearchOutlined, ShoppingCartOutlined } from "@ant-design/icons";
+import type { InventoryBatchSummary, InventoryMovementType } from "@mallbay/shared";
+import { Alert, Button, Card, Table, Tag, Typography } from "antd";
+import { AppstoreOutlined, ArrowRightOutlined, FileSearchOutlined, SwapOutlined } from "@ant-design/icons";
 import Link from "next/link";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { inventoryApi, orderApi, productApi, userApi } from "../../src/lib/api";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { inventoryApi } from "../../src/lib/api";
+import { getInventoryMovementSummary, getInventoryMovementTypeLabel } from "../../src/features/inventory/display";
+import { getProductDisplayName } from "../../src/features/products/display";
+import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../src/stores/auth-store";
-import {
-  getInventoryBatchLabel,
-  getInventoryAllocationStatusLabel,
-  getInventoryMovementTypeLabel,
-  getInventoryOrderCustomerLabel,
-  getInventoryOrderItemsSummary,
-  getInventoryProductLabel,
-  getInventoryOrderVehicleLabel,
-  getInventoryBatchSplitSummary,
-  getInventoryMovementSummary,
-  getPurchaseInboundItemDetails,
-  getPurchaseOrderArrivalReminder,
-  getPurchaseOrderStatusLabel,
-  getPurchaseRequirementItemsSummary,
-  getPurchaseRequirementStatusLabel,
-  getPurchaseRequirementSourceOrderLabel,
-  INVENTORY_BATCH_MISSING_LABEL,
-  INVENTORY_MOVEMENT_TYPE_LABEL,
-  type InventoryOrderLike,
-  type PurchaseInboundItemLike
-} from "../../src/features/inventory/display";
-import {
-  buildInventoryAllocationRows,
-  buildInventoryMatchRows,
-  buildPurchaseRequirementFromShortages,
-  filterInventoryBatches,
-  type InventoryMatchInput
-} from "../../src/features/inventory/matching";
-import { parseInboundScanLines } from "../../src/features/inventory/inbound-scan";
-import { getProductDisplayName, getProductUnitLabel } from "../../src/features/products/display";
-import { getOrderStatusLabel } from "../../src/features/orders/order-display";
-
-type MovementRow = {
-  id: string;
-  movementType: string;
-  productId: string;
-  batchId: string;
-  quantity: number;
-  createdAt: string;
-};
-
-type ProductOption = {
-  id: string;
-  brand?: string;
-  name?: string;
-  model?: string;
-  unit?: ProductUnit;
-  inventoryUnit?: ProductUnit;
-  metersPerRoll?: number | string | null;
-  quantityPrecision?: number | null;
-};
-
-type PurchaseRequirementRow = {
-  id: string;
-  status: string;
-  sourceOrderId?: string;
-  sourceOrder?: InventoryOrderLike | null;
-  items?: Array<{
-    productId?: string | null;
-    requiredQuantity?: number | string | null;
-    requiredUnit?: ProductUnit | string | null;
-  }>;
-  createdAt?: string;
-};
-
-type PurchaseOrderRow = {
-  id: string;
-  orderNo: string;
-  status: string;
-  supplierName?: string;
-  expectedAt?: string;
-  items?: PurchaseOrderItemRow[];
-};
-
-type PurchaseOrderItemRow = PurchaseInboundItemLike & {
-  id: string;
-  productId: string;
-};
-
-type SupplierFormValues = Omit<CreateSupplierPayload, "storeId">;
-
-type SupplierEditFormValues = UpdateSupplierPayload;
-type SupplierContactFormValues = CreateSupplierContactPayload;
-type SupplierRatingFormValues = CreateSupplierRatingHistoryPayload;
 
 type PendingMatchOrderRow = {
   id: string;
-  orderNo: string;
-  status: string;
-  appointmentDate?: string;
-  customer?: { name?: string; companyName?: string; contactName?: string };
-  vehicle?: { plateNo?: string; model?: string; color?: string };
+  orderNo?: string;
+  status?: string;
+  appointmentDate?: string | Date | null;
+  customer?: {
+    name?: string | null;
+    companyName?: string | null;
+    contactPerson?: string | null;
+  } | null;
+  vehicle?: {
+    carPlate?: string | null;
+    carModel?: string | null;
+    carColor?: string | null;
+  } | null;
   items?: Array<{
+    product?: {
+      brand?: string;
+      name?: string;
+      model?: string;
+      specification?: string | null;
+    } | null;
     quantity?: number;
-    productId?: string;
-    product?: { brand?: string; name?: string; model?: string };
   }>;
 };
 
-type MovementFilterOrderRow = PendingMatchOrderRow;
-
-type MovementOperatorRow = {
+type MovementRow = {
   id: string;
-  username: string;
-  nickname: string | null;
-};
-
-type SplitBatchResult = InventoryBatchSummary;
-
-type LastSplitResult = {
-  originalBatch: InventoryBatchSummary;
-  childBatch: SplitBatchResult;
-  quantityMeters: number;
-  metersPerRoll?: number | string | null;
-  quantityPrecision?: number | null;
-};
-
-type MovementFilterValues = {
-  productId?: string;
-  batchId?: string;
   movementType?: InventoryMovementType;
-  orderId?: string;
-  createdById?: string;
+  quantity?: number | string;
+  createdAt?: string | Date;
 };
 
-type AvailableInventoryPreviewRow = {
-  id: string;
-  productLabel: string;
-  unit?: ProductUnit;
-  batchNo?: string;
-  availableQuantity?: number | string | null;
-};
-
-const INVENTORY_TAB_NAV_ITEMS = [
-  { key: "pending-orders", label: "待匹配订单" },
-  { key: "suppliers", label: "供应商档案" },
-  { key: "batches", label: "库存批次" },
-  { key: "purchase", label: "采购需求" },
-  { key: "movements", label: "锁库与流水" },
-  { key: "split", label: "批次拆分" },
-  { key: "stock-operations", label: "其他出入库" }
-];
-
-export default function InventoryPage() {
-  const { message } = App.useApp();
-  const queryClient = useQueryClient();
-  const router = useRouter();
+export default function InventoryOverviewPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const [batchForm] = Form.useForm<CreateInventoryBatchPayload>();
-  const [supplierForm] = Form.useForm<SupplierFormValues>();
-  const [purchaseForm] = Form.useForm<{ productId: string; quantity: number }>();
-  const [orderForm] = Form.useForm<{ orderId: string }>();
-  const [movementFilterForm] = Form.useForm<MovementFilterValues>();
-  const [allocationForm] = Form.useForm<{ allocations: Array<{ batchId: string; quantity: number }> }>();
-  const [splitForm] = Form.useForm<{ batchId: string; quantityMeters: number }>();
-  const [stockForm] = Form.useForm<{ batchId: string; movementType: "COUNT_IN" | "COUNT_OUT" | "DAMAGE_OUT" | "TRANSFER_IN" | "TRANSFER_OUT" | "RETURN_IN" | "RETURN_OUT"; quantity: number; note?: string }>();
-  const [selectedOrderId, setSelectedOrderId] = useState<string>();
-  const [activeInventoryTab, setActiveInventoryTab] = useState("pending-orders");
-  const [inventorySearch, setInventorySearch] = useState("");
-  const [batchSearchByOrderItem, setBatchSearchByOrderItem] = useState<Record<string, string>>({});
-  const [movementFilters, setMovementFilters] = useState<MovementFilterValues>({});
-  const [operatorKeyword, setOperatorKeyword] = useState("");
-  const [lastSplitResult, setLastSplitResult] = useState<LastSplitResult | null>(null);
-  const [editingSupplier, setEditingSupplier] = useState<InventorySupplierSummary | null>(null);
-
-  const productsQuery = useQuery({
-    queryKey: ["inventory-products", storeId],
-    queryFn: () => productApi.list({ storeId: storeId!, pageSize: 100 }),
-    enabled: Boolean(storeId)
-  });
+  const canManageInventory = user?.isAuditor === true ||
+    user?.storeMember?.position === "MANAGER" ||
+    user?.storeMember?.position === "PURCHASING";
 
   const batchesQuery = useQuery({
-    queryKey: ["inventory-batches", storeId],
+    queryKey: ["inventory-overview-batches", storeId],
     queryFn: () => inventoryApi.batches({ storeId: storeId! }),
     enabled: Boolean(storeId)
   });
-  const suppliersQuery = useQuery({
-    queryKey: ["inventory-suppliers", storeId],
-    queryFn: () => inventoryApi.suppliers(storeId!),
-    enabled: Boolean(storeId)
-  });
-  const movementsQuery = useQuery({
-    queryKey: ["inventory-movements", storeId, movementFilters],
-    queryFn: () => inventoryApi.movements({ storeId: storeId!, ...movementFilters }),
-    enabled: Boolean(storeId)
-  });
-  const movementOrdersQuery = useQuery({
-    queryKey: ["inventory-movement-orders", storeId],
-    queryFn: () => orderApi.list({ storeId: storeId!, pageSize: 100 }),
-    enabled: Boolean(storeId)
-  });
-  const movementOperatorsQuery = useQuery({
-    queryKey: ["inventory-movement-operators", operatorKeyword],
-    queryFn: () => userApi.searchUsers(operatorKeyword.trim()),
-    enabled: operatorKeyword.trim().length > 0
-  });
-  const purchaseOrdersQuery = useQuery({
-    queryKey: ["purchase-orders", storeId],
-    queryFn: () => inventoryApi.purchaseOrders(storeId!),
-    enabled: Boolean(storeId)
-  });
-  const purchaseRequirementsQuery = useQuery({
-    queryKey: ["purchase-requirements", storeId],
-    queryFn: () => inventoryApi.purchaseRequirements(storeId!),
-    enabled: Boolean(storeId)
-  });
   const pendingOrdersQuery = useQuery({
-    queryKey: ["inventory-pending-match-orders", storeId],
+    queryKey: ["inventory-overview-pending-orders", storeId],
     queryFn: () => inventoryApi.pendingMatchOrders(storeId!),
     enabled: Boolean(storeId)
   });
-
-  const productItems = useMemo(() => (productsQuery.data?.items ?? []) as ProductOption[], [productsQuery.data]);
-  const productMap = useMemo(
-    () => new Map(productItems.map((product) => [product.id, product])),
-    [productItems]
-  );
-  const productOptions = productItems.map((product) => ({
-    value: product.id,
-    label: getProductDisplayName(product) || product.id
-  }));
-  const batchMap = useMemo(
-    () => new Map((batchesQuery.data ?? []).map((batch) => [batch.id, batch])),
-    [batchesQuery.data]
-  );
-  const batchOptions = (batchesQuery.data ?? []).map((batch) => ({
-    value: batch.id,
-    label: getInventoryBatchLabel(batch, productMap)
-  }));
-  const movementTypeOptions = (Object.entries(INVENTORY_MOVEMENT_TYPE_LABEL) as Array<[InventoryMovementType, string]>).map(
-    ([value, label]) => ({ value, label })
-  );
-  const pendingOrderOptions = ((pendingOrdersQuery.data ?? []) as PendingMatchOrderRow[]).map((order) => ({
-    value: order.id,
-    label: `${order.orderNo} · ${getInventoryOrderCustomerLabel(order)} · ${getInventoryOrderItemsSummary(order)}`
-  }));
-  const movementOrderOptions = ((movementOrdersQuery.data?.items ?? []) as MovementFilterOrderRow[]).map((order) => ({
-    value: order.id,
-    label: `${order.orderNo} · ${getInventoryOrderCustomerLabel(order)} · ${getInventoryOrderItemsSummary(order)}`
-  }));
-  const sourceOrderMap = useMemo(
-    () => new Map(((movementOrdersQuery.data?.items ?? []) as InventoryOrderLike[]).map((order) => [order.id ?? "", order])),
-    [movementOrdersQuery.data]
-  );
-  const movementOperatorOptions = ((movementOperatorsQuery.data ?? []) as MovementOperatorRow[]).map((operator) => ({
-    value: operator.id,
-    label: [operator.nickname, `@${operator.username}`].filter(Boolean).join(" ")
-  }));
-  const pendingMatchRows = useMemo(
-    () => (pendingOrdersQuery.data ?? []) as PendingMatchOrderRow[],
-    [pendingOrdersQuery.data]
-  );
-  const firstPendingOrderId = pendingMatchRows[0]?.id;
-  const activeSelectedOrderId = selectedOrderId ?? firstPendingOrderId;
-  const orderMatchQuery = useQuery({
-    queryKey: ["inventory-order-match", activeSelectedOrderId],
-    queryFn: () => inventoryApi.orderMatch(activeSelectedOrderId!),
-    enabled: Boolean(activeSelectedOrderId)
+  const movementsQuery = useQuery({
+    queryKey: ["inventory-overview-movements", storeId],
+    queryFn: () => inventoryApi.movements({ storeId: storeId! }),
+    enabled: Boolean(storeId)
   });
-  const filteredPendingMatchRows = useMemo(() => {
-    const keyword = inventorySearch.trim().toLowerCase();
-    if (!keyword) return pendingMatchRows;
-    return pendingMatchRows.filter((order) =>
-      [
-        order.orderNo,
-        getInventoryOrderCustomerLabel(order),
-        getInventoryOrderVehicleLabel(order),
-        getInventoryOrderItemsSummary(order)
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(keyword)
-    );
-  }, [inventorySearch, pendingMatchRows]);
-  const matchRows = buildInventoryMatchRows(orderMatchQuery.data as InventoryMatchInput | undefined);
-  const allocationRows = buildInventoryAllocationRows(orderMatchQuery.data as InventoryMatchInput | undefined);
-  const shortageRows = matchRows.filter((row) => row.shortageQuantity > 0);
-  const selectedOrder = pendingMatchRows.find((order) => order.id === activeSelectedOrderId);
-
-  const availableInventoryRows: AvailableInventoryPreviewRow[] = activeSelectedOrderId
-    ? matchRows.flatMap((row) =>
-        row.availableBatches.map((batch) => ({
-          id: `${row.orderItemId}-${batch.id}`,
-          productLabel: row.productLabel,
-          unit: row.unit,
-          batchNo: batch.batchNo,
-          availableQuantity: batch.availableQuantity
-        }))
-      )
-    : (batchesQuery.data ?? []).slice(0, 5).map((batch) => ({
-        id: batch.id,
-        productLabel: getInventoryProductLabel(batch.productId, productMap),
-        unit: undefined,
-        batchNo: batch.batchNo,
-        availableQuantity: batch.availableQuantity
-      }));
-  const movementRows = (movementsQuery.data ?? []) as MovementRow[];
+  const batchRows = useMemo(() => (batchesQuery.data ?? []) as InventoryBatchSummary[], [batchesQuery.data]);
+  const pendingRows = useMemo(() => {
+    const data = pendingOrdersQuery.data as PendingMatchOrderRow[] | { items?: PendingMatchOrderRow[] } | undefined;
+    if (Array.isArray(data)) return data;
+    return data?.items ?? [];
+  }, [pendingOrdersQuery.data]);
+  const movementRows = useMemo(() => (movementsQuery.data ?? []) as MovementRow[], [movementsQuery.data]);
   const movementSummary = getInventoryMovementSummary(movementRows);
-  const supplierRows = (suppliersQuery.data ?? []) as InventorySupplierSummary[];
-  const batchRows = (batchesQuery.data ?? []) as InventoryBatchSummary[];
-  const purchaseRequirementRows = (purchaseRequirementsQuery.data ?? []) as PurchaseRequirementRow[];
-  const purchaseOrderRows = (purchaseOrdersQuery.data ?? []) as PurchaseOrderRow[];
-  const createBatch = useMutation({
-    mutationFn: (values: CreateInventoryBatchPayload) => inventoryApi.createBatch({ ...values, storeId: storeId! }),
-    onSuccess: async () => {
-      message.success("批次已入库");
-      batchForm.resetFields();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const createSupplier = useMutation({
-    mutationFn: (values: SupplierFormValues) => inventoryApi.createSupplier({ ...values, storeId: storeId! }),
-    onSuccess: async () => {
-      message.success("供应商已保存");
-      supplierForm.resetFields();
-      await queryClient.invalidateQueries({ queryKey: ["inventory-suppliers", storeId] });
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const updateSupplier = useMutation({
-    mutationFn: (values: SupplierEditFormValues) => inventoryApi.updateSupplier(editingSupplier!.id!, values),
-    onSuccess: async () => {
-      message.success("供应商已更新");
-      setEditingSupplier(null);
-      await queryClient.invalidateQueries({ queryKey: ["inventory-suppliers", storeId] });
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const createSupplierContact = useMutation({
-    mutationFn: (values: SupplierContactFormValues & { supplierId: string }) =>
-      inventoryApi.createSupplierContact(values.supplierId, {
-        name: values.name,
-        phone: values.phone,
-        role: values.role,
-        isPrimary: values.isPrimary
-      }),
-    onSuccess: async () => {
-      message.success("联系人已保存");
-      await queryClient.invalidateQueries({ queryKey: ["inventory-suppliers", storeId] });
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const createSupplierRatingHistory = useMutation({
-    mutationFn: (values: SupplierRatingFormValues & { supplierId: string }) =>
-      inventoryApi.createSupplierRatingHistory(values.supplierId, {
-        rating: values.rating,
-        note: values.note
-      }),
-    onSuccess: async () => {
-      message.success("评级历史已保存");
-      await queryClient.invalidateQueries({ queryKey: ["inventory-suppliers", storeId] });
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const openSupplierEditor = (supplier: InventorySupplierSummary) => {
-    setEditingSupplier(supplier);
-  };
-
-  const createPurchaseRequirement = useMutation({
-    mutationFn: (values: { productId: string; quantity: number }) => {
-      const product = productItems.find((item) => item.id === values.productId);
-      return inventoryApi.createPurchaseRequirement({
-        storeId: storeId!,
-        items: [
-          {
-            productId: values.productId,
-            requiredQuantity: values.quantity,
-            requiredUnit: product?.inventoryUnit ?? product?.unit ?? "ROLL"
-          }
-        ]
-      });
-    },
-    onSuccess: async () => {
-      message.success("采购需求已创建");
-      purchaseForm.resetFields();
-      await queryClient.invalidateQueries({ queryKey: ["purchase-requirements", storeId] });
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const createShortagePurchaseRequirement = useMutation({
-    mutationFn: () => {
-      if (!storeId || !activeSelectedOrderId || shortageRows.length === 0) {
-        throw new Error("当前订单没有缺货明细");
-      }
-      return inventoryApi.createPurchaseRequirement(
-        buildPurchaseRequirementFromShortages(storeId, activeSelectedOrderId, matchRows)
-      );
-    },
-    onSuccess: async () => {
-      message.success("缺货采购需求已创建");
-      await queryClient.invalidateQueries({ queryKey: ["purchase-requirements", storeId] });
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const createPurchaseOrderFromRequirement = useMutation({
-    mutationFn: (id: string) => inventoryApi.createPurchaseOrderFromRequirement(id, {}),
-    onSuccess: async () => {
-      message.success("采购订单已生成");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["purchase-requirements", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const receivePurchaseItem = useMutation({
-    mutationFn: (values: { itemId: string; quantity: number; batchNo: string; supplierName?: string }) =>
-      inventoryApi.receivePurchaseItem(values.itemId, {
-        quantity: values.quantity,
-        batchNo: values.batchNo,
-        supplierName: values.supplierName
-      }),
-    onSuccess: async () => {
-      message.success("采购明细已入库");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const receivePurchaseItemBatches = useMutation({
-    mutationFn: (values: { itemId: string; batches: Array<{ quantity: number; batchNo: string; supplierName?: string }> }) =>
-      inventoryApi.receivePurchaseItemBatches(values.itemId, values.batches),
-    onSuccess: async (result) => {
-      if (result.failed.length > 0) {
-        message.warning(`批量入库完成，成功 ${result.received.length} 行，失败 ${result.failed.length} 行`);
-      } else {
-        message.success("批量入库已完成");
-      }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const approvePurchaseOrder = useMutation({
-    mutationFn: (id: string) => inventoryApi.approvePurchaseOrder(id),
-    onSuccess: async () => {
-      message.success("采购订单已审批通过");
-      await queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] });
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const cancelPurchaseOrder = useMutation({
-    mutationFn: (values: { id: string; reason: string }) =>
-      inventoryApi.cancelPurchaseOrder(values.id, { reason: values.reason }),
-    onSuccess: async () => {
-      message.success("采购订单已取消");
-      await queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] });
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const lockOrder = useMutation({
-    mutationFn: (values: { orderId: string }) => inventoryApi.lockOrder(values.orderId),
-    onSuccess: async () => {
-      message.success("订单库存匹配完成");
-      orderForm.resetFields();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const outboundSelectedOrder = useMutation({
-    mutationFn: () => inventoryApi.outboundOrder(activeSelectedOrderId!),
-    onSuccess: async () => {
-      message.success("订单库存已出库");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-order-match", activeSelectedOrderId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const releaseSelectedOrder = useMutation({
-    mutationFn: () => inventoryApi.releaseOrder(activeSelectedOrderId!),
-    onSuccess: async () => {
-      message.success("订单锁定库存已释放");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-order-match", activeSelectedOrderId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const handleSelectedOrderChange = (orderId: string) => {
-    setSelectedOrderId(orderId);
-    setBatchSearchByOrderItem({});
-  };
-
-  const traceBatchMovements = (batch: InventoryBatchSummary) => {
-    movementFilterForm.setFieldsValue({ batchId: batch.id });
-    setMovementFilters({ batchId: batch.id });
-    setActiveInventoryTab("movements");
-  };
-
-  const handleCancelPurchaseOrder = (id: string) => {
-    const reason = window.prompt("请输入取消原因");
-    if (reason === null) return;
-    const trimmedReason = reason.trim();
-    if (!trimmedReason) {
-      message.error("请输入取消原因");
-      return;
-    }
-    cancelPurchaseOrder.mutate({ id, reason: trimmedReason });
-  };
-
-  const createOrderAllocations = useMutation({
-    mutationFn: (values: { allocations: Array<{ batchId: string; quantity: number }> }) => {
-      return inventoryApi.createOrderAllocations(activeSelectedOrderId!, {
-        allocations: values.allocations.map((allocation, index) => ({
-          orderItemId: matchRows[index].orderItemId,
-          batchId: allocation.batchId,
-          quantity: allocation.quantity
-        }))
-      });
-    },
-    onSuccess: async () => {
-      message.success("批次已锁定");
-      allocationForm.resetFields();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-order-match", activeSelectedOrderId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const splitBatch = useMutation({
-    mutationFn: (values: { batchId: string; quantityMeters: number }) =>
-      inventoryApi.splitBatch(values.batchId, { quantityMeters: values.quantityMeters }),
-    onSuccess: async (childBatch, values) => {
-      const originalBatch = batchMap.get(values.batchId);
-      const product = originalBatch ? productMap.get(originalBatch.productId) : undefined;
-      if (originalBatch) {
-        setLastSplitResult({
-          originalBatch,
-          childBatch: childBatch as SplitBatchResult,
-          quantityMeters: values.quantityMeters,
-          metersPerRoll: product?.metersPerRoll,
-          quantityPrecision: product?.quantityPrecision
-        });
-      }
-      message.success("批次已拆分");
-      splitForm.resetFields();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
-  const createStockOperation = useMutation({
-    mutationFn: (values: { batchId: string; movementType: "COUNT_IN" | "COUNT_OUT" | "DAMAGE_OUT" | "TRANSFER_IN" | "TRANSFER_OUT" | "RETURN_IN" | "RETURN_OUT"; quantity: number; note?: string }) =>
-      inventoryApi.createStockOperation(values),
-    onSuccess: async () => {
-      message.success("出入库已记录");
-      stockForm.resetFields();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
+  const lowStockRows = batchRows.filter((batch) => Number(batch.availableQuantity ?? 0) <= 1).slice(0, 5);
+  const lockedRows = batchRows.filter((batch) => Number(batch.lockedQuantity ?? 0) > 0).slice(0, 5);
+  const selectedOrderMessage = "请先选择待匹配订单";
 
   return (
-    <>
-      <div className="management-page inventory-fulfillment-shell">
-          <section className="inventory-workspace-grid inventory-fulfillment-board">
-            <div className="inventory-board-rail inventory-rail-stack">
-              <Card
-                className="inventory-prototype-card inventory-workspace-card"
-                title="待匹配订单"
-                extra={<Tag color="warning">{filteredPendingMatchRows.length} 笔等待</Tag>}
-              >
-                <Space orientation="vertical" className="w-full" size="middle">
-                  <Input
-                    prefix={<SearchOutlined />}
-                    allowClear
-                    placeholder="搜索订单、批次或客户..."
-                    value={inventorySearch}
-                    onChange={(event) => setInventorySearch(event.target.value)}
-                  />
-                  {filteredPendingMatchRows.length > 0 ? (
-                    <Space orientation="vertical" className="w-full" size="small">
-                      {filteredPendingMatchRows.slice(0, 4).map((order) => (
-                        <button
-                          key={order.id}
-                          type="button"
-                          className={order.id === activeSelectedOrderId ? "inventory-order-card is-active" : "inventory-order-card"}
-                          onClick={() => handleSelectedOrderChange(order.id)}
-                        >
-                          <span className="inventory-order-title">{order.orderNo}</span>
-                          <span>{getInventoryOrderCustomerLabel(order)}</span>
-                          <span>{getInventoryOrderVehicleLabel(order)}</span>
-                          <small>{getInventoryOrderItemsSummary(order)}</small>
-                        </button>
-                      ))}
-                    </Space>
-                  ) : (
-                    <Typography.Text type="secondary">暂无待匹配订单</Typography.Text>
-                  )}
-                </Space>
-              </Card>
+    <div className="management-page inventory-overview-shell">
+      <StorePageHeader title="库存运营总览" description="查看库存健康、订单匹配、锁库出库和库存流水，采购事项已拆到采购管理。">
+        <Button icon={<FileSearchOutlined />} href="/inventory/matching">
+          库存匹配
+        </Button>
+        {canManageInventory ? (
+          <Button type="primary" icon={<AppstoreOutlined />} href="/inventory/adjustments">
+            库存调整工作台
+          </Button>
+        ) : null}
+      </StorePageHeader>
 
-              <Card className="inventory-prototype-card inventory-workspace-card inventory-demand-card" title="订单产品需求">
-                <Space orientation="vertical" className="w-full" size="middle">
-                  <Typography.Text type="secondary">
-                    当前订单：{selectedOrder?.orderNo ?? "请选择左侧待匹配订单"}
-                  </Typography.Text>
-                  {selectedOrder ? (
-                    <div className="inventory-demand-box">
-                      {(selectedOrder.items ?? []).map((item) => (
-                        <div key={`${item.productId}-${item.quantity}`} className="inventory-demand-row">
-                          <span>产品</span>
-                          <strong>{item.product ? getProductDisplayName(item.product) : item.productId}</strong>
-                          <span>需求量</span>
-                          <strong>{item.quantity ?? 0}</strong>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="inventory-demand-empty">选择订单后显示产品、规格、需求量和库存建议。</div>
-                  )}
-                  <div className={shortageRows.length > 0 ? "inventory-demand-hint is-warning" : "inventory-demand-hint"}>
-                    {shortageRows.length > 0 ? `存在 ${shortageRows.length} 项缺货，可生成采购需求单。` : "库存匹配结果会优先提示可出库批次。"}
-                  </div>
-                </Space>
-              </Card>
-            </div>
+      {!canManageInventory ? (
+        <Alert
+          className="management-readonly-alert"
+          type="info"
+          showIcon
+          message="只读模式"
+          description="客服可查看库存匹配建议、批次、锁库结果和库存流水，不能执行锁库、出库、调整或其他库存操作。"
+        />
+      ) : null}
 
-            <div className="inventory-board-center inventory-main-stack">
-              <Card
-                className="inventory-prototype-card inventory-workspace-card inventory-match-card"
-                title="可用库存匹配"
-                extra={<Tag color={shortageRows.length > 0 ? "warning" : "success"}>{shortageRows.length > 0 ? "需采购" : "充足"}</Tag>}
-              >
-                <Table
-                  rowKey="id"
-                  size="small"
-                  pagination={false}
-                  loading={activeSelectedOrderId ? orderMatchQuery.isLoading : batchesQuery.isLoading}
-                  dataSource={availableInventoryRows}
-                  columns={[
-                    { title: "批次号", dataIndex: "batchNo" },
-                    { title: "产品", dataIndex: "productLabel" },
-                    {
-                      title: "可用",
-                      render: (_, row) => (
-                        <Tag color={Number(row.availableQuantity) > 0 ? "success" : "default"}>
-                          {row.availableQuantity}
-                          {row.unit ? ` ${getProductUnitLabel(row.unit)}` : ""}
-                        </Tag>
-                      )
-                    }
-                  ]}
-                />
-              </Card>
+      <div className="management-kpi-grid">
+        {[
+          ["库存健康", batchRows.length, "当前可追踪批次数"],
+          ["待匹配订单", pendingRows.length, "等待库存匹配或确认"],
+          ["低库存与异常批次", lowStockRows.length, "可用数量低于安全线"],
+          ["锁库待出库", lockedRows.length, "已锁定但未完成出库"]
+        ].map(([label, value, description]) => (
+          <Card key={label} className="management-kpi-card inventory-summary-tile">
+            <div className="management-kpi-label">{label}</div>
+            <div className="management-kpi-value inventory-summary-value">{value}</div>
+            <div className="management-kpi-desc">{description}</div>
+          </Card>
+        ))}
+      </div>
 
-              <Card className="inventory-prototype-card inventory-workspace-card inventory-board-aside inventory-outbound-card" title="出库操作">
-                <div className="inventory-outbound-grid">
-                  <div className="inventory-outbound-form">
-                    <div className="inventory-current-order-strip">
-                      <span>当前订单</span>
-                      <strong>{selectedOrder?.orderNo ?? "请选择左侧待匹配订单"}</strong>
-                      <small>{selectedOrder ? `${getInventoryOrderCustomerLabel(selectedOrder)} · ${getInventoryOrderVehicleLabel(selectedOrder)}` : "先从左侧订单队列选择需要匹配库存的订单"}</small>
-                    </div>
-                    <span className="orders-filter-label">批次追溯</span>
-                    <Select
-                      allowClear
-                      showSearch
-                      optionFilterProp="label"
-                      placeholder="选择批次查看流水"
-                      options={batchOptions}
-                      onChange={(batchId) => {
-                        const batch = batchMap.get(batchId);
-                        if (batch) traceBatchMovements(batch);
-                      }}
-                    />
-                    <div className="inventory-outbound-actions">
-                      <Button
-                        type="primary"
-                        disabled={!activeSelectedOrderId || allocationRows.length === 0}
-                        loading={outboundSelectedOrder.isPending}
-                        onClick={() => outboundSelectedOrder.mutate()}
-                      >
-                        锁定库存并出库
-                      </Button>
-                      <Button
-                        disabled={!activeSelectedOrderId || shortageRows.length === 0}
-                        loading={createShortagePurchaseRequirement.isPending}
-                        onClick={() => createShortagePurchaseRequirement.mutate()}
-                      >
-                        生成采购需求单
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="inventory-outbound-summary">
-                    <span>当前订单</span>
-                    <strong>{selectedOrder?.orderNo ?? "未选择"}</strong>
-                    <span>已锁批次</span>
-                    <strong>{allocationRows.length} 个</strong>
-                    <span>缺货明细</span>
-                    <strong>{shortageRows.length} 项</strong>
-                  </div>
-                </div>
-                <div className="inventory-inline-shortcuts">
-                  {[
-                    { label: "批次入库", tab: "batches", description: "采购到货或手工入库" },
-                    { label: "采购入库", tab: "purchase", description: "采购需求、采购单、到货" },
-                    { label: "批次拆分", tab: "split", description: "卷与米换算、生成子批次" },
-                    { label: "其他出入库", tab: "stock-operations", description: "盘点、报损、调拨、退货" }
-                  ].map((item) => (
-                    <button
-                      key={item.tab}
-                      type="button"
-                      className="inventory-shortcut"
-                      onClick={() => setActiveInventoryTab(item.tab)}
-                    >
-                      <strong>{item.label}</strong>
-                      <span>{item.description}</span>
-                    </button>
-                  ))}
-                  <Link href="/inventory/adjustments" className="inventory-shortcut">
-                    <strong>库存调整工作台</strong>
-                    <span>单位转换、盘点报损、调拨</span>
-                  </Link>
-                  <Link href="/inventory/movements" className="inventory-shortcut">
-                    <strong>库存流水</strong>
-                    <span>入库、出库、调拨与异常追踪</span>
-                  </Link>
-                  <Link href="/inventory/suppliers" className="inventory-shortcut">
-                    <strong>供应商档案</strong>
-                    <span>联系人、评级与批次历史</span>
-                  </Link>
-                </div>
-              </Card>
-            </div>
-          </section>
-
-          <Card className="inventory-prototype-card inventory-tab-workspace-card">
-            <div className="inventory-mobile-tab-switcher" aria-label="库存模块导航">
-              {INVENTORY_TAB_NAV_ITEMS.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={activeInventoryTab === item.key ? "is-active" : undefined}
-                  onClick={() => setActiveInventoryTab(item.key)}
-                >
-                  {item.label}
-                </button>
+      <section className="inventory-overview-grid">
+        <div className="inventory-overview-main">
+          <Card className="inventory-prototype-card" title="待匹配订单" extra={<Link href="/inventory/matching">进入匹配</Link>}>
+            <div className="inventory-overview-order-cards">
+              {pendingRows.slice(0, 5).map((row) => (
+                <article key={row.id} className="inventory-overview-order-card">
+                  <strong>{row.orderNo ?? "未编号订单"}</strong>
+                  <span>{getInventoryOrderCustomerLabel(row)}</span>
+                  <small>{getInventoryOrderItemsSummary(row)}</small>
+                </article>
               ))}
             </div>
-            <Tabs
-              activeKey={activeInventoryTab}
-              onChange={setActiveInventoryTab}
-              items={[
-            {
-              key: "pending-orders",
-              label: "待匹配订单",
-              children: (
-                <>
-                  <div className="inventory-mobile-order-cards">
-                    {pendingMatchRows.length > 0 ? (
-                      pendingMatchRows.map((row) => (
-                        <article key={row.id} className="inventory-mobile-order-card">
-                          <div className="inventory-mobile-order-head">
-                            <strong>{row.orderNo}</strong>
-                            <Tag>{getOrderStatusLabel(row.status)}</Tag>
-                          </div>
-                          <dl>
-                            <div>
-                              <dt>客户</dt>
-                              <dd>{getInventoryOrderCustomerLabel(row)}</dd>
-                            </div>
-                            <div>
-                              <dt>车辆</dt>
-                              <dd>{getInventoryOrderVehicleLabel(row)}</dd>
-                            </div>
-                            <div>
-                              <dt>产品</dt>
-                              <dd>{getInventoryOrderItemsSummary(row)}</dd>
-                            </div>
-                            <div>
-                              <dt>预约</dt>
-                              <dd>{row.appointmentDate?.slice(0, 10) ?? "-"}</dd>
-                            </div>
-                          </dl>
-                          <div className="inventory-mobile-order-actions">
-                            <Button size="small" onClick={() => lockOrder.mutate({ orderId: row.id })} loading={lockOrder.isPending}>
-                              匹配库存
-                            </Button>
-                            <Button size="small" onClick={() => handleSelectedOrderChange(row.id)}>
-                              选择批次
-                            </Button>
-                          </div>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="inventory-mobile-empty">暂无待匹配订单</div>
-                    )}
-                  </div>
-                  <Table<PendingMatchOrderRow>
-                    className="inventory-desktop-table"
-                    rowKey="id"
-                    loading={pendingOrdersQuery.isLoading}
-                    dataSource={pendingMatchRows}
-                    columns={[
-                      { title: "订单号", dataIndex: "orderNo" },
-                      { title: "客户", render: (_, row) => getInventoryOrderCustomerLabel(row) },
-                      { title: "车辆", render: (_, row) => getInventoryOrderVehicleLabel(row) },
-                      { title: "产品明细", render: (_, row) => getInventoryOrderItemsSummary(row) },
-                      { title: "状态", render: (_, row) => <Tag>{getOrderStatusLabel(row.status)}</Tag> },
-                      { title: "预约日期", render: (_, row) => row.appointmentDate?.slice(0, 10) ?? "-" },
-                      {
-                        title: "操作",
-                        render: (_, row) => (
-                          <>
-                            <Button size="small" onClick={() => lockOrder.mutate({ orderId: row.id })} loading={lockOrder.isPending}>
-                              匹配库存
-                            </Button>
-                            <Button size="small" className="ml-2" onClick={() => handleSelectedOrderChange(row.id)}>
-                              选择批次
-                            </Button>
-                          </>
-                        )
-                      }
-                    ]}
-                  />
-                  {activeSelectedOrderId ? (
-                    <div className="mt-6">
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <Typography.Title level={5} className="!mb-0">批次锁定</Typography.Title>
-                        <Button
-                          icon={<ShoppingCartOutlined />}
-                          disabled={shortageRows.length === 0}
-                          loading={createShortagePurchaseRequirement.isPending}
-                          onClick={() => createShortagePurchaseRequirement.mutate()}
-                        >
-                          为缺货生成采购需求
-                        </Button>
-                      </div>
-                      <Form form={allocationForm} layout="vertical" onFinish={(values) => createOrderAllocations.mutate(values)}>
-                        {matchRows.map((row, index) => (
-                          <div key={row.orderItemId} className="inventory-nested-panel">
-                            <div className="mb-3 flex flex-wrap items-center gap-2">
-                              <Typography.Text strong>{row.productLabel}</Typography.Text>
-                              <Tag>需求 {row.requiredQuantity} {getProductUnitLabel(row.unit)}</Tag>
-                              <Tag color={row.lockedQuantity > 0 ? "processing" : "default"}>已锁 {row.lockedQuantity}</Tag>
-                              <Tag color={row.availableQuantity > 0 ? "success" : "default"}>可用 {row.availableQuantity}</Tag>
-                              <Tag color={row.shortageQuantity > 0 ? "error" : "success"}>缺口 {row.shortageQuantity}</Tag>
-                            </div>
-                            <Space className="w-full" align="baseline" wrap>
-                            <Input
-                              className="min-w-56"
-                              allowClear
-                              placeholder="扫描或输入批次号"
-                              value={batchSearchByOrderItem[row.orderItemId] ?? ""}
-                              onChange={(event) =>
-                                setBatchSearchByOrderItem((current) => ({
-                                  ...current,
-                                  [row.orderItemId]: event.target.value
-                                }))
-                              }
-                            />
-                            <Form.Item name={["allocations", index, "batchId"]} rules={[{ required: true, message: "请选择批次" }]} className="!mb-0">
-                              <Select
-                                className="min-w-60"
-                                placeholder="批次"
-                                options={filterInventoryBatches(
-                                  row.availableBatches,
-                                  batchSearchByOrderItem[row.orderItemId]
-                                ).map((batch) => ({
-                                  value: batch.id,
-                                  label: `${batch.batchNo} · 可用 ${batch.availableQuantity}`
-                                }))}
-                              />
-                            </Form.Item>
-                            <Form.Item name={["allocations", index, "quantity"]} rules={[{ required: true, message: "请输入数量" }]} className="!mb-0">
-                              <InputNumber min={0.001} max={row.availableQuantity || undefined} placeholder="锁定数量" />
-                            </Form.Item>
-                            </Space>
-                          </div>
-                        ))}
-                        <Button type="primary" htmlType="submit" loading={createOrderAllocations.isPending || orderMatchQuery.isLoading}>
-                          确认锁定
-                        </Button>
-                      </Form>
-                      <div className="mt-6">
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                          <Typography.Title level={5} className="!mb-0">已锁批次</Typography.Title>
-                          <Space>
-                            <Button
-                              disabled={allocationRows.length === 0}
-                              loading={outboundSelectedOrder.isPending}
-                              onClick={() => outboundSelectedOrder.mutate()}
-                            >
-                              确认出库
-                            </Button>
-                            <Button
-                              danger
-                              disabled={allocationRows.length === 0}
-                              loading={releaseSelectedOrder.isPending}
-                              onClick={() => releaseSelectedOrder.mutate()}
-                            >
-                              释放锁库
-                            </Button>
-                          </Space>
-                        </div>
-                        <Table
-                          className="inventory-tab-desktop-table inventory-allocation-desktop-table"
-                          rowKey="id"
-                          size="small"
-                          pagination={false}
-                          dataSource={allocationRows}
-                          columns={[
-                            { title: "产品", dataIndex: "productLabel" },
-                            { title: "批次", dataIndex: "batchLabel" },
-                            { title: "锁定数量", dataIndex: "lockedQuantity" },
-                            { title: "已出库", dataIndex: "outboundQuantity" },
-                            { title: "剩余锁定", dataIndex: "remainingQuantity" },
-                            { title: "状态", render: (_, row) => <Tag>{getInventoryAllocationStatusLabel(row.status)}</Tag> }
-                          ]}
-                        />
-                        <div className="inventory-tab-mobile-cards inventory-allocation-mobile-cards">
-                          {allocationRows.length > 0 ? (
-                            allocationRows.map((row) => (
-                              <article key={row.id} className="inventory-tab-mobile-card inventory-allocation-mobile-card">
-                                <div className="inventory-tab-mobile-card-head">
-                                  <strong>{row.productLabel}</strong>
-                                  <Tag>{getInventoryAllocationStatusLabel(row.status)}</Tag>
-                                </div>
-                                <dl className="inventory-tab-mobile-card-fields">
-                                  <div>
-                                    <dt>批次</dt>
-                                    <dd>{row.batchLabel}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>锁定数量</dt>
-                                    <dd>{row.lockedQuantity}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>已出库</dt>
-                                    <dd>{row.outboundQuantity}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>剩余锁定</dt>
-                                    <dd>{row.remainingQuantity}</dd>
-                                  </div>
-                                </dl>
-                              </article>
-                            ))
-                          ) : (
-                            <div className="inventory-tab-mobile-empty">暂无已锁批次</div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </>
-              )
-            },
-            {
-              key: "suppliers",
-              label: "供应商档案",
-              children: (
-                <>
-                  <Form form={supplierForm} layout="inline" className="mb-4" onFinish={(values) => createSupplier.mutate(values)}>
-                    <Form.Item name="name" rules={[{ required: true, message: "请输入供应商名称" }]}>
-                      <Input placeholder="供应商名称" />
-                    </Form.Item>
-                    <Form.Item name="contactName">
-                      <Input placeholder="联系人" />
-                    </Form.Item>
-                    <Form.Item name="contactPhone">
-                      <Input placeholder="联系电话" />
-                    </Form.Item>
-                    <Form.Item name="rating">
-                      <InputNumber min={1} max={5} placeholder="评级" />
-                    </Form.Item>
-                    <Form.Item name="note">
-                      <Input placeholder="备注" />
-                    </Form.Item>
-                    <Button type="primary" htmlType="submit" loading={createSupplier.isPending}>
-                      新增供应商
-                    </Button>
-                  </Form>
+            <Table<PendingMatchOrderRow>
+              className="inventory-overview-order-table"
+              rowKey="id"
+              loading={pendingOrdersQuery.isLoading}
+              dataSource={pendingRows.slice(0, 6)}
+              pagination={false}
+              columns={[
+                { title: "订单号", render: (_, row) => row.orderNo ?? "未编号订单" },
+                { title: "客户", render: (_, row) => getInventoryOrderCustomerLabel(row) },
+                { title: "产品", render: (_, row) => getInventoryOrderItemsSummary(row) },
+                { title: "预约", render: (_, row) => formatInventoryOrderDate(row.appointmentDate) }
+              ]}
+            />
+            <Typography.Text type="secondary">{selectedOrderMessage}</Typography.Text>
+          </Card>
 
-                  <div className="inventory-tab-mobile-cards inventory-supplier-tab-mobile-cards">
-                    {supplierRows.length > 0 ? (
-                      supplierRows.map((row) => (
-                        <article key={row.id ?? row.name} className="inventory-tab-mobile-card inventory-supplier-tab-mobile-card">
-                          <div className="inventory-tab-mobile-card-head">
-                            <strong>{row.name}</strong>
-                            <Tag>{row.isActive === false ? "停用" : "启用"}</Tag>
-                          </div>
-                          <dl className="inventory-tab-mobile-card-fields">
-                            <div>
-                              <dt>联系人</dt>
-                              <dd>{row.contactName ?? "-"}</dd>
-                            </div>
-                            <div>
-                              <dt>联系电话</dt>
-                              <dd>{row.contactPhone ?? "-"}</dd>
-                            </div>
-                            <div>
-                              <dt>评级</dt>
-                              <dd>{row.rating ?? "-"}</dd>
-                            </div>
-                            <div>
-                              <dt>采购单</dt>
-                              <dd>{row.purchaseOrderCount ?? 0}</dd>
-                            </div>
-                            <div>
-                              <dt>批次数</dt>
-                              <dd>{row.batchCount ?? 0}</dd>
-                            </div>
-                          </dl>
-                          <div className="inventory-tab-mobile-actions">
-                            <Button size="small" disabled={!row.id} onClick={() => openSupplierEditor(row)}>
-                              编辑供应商
-                            </Button>
-                          </div>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="inventory-tab-mobile-empty">暂无供应商</div>
-                    )}
-                  </div>
-
-                  <Table<InventorySupplierSummary>
-                    className="inventory-tab-desktop-table inventory-supplier-tab-desktop-table"
-                    rowKey={(row) => row.id ?? row.name}
-                    loading={suppliersQuery.isLoading}
-                    dataSource={supplierRows}
-                    columns={[
-                      { title: "供应商", dataIndex: "name" },
-                      { title: "联系人", render: (_, row) => row.contactName ?? "-" },
-                      { title: "联系电话", render: (_, row) => row.contactPhone ?? "-" },
-                      { title: "评级", render: (_, row) => row.rating ?? "-" },
-                      { title: "联系人档案", render: (_, row) => row.contacts?.length ?? 0 },
-                      { title: "评级历史", render: (_, row) => row.ratingHistory?.length ?? 0 },
-                      { title: "采购单", dataIndex: "purchaseOrderCount" },
-                      { title: "批次数", dataIndex: "batchCount" },
-                      { title: "启用", render: (_, row) => row.isActive === false ? "停用" : "启用" },
-                      {
-                        title: "操作",
-                        render: (_, row) => (
-                          <Button size="small" disabled={!row.id} onClick={() => openSupplierEditor(row)}>
-                            编辑供应商
-                          </Button>
-                        )
-                      }
-                    ]}
-                    expandable={{
-                      expandedRowRender: (row) => row.id ? (
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="inventory-nested-panel">
-                            <Typography.Title level={5} className="!mt-0">联系人档案</Typography.Title>
-                            <Space orientation="vertical" className="mb-3 w-full">
-                              {(row.contacts ?? []).map((contact) => (
-                                <Typography.Text key={contact.id}>
-                                  {contact.isPrimary ? "主要 · " : ""}
-                                  {contact.name}
-                                  {contact.phone ? ` / ${contact.phone}` : ""}
-                                  {contact.role ? ` / ${contact.role}` : ""}
-                                </Typography.Text>
-                              ))}
-                              {(row.contacts?.length ?? 0) === 0 ? <Typography.Text type="secondary">暂无联系人</Typography.Text> : null}
-                            </Space>
-                            <Form
-                              layout="inline"
-                              onFinish={(values: SupplierContactFormValues) =>
-                                createSupplierContact.mutate({ supplierId: row.id!, ...values })
-                              }
-                            >
-                              <Form.Item name="name" rules={[{ required: true, message: "请输入联系人" }]}>
-                                <Input placeholder="联系人" />
-                              </Form.Item>
-                              <Form.Item name="phone">
-                                <Input placeholder="电话" />
-                              </Form.Item>
-                              <Form.Item name="role">
-                                <Input placeholder="角色" />
-                              </Form.Item>
-                              <Form.Item name="isPrimary" valuePropName="checked">
-                                <Switch checkedChildren="主要" unCheckedChildren="普通" />
-                              </Form.Item>
-                              <Button htmlType="submit" loading={createSupplierContact.isPending}>
-                                新增联系人
-                              </Button>
-                            </Form>
-                          </div>
-                          <div className="inventory-nested-panel">
-                            <Typography.Title level={5} className="!mt-0">评级历史</Typography.Title>
-                            <Space orientation="vertical" className="mb-3 w-full">
-                              {(row.ratingHistory ?? []).map((history) => (
-                                <Typography.Text key={history.id}>
-                                  {history.rating} 星
-                                  {history.note ? ` / ${history.note}` : ""}
-                                </Typography.Text>
-                              ))}
-                              {(row.ratingHistory?.length ?? 0) === 0 ? <Typography.Text type="secondary">暂无评级历史</Typography.Text> : null}
-                            </Space>
-                            <Form
-                              layout="inline"
-                              onFinish={(values: SupplierRatingFormValues) =>
-                                createSupplierRatingHistory.mutate({ supplierId: row.id!, ...values })
-                              }
-                            >
-                              <Form.Item name="rating" rules={[{ required: true, message: "请选择评级" }]}>
-                                <InputNumber min={1} max={5} placeholder="评级" />
-                              </Form.Item>
-                              <Form.Item name="note">
-                                <Input placeholder="评级说明" />
-                              </Form.Item>
-                              <Button htmlType="submit" loading={createSupplierRatingHistory.isPending}>
-                                追加评级
-                              </Button>
-                            </Form>
-                          </div>
-                        </div>
-                      ) : (
-                        <Typography.Text type="secondary">历史供应商快照不可维护联系人和评级历史</Typography.Text>
-                      )
-                    }}
-                  />
-                </>
-              )
-            },
-            {
-              key: "batches",
-              label: "库存批次",
-              children: (
-                <>
-                  <Form form={batchForm} layout="inline" className="mb-4" onFinish={(values) => createBatch.mutate(values)}>
-                    <Form.Item name="productId" rules={[{ required: true, message: "请选择产品" }]}>
-                      <Select className="min-w-64" placeholder="产品" options={productOptions} showSearch optionFilterProp="label" />
-                    </Form.Item>
-                    <Form.Item name="batchNo" rules={[{ required: true, message: "请输入批次号" }]}>
-                      <Input placeholder="批次号" />
-                    </Form.Item>
-                    <Form.Item name="supplierName">
-                      <Input placeholder="供应商" />
-                    </Form.Item>
-                    <Form.Item name="totalQuantity" rules={[{ required: true, message: "请输入数量" }]}>
-                      <InputNumber min={1} placeholder="数量" />
-                    </Form.Item>
-                    <Button type="primary" htmlType="submit" icon={<InboxOutlined />} loading={createBatch.isPending}>
-                      入库
-                    </Button>
-                  </Form>
-
-                  <div className="inventory-tab-mobile-cards inventory-batch-mobile-cards">
-                    {batchRows.length > 0 ? (
-                      batchRows.map((row) => (
-                        <article key={row.id} className="inventory-tab-mobile-card inventory-batch-mobile-card">
-                          <div className="inventory-tab-mobile-card-head">
-                            <strong>{row.batchNo}</strong>
-                            <Tag>{row.availableQuantity ?? 0} 可用</Tag>
-                          </div>
-                          <dl className="inventory-tab-mobile-card-fields">
-                            <div>
-                              <dt>产品</dt>
-                              <dd>{getInventoryProductLabel(row.productId, productMap)}</dd>
-                            </div>
-                            <div>
-                              <dt>供应商</dt>
-                              <dd>{row.supplierName ?? "-"}</dd>
-                            </div>
-                            <div>
-                              <dt>总量</dt>
-                              <dd>{row.totalQuantity}</dd>
-                            </div>
-                            <div>
-                              <dt>已锁</dt>
-                              <dd>{row.lockedQuantity}</dd>
-                            </div>
-                          </dl>
-                          <div className="inventory-tab-mobile-actions">
-                            <Button size="small" onClick={() => traceBatchMovements(row)}>
-                              批次追溯
-                            </Button>
-                          </div>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="inventory-tab-mobile-empty">暂无库存批次</div>
-                    )}
-                  </div>
-
-                  <Table<InventoryBatchSummary>
-                    className="inventory-tab-desktop-table inventory-batch-desktop-table"
-                    rowKey="id"
-                    loading={batchesQuery.isLoading}
-                    dataSource={batchRows}
-                    columns={[
-                      { title: "批次号", dataIndex: "batchNo" },
-                      { title: "产品", render: (_, row) => getInventoryProductLabel(row.productId, productMap) },
-                      { title: "供应商", dataIndex: "supplierName" },
-                      { title: "总量", dataIndex: "totalQuantity" },
-                      { title: "可用", dataIndex: "availableQuantity" },
-                      { title: "已锁", dataIndex: "lockedQuantity" },
-                      {
-                        title: "操作",
-                        render: (_, row) => (
-                          <Button size="small" onClick={() => traceBatchMovements(row)}>
-                            批次追溯
-                          </Button>
-                        )
-                      }
-                    ]}
-                  />
-                </>
-              )
-            },
-            {
-              key: "purchase",
-              label: "采购需求",
-              children: (
-                <>
-                  <Form form={purchaseForm} layout="inline" className="mb-4" onFinish={(values) => createPurchaseRequirement.mutate(values)}>
-                    <Form.Item name="productId" rules={[{ required: true, message: "请选择产品" }]}>
-                      <Select className="min-w-64" placeholder="产品" options={productOptions} showSearch optionFilterProp="label" />
-                    </Form.Item>
-                    <Form.Item name="quantity" rules={[{ required: true, message: "请输入采购数量" }]}>
-                      <InputNumber min={1} placeholder="数量" />
-                    </Form.Item>
-                    <Button type="primary" htmlType="submit" icon={<ShoppingCartOutlined />} loading={createPurchaseRequirement.isPending}>
-                      创建采购需求
-                    </Button>
-                  </Form>
-
-                  <div className="inventory-tab-mobile-cards inventory-purchase-requirement-mobile-cards">
-                    {purchaseRequirementRows.length > 0 ? (
-                      purchaseRequirementRows.map((row) => (
-                        <article key={row.id} className="inventory-tab-mobile-card inventory-purchase-requirement-mobile-card">
-                          <div className="inventory-tab-mobile-card-head">
-                            <strong>{getPurchaseRequirementItemsSummary(row, productMap)}</strong>
-                            <Tag>{getPurchaseRequirementStatusLabel(row.status)}</Tag>
-                          </div>
-                          <dl className="inventory-tab-mobile-card-fields">
-                            <div>
-                              <dt>来源订单</dt>
-                              <dd>{getPurchaseRequirementSourceOrderLabel(row, sourceOrderMap)}</dd>
-                            </div>
-                          </dl>
-                          <div className="inventory-tab-mobile-actions">
-                            <Button size="small" onClick={() => createPurchaseOrderFromRequirement.mutate(row.id)}>
-                              生成采购单
-                            </Button>
-                          </div>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="inventory-tab-mobile-empty">暂无采购需求</div>
-                    )}
-                  </div>
-
-                  <Table
-                    className="inventory-tab-desktop-table inventory-purchase-requirement-desktop-table"
-                    rowKey="id"
-                    loading={purchaseRequirementsQuery.isLoading}
-                    dataSource={purchaseRequirementRows}
-                    columns={[
-                      { title: "需求明细", render: (_, row) => getPurchaseRequirementItemsSummary(row, productMap) },
-                      { title: "来源订单", render: (_, row) => getPurchaseRequirementSourceOrderLabel(row, sourceOrderMap) },
-                      { title: "状态", render: (_, row) => <Tag>{getPurchaseRequirementStatusLabel(row.status)}</Tag> },
-                      {
-                        title: "操作",
-                        render: (_, row) => (
-                          <Button size="small" onClick={() => createPurchaseOrderFromRequirement.mutate(row.id)}>
-                            生成采购单
-                          </Button>
-                        )
-                      }
-                    ]}
-                  />
-
-                  <Typography.Title level={5} className="!mt-6">采购订单</Typography.Title>
-                  <div className="inventory-tab-mobile-cards inventory-purchase-order-mobile-cards">
-                    {purchaseOrderRows.length > 0 ? (
-                      purchaseOrderRows.map((row) => {
-                        const reminder = getPurchaseOrderArrivalReminder(row);
-                        const isRisk = reminder.includes("逾期") || reminder.includes("今日") || reminder.includes("未设置");
-                        return (
-                          <article key={row.id} className="inventory-tab-mobile-card inventory-purchase-order-mobile-card">
-                            <div className="inventory-tab-mobile-card-head">
-                              <strong>{row.orderNo}</strong>
-                              <Tag>{getPurchaseOrderStatusLabel(row.status)}</Tag>
-                            </div>
-                            <dl className="inventory-tab-mobile-card-fields">
-                              <div>
-                                <dt>供应商</dt>
-                                <dd>{row.supplierName ?? "-"}</dd>
-                              </div>
-                              <div>
-                                <dt>预计到货</dt>
-                                <dd>{row.expectedAt?.slice(0, 10) ?? "-"}</dd>
-                              </div>
-                              <div>
-                                <dt>到货提醒</dt>
-                                <dd><Tag color={isRisk ? "warning" : "default"}>{reminder}</Tag></dd>
-                              </div>
-                              <div>
-                                <dt>采购明细</dt>
-                                <dd>{row.items?.length ?? 0} 项</dd>
-                              </div>
-                            </dl>
-                            <div className="inventory-tab-mobile-actions">
-                              <Button size="small" onClick={() => router.push(`/inventory/purchase-orders/${row.id}`)}>
-                                详情
-                              </Button>
-                              {row.status === "DRAFT" ? (
-                                <Button
-                                  size="small"
-                                  loading={approvePurchaseOrder.isPending}
-                                  onClick={() => approvePurchaseOrder.mutate(row.id)}
-                                >
-                                  审批通过
-                                </Button>
-                              ) : null}
-                              {row.status === "DRAFT" || row.status === "ORDERED" ? (
-                                <Button
-                                  size="small"
-                                  danger
-                                  loading={cancelPurchaseOrder.isPending}
-                                  onClick={() => handleCancelPurchaseOrder(row.id)}
-                                >
-                                  取消采购单
-                                </Button>
-                              ) : null}
-                            </div>
-                          </article>
-                        );
-                      })
-                    ) : (
-                      <div className="inventory-tab-mobile-empty">暂无采购订单</div>
-                    )}
-                  </div>
-                  <Table
-                    className="inventory-tab-desktop-table inventory-purchase-order-desktop-table"
-                    rowKey="id"
-                    loading={purchaseOrdersQuery.isLoading}
-                    dataSource={purchaseOrderRows}
-                    columns={[
-                      { title: "采购单号", dataIndex: "orderNo" },
-                      { title: "供应商", dataIndex: "supplierName" },
-                      { title: "状态", render: (_, row: PurchaseOrderRow) => <Tag>{getPurchaseOrderStatusLabel(row.status)}</Tag> },
-                      {
-                        title: "预计到货",
-                        render: (_, row: PurchaseOrderRow) => row.expectedAt?.slice(0, 10) ?? "-"
-                      },
-                      {
-                        title: "到货提醒",
-                        render: (_, row: PurchaseOrderRow) => {
-                          const reminder = getPurchaseOrderArrivalReminder(row);
-                          const isRisk = reminder.includes("逾期") || reminder.includes("今日") || reminder.includes("未设置");
-                          return <Tag color={isRisk ? "warning" : "default"}>{reminder}</Tag>;
-                        }
-                      },
-                      {
-                        title: "采购明细",
-                        render: (_, row: PurchaseOrderRow) => `${row.items?.length ?? 0} 项`
-                      },
-                      {
-                        title: "操作",
-                        render: (_, row: PurchaseOrderRow) => (
-                          <Space>
-                            <Button
-                              size="small"
-                              onClick={() => router.push(`/inventory/purchase-orders/${row.id}`)}
-                            >
-                              详情
-                            </Button>
-                            {row.status === "DRAFT" ? (
-                              <Button
-                                size="small"
-                                loading={approvePurchaseOrder.isPending}
-                                onClick={() => approvePurchaseOrder.mutate(row.id)}
-                              >
-                                审批通过
-                              </Button>
-                            ) : null}
-                            {row.status === "DRAFT" || row.status === "ORDERED" ? (
-                              <Button
-                                size="small"
-                                danger
-                                loading={cancelPurchaseOrder.isPending}
-                                onClick={() => handleCancelPurchaseOrder(row.id)}
-                              >
-                                取消采购单
-                              </Button>
-                            ) : null}
-                          </Space>
-                        )
-                      }
-                    ]}
-                    expandable={{
-                      expandedRowRender: (row: PurchaseOrderRow) => (
-                        <Space orientation="vertical" className="w-full" size="middle">
-                          {(row.items ?? []).map((item) => {
-                            const details = getPurchaseInboundItemDetails(item);
-                            return (
-                              <div key={item.id} className="inventory-nested-panel">
-                                <div className="mb-2 grid gap-2 md:grid-cols-2">
-                                  <Typography.Text><strong>产品：</strong>{details.product}</Typography.Text>
-                                  <Typography.Text><strong>类别：</strong>{details.category}</Typography.Text>
-                                  <Typography.Text><strong>规格：</strong>{details.specification}</Typography.Text>
-                                  <Typography.Text><strong>质保：</strong>{details.warranty}</Typography.Text>
-                                  <Typography.Text><strong>数量：</strong>{details.quantity}</Typography.Text>
-                                  <Typography.Text><strong>入库批次：</strong>{details.batches}</Typography.Text>
-                                </div>
-                                <Form
-                                  layout="inline"
-                                  initialValues={{ supplierName: row.supplierName }}
-                                  onFinish={(values: { batchNo: string; quantity: number; supplierName?: string }) =>
-                                    receivePurchaseItem.mutate({ itemId: item.id, ...values })
-                                  }
-                                >
-                                  <Form.Item name="batchNo" rules={[{ required: true, message: "请输入批次号" }]}>
-                                    <Input placeholder="批次号" />
-                                  </Form.Item>
-                                  <Form.Item name="quantity" rules={[{ required: true, message: "请输入入库数量" }]}>
-                                    <InputNumber min={0.001} placeholder="入库数量" />
-                                  </Form.Item>
-                                  <Form.Item name="supplierName">
-                                    <Input placeholder="供应商" />
-                                  </Form.Item>
-                                  <Button htmlType="submit" loading={receivePurchaseItem.isPending}>
-                                    到货入库
-                                  </Button>
-                                </Form>
-                                <Form
-                                  layout="vertical"
-                                  className="mt-3"
-                                  onFinish={(values: { scanText: string }) => {
-                                    const parsed = parseInboundScanLines(values.scanText);
-                                    if (parsed.errors.length > 0) {
-                                      message.error(`扫码内容有误：第 ${parsed.errors[0].line} 行 ${parsed.errors[0].message}`);
-                                      return;
-                                    }
-                                    if (parsed.batches.length === 0) {
-                                      message.error("请粘贴或扫描入库批次");
-                                      return;
-                                    }
-                                    receivePurchaseItemBatches.mutate({ itemId: item.id, batches: parsed.batches });
-                                  }}
-                                >
-                                  <Form.Item name="scanText" label="批量扫码入库">
-                                    <Input.TextArea
-                                      rows={3}
-                                      placeholder="每行：批次号 数量 供应商（供应商可选），例如 B001 1 3M"
-                                    />
-                                  </Form.Item>
-                                  <Button htmlType="submit" loading={receivePurchaseItemBatches.isPending}>
-                                    批量入库
-                                  </Button>
-                                </Form>
-                              </div>
-                            );
-                          })}
-                        </Space>
-                      )
-                    }}
-                  />
-                </>
-              )
-            },
-            {
-              key: "movements",
-              label: "锁库与流水",
-              children: (
-                <>
-                  <Form form={orderForm} layout="inline" className="mb-4" onFinish={(values) => lockOrder.mutate(values)}>
-                    <Form.Item name="orderId" rules={[{ required: true, message: "请选择订单" }]}>
-                      <Select className="min-w-80" placeholder="待匹配订单" options={pendingOrderOptions} showSearch optionFilterProp="label" />
-                    </Form.Item>
-                    <Button type="primary" htmlType="submit" icon={<LockOutlined />} loading={lockOrder.isPending}>
-                      匹配库存
-                    </Button>
-                  </Form>
-
-                  <Form
-                    form={movementFilterForm}
-                    layout="vertical"
-                    className="inventory-movement-filter"
-                    onFinish={(values) => setMovementFilters(values)}
-                  >
-                    <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
-                      <Form.Item name="productId" label="产品">
-                        <Select
-                          allowClear
-                          placeholder="全部产品"
-                          options={productOptions}
-                          showSearch
-                          optionFilterProp="label"
-                        />
-                      </Form.Item>
-                      <Form.Item name="batchId" label="批次">
-                        <Select
-                          allowClear
-                          placeholder="全部批次"
-                          options={batchOptions}
-                          showSearch
-                          optionFilterProp="label"
-                        />
-                      </Form.Item>
-                      <Form.Item name="movementType" label="流水类型">
-                        <Select allowClear placeholder="全部类型" options={movementTypeOptions} />
-                      </Form.Item>
-                      <Form.Item name="orderId" label="订单">
-                        <Select
-                          allowClear
-                          showSearch
-                          optionFilterProp="label"
-                          loading={movementOrdersQuery.isLoading}
-                          placeholder="选择订单"
-                          options={movementOrderOptions}
-                        />
-                      </Form.Item>
-                      <Form.Item name="createdById" label="操作人">
-                        <Select
-                          allowClear
-                          showSearch
-                          filterOption={false}
-                          loading={movementOperatorsQuery.isLoading}
-                          onSearch={setOperatorKeyword}
-                          placeholder="搜索操作人"
-                          options={movementOperatorOptions}
-                        />
-                      </Form.Item>
-                    </div>
-                    <Space>
-                      <Button type="primary" htmlType="submit">
-                        查询流水
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          movementFilterForm.resetFields();
-                          setMovementFilters({});
-                        }}
-                      >
-                        重置
-                      </Button>
-                    </Space>
-                  </Form>
-
-                  <div className="mb-4">
-                    <Typography.Title level={5}>流水统计</Typography.Title>
-                    <div className="inventory-summary-grid">
-                      {[
-                        ["入库合计", movementSummary.inbound],
-                        ["出库合计", movementSummary.outbound],
-                        ["锁定合计", movementSummary.locked],
-                        ["释放合计", movementSummary.released],
-                        ["调整合计", movementSummary.adjustments],
-                        ["流水条数", movementSummary.totalRows]
-                      ].map(([label, value]) => (
-                        <div key={label} className="inventory-summary-tile">
-                          <Typography.Text type="secondary">{label}</Typography.Text>
-                          <div className="inventory-summary-value">{value}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="inventory-tab-mobile-cards inventory-movement-tab-mobile-cards">
-                    {movementRows.length > 0 ? (
-                      movementRows.map((row) => {
-                        const batch = batchMap.get(row.batchId);
-                        return (
-                          <article key={row.id} className="inventory-tab-mobile-card inventory-movement-tab-mobile-card">
-                            <div className="inventory-tab-mobile-card-head">
-                              <strong>{getInventoryMovementTypeLabel(row.movementType)}</strong>
-                              <Tag>{row.quantity}</Tag>
-                            </div>
-                            <dl className="inventory-tab-mobile-card-fields">
-                              <div>
-                                <dt>产品</dt>
-                                <dd>{getInventoryProductLabel(row.productId, productMap)}</dd>
-                              </div>
-                              <div>
-                                <dt>批次</dt>
-                                <dd>{batch ? getInventoryBatchLabel(batch, productMap) : INVENTORY_BATCH_MISSING_LABEL}</dd>
-                              </div>
-                              <div>
-                                <dt>时间</dt>
-                                <dd>{row.createdAt?.slice(0, 19).replace("T", " ")}</dd>
-                              </div>
-                            </dl>
-                          </article>
-                        );
-                      })
-                    ) : (
-                      <div className="inventory-tab-mobile-empty">暂无库存流水</div>
-                    )}
-                  </div>
-
-                  <Table<MovementRow>
-                    className="inventory-tab-desktop-table inventory-movement-tab-desktop-table"
-                    rowKey="id"
-                    loading={movementsQuery.isLoading}
-                    dataSource={movementRows}
-                    columns={[
-                      { title: "类型", render: (_, row) => getInventoryMovementTypeLabel(row.movementType) },
-                      { title: "产品", render: (_, row) => getInventoryProductLabel(row.productId, productMap) },
-                      {
-                        title: "批次",
-                        render: (_, row) => {
-                          const batch = batchMap.get(row.batchId);
-                          return batch ? getInventoryBatchLabel(batch, productMap) : INVENTORY_BATCH_MISSING_LABEL;
-                        }
-                      },
-                      { title: "数量", dataIndex: "quantity" },
-                      { title: "时间", render: (_, row) => row.createdAt?.slice(0, 19).replace("T", " ") }
-                    ]}
-                  />
-                </>
-              )
-            }
-            ,
-            {
-              key: "split",
-              label: "批次拆分",
-              children: (
-                <>
-                  <Form form={splitForm} layout="inline" onFinish={(values) => splitBatch.mutate(values)}>
-                    <Form.Item name="batchId" rules={[{ required: true, message: "请选择批次" }]}>
-                      <Select className="min-w-80" placeholder="批次" options={batchOptions} showSearch optionFilterProp="label" />
-                    </Form.Item>
-                    <Form.Item name="quantityMeters" rules={[{ required: true, message: "请输入拆分米数" }]}>
-                      <InputNumber min={0.001} placeholder="拆分米数" />
-                    </Form.Item>
-                    <Button type="primary" htmlType="submit" loading={splitBatch.isPending}>
-                      拆分
-                    </Button>
-                  </Form>
-                  {lastSplitResult ? (
-                    <div className="mt-4 rounded border border-[var(--mb-primary-fixed-dim)] bg-[var(--mb-primary-container)] p-4">
-                      <Typography.Title level={5} className="!mt-0">最近拆分结果</Typography.Title>
-                      {Object.values(getInventoryBatchSplitSummary(lastSplitResult)).map((line) => (
-                        <Typography.Paragraph key={line} className="!mb-1">
-                          {line}
-                        </Typography.Paragraph>
-                      ))}
-                    </div>
-                  ) : null}
-                </>
-              )
-            },
-            {
-              key: "stock-operations",
-              label: "其他出入库",
-              children: (
-                <Form form={stockForm} layout="inline" onFinish={(values) => createStockOperation.mutate(values)}>
-                  <Form.Item name="batchId" rules={[{ required: true, message: "请选择批次" }]}>
-                    <Select className="min-w-80" placeholder="批次" options={batchOptions} showSearch optionFilterProp="label" />
-                  </Form.Item>
-                  <Form.Item name="movementType" rules={[{ required: true, message: "请选择类型" }]}>
-                    <Select
-                      className="min-w-40"
-                      placeholder="类型"
-                      options={[
-                        { value: "COUNT_IN", label: "盘点入库" },
-                        { value: "COUNT_OUT", label: "盘点出库" },
-                        { value: "DAMAGE_OUT", label: "报损出库" },
-                        { value: "TRANSFER_IN", label: "调拨入库" },
-                        { value: "TRANSFER_OUT", label: "调拨出库" },
-                        { value: "RETURN_IN", label: "退货入库" },
-                        { value: "RETURN_OUT", label: "退货出库" }
-                      ]}
-                    />
-                  </Form.Item>
-                  <Form.Item name="quantity" rules={[{ required: true, message: "请输入数量" }]}>
-                    <InputNumber min={0.001} placeholder="数量" />
-                  </Form.Item>
-                  <Form.Item name="note">
-                    <Input placeholder="备注" />
-                  </Form.Item>
-                  <Button type="primary" htmlType="submit" loading={createStockOperation.isPending}>
-                    记录
-                  </Button>
-                </Form>
-              )
-            }
-          ]}
+          <Card className="inventory-prototype-card" title="低库存与异常批次">
+            <Table<InventoryBatchSummary>
+              rowKey="id"
+              size="small"
+              loading={batchesQuery.isLoading}
+              dataSource={lowStockRows}
+              pagination={false}
+              columns={[
+                { title: "批次号", dataIndex: "batchNo" },
+                { title: "产品", render: (_, row) => row.product ? getProductDisplayName({
+                  brand: row.product.brand ?? undefined,
+                  name: row.product.name ?? undefined,
+                  model: row.product.model ?? undefined
+                }) : "产品信息待确认" },
+                { title: "可用", render: (_, row) => <Tag color="warning">{String(row.availableQuantity ?? 0)}</Tag> }
+              ]}
             />
           </Card>
         </div>
-        <Drawer
-          title="编辑供应商"
-          open={Boolean(editingSupplier)}
-          onClose={() => setEditingSupplier(null)}
-          destroyOnHidden
-          rootClassName="inventory-supplier-drawer"
-          className="inventory-supplier-panel"
-          footer={
-            <div className="inventory-supplier-footer">
-              <Button onClick={() => setEditingSupplier(null)}>取消</Button>
-              <Button
-                type="primary"
-                htmlType="submit"
-                form="inventory-supplier-edit-form"
-                loading={updateSupplier.isPending}
-              >
-                保存
-              </Button>
+
+        <aside className="inventory-overview-aside">
+          <Card className="inventory-prototype-card" title="库存流程入口">
+            <div className="inventory-overview-shortcuts">
+              <Link href="/inventory/matching"><strong>订单库存匹配</strong><span>查看匹配建议、锁库结果和待出库订单</span><ArrowRightOutlined /></Link>
+              {canManageInventory ? (
+                <Link href="/inventory/adjustments"><strong>库存调整工作台</strong><span>单位转换、盘点、报损、调拨和退货</span><ArrowRightOutlined /></Link>
+              ) : null}
+              <Link href="/inventory/movements"><strong>库存流水</strong><span>按产品、批次、订单和操作人追踪</span><ArrowRightOutlined /></Link>
+              <Link href="/purchases"><strong>采购管理</strong><span>采购需求、采购订单、到货验收</span><ArrowRightOutlined /></Link>
             </div>
-          }
-        >
-          {editingSupplier ? (
-            <Form
-              key={editingSupplier.id}
-              id="inventory-supplier-edit-form"
-              layout="vertical"
-              initialValues={{
-                name: editingSupplier.name,
-                contactName: editingSupplier.contactName ?? undefined,
-                contactPhone: editingSupplier.contactPhone ?? undefined,
-                rating: editingSupplier.rating ?? undefined,
-                note: editingSupplier.note ?? undefined,
-                isActive: editingSupplier.isActive ?? true
-              }}
-              onFinish={(values) => updateSupplier.mutate(values)}
-            >
-              <Form.Item name="name" label="供应商名称" rules={[{ required: true, message: "请输入供应商名称" }]}>
-                <Input />
-              </Form.Item>
-              <Form.Item name="contactName" label="联系人">
-                <Input />
-              </Form.Item>
-              <Form.Item name="contactPhone" label="联系电话">
-                <Input />
-              </Form.Item>
-              <Form.Item name="rating" label="评级">
-                <InputNumber min={1} max={5} className="w-full" />
-              </Form.Item>
-              <Form.Item name="note" label="备注">
-                <Input />
-              </Form.Item>
-              <Form.Item name="isActive" label="启用" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Form>
-          ) : null}
-        </Drawer>
-    </>
+          </Card>
+
+          <Card className="inventory-prototype-card" title="锁库待出库">
+            <div className="inventory-overview-lock-list">
+              {lockedRows.length > 0 ? lockedRows.map((row) => (
+                <div key={row.id} className="inventory-overview-lock-row">
+                  <span>{row.batchNo}</span>
+                  <strong>{String(row.lockedQuantity ?? 0)}</strong>
+                </div>
+              )) : <Typography.Text type="secondary">暂无锁库待出库批次</Typography.Text>}
+            </div>
+          </Card>
+
+          <Card className="inventory-prototype-card" title="库存流水">
+            <div className="inventory-overview-movement-summary">
+              {[
+                ["入库合计", movementSummary.inbound],
+                ["出库合计", movementSummary.outbound],
+                ["锁定合计", movementSummary.locked],
+                ["调整合计", movementSummary.adjustments]
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+            {movementRows.slice(0, 4).map((row) => (
+              <div key={row.id} className="inventory-overview-movement-row">
+                <SwapOutlined />
+                <span>{row.movementType ? getInventoryMovementTypeLabel(row.movementType) : "库存流水"}</span>
+                <strong>{String(row.quantity ?? 0)}</strong>
+              </div>
+            ))}
+          </Card>
+        </aside>
+      </section>
+    </div>
   );
+}
+
+function formatInventoryOrderDate(value?: string | Date | null) {
+  if (!value) return "预约日期待确认";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "预约日期待确认";
+  return date.toISOString().slice(0, 10);
+}
+
+function getInventoryOrderCustomerLabel(order: PendingMatchOrderRow) {
+  return order.customer?.companyName ?? order.customer?.name ?? order.customer?.contactPerson ?? "客户待确认";
+}
+
+function getInventoryOrderItemsSummary(order: PendingMatchOrderRow) {
+  const items = order.items ?? [];
+  if (items.length === 0) return "产品待确认";
+  return items
+    .map((item) => {
+      const product = item.product;
+      const label = product ? [product.brand, product.name, product.model].filter(Boolean).join(" ") : "产品信息待确认";
+      return `${label} x ${item.quantity ?? 0}`;
+    })
+    .join(" / ");
 }

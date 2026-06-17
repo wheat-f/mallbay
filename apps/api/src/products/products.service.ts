@@ -118,7 +118,7 @@ export class ProductsService {
   }
 
   private assertCanManageProducts(user: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.isStoreManager(user, storeId)) {
+    if (!PermissionPolicy.canManageProduct(user, storeId)) {
       throw new ForbiddenException("无权限");
     }
   }

@@ -140,6 +140,29 @@ test("InvoicesService records sending issued invoice without changing invoice st
   assert.equal(JSON.stringify(writes).includes(InvoiceStatus.ISSUED), true);
 });
 
+test("InvoicesService list includes order status and amount summary for invoice filters", async () => {
+  let findManyArgs: unknown;
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    invoice: {
+      findMany: async (args: unknown) => {
+        findManyArgs = args;
+        return [];
+      }
+    }
+  };
+  const service = new InvoicesService(prisma as never);
+
+  await service.list(
+    { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
+    { storeId: "store-1" }
+  );
+
+  const serialized = JSON.stringify(findManyArgs);
+  assert.match(serialized, /"status":true/);
+  assert.match(serialized, /"amount":\{"select":\{"paidAmountCents":true,"outstandingCents":true\}\}/);
+});
+
 test("InvoicesService lists invoices with order customer and vehicle summary", async () => {
   const calls: unknown[] = [];
   const prisma = {

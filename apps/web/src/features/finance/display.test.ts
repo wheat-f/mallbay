@@ -18,14 +18,15 @@ import {
 test("finance display helpers format approval statuses", () => {
   assert.equal(getFinanceApprovalStatusLabel("PENDING"), "待审批");
   assert.equal(getFinanceApprovalStatusLabel("APPROVED"), "已通过");
+  assert.equal(getFinanceApprovalStatusLabel("REJECTED"), "已驳回");
   assert.equal(getFinanceApprovalStatusLabel("PAID"), "已打款");
-  assert.equal(getFinanceApprovalStatusLabel("UNKNOWN"), "UNKNOWN");
+  assert.equal(getFinanceApprovalStatusLabel("UNKNOWN"), "状态待确认");
 });
 
 test("finance review options use the same labels as status helpers", () => {
   assert.deepEqual(FINANCE_REVIEW_OPTIONS, [
     { value: "APPROVED", label: "已通过" },
-    { value: "REJECTED", label: "已拒绝" },
+    { value: "REJECTED", label: "已驳回" },
     { value: "PAID", label: "已打款" }
   ]);
 });
@@ -33,15 +34,15 @@ test("finance review options use the same labels as status helpers", () => {
 test("payment record display helper formats record types", () => {
   assert.equal(getPaymentRecordTypeLabel("ORDER_PAYMENT"), "订单收款");
   assert.equal(getPaymentRecordTypeLabel("REIMBURSEMENT"), "报销打款");
-  assert.equal(getPaymentRecordTypeLabel("UNKNOWN"), "UNKNOWN");
+  assert.equal(getPaymentRecordTypeLabel("UNKNOWN"), "流水类型待确认");
 });
 
 test("payment account and audit display helpers format business labels", () => {
   assert.equal(getPaymentAccountTypeLabel("CORPORATE"), "对公账户");
   assert.equal(getPaymentAccountTypeLabel("WECHAT"), "微信");
-  assert.equal(getPaymentAccountTypeLabel("UNKNOWN"), "UNKNOWN");
+  assert.equal(getPaymentAccountTypeLabel("UNKNOWN"), "账户类型待确认");
   assert.equal(getFinanceAuditActionLabel("PAYMENT_ACCOUNT_UPDATED"), "收款账户变更");
-  assert.equal(getFinanceAuditActionLabel("UNKNOWN"), "UNKNOWN");
+  assert.equal(getFinanceAuditActionLabel("UNKNOWN"), "操作记录待确认");
   assert.equal(getAuditActorLabel({ actor: { username: "zhouqi", nickname: "周琪" }, actorId: "user-1" }), "周琪");
   assert.equal(getAuditActorLabel({ actor: { username: "zhouqi" }, actorId: "user-1" }), "zhouqi");
   assert.equal(getAuditActorLabel({ actorId: "cmprn332u0000lpibg4bbog5t" }), "未知用户");
@@ -76,6 +77,10 @@ test("finance application and payment source helpers use business labels", () =>
   assert.equal(getPaymentRecordSourceLabel({ type: "OTHER", note: "手工调整" }, {}), "手工调整");
   assert.equal(
     getPaymentRecordSourceLabel({ type: "EXPENSE", sourceId: "expense-technical-id" }, { expenses: [] }),
-    "来源未加载"
+    "关联来源待确认"
   );
+});
+
+test("finance application labels do not expose technical ids", () => {
+  assert.equal(getFinanceApplicationLabel({ id: "cm-finance-technical-id" }), "申请信息待确认");
 });

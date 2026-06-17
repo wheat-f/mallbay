@@ -67,7 +67,9 @@ test("InventoryService filters inventory movements by product batch order type a
       batchId: "batch-1",
       orderId: "order-1",
       movementType: InventoryMovementType.ORDER_LOCK,
-      createdById: "user-1"
+      createdById: "user-1",
+      createdFrom: "2026-06-01",
+      createdTo: "2026-06-10"
     } as never
   );
 
@@ -77,7 +79,11 @@ test("InventoryService filters inventory movements by product batch order type a
     batchId: "batch-1",
     orderId: "order-1",
     movementType: InventoryMovementType.ORDER_LOCK,
-    createdById: "user-1"
+    createdById: "user-1",
+    createdAt: {
+      gte: new Date("2026-06-01T00:00:00.000Z"),
+      lte: new Date("2026-06-10T23:59:59.999Z")
+    }
   });
 });
 
@@ -258,6 +264,63 @@ test("InventoryService rejects sales viewing supplier backoffice list", async ()
         },
         "store-1"
       ),
+    /无权限/
+  );
+});
+
+test("InventoryService allows customer service to view purchase orders and suppliers", async () => {
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    purchaseOrder: {
+      findMany: async () => []
+    },
+    supplier: {
+      findMany: async () => []
+    },
+    inventoryBatch: {
+      findMany: async () => []
+    }
+  } as never);
+  const user = {
+    id: "customer-service-1",
+    isAuditor: false,
+    storeMember: { storeId: "store-1", position: "CUSTOMER_SERVICE" as StorePosition }
+  };
+
+  await assert.doesNotReject(() => service.listPurchaseOrders(user, "store-1"));
+  await assert.doesNotReject(() => service.listSuppliers(user, "store-1"));
+});
+
+test("InventoryService rejects customer service purchase and supplier mutations", async () => {
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    supplier: {
+      findUnique: async () => ({ id: "supplier-1", storeId: "store-1" })
+    },
+    purchaseOrder: {
+      findUnique: async () => ({ id: "po-1", storeId: "store-1", status: "DRAFT", orderNo: "PO1" })
+    }
+  } as never);
+  const user = {
+    id: "customer-service-1",
+    isAuditor: false,
+    storeMember: { storeId: "store-1", position: "CUSTOMER_SERVICE" as StorePosition }
+  };
+
+  await assert.rejects(
+    () => service.createPurchaseOrder(user, { storeId: "store-1", items: [] }),
+    /无权限/
+  );
+  await assert.rejects(
+    () => service.approvePurchaseOrder(user, "po-1"),
+    /无权限/
+  );
+  await assert.rejects(
+    () => service.createSupplier(user, { storeId: "store-1", name: "3M" }),
+    /无权限/
+  );
+  await assert.rejects(
+    () => service.updateSupplier(user, "supplier-1", { note: "仅查看" }),
     /无权限/
   );
 });

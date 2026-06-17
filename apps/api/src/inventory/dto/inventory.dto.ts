@@ -37,6 +37,14 @@ export class ListInventoryDto {
   @IsOptional()
   @IsString()
   createdById?: string;
+
+  @IsOptional()
+  @IsDateString()
+  createdFrom?: string;
+
+  @IsOptional()
+  @IsDateString()
+  createdTo?: string;
 }
 
 export class ListSuppliersDto {

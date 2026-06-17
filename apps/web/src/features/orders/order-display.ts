@@ -38,22 +38,22 @@ export const PAYMENT_TYPE_LABEL: Record<string, string> = {
 
 export function getOrderStatusLabel(value?: string | null) {
   if (!value) return "-";
-  return ORDER_STATUS_LABEL[value] ?? value;
+  return ORDER_STATUS_LABEL[value] ?? "订单状态待确认";
 }
 
 export function getConstructionTypeLabel(value?: string | null) {
   if (!value) return "-";
-  return CONSTRUCTION_TYPE_LABEL[value] ?? value;
+  return CONSTRUCTION_TYPE_LABEL[value] ?? "施工类型待确认";
 }
 
 export function getConstructionLocationLabel(value?: string | null) {
   if (!value) return "-";
-  return CONSTRUCTION_LOCATION_LABEL[value] ?? value;
+  return CONSTRUCTION_LOCATION_LABEL[value] ?? "施工地点待确认";
 }
 
 export function getPaymentTypeLabel(value?: string | null) {
   if (!value) return "-";
-  return PAYMENT_TYPE_LABEL[value] ?? value;
+  return PAYMENT_TYPE_LABEL[value] ?? "付款类型待确认";
 }
 
 export function yuanCurrency(value?: number | null) {

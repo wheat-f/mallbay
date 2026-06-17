@@ -257,10 +257,12 @@ export type InvoiceSummary = {
   orderId: string;
   order?: BusinessOrderSummary | null;
   title: string;
+  taxNo?: string | null;
   amountCents: number;
   status: InvoiceStatus;
   invoiceNo: string | null;
   fileUrl: string | null;
+  createdAt?: string | Date | null;
 };
 
 export type RebateSummary = {
@@ -275,6 +277,11 @@ export type RebateSummary = {
 
 export type BusinessOrderSummary = {
   orderNo?: string | null;
+  status?: string | null;
+  amount?: {
+    paidAmountCents?: number | null;
+    outstandingCents?: number | null;
+  } | null;
   customer?: {
     name?: string | null;
     personalName?: string | null;

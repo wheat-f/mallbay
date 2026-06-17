@@ -1,10 +1,11 @@
 "use client";
 
-import { App, Button, Card, Select, Tag } from "antd";
-import { CarOutlined, CheckCircleOutlined, SendOutlined } from "@ant-design/icons";
+import { App, Button, Card, Drawer, Input, Select, Tag } from "antd";
+import type { DefaultOptionType } from "antd/es/select";
+import { CarOutlined, CheckCircleOutlined, SearchOutlined, SendOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { constructionApi, orderApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { getConstructionStatusLabel, getConstructionWorkerLabel } from "../../../src/features/construction/display";
@@ -54,6 +55,9 @@ export default function ConstructionAssignmentsPage() {
   const storeId = user?.storeMember?.store.id;
   const [selectedOrderId, setSelectedOrderId] = useState<string>();
   const [selectedWorkerUserIds, setSelectedWorkerUserIds] = useState<string[]>([]);
+  const [confirmDrawerOpen, setConfirmDrawerOpen] = useState(false);
+  const [dispatchNote, setDispatchNote] = useState("");
+  const [workerSearchKeyword, setWorkerSearchKeyword] = useState("");
 
   const pendingOrdersQuery = useQuery({
     queryKey: ["orders", storeId, "PENDING_DISPATCH"],
@@ -74,11 +78,18 @@ export default function ConstructionAssignmentsPage() {
   });
 
   const assignMutation = useMutation({
-    mutationFn: () => constructionApi.assignOrder(selectedOrder!.id, { workerUserIds: selectedWorkerUserIds }),
+    mutationFn: () => {
+      if (!selectedOrder) {
+        throw new Error("请先选择待派单订单");
+      }
+      return constructionApi.assignOrder(selectedOrder.id, { workerUserIds: selectedWorkerUserIds });
+    },
     onSuccess: async () => {
       message.success("派工已保存");
       setSelectedOrderId(undefined);
       setSelectedWorkerUserIds([]);
+      setDispatchNote("");
+      setConfirmDrawerOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["orders", storeId, "PENDING_DISPATCH"] });
       await queryClient.invalidateQueries({ queryKey: ["construction-assignments", storeId] });
     },
@@ -88,14 +99,9 @@ export default function ConstructionAssignmentsPage() {
   const pendingRows = useMemo(() => ((pendingOrdersQuery.data?.items ?? []) as OrderRow[]), [pendingOrdersQuery.data?.items]);
   const records = (recordsQuery.data ?? []) as ConstructionRecordRow[];
   const workers = ((workersQuery.data ?? []) as WorkerRow[]).filter((worker) => worker.isActive);
+  const filteredWorkers = useMemo(() => filterConstructionWorkers(workers, workerSearchKeyword), [workers, workerSearchKeyword]);
   const workerMap = new Map(workers.map((worker) => [worker.userId, worker]));
   const selectedOrder = pendingRows.find((row) => row.id === selectedOrderId) ?? pendingRows[0];
-
-  useEffect(() => {
-    if (!selectedOrderId && pendingRows[0]) {
-      setSelectedOrderId(pendingRows[0].id);
-    }
-  }, [pendingRows, selectedOrderId]);
 
   return (
     <div className="management-page dispatch-page">
@@ -146,7 +152,7 @@ export default function ConstructionAssignmentsPage() {
                     </div>
                     <div className="dispatch-order-meta">
                       <span>{getOrderCustomerLabel(row)}</span>
-                      <span>{row.appointmentDate?.slice(0, 10) ?? "未预约"}</span>
+                      <span>{formatDispatchAppointmentDate(row.appointmentDate)}</span>
                     </div>
                   </button>
                 );
@@ -174,7 +180,7 @@ export default function ConstructionAssignmentsPage() {
               </div>
               <div className="dispatch-detail-number">
                 <strong>{selectedOrder?.orderNo ?? "未选择订单"}</strong>
-                <span>预约 {selectedOrder?.appointmentDate?.slice(0, 10) ?? "-"} {selectedOrder?.appointmentTimeSlot ?? ""}</span>
+                <span>预约 {formatDispatchAppointmentDate(selectedOrder?.appointmentDate, "-")} {selectedOrder?.appointmentTimeSlot ?? ""}</span>
               </div>
             </div>
 
@@ -238,7 +244,9 @@ export default function ConstructionAssignmentsPage() {
                 value={selectedWorkerUserIds}
                 onChange={setSelectedWorkerUserIds}
                 placeholder="选择施工人员"
-                options={workers.map((worker) => ({
+                showSearch
+                filterOption={filterWorkerOption}
+                options={filteredWorkers.map((worker) => ({
                   value: worker.userId,
                   label: getConstructionWorkerLabel(worker)
                 }))}
@@ -248,7 +256,7 @@ export default function ConstructionAssignmentsPage() {
                 icon={<SendOutlined />}
                 loading={assignMutation.isPending}
                 disabled={!selectedOrder || selectedWorkerUserIds.length === 0}
-                onClick={() => assignMutation.mutate()}
+                onClick={() => setConfirmDrawerOpen(true)}
               >
                 确认派单
               </Button>
@@ -269,10 +277,18 @@ export default function ConstructionAssignmentsPage() {
                 ))}
               </div>
             </div>
+            <Input
+              allowClear
+              className="dispatch-worker-search"
+              prefix={<SearchOutlined />}
+              value={workerSearchKeyword}
+              onChange={(event) => setWorkerSearchKeyword(event.target.value)}
+              placeholder="搜索施工人员姓名、账号或技能"
+            />
 
             <div className="dispatch-worker-list">
-              {workers.length ? (
-                workers.map((worker, index) => {
+              {filteredWorkers.length ? (
+                filteredWorkers.map((worker, index) => {
                   const selected = selectedWorkerUserIds.includes(worker.userId);
                   return (
                     <button
@@ -297,7 +313,7 @@ export default function ConstructionAssignmentsPage() {
                   );
                 })
               ) : (
-                <div className="operation-empty">暂无可用施工人员</div>
+                <div className="operation-empty">{workerSearchKeyword ? "未找到匹配施工人员" : "暂无可用施工人员"}</div>
               )}
             </div>
           </Card>
@@ -314,7 +330,7 @@ export default function ConstructionAssignmentsPage() {
                     className="dispatch-progress-item"
                     onClick={() => router.push(`/construction/orders/${record.orderId}`)}
                   >
-                    <span>{record.order?.orderNo ?? "订单未加载"}</span>
+                    <span>{record.order?.orderNo ?? "订单信息待确认"}</span>
                     <Tag>{getConstructionStatusLabel(record.status)}</Tag>
                     <small>
                       {record.assignments
@@ -330,6 +346,127 @@ export default function ConstructionAssignmentsPage() {
           </Card>
         </aside>
       </section>
+      <Drawer
+        className="dispatch-confirm-drawer"
+        title={
+          <div className="dispatch-confirm-drawer-title">
+            <CheckCircleOutlined />
+            <span>确认提交派工与库房匹配</span>
+          </div>
+        }
+        width={480}
+        open={confirmDrawerOpen}
+        onClose={() => setConfirmDrawerOpen(false)}
+        footer={
+          <div className="dispatch-confirm-drawer-footer">
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              block
+              loading={assignMutation.isPending}
+              disabled={!selectedOrder || selectedWorkerUserIds.length === 0}
+              onClick={() => assignMutation.mutate()}
+            >
+              确认提交，进入派工流转
+            </Button>
+            <Button
+              block
+              onClick={() => {
+                message.info("派工草稿已保留在当前页面");
+                setConfirmDrawerOpen(false);
+              }}
+            >
+              暂存草稿
+            </Button>
+            <p>提交后订单将进入“库房备货”与“派工排期”阶段，请确保信息准确无误。</p>
+          </div>
+        }
+      >
+        <div className="dispatch-confirm-drawer-body">
+          <section className="dispatch-confirm-section">
+            <div className="dispatch-confirm-section-title">
+              <i />
+              <h3>订单概览</h3>
+            </div>
+            <div className="dispatch-confirm-summary">
+              <div>
+                <span>订单号</span>
+                <strong>{selectedOrder?.orderNo ?? "未选择订单"}</strong>
+              </div>
+              <div>
+                <span>客户姓名</span>
+                <strong>{getOrderCustomerLabel(selectedOrder)}</strong>
+              </div>
+              <div>
+                <span>车型</span>
+                <strong>{getOrderVehicleLabel(selectedOrder)}</strong>
+              </div>
+              <div>
+                <span>施工类型</span>
+                <Tag color="processing">{getConstructionTypeLabel(selectedOrder?.constructionType)}</Tag>
+              </div>
+              <div className="dispatch-confirm-summary-wide">
+                <span>预约施工日期</span>
+                <strong>{formatDispatchAppointmentDate(selectedOrder?.appointmentDate)} {selectedOrder?.appointmentTimeSlot ?? ""}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="dispatch-confirm-section">
+            <div className="dispatch-confirm-section-title">
+              <i />
+              <h3>货品匹配预检</h3>
+              <span>共 {selectedOrder?.items?.length ?? 0} 项货品</span>
+            </div>
+            <div className="dispatch-confirm-product-list">
+              {selectedOrder?.items?.length ? (
+                selectedOrder.items.map((item, index) => (
+                  <div key={item.id ?? index} className="dispatch-confirm-product">
+                    <div>
+                      <strong>{getOrderProductName(item)}</strong>
+                      <span>{getOrderProductSpec(item)}</span>
+                    </div>
+                    <div>
+                      <strong>x{item.quantity ?? 1}</strong>
+                      <Tag color={index === 0 ? "success" : "warning"}>
+                        {index === 0 ? "现货充足" : "需切割/待库房备货"}
+                      </Tag>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="operation-empty">暂无货品明细，派工前请回订单补齐。</div>
+              )}
+            </div>
+          </section>
+
+          <section className="dispatch-confirm-section dispatch-confirm-checks">
+            <label>
+              <input type="checkbox" />
+              <span>
+                <strong>已核对客户信息及施工要求</strong>
+                <small>确认施工部位、产品型号、特殊工艺已通过客户确认。</small>
+              </span>
+            </label>
+            <label>
+              <input type="checkbox" />
+              <span>
+                <strong>已告知客户施工时间及注意事项</strong>
+                <small>包含工期预估、车辆交接流程以及施工期间的必要提醒。</small>
+              </span>
+            </label>
+            <div className="dispatch-confirm-note">
+              <strong>给库房/施工主管的补充建议</strong>
+              <Input.TextArea
+                rows={5}
+                value={dispatchNote}
+                onChange={(event) => setDispatchNote(event.target.value)}
+                placeholder="例如：客户要求特别注意前保险杠合缝处、需库房优先调配A库物料等..."
+              />
+            </div>
+          </section>
+        </div>
+      </Drawer>
     </div>
   );
 }
@@ -341,20 +478,66 @@ function getOrderCustomerLabel(order?: OrderRow) {
 
 function getOrderVehicleLabel(order?: OrderRow) {
   if (!order?.vehicle) return "车辆未登记";
-  return [order.vehicle.plateNo, [order.vehicle.brand, order.vehicle.model].filter(Boolean).join(" "), order.vehicle.color]
+  const vehicleLabel = [order.vehicle.plateNo, [order.vehicle.brand, order.vehicle.model].filter(Boolean).join(" "), order.vehicle.color]
     .filter(Boolean)
     .join(" / ");
+  return vehicleLabel || "车辆未登记";
 }
 
 function getOrderItemsSummary(order?: OrderRow) {
-  if (!order?.items?.length) return "产品明细未加载";
+  if (!order?.items?.length) return "待库房核对产品明细";
   return order.items
     .map((item) => {
       const product = item.product;
-      const productLabel = [product?.brand, product?.name, product?.model].filter(Boolean).join(" / ") || "产品未加载";
+      const productLabel = [product?.brand, product?.name, product?.model].filter(Boolean).join(" / ") || "待库房核对产品";
       return `${productLabel} x ${item.quantity ?? 1}`;
     })
     .join("、");
+}
+
+function formatDispatchAppointmentDate(value?: string | null, missingLabel = "未预约") {
+  if (!value) return missingLabel;
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match?.[1] ?? "预约日期待确认";
+}
+
+function getOrderProductName(item: NonNullable<OrderRow["items"]>[number]) {
+  const product = item.product;
+  return [product?.brand, product?.name].filter(Boolean).join(" / ") || "待库房核对产品";
+}
+
+function getOrderProductSpec(item: NonNullable<OrderRow["items"]>[number]) {
+  return item.product?.model || "待库房核对规格";
+}
+
+function filterConstructionWorkers(workers: WorkerRow[], keyword: string) {
+  const normalizedKeyword = normalizeWorkerSearchKeyword(keyword);
+  if (!normalizedKeyword) return workers;
+  return workers.filter((worker) => getWorkerSearchText(worker).includes(normalizedKeyword));
+}
+
+function filterWorkerOption(input: string, option?: DefaultOptionType) {
+  const normalizedInput = normalizeWorkerSearchKeyword(input);
+  if (!normalizedInput) return true;
+  return normalizeWorkerSearchKeyword(`${option?.label ?? ""} ${option?.value ?? ""}`).includes(normalizedInput);
+}
+
+function getWorkerSearchText(worker: WorkerRow) {
+  return normalizeWorkerSearchKeyword(
+    [
+      getConstructionWorkerLabel(worker),
+      worker.user?.nickname,
+      worker.user?.username,
+      worker.userId,
+      ...(worker.skillTags ?? [])
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+function normalizeWorkerSearchKeyword(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function getWorkerAvatarText(worker: WorkerRow, index: number) {

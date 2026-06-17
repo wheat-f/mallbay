@@ -18,6 +18,8 @@ test("customers page follows the prototype customer operations layout", () => {
   assert.match(pageSource, /消费总额/);
   assert.match(pageSource, /最近消费/);
   assert.match(pageSource, /有效质保/);
+  assert.match(pageSource, /待质保录入/);
+  assert.doesNotMatch(pageSource, /<Tag>待生成<\/Tag>/);
 });
 
 test("customers page keeps order creation as a row action instead of the primary page action", () => {
@@ -32,8 +34,8 @@ test("customers page uses mobile archive cards instead of squeezing the desktop 
   assert.match(pageSource, /customers-mobile-card/);
   assert.match(pageSource, /customers-desktop-table/);
   assert.match(cssSource, /\.customers-mobile-cards/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.customers-desktop-table/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.customers-mobile-cards\s*\{[\s\S]*display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{\n\s{2}\.customers-desktop-table \{\n\s{4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.customers-mobile-cards \{\n\s{4}display: grid;/);
 });
 
 test("customers page opens a prototype right-side customer detail drawer from table rows", () => {
@@ -63,6 +65,8 @@ test("customers page creates customer records in a prototype right-side drawer",
   assert.match(pageSource, /创建客户/);
   assert.match(pageSource, /客户类型/);
   assert.match(pageSource, /介绍人/);
+  assert.doesNotMatch(pageSource, /customer\.companyName \?\? customer\.name \?\? customer\.contactPerson \?\? customer\.id/);
+  assert.match(pageSource, /customer\.companyName \?\? customer\.name \?\? customer\.contactPerson \?\? "未命名客户"/);
   assert.doesNotMatch(pageSource, /<Modal/);
   assert.doesNotMatch(pageSource, /width=\{/);
   assert.doesNotMatch(pageSource, /forceRender/);

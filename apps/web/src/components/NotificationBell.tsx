@@ -1,6 +1,6 @@
 "use client";
 
-import { App, Badge, Button, Popover, Spin, Tabs, Typography } from "antd";
+import { App, Badge, Button, Popover, Spin, Tabs } from "antd";
 import {
   BellOutlined,
   CheckOutlined,
@@ -283,6 +283,7 @@ export function NotificationBell({ onJoined }: { onJoined?: () => void }) {
         <Badge count={unread} size="small" offset={[-2, 2]}>
           <BellOutlined style={{ fontSize: 18, color: "#475569" }} />
         </Badge>
+        <span className="notif-bell-prototype-dot" aria-hidden="true" />
       </button>
     </Popover>
   );

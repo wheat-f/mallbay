@@ -4,7 +4,7 @@ export { commissionsApi } from "../features/commissions/api";
 export { customerApi } from "../features/customers/api";
 export { constructionApi } from "../features/construction/api";
 export { financeApi } from "../features/finance/api";
-export { inventoryApi } from "../features/inventory/api";
+export { inventoryApi, purchaseApi } from "../features/inventory/api";
 export { invoicesApi } from "../features/invoices/api";
 export { memberApi } from "../features/members/api";
 export { notificationApi } from "../features/notifications/api";

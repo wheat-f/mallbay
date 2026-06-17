@@ -72,7 +72,7 @@ export default function AfterSalesPage() {
   const orderOptions = ((ordersQuery.data?.items ?? []) as AfterSaleOrderOption[]).map((order) => ({
     value: order.id,
     label: [
-      order.orderNo ?? order.id,
+      order.orderNo ?? "未编号订单",
       order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name,
       order.vehicle?.plateNo
     ].filter(Boolean).join(" / ")
@@ -151,8 +151,8 @@ export default function AfterSalesPage() {
         {[
           ["售后单", afterSaleSummary.total, "门店售后服务总量"],
           ["待处理", afterSaleSummary.pending, "等待客服或主管处理"],
-          ["已派单", afterSaleSummary.assigned, "师傅待上门或处理中"],
-          ["已解决", afterSaleSummary.resolved, "已归档售后记录"]
+          ["处理中", afterSaleSummary.assigned, "师傅处理中"],
+          ["已完成", afterSaleSummary.resolved, "已归档售后记录"]
         ].map(([label, value, description]) => (
           <Card key={label} className="management-kpi-card">
             <div className="management-kpi-label">{label}</div>
@@ -166,7 +166,27 @@ export default function AfterSalesPage() {
         <div className="after-sales-filter-grid">
           <div className="after-sales-search-box">
             <span>快速查询</span>
-            <Input prefix={<SearchOutlined />} placeholder="车牌号 / 客户电话 / 订单号 / 售后问题" />
+            <Input prefix={<SearchOutlined />} placeholder="质保单号 / 车牌号 / VIN / 客户电话" />
+            <div className="after-sales-prototype-filters">
+              <label>
+                <span>车架号 (VIN)</span>
+                <Input placeholder="输入VIN" />
+              </label>
+              <label>
+                <span>客户电话</span>
+                <Input placeholder="输入手机号" />
+              </label>
+              <label>
+                <span>质保单号</span>
+                <Input placeholder="输入质保单号" />
+              </label>
+              <div className="after-sales-prototype-filter-actions">
+                <Button type="primary" icon={<SearchOutlined />}>
+                  查询
+                </Button>
+                <Button>重置</Button>
+              </div>
+            </div>
           </div>
           <Form
             form={createForm}
@@ -251,7 +271,7 @@ export default function AfterSalesPage() {
             })}
             rowClassName={(row) => (row.id === selectedAfterSale?.id ? "after-sales-selected-row" : "")}
             columns={[
-              { title: "售后", render: (_, row) => getAfterSaleBusinessLabel(row) },
+              { title: "售后单号", render: (_, row) => getAfterSaleBusinessLabel(row) },
               { title: "订单", render: (_, row) => getAfterSaleOrderLabel(row) },
               { title: "售后类型", dataIndex: "description" },
               { title: "责任判定", render: (_, row) => <Tag>{getAfterSaleResponsibilityLabel(row.responsibility)}</Tag> },

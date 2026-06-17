@@ -64,7 +64,7 @@ test("getPurchaseRequirementItemsSummary formats product quantity and unit inste
       },
       products
     ),
-    "品牌：品牌1 / 名称：漆面保护膜 / 型号：PPF-100 x 15 米；产品未加载 x 2 卷"
+    "品牌：品牌1 / 名称：漆面保护膜 / 型号：PPF-100 x 15 米；产品信息待确认 x 2 卷"
   );
   assert.equal(getPurchaseRequirementItemsSummary({ items: [] }, products), "-");
 });
@@ -94,7 +94,7 @@ test("getInventoryOrderItemsSummary does not expose technical product ids when p
         }
       ]
     }),
-    "产品未加载 x 2"
+    "产品信息待确认 x 2"
   );
 });
 
@@ -104,7 +104,7 @@ test("inventory product and batch labels use product display helpers", () => {
   ]);
 
   assert.equal(getInventoryProductLabel("product-1", products), "品牌：品牌1 / 名称：漆面保护膜 / 型号：PPF-100");
-  assert.equal(getInventoryProductLabel("missing-product", products), "产品未加载");
+  assert.equal(getInventoryProductLabel("missing-product", products), "产品信息待确认");
   assert.equal(
     getInventoryBatchLabel(
       { batchNo: "BOP001", productId: "product-1", availableQuantity: 12 },
@@ -117,15 +117,17 @@ test("inventory product and batch labels use product display helpers", () => {
 test("getInventoryMovementTypeLabel formats stock movement enum values", () => {
   assert.equal(getInventoryMovementTypeLabel("PURCHASE_IN"), "采购入库");
   assert.equal(getInventoryMovementTypeLabel("DAMAGE_OUT"), "报损出库");
-  assert.equal(getInventoryMovementTypeLabel("UNKNOWN"), "UNKNOWN");
+  assert.equal(getInventoryMovementTypeLabel("UNKNOWN"), "库存变动类型待确认");
 });
 
 test("inventory purchase and allocation status helpers format business labels", () => {
   assert.equal(getInventoryAllocationStatusLabel("LOCKED"), "已锁定");
   assert.equal(getInventoryAllocationStatusLabel("OUTBOUND"), "已出库");
+  assert.equal(getInventoryAllocationStatusLabel("UNKNOWN"), "库存分配状态待确认");
   assert.equal(getPurchaseRequirementStatusLabel("PARTIAL_RECEIVED"), "部分入库");
+  assert.equal(getPurchaseRequirementStatusLabel("UNKNOWN"), "采购需求状态待确认");
   assert.equal(getPurchaseOrderStatusLabel("DRAFT"), "草稿");
-  assert.equal(getPurchaseOrderStatusLabel("UNKNOWN"), "UNKNOWN");
+  assert.equal(getPurchaseOrderStatusLabel("UNKNOWN"), "采购单状态待确认");
 });
 
 test("getInventoryMovementSummary totals filtered movement quantities by business direction", () => {

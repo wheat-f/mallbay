@@ -62,7 +62,7 @@ function StoreLobbyCard({ store }: StoreLobbyCardProps) {
         )}
       </div>
       <div className="store-lobby-card-body">
-        <div className="store-lobby-card-kicker">公开门店</div>
+        <div className="store-lobby-card-kicker">认证服务门店</div>
         <h2>{store.name}</h2>
         {store.address && (
           <p className="store-lobby-card-address">
@@ -71,6 +71,10 @@ function StoreLobbyCard({ store }: StoreLobbyCardProps) {
           </p>
         )}
         <p className="store-lobby-card-desc">{store.description ?? "门店暂未填写简介，点击查看公开资料。"}</p>
+        <div className="store-lobby-card-meta">
+          <span>认证技师: 已认证团队</span>
+          <span>工位: 以门店详情为准</span>
+        </div>
       </div>
     </button>
   );
@@ -184,7 +188,7 @@ export default function HomePage() {
     <main className="home-lobby-shell">
       <header className="home-lobby-topbar">
         <button className="home-lobby-brand" type="button" onClick={() => router.push("/")}>
-          <span>MallBay</span>
+          <span>mallbay</span>
           <small>门店运营系统</small>
         </button>
 
@@ -252,8 +256,8 @@ export default function HomePage() {
       <section className="home-lobby-store-section">
         <div className="home-lobby-section-head">
           <div>
-            <span>公开门店</span>
-            <h2>公开门店</h2>
+            <span>公开服务网络</span>
+            <h2>认证服务门店</h2>
           </div>
           <Typography.Text>{storesQuery.data?.total ?? 0} 家</Typography.Text>
         </div>

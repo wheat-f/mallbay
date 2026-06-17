@@ -22,11 +22,14 @@ import {
   WarningOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { DailyCapacitySummary, InventoryBatchSummary, ReportSummary, WarrantySummary } from "@mallbay/shared";
 import { useParams, useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { useRef, useState } from "react";
-import { memberApi, storeApi } from "../../../src/lib/api";
+import { constructionApi, inventoryApi, memberApi, orderApi, reportsApi, storeApi, warrantiesApi } from "../../../src/lib/api";
 import { getWorkbenchSections, type StorePosition } from "../../../src/features/workbench/navigation";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { yuanCurrency } from "../../../src/features/orders/order-display";
 
 const POSITION_OPTIONS = [
   { label: "销售", value: "SALES" },
@@ -49,6 +52,226 @@ const STATUS_CONFIG: Record<string, { text: string; color: string }> = {
   FROZEN: { text: "已冻结", color: "warning" }
 };
 
+type WorkbenchTone = "primary" | "warning" | "info" | "danger" | "success";
+
+type WorkbenchKpi = {
+  label: string;
+  value: string;
+  trend: string;
+  tone: WorkbenchTone;
+  icon: ReactNode;
+};
+
+type CapacityItem = {
+  label: string;
+  value: string;
+  percent: number;
+  tone: WorkbenchTone;
+  meta: string;
+  remaining: number;
+};
+
+type ExceptionItem = {
+  title: string;
+  detail: string;
+  tone: WorkbenchTone;
+  icon: ReactNode;
+};
+
+type TaskRow = {
+  type: string;
+  ref: string;
+  owner: string;
+  due: string;
+  status: string;
+};
+
+function getTodayDateString() {
+  const now = new Date();
+  const month = `${now.getMonth() + 1}`.padStart(2, "0");
+  const day = `${now.getDate()}`.padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function buildWorkbenchKpis({
+  summary,
+  pendingDispatchTotal,
+  todayCapacity,
+  activeWarrantyCount,
+  lowStockCount,
+  teamSize,
+  currentPosition
+}: {
+  summary?: ReportSummary;
+  pendingDispatchTotal: number;
+  todayCapacity?: DailyCapacitySummary;
+  activeWarrantyCount: number;
+  lowStockCount: number;
+  teamSize: number;
+  currentPosition: string;
+}): WorkbenchKpi[] {
+  const financeApplicationAmountCents = (summary?.expenseAmountCents ?? 0) + (summary?.reimbursementAmountCents ?? 0);
+  return [
+    {
+      label: "订单总数",
+      value: String(summary?.orders ?? 0),
+      trend: `已收款 ${yuanCurrency(summary?.paidAmountCents ?? 0)}`,
+      tone: "primary",
+      icon: <ShoppingCartOutlined />
+    },
+    {
+      label: "待派单",
+      value: String(pendingDispatchTotal),
+      trend: pendingDispatchTotal > 0 ? "待处理" : "已清空",
+      tone: "warning",
+      icon: <ScheduleOutlined />
+    },
+    {
+      label: "今日施工容量",
+      value: formatTotalCapacity(todayCapacity),
+      trend: `剩余 ${getRemainingCapacity(todayCapacity)}`,
+      tone: "info",
+      icon: <CalendarOutlined />
+    },
+    {
+      label: "生效质保",
+      value: String(activeWarrantyCount),
+      trend: "质保档案",
+      tone: "primary",
+      icon: <FileProtectOutlined />
+    },
+    {
+      label: "库存预警",
+      value: String(lowStockCount),
+      trend: lowStockCount > 0 ? "低于安全线" : "库存正常",
+      tone: lowStockCount > 0 ? "danger" : "success",
+      icon: <WarningOutlined />
+    },
+    {
+      label: "财务申请额",
+      value: yuanCurrency(financeApplicationAmountCents),
+      trend: "费用与报销",
+      tone: "info",
+      icon: <DollarOutlined />
+    },
+    {
+      label: "收款率",
+      value: formatPercent(summary?.paidAmountCents ?? 0, summary?.totalAmountCents ?? 0),
+      trend: "按订单总额",
+      tone: "success",
+      icon: <RiseOutlined />
+    },
+    {
+      label: "团队成员",
+      value: String(teamSize),
+      trend: `${POSITION_LABEL[currentPosition] ?? currentPosition}视图`,
+      tone: "primary",
+      icon: <TeamOutlined />
+    }
+  ];
+}
+
+function buildCapacityItems(todayCapacity?: DailyCapacitySummary): CapacityItem[] {
+  return [
+    buildCapacityItem("店内施工", todayCapacity?.inStoreReserved, todayCapacity?.inStoreCapacity, "primary", "隐形车衣"),
+    buildCapacityItem("外出施工", todayCapacity?.outsideReserved, todayCapacity?.outsideCapacity, "info", "上门服务"),
+    buildCapacityItem("玻璃膜施工", todayCapacity?.heatFilmReserved, todayCapacity?.heatFilmCapacity, "danger", "隔热膜"),
+    buildCapacityItem("复检", todayCapacity?.inspectionReserved, todayCapacity?.inspectionCapacity, "success", "售后复检")
+  ];
+}
+
+function buildExceptionItems({
+  lowStockCount,
+  pendingDispatchTotal,
+  afterSalesCount
+}: {
+  lowStockCount: number;
+  pendingDispatchTotal: number;
+  afterSalesCount: number;
+}): ExceptionItem[] {
+  const items: ExceptionItem[] = [];
+  if (lowStockCount > 0) {
+    items.push({ title: "库存不足", detail: `${lowStockCount} 个批次低于安全线，请及时补货。`, tone: "danger", icon: <WarningOutlined /> });
+  }
+  if (pendingDispatchTotal > 0) {
+    items.push({ title: "待派单", detail: `${pendingDispatchTotal} 个订单等待施工排班。`, tone: "warning", icon: <ScheduleOutlined /> });
+  }
+  if (afterSalesCount > 0) {
+    items.push({ title: "售后跟进", detail: `${afterSalesCount} 个售后单需要持续跟进。`, tone: "info", icon: <ToolOutlined /> });
+  }
+  return items;
+}
+
+function buildTaskRows({
+  pendingDispatchTotal,
+  financeApplicationAmountCents,
+  afterSalesCount,
+  currentPosition
+}: {
+  pendingDispatchTotal: number;
+  financeApplicationAmountCents: number;
+  afterSalesCount: number;
+  currentPosition: string;
+}): TaskRow[] {
+  const rows: TaskRow[] = [];
+  if (pendingDispatchTotal > 0) {
+    rows.push({ type: "施工派单", ref: `${pendingDispatchTotal} 个待派单订单`, owner: POSITION_LABEL[currentPosition] ?? "主管", due: "尽快处理", status: "待处理" });
+  }
+  if (afterSalesCount > 0) {
+    rows.push({ type: "售后跟进", ref: `${afterSalesCount} 个售后单`, owner: "客服/施工主管", due: "持续跟进", status: "处理中" });
+  }
+  if (financeApplicationAmountCents > 0) {
+    rows.push({ type: "费用审批", ref: yuanCurrency(financeApplicationAmountCents), owner: "财务", due: "按审批流处理", status: "待处理" });
+  }
+  return rows;
+}
+
+function buildWorkbenchTrendBars(summary?: ReportSummary) {
+  const rows = (summary?.salesTrend ?? []).slice(-7);
+  const maxOrders = rows.reduce((max, row) => Math.max(max, row.orders), 0);
+  if (rows.length === 0 || maxOrders <= 0) return [];
+  return rows.map((row) => [row.month, Math.max(12, Math.round((row.orders / maxOrders) * 100))] as const);
+}
+
+function buildCapacityItem(label: string, reserved = 0, capacity = 0, tone: WorkbenchTone, meta: string): CapacityItem {
+  const remaining = Math.max(capacity - reserved, 0);
+  return {
+    label,
+    value: `${reserved}/${capacity}`,
+    percent: capacity > 0 ? Math.min(100, Math.round((reserved / capacity) * 100)) : 0,
+    tone,
+    meta: capacity > 0 ? meta : "暂无维护",
+    remaining
+  };
+}
+
+function formatTotalCapacity(capacity?: DailyCapacitySummary) {
+  if (!capacity) return "0/0";
+  const reserved = capacity.inStoreReserved + capacity.outsideReserved + capacity.heatFilmReserved + capacity.inspectionReserved;
+  const total = capacity.inStoreCapacity + capacity.outsideCapacity + capacity.heatFilmCapacity + capacity.inspectionCapacity;
+  return `${reserved}/${total}`;
+}
+
+function getRemainingCapacity(capacity?: DailyCapacitySummary) {
+  if (!capacity) return 0;
+  const reserved = capacity.inStoreReserved + capacity.outsideReserved + capacity.heatFilmReserved + capacity.inspectionReserved;
+  const total = capacity.inStoreCapacity + capacity.outsideCapacity + capacity.heatFilmCapacity + capacity.inspectionCapacity;
+  return Math.max(total - reserved, 0);
+}
+
+function formatPercent(numerator: number, denominator: number) {
+  if (denominator <= 0) return "0.0%";
+  return `${((numerator / denominator) * 100).toFixed(1)}%`;
+}
+
+function countLowStockBatches(batches: InventoryBatchSummary[]) {
+  return batches.filter((batch) => batch.totalQuantity <= 0 || batch.availableQuantity / batch.totalQuantity <= 0.1).length;
+}
+
+function countActiveWarranties(warranties: WarrantySummary[]) {
+  return warranties.filter((warranty) => warranty.status === "ACTIVE").length;
+}
+
 // ─── 邀请成员抽屉 ───────────────────────────────────────────────
 function InviteDrawer({ storeId, open, onClose, onDone }: {
   storeId: string; open: boolean; onClose: () => void; onDone: () => void;
@@ -66,7 +289,10 @@ function InviteDrawer({ storeId, open, onClose, onDone }: {
   });
 
   const inviteMutation = useMutation({
-    mutationFn: () => memberApi.invite(storeId, selected!.id, position),
+    mutationFn: () => {
+      if (!selected?.id) throw new Error("请先选择邀请成员");
+      return memberApi.invite(storeId, selected.id, position);
+    },
     onSuccess: () => {
       message.success(`已发出邀请`);
       setKeyword(""); setSelected(null); setPosition("SALES");
@@ -389,92 +615,62 @@ export default function WorkbenchPage() {
   const workbenchSections = store
     ? getWorkbenchSections(store.currentMember.position as StorePosition, store.id)
     : [];
-  const todayOrderCount = store ? Math.max(3, workbenchSections.reduce((sum, section) => sum + section.items.length, 0)) : 0;
+  const todayDate = getTodayDateString();
+  const summaryQuery = useQuery({
+    queryKey: ["workbench-summary", storeId],
+    queryFn: () => reportsApi.summary(storeId),
+    enabled: Boolean(store)
+  });
+  const pendingDispatchQuery = useQuery({
+    queryKey: ["workbench-pending-dispatch", storeId],
+    queryFn: () => orderApi.list({ storeId, status: "PENDING_DISPATCH", page: 1, pageSize: 1 }),
+    enabled: Boolean(store)
+  });
+  const capacityQuery = useQuery({
+    queryKey: ["workbench-capacity", storeId, todayDate],
+    queryFn: () => constructionApi.capacities({ storeId, from: todayDate, to: todayDate }),
+    enabled: Boolean(store)
+  });
+  const inventoryBatchesQuery = useQuery({
+    queryKey: ["workbench-inventory-batches", storeId],
+    queryFn: () => inventoryApi.batches({ storeId }),
+    enabled: Boolean(store)
+  });
+  const warrantiesQuery = useQuery({
+    queryKey: ["workbench-warranties", storeId],
+    queryFn: () => warrantiesApi.list(storeId),
+    enabled: Boolean(store)
+  });
+  const summary = summaryQuery.data;
+  const pendingDispatchTotal = pendingDispatchQuery.data?.total ?? 0;
+  const todayCapacity = capacityQuery.data?.[0];
+  const lowStockCount = countLowStockBatches((inventoryBatchesQuery.data ?? []) as InventoryBatchSummary[]);
+  const activeWarrantyCount = countActiveWarranties((warrantiesQuery.data ?? []) as WarrantySummary[]);
+  const financeApplicationAmountCents = (summary?.expenseAmountCents ?? 0) + (summary?.reimbursementAmountCents ?? 0);
   const workbenchKpis = store
-    ? [
-        {
-          label: "今日订单",
-          value: String(todayOrderCount),
-          trend: "+20%",
-          tone: "primary",
-          icon: <ShoppingCartOutlined />
-        },
-        {
-          label: "待派单",
-          value: isManager ? "4" : "2",
-          trend: "待处理",
-          tone: "warning",
-          icon: <ScheduleOutlined />
-        },
-        {
-          label: "今日施工容量",
-          value: "8/12",
-          trend: "剩余 4",
-          tone: "info",
-          icon: <CalendarOutlined />
-        },
-        {
-          label: "待质保录入",
-          value: "3",
-          trend: "施工完工后",
-          tone: "primary",
-          icon: <FileProtectOutlined />
-        },
-        {
-          label: "库存预警",
-          value: "2",
-          trend: "低于安全线",
-          tone: "danger",
-          icon: <WarningOutlined />
-        },
-        {
-          label: "待财务审批",
-          value: isManager ? "5" : "1",
-          trend: "费用与收款",
-          tone: "info",
-          icon: <DollarOutlined />
-        },
-        {
-          label: "本月收款率",
-          value: "82%",
-          trend: "持续追踪",
-          tone: "success",
-          icon: <RiseOutlined />
-        },
-        {
-          label: "团队成员",
-          value: String(store.members.length),
-          trend: `${POSITION_LABEL[store.currentMember.position] ?? store.currentMember.position}视图`,
-          tone: "primary",
-          icon: <TeamOutlined />
-        }
-      ]
+    ? buildWorkbenchKpis({
+        summary,
+        pendingDispatchTotal,
+        todayCapacity,
+        activeWarrantyCount,
+        lowStockCount,
+        teamSize: store.members.length,
+        currentPosition: store.currentMember.position
+      })
     : [];
-  const capacityItems = [
-    { label: "店内施工", value: "5/7", percent: 71, tone: "primary", meta: "隐形车衣" },
-    { label: "外出施工", value: "2/3", percent: 66, tone: "info", meta: "上门服务" },
-    { label: "玻璃膜施工", value: "4/4", percent: 100, tone: "danger", meta: "已满" },
-    { label: "复检", value: "3/5", percent: 60, tone: "success", meta: "售后复检" }
-  ];
-  const exceptionItems = [
-    { title: "库存不足", detail: "核心膜材库存低于安全线，请及时补货。", tone: "danger", icon: <WarningOutlined /> },
-    { title: "施工超时", detail: "有订单已超过预计交付时间，需要主管跟进。", tone: "warning", icon: <ToolOutlined /> },
-    { title: "质保提醒", detail: "近期完工订单需要补齐质保资料。", tone: "info", icon: <FileProtectOutlined /> }
-  ];
-  const taskRows = [
-    { type: "施工派单", ref: "待派单订单", owner: POSITION_LABEL[store?.currentMember.position ?? ""] ?? "主管", due: "今天 14:00", status: "待处理" },
-    { type: "质检核算", ref: "完工记录", owner: "施工主管", due: "今天 16:30", status: "处理中" },
-    { type: "费用审批", ref: "收款核对", owner: "财务", due: "明天 10:00", status: "待处理" }
-  ];
-  const trendBars = [
-    ["05.01", 64],
-    ["05.02", 78],
-    ["05.03", 48],
-    ["05.04", 70],
-    ["05.05", 88],
-    ["05.06", 82],
-    ["今天", 74]
-  ] as const;
+  const capacityItems = buildCapacityItems(todayCapacity);
+  const exceptionItems = buildExceptionItems({
+    lowStockCount,
+    pendingDispatchTotal,
+    afterSalesCount: summary?.afterSales ?? 0
+  });
+  const taskRows = buildTaskRows({
+    pendingDispatchTotal,
+    financeApplicationAmountCents,
+    afterSalesCount: summary?.afterSales ?? 0,
+    currentPosition: store?.currentMember.position ?? ""
+  });
+  const trendBars = buildWorkbenchTrendBars(summary);
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) => memberApi.remove(storeId, userId),
@@ -505,7 +701,7 @@ export default function WorkbenchPage() {
           <section className="workbench-empty-panel workbench-empty-state">
             <Typography.Title level={4}>无法加载门店工作台</Typography.Title>
             <Typography.Text type="secondary">
-              当前账号可能不属于该门店，或门店资料接口暂时不可用。
+              当前账号可能不属于该门店，或门店资料暂时无法读取。
             </Typography.Text>
             <Button type="primary" onClick={() => router.push("/")}>
               返回门店大厅
@@ -549,7 +745,8 @@ export default function WorkbenchPage() {
                   onClick={() => {
                     if (item.label === "待派单") router.push("/construction/assignments");
                     if (item.label === "库存预警") router.push("/inventory");
-                    if (item.label === "待质保录入") router.push("/warranties");
+                    if (item.label === "生效质保") router.push("/warranties");
+                    if (item.label === "财务申请额") router.push("/finance");
                     if (item.label === "团队成员") setInviteOpen(true);
                   }}
                 >
@@ -575,7 +772,7 @@ export default function WorkbenchPage() {
                       </div>
                       <div className="workbench-capacity-foot">
                         <span>{item.meta}</span>
-                        <span>剩余 {Math.max(0, Math.round((100 - item.percent) / 20))}</span>
+                        <span>剩余 {item.remaining}</span>
                       </div>
                     </div>
                   ))}
@@ -584,24 +781,28 @@ export default function WorkbenchPage() {
 
               <Card className="workbench-exception-panel" title="异常提醒">
                 <div className="workbench-exception-list">
-                  {exceptionItems.map((item) => (
-                    <button
-                      key={item.title}
-                      type="button"
-                      className={`workbench-exception-item workbench-exception-${item.tone}`}
-                      onClick={() => {
-                        if (item.title === "库存不足") router.push("/inventory");
-                        if (item.title === "施工超时") router.push("/construction/assignments");
-                        if (item.title === "质保提醒") router.push("/warranties");
-                      }}
-                    >
-                      <span>{item.icon}</span>
-                      <div>
-                        <strong>{item.title}</strong>
-                        <small>{item.detail}</small>
-                      </div>
-                    </button>
-                  ))}
+                  {exceptionItems.length > 0 ? (
+                    exceptionItems.map((item) => (
+                      <button
+                        key={item.title}
+                        type="button"
+                        className={`workbench-exception-item workbench-exception-${item.tone}`}
+                        onClick={() => {
+                          if (item.title === "库存不足") router.push("/inventory");
+                          if (item.title === "待派单") router.push("/construction/assignments");
+                          if (item.title === "售后跟进") router.push("/after-sales");
+                        }}
+                      >
+                        <span>{item.icon}</span>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <small>{item.detail}</small>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="workbench-panel-empty">暂无异常提醒</div>
+                  )}
                 </div>
               </Card>
             </section>
@@ -616,24 +817,28 @@ export default function WorkbenchPage() {
                     <span>截止时间</span>
                     <span>状态</span>
                   </div>
-                  {taskRows.map((task) => (
-                    <button
-                      key={`${task.type}-${task.ref}`}
-                      type="button"
-                      className="workbench-task-row"
-                      onClick={() => {
-                        if (task.type === "施工派单") router.push("/construction/assignments");
-                        if (task.type === "质检核算") router.push("/construction/assignments");
-                        if (task.type === "费用审批") router.push("/finance");
-                      }}
-                    >
-                      <span>{task.type}</span>
-                      <span>{task.ref}</span>
-                      <span>{task.owner}</span>
-                      <span>{task.due}</span>
-                      <Tag color={task.status === "待处理" ? "warning" : "processing"}>{task.status}</Tag>
-                    </button>
-                  ))}
+                  {taskRows.length > 0 ? (
+                    taskRows.map((task) => (
+                      <button
+                        key={`${task.type}-${task.ref}`}
+                        type="button"
+                        className="workbench-task-row"
+                        onClick={() => {
+                          if (task.type === "施工派单") router.push("/construction/assignments");
+                          if (task.type === "售后跟进") router.push("/after-sales");
+                          if (task.type === "费用审批") router.push("/finance");
+                        }}
+                      >
+                        <span>{task.type}</span>
+                        <span>{task.ref}</span>
+                        <span>{task.owner}</span>
+                        <span>{task.due}</span>
+                        <Tag color={task.status === "待处理" ? "warning" : "processing"}>{task.status}</Tag>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="workbench-task-empty">暂无待处理任务</div>
+                  )}
                 </div>
 
                 <div className="workbench-quick-section">
@@ -661,14 +866,18 @@ export default function WorkbenchPage() {
 
               <div className="workbench-side-stack">
                 <Card className="workbench-trend-card" title="销售与施工趋势">
-                  <div className="workbench-trend-bars">
-                    {trendBars.map(([label, height]) => (
-                      <div key={label} className="workbench-trend-bar-item">
-                        <span style={{ height: `${height}%` }} />
-                        <small>{label}</small>
-                      </div>
-                    ))}
-                  </div>
+                  {trendBars.length > 0 ? (
+                    <div className="workbench-trend-bars">
+                      {trendBars.map(([label, height]) => (
+                        <div key={label} className="workbench-trend-bar-item">
+                          <span style={{ height: `${height}%` }} />
+                          <small>{label}</small>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="workbench-panel-empty">暂无趋势数据</div>
+                  )}
                   <div className="workbench-trend-legend">
                     <span><i />订单量</span>
                     <span><i />施工量</span>

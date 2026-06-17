@@ -26,7 +26,6 @@ import {
   getAfterSaleResponsibilityLabel,
   getAfterSaleStatusLabel
 } from "../../../src/features/after-sales/display";
-import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../src/stores/auth-store";
 
 type AfterSaleTimelineItem = {
@@ -83,20 +82,28 @@ export default function AfterSaleDetailPage() {
 
   return (
     <div className="management-page after-sale-detail-page">
-      <StorePageHeader
-        title="售后工单详情与责任判罚"
-        description={afterSale ? getAfterSaleBusinessLabel(afterSale) : "集中查看售后证据、责任判定、处罚处理和处理日志"}
-      >
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/after-sales")}>
-          返回售后管理
-        </Button>
-        <Button icon={<ExportOutlined />} disabled={!afterSale}>
-          导出报告
-        </Button>
-        <Button type="primary" disabled={!afterSale}>
-          确认判罚并归档
-        </Button>
-      </StorePageHeader>
+      <section className="after-sale-detail-hero">
+        <div>
+          <div className="after-sale-detail-breadcrumb">
+            <span>售后管理</span>
+            <span>/</span>
+            <span>{afterSale ? getAfterSaleBusinessLabel(afterSale) : "工单详情"}</span>
+          </div>
+          <h1>售后工单详情与责任判罚</h1>
+          <p>{afterSale ? getAfterSaleBusinessLabel(afterSale) : "集中查看售后证据、责任判定、处罚处理和处理日志"}</p>
+        </div>
+        <div className="after-sale-detail-actions">
+          <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/after-sales")}>
+            返回售后列表
+          </Button>
+          <Button icon={<ExportOutlined />} disabled={!afterSale}>
+            导出报告
+          </Button>
+          <Button type="primary" disabled={!afterSale}>
+            确认判罚并归档
+          </Button>
+        </div>
+      </section>
 
       {afterSalesQuery.isLoading ? (
         <Card className="after-sale-detail-loading">
@@ -118,7 +125,7 @@ export default function AfterSaleDetailPage() {
               <div className="after-sale-summary-grid">
                 <DetailMetric label="客户信息" value={getOrderCustomerLabel(afterSale)} hint={getOrderVehicleLabel(afterSale)} />
                 <DetailMetric label="车型/膜卷号" value={getVehicleModelLabel(afterSale)} hint="材料批次由库存出库后自动追溯" />
-                <DetailMetric label="原订单" value={getAfterSaleOrderLabel(afterSale)} hint={`工单ID: ${afterSale.orderId}`} />
+                <DetailMetric label="原订单" value={getAfterSaleOrderLabel(afterSale)} hint="原订单记录已关联售后流程" />
               </div>
             </Card>
 
@@ -182,7 +189,7 @@ export default function AfterSaleDetailPage() {
               </div>
               <div className="after-sale-worker-card">
                 <span>责任技师</span>
-                <strong>{afterSale.responsibility === "CONSTRUCTION" ? "待从派单记录确认" : "非施工责任或待判责"}</strong>
+                <strong>{afterSale.responsibility === "CONSTRUCTION" ? "待从派单记录确认" : "非施工或待判责"}</strong>
                 <p>{getAfterSaleResponsibilityLabel(afterSale.responsibility)}</p>
               </div>
             </Card>
@@ -198,7 +205,7 @@ export default function AfterSaleDetailPage() {
               </label>
               <div className="after-sale-risk-note">
                 <ExclamationCircleOutlined />
-                <span>当前摘要接口未返回历史售后次数，处罚金额需在售后管理处理面板完成录入后沉淀。</span>
+                <span>处罚金额在处理面板录入后自动沉淀到售后记录；本月累计售后较多时，建议进行工艺二次培训或降级处理。</span>
               </div>
             </Card>
 
@@ -316,12 +323,12 @@ function getAfterSaleStatusColor(status?: AfterSaleStatus) {
 
 function getOrderCustomerLabel(afterSale: AfterSaleSummary) {
   const customer = afterSale.order?.customer;
-  return customer?.companyName ?? customer?.personalName ?? customer?.name ?? customer?.contactPerson ?? "客户未加载";
+  return customer?.companyName ?? customer?.personalName ?? customer?.name ?? customer?.contactPerson ?? "客户信息待确认";
 }
 
 function getOrderVehicleLabel(afterSale: AfterSaleSummary) {
   const vehicle = afterSale.order?.vehicle;
-  return [vehicle?.plateNo ?? vehicle?.carPlate, getVehicleModelLabel(afterSale)].filter(Boolean).join(" / ") || "车辆未加载";
+  return [vehicle?.plateNo ?? vehicle?.carPlate, getVehicleModelLabel(afterSale)].filter(Boolean).join(" / ") || "车辆信息待确认";
 }
 
 function getVehicleModelLabel(afterSale: AfterSaleSummary) {

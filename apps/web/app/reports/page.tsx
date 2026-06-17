@@ -7,14 +7,16 @@ import {
   FilterOutlined,
   PayCircleOutlined,
   RiseOutlined,
+  SearchOutlined,
   ToolOutlined,
   WarningOutlined
 } from "@ant-design/icons";
-import { Button, Card, Empty, Select, Statistic, Table, Tag, Typography } from "antd";
+import { Button, Card, Empty, Input, Select, Statistic, Table, Tag, Typography } from "antd";
 import type { ColumnType } from "antd/es/table";
 import { useQuery } from "@tanstack/react-query";
 import type { ReportSummary } from "@mallbay/shared";
 import type { ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { reportsApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -49,6 +51,8 @@ type ReportTab = {
   label: string;
 };
 
+type ReportSectionKey = "summary" | "salesTrend" | "commissionTrend" | "constructionTrend" | "afterSaleTrend" | "inventoryTrend" | "invoiceTrend" | "rebateTrend" | "financeTrend";
+
 const STORE_REPORT_TABS: ReportTab[] = [
   { key: "sales", label: "销售报表" },
   { key: "payments", label: "收款报表" },
@@ -68,6 +72,24 @@ const SALES_REPORT_TABS: ReportTab[] = [
   { key: "rebate", label: "我的返利" }
 ];
 
+const REPORT_TAB_TARGETS: Record<string, ReportSectionKey> = {
+  sales: "salesTrend",
+  payments: "summary",
+  construction: "constructionTrend",
+  workerCommission: "commissionTrend",
+  afterSales: "afterSaleTrend",
+  salesCommission: "commissionTrend",
+  delivery: "constructionTrend",
+  finance: "financeTrend",
+  performance: "summary",
+  collection: "salesTrend",
+  commission: "commissionTrend",
+  invoice: "invoiceTrend",
+  rebate: "rebateTrend"
+};
+
+const REPORT_TAB_STICKY_OFFSET = 148;
+
 function ReportSectionHeader({ title, description }: { title: string; description: string }) {
   return (
     <div className="reports-section-title">
@@ -81,7 +103,7 @@ function ReportsPageHeader({ isSalesReport }: { isSalesReport: boolean }) {
   return (
     <StorePageHeader
       title={isSalesReport ? "我的业绩" : "分析报表中心"}
-      description={isSalesReport ? "查看自己的订单、回款、发票、返利和销售提成" : "销售、收款、施工、售后、发票和返利的门店经营分析"}
+      description={isSalesReport ? "查看自己的订单、回款、发票、返利和销售提成" : undefined}
     />
   );
 }
@@ -245,6 +267,31 @@ export default function ReportsPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const isSalesReport = user?.storeMember?.position === "SALES";
+  const tabs = isSalesReport ? SALES_REPORT_TABS : STORE_REPORT_TABS;
+  const [activeReportTabKey, setActiveReportTabKey] = useState(tabs[0]?.key ?? "sales");
+  const summarySectionRef = useRef<HTMLDivElement | null>(null);
+  const salesTrendSectionRef = useRef<HTMLDivElement | null>(null);
+  const commissionTrendSectionRef = useRef<HTMLDivElement | null>(null);
+  const constructionTrendSectionRef = useRef<HTMLDivElement | null>(null);
+  const afterSaleTrendSectionRef = useRef<HTMLDivElement | null>(null);
+  const inventoryTrendSectionRef = useRef<HTMLDivElement | null>(null);
+  const invoiceTrendSectionRef = useRef<HTMLDivElement | null>(null);
+  const rebateTrendSectionRef = useRef<HTMLDivElement | null>(null);
+  const financeTrendSectionRef = useRef<HTMLDivElement | null>(null);
+  const reportSectionRefs = useMemo(
+    () => ({
+      summary: summarySectionRef,
+      salesTrend: salesTrendSectionRef,
+      commissionTrend: commissionTrendSectionRef,
+      constructionTrend: constructionTrendSectionRef,
+      afterSaleTrend: afterSaleTrendSectionRef,
+      inventoryTrend: inventoryTrendSectionRef,
+      invoiceTrend: invoiceTrendSectionRef,
+      rebateTrend: rebateTrendSectionRef,
+      financeTrend: financeTrendSectionRef
+    }),
+    []
+  );
   const summaryQuery = useQuery({
     queryKey: ["reports-summary", storeId ?? "all"],
     queryFn: () => reportsApi.summary(storeId),
@@ -262,11 +309,26 @@ export default function ReportsPage() {
   const rebateTrendRows = buildRebateTrendRows(summary);
   const financeTrendRows = buildFinanceTrendRows(summary);
   const bars = trendBars(summary);
-  const tabs = isSalesReport ? SALES_REPORT_TABS : STORE_REPORT_TABS;
+  const scrollReportSectionIntoView = useCallback(
+    (tabKey: string) => {
+      setActiveReportTabKey(tabKey);
+      const target = REPORT_TAB_TARGETS[tabKey] ?? "summary";
+      const targetElement = reportSectionRefs[target].current;
+      if (!targetElement) return;
+      const maxScrollTop = document.documentElement.scrollHeight - window.innerHeight;
+      const targetTop = targetElement.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo({ top: Math.max(0, Math.min(targetTop - REPORT_TAB_STICKY_OFFSET, maxScrollTop)), behavior: "auto" });
+    },
+    [reportSectionRefs]
+  );
 
   return (
     <div className="management-page reports-page">
       <ReportsPageHeader isSalesReport={isSalesReport} />
+
+      <div className="reports-search-box">
+        <Input prefix={<SearchOutlined />} placeholder="搜索报表、数据或人员..." allowClear />
+      </div>
 
       <Card className="reports-filter-card">
         <div className="reports-filter-title">
@@ -276,7 +338,7 @@ export default function ReportsPage() {
         <div className="reports-filter-grid">
           <label>
             <span>日期范围</span>
-            <Select defaultValue="本月" options={[{ value: "本月" }, { value: "上个月" }, { value: "本季度" }, { value: "本年度" }]} />
+            <Select defaultValue="本月" options={[{ value: "本月" }, { value: "上个月" }, { value: "本季度" }, { value: "本年度" }, { value: "自定义范围..." }]} />
           </label>
           <label>
             <span>销售人员</span>
@@ -288,25 +350,37 @@ export default function ReportsPage() {
           </label>
           <label>
             <span>施工类型</span>
-            <Select defaultValue="全部类型" options={[{ value: "全部类型" }, { value: "漆面保护膜" }, { value: "玻璃膜" }, { value: "复检" }]} />
+            <Select
+              defaultValue="全部类型"
+              options={[{ value: "全部类型" }, { value: "全车隐形车衣" }, { value: "局部贴膜" }, { value: "改色膜" }, { value: "玻璃隔热膜" }]}
+            />
           </label>
           <label>
             <span>产品型号</span>
-            <Select defaultValue="全部型号" options={[{ value: "全部型号" }, { value: "PPF" }, { value: "隔热膜" }]} />
+            <Select defaultValue="全部型号" options={[{ value: "全部型号" }, { value: "Pro系列 V10" }, { value: "Elite系列 X8" }, { value: "Classic系列 C5" }]} />
           </label>
           <label>
             <span>订单状态</span>
-            <Select defaultValue="全部状态" options={[{ value: "全部状态" }, { value: "待派单" }, { value: "施工中" }, { value: "已完工" }]} />
+            <Select defaultValue="全部状态" options={[{ value: "全部状态" }, { value: "施工中" }, { value: "已完工" }, { value: "已交车" }, { value: "售后中" }]} />
           </label>
         </div>
       </Card>
 
-      <div className="reports-tabs" role="tablist" aria-label="报表类型">
-        {tabs.map((tabItem, index) => (
-          <button key={tabItem.key} className={index === 0 ? "is-active" : ""} type="button" role="tab" aria-selected={index === 0}>
-            {tabItem.label}
-          </button>
-        ))}
+      <div className="reports-tabs-sticky">
+        <div className="reports-tabs" role="tablist" aria-label="报表类型">
+          {tabs.map((tabItem) => (
+            <button
+              key={tabItem.key}
+              className={activeReportTabKey === tabItem.key ? "is-active" : ""}
+              type="button"
+              role="tab"
+              aria-selected={activeReportTabKey === tabItem.key}
+              onClick={() => scrollReportSectionIntoView(tabItem.key)}
+            >
+              {tabItem.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <Card className="reports-ai-card">
@@ -373,7 +447,7 @@ export default function ReportsPage() {
             ))}
           </div>
         </Card>
-        <Card className="reports-chart-card">
+        <Card className="reports-chart-card reports-insight-card">
           <Typography.Title level={4}>{isSalesReport ? "业绩分析" : "经营分析"}</Typography.Title>
           <ReportDataView<ReportInsightRow>
             rowKey="key"
@@ -388,28 +462,30 @@ export default function ReportsPage() {
         </Card>
       </section>
 
-      <Card
-        className="reports-detail-card"
-        title={isSalesReport ? "我的业绩指标明细" : "经营指标明细"}
-        extra={
-          <Button icon={<DownloadOutlined />} type="default">
-            导出数据
-          </Button>
-        }
-      >
-        <ReportDataView<ReportDisplayRow>
-          rowKey="key"
-          loading={summaryQuery.isLoading}
-          dataSource={rows}
-          columns={[
-            { title: "指标", dataIndex: "label" },
-            { title: "数值", dataIndex: "value" }
-          ]}
-        />
-      </Card>
+      <div ref={summarySectionRef}>
+        <Card
+          className="reports-detail-card"
+          title={isSalesReport ? "我的业绩指标明细" : "销售订单明细"}
+          extra={
+            <Button icon={<DownloadOutlined />} type="default">
+              导出数据
+            </Button>
+          }
+        >
+          <ReportDataView<ReportDisplayRow>
+            rowKey="key"
+            loading={summaryQuery.isLoading}
+            dataSource={rows}
+            columns={[
+              { title: "指标", dataIndex: "label" },
+              { title: "数值", dataIndex: "value" }
+            ]}
+          />
+        </Card>
+      </div>
 
       <section className="reports-trend-grid">
-        <div className="report-section">
+        <div ref={salesTrendSectionRef} className="report-section">
           <ReportSectionHeader title="销售趋势" description={isSalesReport ? "按月查看本人订单数、订单额、已收款和回款率" : "按月查看订单数、订单额、已收款和回款率"} />
           <ReportDataView<SalesTrendDisplayRow>
             rowKey="month"
@@ -425,7 +501,7 @@ export default function ReportsPage() {
           />
         </div>
 
-        <div className="report-section">
+        <div ref={commissionTrendSectionRef} className="report-section">
           <ReportSectionHeader title={isSalesReport ? "我的销售提成" : "提成趋势"} description={isSalesReport ? "按月查看本人销售提成单和销售提成金额" : "按月查看销售提成、师傅提成、调整金额和提成合计"} />
           <ReportDataView<CommissionTrendDisplayRow>
             rowKey="month"
@@ -449,8 +525,8 @@ export default function ReportsPage() {
 
         {isSalesReport ? (
           <>
-            <div className="report-section">
-              <ReportSectionHeader title="我的发票趋势" description="按月查看本人订单对应发票申请、开具和金额" />
+            <div ref={invoiceTrendSectionRef} className="report-section">
+              <ReportSectionHeader title="我的发票趋势" description="按月查看本人订单对应发票申请、开票和金额" />
               <ReportDataView<InvoiceTrendDisplayRow>
                 rowKey="month"
                 loading={summaryQuery.isLoading}
@@ -458,14 +534,14 @@ export default function ReportsPage() {
                 columns={[
                   { title: "月份", dataIndex: "month" },
                   { title: "发票", dataIndex: "invoices" },
-                  { title: "已开具", dataIndex: "issued" },
+                  { title: "已开票", dataIndex: "issued" },
                   { title: "金额", dataIndex: "amount" },
                   { title: "开票率", dataIndex: "issueRate" }
                 ]}
               />
             </div>
 
-            <div className="report-section">
+            <div ref={rebateTrendSectionRef} className="report-section">
               <ReportSectionHeader title="我的返利趋势" description="按月查看本人订单对应返利申请、发放和金额" />
               <ReportDataView<RebateTrendDisplayRow>
                 rowKey="month"
@@ -483,7 +559,7 @@ export default function ReportsPage() {
           </>
         ) : (
           <>
-            <div className="report-section">
+            <div ref={constructionTrendSectionRef} className="report-section">
               <ReportSectionHeader title="施工趋势" description="按月查看施工记录、完工、质检通过、返工和完工率" />
               <ReportDataView<ConstructionTrendDisplayRow>
                 rowKey="month"
@@ -500,8 +576,8 @@ export default function ReportsPage() {
               />
             </div>
 
-            <div className="report-section">
-              <ReportSectionHeader title="售后趋势" description="按月查看售后单、解决率、施工责任和售后率" />
+            <div ref={afterSaleTrendSectionRef} className="report-section">
+              <ReportSectionHeader title="售后趋势" description="按月查看售后单、完成率、施工责任和售后率" />
               <ReportDataView<AfterSaleTrendDisplayRow>
                 rowKey="month"
                 loading={summaryQuery.isLoading}
@@ -509,15 +585,15 @@ export default function ReportsPage() {
                 columns={[
                   { title: "月份", dataIndex: "month" },
                   { title: "售后单", dataIndex: "cases" },
-                  { title: "已解决", dataIndex: "resolved" },
+                  { title: "已完成", dataIndex: "resolved" },
                   { title: "施工责任", dataIndex: "constructionResponsibility" },
-                  { title: "解决率", dataIndex: "resolveRate" },
+                  { title: "完成率", dataIndex: "resolveRate" },
                   { title: "售后率", dataIndex: "afterSalesRate" }
                 ]}
               />
             </div>
 
-            <div className="report-section">
+            <div ref={inventoryTrendSectionRef} className="report-section">
               <ReportSectionHeader title="库存趋势" description="按月查看库存流水、入库、出库、锁定、释放和调整数量" />
               <ReportDataView<InventoryTrendDisplayRow>
                 rowKey="month"
@@ -535,8 +611,8 @@ export default function ReportsPage() {
               />
             </div>
 
-            <div className="report-section">
-              <ReportSectionHeader title="发票趋势" description="按月查看发票申请、开具、作废、重开、金额和开票率" />
+            <div ref={invoiceTrendSectionRef} className="report-section">
+              <ReportSectionHeader title="发票趋势" description="按月查看发票申请、开票、作废、重新开票、金额和开票率" />
               <ReportDataView<InvoiceTrendDisplayRow>
                 rowKey="month"
                 loading={summaryQuery.isLoading}
@@ -544,16 +620,16 @@ export default function ReportsPage() {
                 columns={[
                   { title: "月份", dataIndex: "month" },
                   { title: "发票", dataIndex: "invoices" },
-                  { title: "已开具", dataIndex: "issued" },
+                  { title: "已开票", dataIndex: "issued" },
                   { title: "已作废", dataIndex: "voided" },
-                  { title: "已重开", dataIndex: "reissued" },
+                  { title: "重新开票", dataIndex: "reissued" },
                   { title: "金额", dataIndex: "amount" },
                   { title: "开票率", dataIndex: "issueRate" }
                 ]}
               />
             </div>
 
-            <div className="report-section">
+            <div ref={rebateTrendSectionRef} className="report-section">
               <ReportSectionHeader title="返利趋势" description="按月查看返利申请、审批、发放、驳回、金额和发放率" />
               <ReportDataView<RebateTrendDisplayRow>
                 rowKey="month"
@@ -571,7 +647,7 @@ export default function ReportsPage() {
               />
             </div>
 
-            <div className="report-section">
+            <div ref={financeTrendSectionRef} className="report-section">
               <ReportSectionHeader title="财务趋势" description="按月查看收款、费用、报销、返利和净现金流" />
               <ReportDataView<FinanceTrendDisplayRow>
                 rowKey="month"

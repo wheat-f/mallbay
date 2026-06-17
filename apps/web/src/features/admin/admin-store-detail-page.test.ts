@@ -18,6 +18,8 @@ test("admin store detail page follows the prototype review detail workspace", ()
   assert.match(pageSource, /admin-store-photo-review/);
   assert.match(pageSource, /admin-store-actions-rail/);
   assert.match(pageSource, /门店审核详情/);
+  assert.match(pageSource, /返回门店列表/);
+  assert.doesNotMatch(pageSource, /返回运营管理/);
   assert.match(pageSource, /当前门店资料/);
   assert.match(pageSource, /待审核提交/);
   assert.match(pageSource, /字段对比/);
@@ -48,4 +50,11 @@ test("admin store detail keeps existing review and manager operations", () => {
   assert.match(pageSource, /function ChangeManagerDrawer/);
   assert.match(pageSource, /setRejectOpen\(true\)/);
   assert.match(pageSource, /setChangeManagerOpen\(true\)/);
+});
+
+test("admin store detail guards review actions when no pending submission exists", () => {
+  const pageSource = readFileSync(detailPath, "utf8");
+
+  assert.match(pageSource, /暂无待审核提交/);
+  assert.doesNotMatch(pageSource, /storeApi\.reviewSubmission\(store!\.pendingSubmission!\.id/);
 });

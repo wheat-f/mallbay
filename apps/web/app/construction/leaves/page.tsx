@@ -96,7 +96,7 @@ export default function ConstructionLeavesPage() {
   };
 
   return (
-    <ConstructionMobileShell title="请假申请" subtitle="提交请假状态，方便主管派单" active="leaves" variant="calendar">
+    <ConstructionMobileShell title="请假申请" subtitle="提交请假状态，方便主管派单" active="leaves" variant="calendar" desktopHref="/construction/capacities">
       <div className="construction-leave-workspace">
         <section className="construction-leave-application-panel">
           <div className="construction-mobile-section-head">
@@ -214,7 +214,7 @@ function formatLeaveReason(values: LeaveFormValues) {
 
 function getLeaveStatusLabel(status?: string) {
   if (status === "APPROVED") return "已批准";
-  if (status === "REJECTED") return "已拒绝";
+  if (status === "REJECTED") return "已驳回";
   return "待处理";
 }
 

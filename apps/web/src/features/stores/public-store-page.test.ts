@@ -11,9 +11,17 @@ test("public store detail page uses the prototype public shell instead of the le
   assert.doesNotMatch(pageSource, /Layout\.Content/);
   assert.doesNotMatch(pageSource, /Automotive SaaS|Gallery/);
   assert.match(pageSource, /门店运营系统/);
+  assert.match(pageSource, /<span>mallbay<\/span>/);
+  assert.doesNotMatch(pageSource, /<span>MallBay<\/span>/);
   assert.match(pageSource, /门店影像/);
+  assert.match(pageSource, /公开状态/);
+  assert.doesNotMatch(pageSource, /公开营业/);
+  assert.match(pageSource, /认证服务门店/);
+  assert.match(pageSource, /认证技师/);
+  assert.match(pageSource, /工位/);
   assert.match(pageSource, /store-public-shell/);
   assert.match(pageSource, /store-public-hero/);
+  assert.match(pageSource, /store-public-meta/);
   assert.match(pageSource, /store-public-cover/);
   assert.match(pageSource, /store-public-info-card/);
   assert.match(pageSource, /返回门店大厅/);

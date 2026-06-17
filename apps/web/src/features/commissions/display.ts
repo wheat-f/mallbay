@@ -16,5 +16,5 @@ export const COMMISSION_RULE_TYPE_OPTIONS: Array<{ value: CommissionRuleType; la
 
 export function getCommissionRuleTypeLabel(type?: string | null) {
   if (!type) return "-";
-  return COMMISSION_RULE_TYPE_LABELS[type] ?? type;
+  return COMMISSION_RULE_TYPE_LABELS[type] ?? "规则类型待确认";
 }

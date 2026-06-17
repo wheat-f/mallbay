@@ -29,6 +29,24 @@ test("members management page keeps member operations out of the workbench-only 
   assert.doesNotMatch(source, /返回工作台/);
 });
 
+test("members management page exposes the prototype staff module tabs", () => {
+  const source = readFileSync(pagePath, "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(source, /members-module-tabs/);
+  assert.match(source, /人员管理/);
+  assert.match(source, /师傅档案/);
+  assert.match(source, /请假审批/);
+  assert.match(source, /施工排班/);
+  assert.match(source, /施工组合/);
+  assert.match(source, /href="\/members"/);
+  assert.match(source, /href="\/construction\/schedules"/);
+  assert.match(source, /href="\/construction\/capacities"/);
+  assert.match(source, /href="\/construction\/assignments"/);
+  assert.match(cssSource, /\.members-module-tabs/);
+  assert.match(cssSource, /\.members-module-tab\.is-active/);
+});
+
 test("members management filter uses a horizontal prototype toolbar", () => {
   const cssSource = readFileSync("app/globals.css", "utf8");
 
@@ -36,6 +54,13 @@ test("members management filter uses a horizontal prototype toolbar", () => {
   assert.match(cssSource, /\.members-filter-grid\s*\{[^}]*grid-template-columns: minmax\(260px, 1fr\) minmax\(180px, 240px\) minmax\(120px, 160px\)/s);
   assert.match(cssSource, /\.members-filter-result/);
   assert.doesNotMatch(cssSource, /\.members-filter-panel\.ant-card\s*\{[^}]*position: sticky/s);
+});
+
+test("members management page labels the staff list panel like the prototype", () => {
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /title="人员列表"/);
+  assert.match(source, /className="members-table-card"/);
 });
 
 test("members invitation uses a prototype right-side drawer", () => {
@@ -52,6 +77,13 @@ test("members invitation uses a prototype right-side drawer", () => {
   assert.doesNotMatch(source, /width=\{480\}/);
 });
 
+test("members invitation guards member selection with business-safe copy", () => {
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /请先选择邀请成员/);
+  assert.doesNotMatch(source, /memberApi\.invite\(storeId!, inviteUser!\.id/);
+});
+
 test("members removal uses inline confirmation instead of global modal", () => {
   const source = readFileSync(pagePath, "utf8");
 
@@ -61,6 +93,13 @@ test("members removal uses inline confirmation instead of global modal", () => {
   assert.match(source, /cancelText="取消"/);
   assert.doesNotMatch(source, /\bModal\b/);
   assert.doesNotMatch(source, /Modal\.confirm/);
+});
+
+test("members removal guards missing store with business-safe copy", () => {
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /if \(!storeId\) throw new Error\("当前账号未加入门店"\);/);
+  assert.doesNotMatch(source, /memberApi\.remove\(storeId!, userId\)/);
 });
 
 test("members management page uses mobile cards for member rows", () => {
@@ -74,8 +113,8 @@ test("members management page uses mobile cards for member rows", () => {
   assert.match(source, /members-mobile-card/);
   assert.match(source, /members-desktop-table/);
   assert.match(cssSource, /\.members-mobile-cards\s*\{[\s\S]*display: none;/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.members-desktop-table\s*\{[\s\S]*display: none;/);
-  assert.match(cssSource, /@media \(max-width: 720px\)[\s\S]*\.members-mobile-cards\s*\{[\s\S]*display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{\n\s{2}\.members-desktop-table \{\n\s{4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.members-mobile-cards \{\n\s{4}display: grid;/);
   assert.ok(desktopTableIndex > baseHiddenIndex, "mobile breakpoint must come after the base hidden rule");
   assert.ok(mobileDisplayIndex > baseHiddenIndex, "mobile display override must come after the base hidden rule");
 });

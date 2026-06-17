@@ -7,7 +7,7 @@ import { App, Button, Card, Form, Input, InputNumber, Select, Table, Tag } from 
 import { AuditOutlined, DollarOutlined, DownloadOutlined, EyeOutlined, FileAddOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { financeApi, orderApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -52,6 +52,15 @@ type ReviewFormValues = {
   note?: string;
 };
 
+type FinanceSectionKey = "expense" | "reimbursement" | "account" | "ledger";
+
+const FINANCE_SECTION_NAV_ITEMS: Array<{ key: FinanceSectionKey; label: string }> = [
+  { key: "expense", label: "费用申请" },
+  { key: "reimbursement", label: "报销审核" },
+  { key: "account", label: "打款管理" },
+  { key: "ledger", label: "财务流水" }
+];
+
 export default function FinancePage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -64,6 +73,20 @@ export default function FinancePage() {
   const [selectedReimbursementId, setSelectedReimbursementId] = useState<string>();
   const [selectedAccount, setSelectedAccount] = useState<PaymentAccountOption | null>(null);
   const [ledgerFilter, setLedgerFilter] = useState<"ALL" | "INCOME" | "EXPENSE">("ALL");
+  const [activeFinanceSection, setActiveFinanceSection] = useState<FinanceSectionKey>("expense");
+  const expenseSectionRef = useRef<HTMLElement | null>(null);
+  const reimbursementSectionRef = useRef<HTMLDivElement | null>(null);
+  const accountSectionRef = useRef<HTMLDivElement | null>(null);
+  const ledgerSectionRef = useRef<HTMLDivElement | null>(null);
+  const financeSectionRefs = useMemo(
+    () => ({
+      expense: expenseSectionRef,
+      reimbursement: reimbursementSectionRef,
+      account: accountSectionRef,
+      ledger: ledgerSectionRef
+    }),
+    []
+  );
 
   const expensesQuery = useQuery({
     queryKey: ["finance-expenses", storeId],
@@ -93,7 +116,10 @@ export default function FinancePage() {
   const activeSelectedAccount = selectedAccount ?? paymentAccountRows[0] ?? null;
   const accountAuditQuery = useQuery({
     queryKey: ["finance-payment-account-audit", activeSelectedAccount?.id],
-    queryFn: () => orderApi.paymentAccountAuditEvents(activeSelectedAccount!.id),
+    queryFn: () => {
+      if (!activeSelectedAccount?.id) throw new Error("请先选择账户");
+      return orderApi.paymentAccountAuditEvents(activeSelectedAccount.id);
+    },
     enabled: Boolean(activeSelectedAccount?.id)
   });
   const accountAuditRows = useMemo(() => accountAuditQuery.data ?? [], [accountAuditQuery.data]);
@@ -138,13 +164,15 @@ export default function FinancePage() {
     ]);
 
   const createExpense = useMutation({
-    mutationFn: (values: MoneyApplicationFormValues) =>
-      financeApi.createExpense({
-        storeId: storeId!,
+    mutationFn: (values: MoneyApplicationFormValues) => {
+      if (!storeId) throw new Error("当前账号未加入门店");
+      return financeApi.createExpense({
+        storeId,
         title: values.title,
         amountCents: yuanToCents(values.amountYuan),
         reason: values.reason
-      }),
+      });
+    },
     onSuccess: async () => {
       message.success("费用申请已提交");
       expenseForm.resetFields();
@@ -153,14 +181,16 @@ export default function FinancePage() {
     onError: (error: Error) => message.error(error.message)
   });
   const createReimbursement = useMutation({
-    mutationFn: (values: MoneyReimbursementFormValues) =>
-      financeApi.createReimbursement({
-        storeId: storeId!,
+    mutationFn: (values: MoneyReimbursementFormValues) => {
+      if (!storeId) throw new Error("当前账号未加入门店");
+      return financeApi.createReimbursement({
+        storeId,
         title: values.title,
         amountCents: yuanToCents(values.amountYuan),
         reason: values.reason,
         expenseId: values.expenseId
-      }),
+      });
+    },
     onSuccess: async (created) => {
       message.success("报销申请已提交");
       reimbursementForm.resetFields();
@@ -182,6 +212,13 @@ export default function FinancePage() {
     const values = await reviewForm.validateFields(["id", "note"]);
     reviewReimbursement.mutate({ ...(values as ReviewFormValues), status });
   };
+  const scrollFinanceSectionIntoView = useCallback(
+    (sectionKey: FinanceSectionKey) => {
+      setActiveFinanceSection(sectionKey);
+      financeSectionRefs[sectionKey].current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    },
+    [financeSectionRefs]
+  );
 
   return (
     <div className="management-page">
@@ -189,9 +226,15 @@ export default function FinancePage() {
 
       <div className="finance-command-bar finance-prototype-tabs">
         <div className="finance-tab-list" aria-label="财务模块导航">
-          {["费用申请", "报销审核", "打款管理", "财务流水"].map((item, index) => (
-            <button key={item} type="button" className={index === 0 ? "is-active" : ""}>
-              {item}
+          {FINANCE_SECTION_NAV_ITEMS.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className={activeFinanceSection === item.key ? "is-active" : ""}
+              aria-pressed={activeFinanceSection === item.key}
+              onClick={() => scrollFinanceSectionIntoView(item.key)}
+            >
+              {item.label}
             </button>
           ))}
         </div>
@@ -203,7 +246,7 @@ export default function FinancePage() {
         </div>
       </div>
 
-      <section className="finance-operation-hero">
+      <section ref={expenseSectionRef} className="finance-operation-hero">
         <Card className="finance-application-panel" title="新建费用申请">
           <Form
             form={expenseForm}
@@ -225,7 +268,7 @@ export default function FinancePage() {
             <div className="finance-upload-placeholder">
               <FileAddOutlined />
               <strong>附件上传（发票、凭证等）</strong>
-              <span>当前阶段先记录申请信息，附件上传后续接入 OSS。</span>
+              <span>支持上传发票、付款截图或合同扫描件，审批通过后归档到费用记录。</span>
             </div>
             <div className="finance-form-actions">
               <Button>取消</Button>
@@ -300,7 +343,8 @@ export default function FinancePage() {
 
       <section className="finance-workspace">
         <div className="finance-main-column">
-          <Card className="finance-ledger-list" title="财务流水">
+          <div ref={ledgerSectionRef}>
+            <Card className="finance-ledger-list" title="财务流水">
             <div className="finance-ledger-toolbar">
               {[
                 ["ALL", "全部流水"],
@@ -385,7 +429,8 @@ export default function FinancePage() {
                 }
               ]}
             />
-          </Card>
+            </Card>
+          </div>
 
           <Card className="finance-application-list" title="费用 / 报销单据">
             <div className="finance-application-tables">
@@ -402,7 +447,8 @@ export default function FinancePage() {
         </div>
 
         <aside className="finance-side-column">
-          <Card className="finance-approval-panel">
+          <div ref={reimbursementSectionRef}>
+            <Card className="finance-approval-panel">
             <div className="finance-approval-head">
               <div>
                 <h2>审批详情</h2>
@@ -481,9 +527,12 @@ export default function FinancePage() {
                 </Button>
               </div>
             </Form>
-          </Card>
+            </Card>
+          </div>
 
-          <Card className="finance-account-audit-panel" title="账户审计">
+          <div ref={accountSectionRef}>
+            <Card className="finance-account-audit-panel" title="打款管理与对账">
+            <div className="finance-subsection-title">待打款列表</div>
             <div className="finance-account-mobile-cards">
               {paymentAccountRows.length > 0 ? (
                 paymentAccountRows.map((account) => (
@@ -522,6 +571,29 @@ export default function FinancePage() {
                 { title: "账号", render: (_, row) => maskAccountNo(row.accountNo) }
               ]}
             />
+            <div className="finance-payout-distribution">
+              <div className="finance-subsection-title">打款类型分布</div>
+              <div className="finance-payout-distribution-chart" aria-label="打款类型分布">
+                <div className="finance-payout-donut">
+                  <span>占比</span>
+                </div>
+                <div className="finance-payout-legend">
+                  <span><i className="is-reimbursement" />报销</span>
+                  <span><i className="is-ledger" />流水</span>
+                </div>
+              </div>
+              <div className="finance-payout-distribution-metrics">
+                <div>
+                  <span>待打款报销</span>
+                  <strong>{financeSummary.pendingReimbursements} 笔</strong>
+                </div>
+                <div>
+                  <span>支出流水</span>
+                  <strong>{formatCentsAsYuan(financeSummary.expenseCents)}</strong>
+                </div>
+              </div>
+            </div>
+            <div className="finance-subsection-title">最近对账动态</div>
             <div className="finance-audit-mobile-cards">
               {accountAuditRows.length > 0 ? (
                 accountAuditRows.map((event) => (
@@ -562,7 +634,8 @@ export default function FinancePage() {
                 { title: "时间", render: (_, row) => formatDateTime(row.createdAt) }
               ]}
             />
-          </Card>
+            </Card>
+          </div>
         </aside>
       </section>
     </div>

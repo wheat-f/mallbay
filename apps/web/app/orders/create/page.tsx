@@ -137,7 +137,7 @@ function CreateOrderContent() {
     selectedCustomer
   );
   const referrerOptions = ((referrersQuery.data ?? []) as OrderCustomer[]).map((customer) => ({
-    label: customer.companyName ?? customer.name ?? customer.contactPerson ?? customer.id,
+    label: customer.companyName ?? customer.name ?? customer.contactPerson ?? "未命名客户",
     value: customer.id
   }));
   const vehicleOptions = buildOrderVehicleOptions(selectedCustomer);
@@ -170,7 +170,10 @@ function CreateOrderContent() {
   const hasLaborCostAdjustment = selectedLaborCostYuan !== undefined && selectedLaborCostYuan !== suggestedLaborCostYuan;
 
   const createMutation = useMutation({
-    mutationFn: (values: CreateOrderFormValues) => orderApi.create(toCreateOrderPayload(values, storeId!)),
+    mutationFn: (values: CreateOrderFormValues) => {
+      if (!storeId) throw new Error("当前账号尚未加入门店");
+      return orderApi.create(toCreateOrderPayload(values, storeId));
+    },
     onSuccess: (order) => {
       message.success("订单已创建");
       router.push(`/orders/${order.id}`);
@@ -236,6 +239,14 @@ function CreateOrderContent() {
     onError: (error: Error) => message.error(error.message)
   });
 
+  const saveDraft = () => {
+    localStorage.setItem("mallbay-create-order-draft", JSON.stringify({
+      savedAt: new Date().toISOString(),
+      values: form.getFieldsValue(true)
+    }));
+    message.success("订单草稿已保存在本机");
+  };
+
   const defaultItems = useMemo(() => [{ quantity: 1 }], []);
 
   const closeNewCustomerDrawer = () => {
@@ -280,6 +291,9 @@ function CreateOrderContent() {
             <Space className="create-order-header-actions" wrap>
               <Button disabled={!storeId} onClick={() => storeId && router.push(getStoreWorkbenchHref(storeId))}>
                 取消
+              </Button>
+              <Button onClick={saveDraft}>
+                保存草稿
               </Button>
               <Button
                 type="primary"
@@ -732,7 +746,7 @@ function CreateOrderContent() {
               </Form.Item>
             </div>
             <Form.Item name="photoUrl" label="车辆照片">
-              <Input maxLength={500} placeholder="车辆照片 URL，可稍后在客户档案补充" />
+              <Input maxLength={500} placeholder="车辆照片链接，可稍后在客户档案补充" />
             </Form.Item>
           </Form>
         </Drawer>

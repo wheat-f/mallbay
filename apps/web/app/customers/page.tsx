@@ -101,7 +101,7 @@ export default function CustomersPage() {
     };
   }, [customersQuery.data?.total, rows]);
   const referrerOptions = ((referrersQuery.data ?? []) as CustomerRow[]).map((customer) => ({
-    label: customer.companyName ?? customer.name ?? customer.contactPerson ?? customer.id,
+    label: customer.companyName ?? customer.name ?? customer.contactPerson ?? "未命名客户",
     value: customer.id
   }));
 
@@ -290,7 +290,7 @@ export default function CustomersPage() {
                         </div>
                         <div>
                           <dt>有效质保</dt>
-                          <dd>{metrics.activeWarrantyCount > 0 ? <Tag color="success">{metrics.activeWarrantyCount} 份</Tag> : <Tag>待生成</Tag>}</dd>
+                          <dd>{metrics.activeWarrantyCount > 0 ? <Tag color="success">{metrics.activeWarrantyCount} 份</Tag> : <Tag>待质保录入</Tag>}</dd>
                         </div>
                         <div>
                           <dt>客户标签</dt>
@@ -405,7 +405,7 @@ export default function CustomersPage() {
                     return metrics.activeWarrantyCount > 0 ? (
                       <Tag color="success">{metrics.activeWarrantyCount} 份</Tag>
                     ) : (
-                      <Tag>待生成</Tag>
+                      <Tag>待质保录入</Tag>
                     );
                   }
                 },

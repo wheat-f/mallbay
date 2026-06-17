@@ -15,6 +15,7 @@ import {
   WalletOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { commissionsApi, constructionApi, orderApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -54,6 +55,13 @@ type CommissionWorkerOption = {
   user?: { username?: string | null; nickname?: string | null } | null;
 };
 
+type CommissionRuleTabKey = "sales" | "worker";
+
+const COMMISSION_RULE_TABS: Array<{ key: CommissionRuleTabKey; label: string }> = [
+  { key: "sales", label: "销售佣金规则" },
+  { key: "worker", label: "施工员佣金规则" }
+];
+
 export default function CommissionsPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -62,6 +70,16 @@ export default function CommissionsPage() {
   const [ruleForm] = Form.useForm<SalesCommissionRuleFormValues>();
   const [salesForm] = Form.useForm<{ orderId: string }>();
   const [workerForm] = Form.useForm<WorkerCommissionFormValues>();
+  const [activeCommissionRuleTab, setActiveCommissionRuleTab] = useState<CommissionRuleTabKey>("sales");
+  const salesCommissionRuleSectionRef = useRef<HTMLDivElement | null>(null);
+  const workerCommissionRuleSectionRef = useRef<HTMLDivElement | null>(null);
+  const commissionRuleSectionRefs = useMemo(
+    () => ({
+      sales: salesCommissionRuleSectionRef,
+      worker: workerCommissionRuleSectionRef
+    }),
+    []
+  );
 
   const rulesQuery = useQuery({
     queryKey: ["commission-rules", storeId],
@@ -86,14 +104,14 @@ export default function CommissionsPage() {
   const commissionOrderOptions = ((commissionOrdersQuery.data?.items ?? []) as CommissionOrderOption[]).map((order) => ({
     value: order.id,
     label: [
-      order.orderNo ?? "订单未加载",
+      order.orderNo ?? "订单信息待确认",
       order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name,
       order.vehicle?.plateNo
     ].filter(Boolean).join(" / ")
   }));
   const constructionRecordOptions = ((constructionRecordsQuery.data ?? []) as ConstructionRecordOption[]).map((record) => ({
     value: record.id,
-    label: [record.order?.orderNo ?? "订单未加载", getConstructionStatusLabel(record.status)].filter(Boolean).join(" / ")
+    label: [record.order?.orderNo ?? "订单信息待确认", getConstructionStatusLabel(record.status)].filter(Boolean).join(" / ")
   }));
   const workerOptions = ((workersQuery.data ?? []) as CommissionWorkerOption[])
     .filter((worker) => worker.isActive !== false)
@@ -166,6 +184,13 @@ export default function CommissionsPage() {
     },
     onError: (error: Error) => message.error(error.message)
   });
+  const scrollCommissionRuleSectionIntoView = useCallback(
+    (tabKey: CommissionRuleTabKey) => {
+      setActiveCommissionRuleTab(tabKey);
+      commissionRuleSectionRefs[tabKey].current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    },
+    [commissionRuleSectionRefs]
+  );
 
   return (
     <div className="management-page">
@@ -175,7 +200,7 @@ export default function CommissionsPage() {
         <Button href="/commissions/settlements" icon={<HistoryOutlined />}>
           提成结算
         </Button>
-        <Button icon={<HistoryOutlined />} onClick={() => message.info("操作日志将在审计中心统一展示")}>
+        <Button icon={<HistoryOutlined />} onClick={() => message.info("操作日志会统一进入审计中心")}>
           操作日志
         </Button>
         <Button type="primary" icon={<SaveOutlined />} onClick={() => ruleForm.submit()}>
@@ -184,10 +209,18 @@ export default function CommissionsPage() {
       </div>
 
       <div className="commission-rule-tabs" role="tablist" aria-label="佣金规则类型">
-        <button className="is-active" type="button">
-          销售佣金规则
-        </button>
-        <button type="button">施工员佣金规则</button>
+        {COMMISSION_RULE_TABS.map((item) => (
+          <button
+            key={item.key}
+            className={activeCommissionRuleTab === item.key ? "is-active" : ""}
+            type="button"
+            role="tab"
+            aria-selected={activeCommissionRuleTab === item.key}
+            onClick={() => scrollCommissionRuleSectionIntoView(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
 
       <section className="commission-workspace">
@@ -198,12 +231,12 @@ export default function CommissionsPage() {
             </div>
             <div>
               <h2>全局规则应用</h2>
-              <p>一键同步配置到当前门店销售组、施工组和财务结算流程。</p>
+              <p>一键同步配置到所有门店或指定销售组。</p>
             </div>
-            <Button onClick={() => message.info("规则同步将在多门店配置批次中实现")}>立即全量应用</Button>
+            <Button onClick={() => message.info("请先确认规则适用范围后再同步到相关小组")}>立即全量应用</Button>
           </div>
 
-          <div className="commission-rule-bento">
+          <div ref={salesCommissionRuleSectionRef} className="commission-rule-bento">
             <div className="commission-bento-card commission-sales-panel">
               <div className="commission-bento-head">
                 <PercentageOutlined />
@@ -220,7 +253,7 @@ export default function CommissionsPage() {
                   <Form.Item name="ruleType" label="规则类型" rules={[{ required: true, message: "请选择规则类型" }]}>
                     <Select placeholder="类型" options={COMMISSION_RULE_TYPE_OPTIONS} />
                   </Form.Item>
-                  <Form.Item name="rateBasisPoints" label="佣金比例 BP">
+                  <Form.Item name="rateBasisPoints" label="佣金比例（万分比）">
                     <InputNumber className="w-full" min={0} max={10000} placeholder="1000 = 10%" />
                   </Form.Item>
                   <Form.Item name="fixedAmountYuan" label="固定金额（元）">
@@ -276,7 +309,7 @@ export default function CommissionsPage() {
                       </div>
                       <dl className="commission-rule-mobile-card-fields">
                         <div>
-                          <dt>比例 BP</dt>
+                          <dt>比例（万分比）</dt>
                           <dd>{rule.rateBasisPoints ?? "-"}</dd>
                         </div>
                         <div>
@@ -299,7 +332,7 @@ export default function CommissionsPage() {
                 columns={[
                   { title: "规则", dataIndex: "name" },
                   { title: "类型", render: (_, row) => getCommissionRuleTypeLabel(row.ruleType) },
-                  { title: "比例 BP", dataIndex: "rateBasisPoints" },
+                  { title: "比例（万分比）", dataIndex: "rateBasisPoints" },
                   { title: "固定金额", render: (_, row) => formatCentsAsYuan(row.fixedAmountCents) },
                   { title: "状态", render: (_, row) => <Tag>{row.isActive ? "启用" : "停用"}</Tag> }
                 ]}
@@ -309,24 +342,26 @@ export default function CommissionsPage() {
         </div>
 
         <aside className="commission-side-column">
-          <Card className="commission-worker-panel" title="施工员佣金规则">
-            <div className="commission-worker-rules">
-              {[
-                ["首席技师 P3", "权重 1.5x", "¥200"],
-                ["高级技师 P2", "权重 1.2x", "¥150"],
-                ["初级技师 P1", "权重 1.0x", "¥100"]
-              ].map(([level, desc, amount]) => (
-                <div key={level}>
-                  <TeamOutlined />
-                  <span>
-                    <strong>{level}</strong>
-                    <small>{desc}</small>
-                  </span>
-                  <b>{amount}</b>
-                </div>
-              ))}
-            </div>
-          </Card>
+          <div ref={workerCommissionRuleSectionRef}>
+            <Card className="commission-worker-panel" title="施工员佣金规则">
+              <div className="commission-worker-rules">
+                {[
+                  ["首席技师 P3", "权重 1.5x", "¥200"],
+                  ["高级技师 P2", "权重 1.2x", "¥150"],
+                  ["初级技师 P1", "权重 1.0x", "¥100"]
+                ].map(([level, desc, amount]) => (
+                  <div key={level}>
+                    <TeamOutlined />
+                    <span>
+                      <strong>{level}</strong>
+                      <small>{desc}</small>
+                    </span>
+                    <b>{amount}</b>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
 
           <Card className="commission-generation-panel" title="提成生成">
             <Form form={salesForm} layout="vertical" onFinish={(values) => generateSales.mutate(values)}>
@@ -383,7 +418,7 @@ export default function CommissionsPage() {
           <Card
             className="commission-settlement-panel"
             title="结算日志明细"
-            extra={<span className="commission-muted-text">当前版本展示可结算来源，不伪造已结算流水</span>}
+            extra={<span className="commission-muted-text">按生成记录核对结算周期、岗位和实发金额</span>}
           >
             <div className="commission-settlement-mobile-cards">
               {settlementRows.map((row) => (
@@ -419,7 +454,7 @@ export default function CommissionsPage() {
                 { title: "说明", dataIndex: "note" }
               ]}
             />
-            <Button className="mt-3" icon={<FileSearchOutlined />} onClick={() => message.info("提成结算导出将在后续财务批次中实现")}>
+            <Button className="mt-3" icon={<FileSearchOutlined />} onClick={() => message.info("请先确认结算明细后再导出报表")}>
               导出报表
             </Button>
           </Card>

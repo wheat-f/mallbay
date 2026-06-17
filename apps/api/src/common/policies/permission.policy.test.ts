@@ -64,12 +64,16 @@ test("PermissionPolicy scopes sales to owned customers and orders", () => {
   });
 });
 
-test("PermissionPolicy grants customer service store customer order inventory warranty after-sales and rebate application access", () => {
+test("PermissionPolicy grants customer service store customer order inventory purchase warranty after-sales and rebate view access", () => {
   assert.equal(PermissionPolicy.canViewCustomer(customerService, "store-1", "sales-2"), true);
   assert.equal(PermissionPolicy.canEditCustomer(customerService, "store-1", "sales-2"), true);
   assert.equal(PermissionPolicy.canCreateOrder(customerService, "store-1"), true);
   assert.deepEqual(PermissionPolicy.getOrderScope(customerService, "store-1"), { storeId: "store-1" });
-  assert.equal(PermissionPolicy.canManageInventory(customerService, "store-1"), true);
+  assert.equal(PermissionPolicy.canViewInventory(customerService, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageInventory(customerService, "store-1"), false);
+  assert.equal(PermissionPolicy.canViewPurchase(customerService, "store-1"), true);
+  assert.equal(PermissionPolicy.canManagePurchase(customerService, "store-1"), false);
+  assert.equal(PermissionPolicy.canManageProduct(customerService, "store-1"), false);
   assert.equal(PermissionPolicy.canCreateWarranty(customerService, "store-1"), true);
   assert.equal(PermissionPolicy.canManageAfterSales(customerService, "store-1"), true);
   assert.equal(PermissionPolicy.canApplyRebate(customerService, "store-1"), true);
@@ -118,11 +122,22 @@ test("PermissionPolicy scopes construction photo upload and quality check", () =
 });
 
 test("PermissionPolicy scopes inventory and warranty operations", () => {
+  assert.equal(PermissionPolicy.canViewInventory(admin, "store-2"), true);
+  assert.equal(PermissionPolicy.canViewInventory(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canViewInventory(purchasing, "store-1"), true);
+  assert.equal(PermissionPolicy.canViewInventory(customerService, "store-1"), true);
+  assert.equal(PermissionPolicy.canViewInventory(sales, "store-1"), false);
   assert.equal(PermissionPolicy.canManageInventory(admin, "store-2"), true);
   assert.equal(PermissionPolicy.canManageInventory(manager, "store-1"), true);
   assert.equal(PermissionPolicy.canManageInventory(purchasing, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageInventory(customerService, "store-1"), false);
   assert.equal(PermissionPolicy.canManageInventory(purchasing, "store-2"), false);
   assert.equal(PermissionPolicy.canManageInventory(sales, "store-1"), false);
+  assert.equal(PermissionPolicy.canViewPurchase(customerService, "store-1"), true);
+  assert.equal(PermissionPolicy.canManagePurchase(customerService, "store-1"), false);
+  assert.equal(PermissionPolicy.canManageProduct(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageProduct(purchasing, "store-1"), true);
+  assert.equal(PermissionPolicy.canManageProduct(customerService, "store-1"), false);
 
   assert.equal(PermissionPolicy.canCreateWarranty(admin, "store-2"), true);
   assert.equal(PermissionPolicy.canCreateWarranty(manager, "store-1"), true);

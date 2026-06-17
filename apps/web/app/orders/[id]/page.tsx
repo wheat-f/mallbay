@@ -6,11 +6,15 @@ import {
   CarOutlined,
   CheckCircleOutlined,
   CreditCardOutlined,
+  CustomerServiceOutlined,
   EditOutlined,
   FileTextOutlined,
   InboxOutlined,
+  LinkOutlined,
   MinusCircleOutlined,
   PlusOutlined,
+  RightOutlined,
+  SafetyCertificateOutlined,
   ToolOutlined,
   UserOutlined
 } from "@ant-design/icons";
@@ -148,7 +152,7 @@ export default function OrderDetailPage() {
             <section className="order-detail-hero">
               <div className="order-detail-title-row">
                 <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/orders")}>
-                  返回订单
+                  返回订单列表
                 </Button>
                 <div>
                   <span className="order-detail-eyebrow">销售订单详情</span>
@@ -171,8 +175,17 @@ export default function OrderDetailPage() {
                     修改订单
                   </Button>
                 ) : null}
-                <Button type="primary" icon={<CreditCardOutlined />}>记录收款</Button>
-                <Button icon={<FileTextOutlined />}>申请发票</Button>
+                {shouldShowFulfillmentConfirmation ? (
+                  <Button type="primary" icon={<CheckCircleOutlined />} onClick={openFulfillmentDrawer}>
+                    确认派工流转
+                  </Button>
+                ) : null}
+                <Button icon={<CreditCardOutlined />} onClick={() => router.push("/finance")}>
+                  记录收款
+                </Button>
+                <Button icon={<FileTextOutlined />} onClick={() => router.push("/invoices")}>
+                  申请发票
+                </Button>
               </div>
             </section>
 
@@ -309,6 +322,26 @@ export default function OrderDetailPage() {
                       </div>
                     ))}
                     {(order?.payments ?? []).length === 0 ? <Typography.Text type="secondary">暂无收款</Typography.Text> : null}
+                  </div>
+                </Card>
+
+                <Card className="order-detail-card order-related-card" title={<><LinkOutlined />相关单据</>}>
+                  <div className="order-related-list">
+                    <Button className="order-related-link" type="text" onClick={() => router.push("/invoices")}>
+                      <span><FileTextOutlined /></span>
+                      <strong>发票记录</strong>
+                      <Tag>未开票</Tag>
+                    </Button>
+                    <Button className="order-related-link" type="text" onClick={() => router.push("/warranties")}>
+                      <span><SafetyCertificateOutlined /></span>
+                      <strong>电子质保单</strong>
+                      <RightOutlined />
+                    </Button>
+                    <Button className="order-related-link" type="text" onClick={() => router.push("/after-sales")}>
+                      <span><CustomerServiceOutlined /></span>
+                      <strong>售后记录</strong>
+                      <RightOutlined />
+                    </Button>
                   </div>
                 </Card>
 
@@ -537,7 +570,7 @@ function getOrderAuditActionLabel(action: string) {
   const labels: Record<string, string> = {
     ORDER_COMMERCIALS_UPDATED: "订单明细和金额变更"
   };
-  return labels[action] ?? action;
+  return labels[action] ?? "订单操作记录";
 }
 
 function getCustomerName(order?: OrderDetail) {
@@ -558,14 +591,28 @@ function formatDateOnly(value?: string | null) {
 }
 
 function getOrderSteps(status?: string) {
-  const statuses = ["PENDING_DISPATCH", "DISPATCHED", "IN_CONSTRUCTION", "COMPLETED", "WARRANTIED"];
-  const labels = ["待派单", "已派单", "施工中", "已完工", "已质保"];
-  const currentIndex = Math.max(0, statuses.indexOf(status ?? "PENDING_DISPATCH"));
-  return labels.map((label, index) => ({
+  const currentIndex = getOrderWorkflowIndex(status);
+  const steps = ["订单确认", "库房匹配", "施工派工", "施工交付", "质保售后"];
+
+  return steps.map((label, index) => ({
     label,
     description: index < currentIndex ? "已完成" : index === currentIndex ? "当前阶段" : "待处理",
     state: index < currentIndex ? "done" : index === currentIndex ? "active" : "pending"
   }));
+}
+
+function getOrderWorkflowIndex(status?: string) {
+  const workflowIndexByStatus: Record<string, number> = {
+    DRAFT: 0,
+    PENDING_PAYMENT: 0,
+    PENDING_DISPATCH: 1,
+    DISPATCHED: 2,
+    IN_CONSTRUCTION: 3,
+    COMPLETED: 4,
+    WARRANTIED: 4,
+    CANCELLED: 0
+  };
+  return workflowIndexByStatus[status ?? "PENDING_DISPATCH"] ?? 0;
 }
 
 function getAuditReason(metadata?: Record<string, unknown>) {

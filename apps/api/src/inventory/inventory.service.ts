@@ -86,7 +86,7 @@ export class InventoryService {
 
   async listBatches(user: AuthenticatedInventoryUser, query: ListInventoryDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, query.storeId)) {
+    if (!PermissionPolicy.canViewInventory(actor, query.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.inventoryBatch.findMany({
@@ -131,7 +131,7 @@ export class InventoryService {
 
   async listMovements(user: AuthenticatedInventoryUser, query: ListInventoryDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, query.storeId)) {
+    if (!PermissionPolicy.canViewInventory(actor, query.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.inventoryMovement.findMany({
@@ -141,7 +141,8 @@ export class InventoryService {
         batchId: query.batchId,
         orderId: query.orderId,
         movementType: query.movementType,
-        createdById: query.createdById
+        createdById: query.createdById,
+        createdAt: buildDateRangeFilter(query.createdFrom, query.createdTo)
       },
       orderBy: { createdAt: "desc" }
     });
@@ -149,7 +150,7 @@ export class InventoryService {
 
   async listSuppliers(user: AuthenticatedInventoryUser, storeId: string): Promise<SupplierSummary[]> {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageInventory(actor, storeId)) {
+    if (!PermissionPolicy.canViewPurchase(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
 
@@ -214,7 +215,7 @@ export class InventoryService {
 
   async createSupplier(user: AuthenticatedInventoryUser, dto: CreateSupplierDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageInventory(actor, dto.storeId)) {
+    if (!PermissionPolicy.canManagePurchase(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.supplier.create({
@@ -237,7 +238,7 @@ export class InventoryService {
       select: { id: true, storeId: true }
     });
     if (!supplier) throw new NotFoundException("供应商不存在");
-    if (!PermissionPolicy.canManageInventory(actor, supplier.storeId)) {
+    if (!PermissionPolicy.canManagePurchase(actor, supplier.storeId)) {
       throw new ForbiddenException("无权限");
     }
 
@@ -265,7 +266,7 @@ export class InventoryService {
       select: { id: true, storeId: true }
     });
     if (!supplier) throw new NotFoundException("供应商不存在");
-    if (!PermissionPolicy.canManageInventory(actor, supplier.storeId)) {
+    if (!PermissionPolicy.canManagePurchase(actor, supplier.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.supplierContact.create({
@@ -291,7 +292,7 @@ export class InventoryService {
       select: { id: true, storeId: true }
     });
     if (!supplier) throw new NotFoundException("供应商不存在");
-    if (!PermissionPolicy.canManageInventory(actor, supplier.storeId)) {
+    if (!PermissionPolicy.canManagePurchase(actor, supplier.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const rating = await this.prisma.supplierRatingHistory.create({
@@ -311,7 +312,7 @@ export class InventoryService {
 
   async createPurchaseOrder(user: AuthenticatedInventoryUser, dto: CreatePurchaseOrderDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageInventory(actor, dto.storeId)) {
+    if (!PermissionPolicy.canManagePurchase(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.purchaseOrder.create({
@@ -337,7 +338,7 @@ export class InventoryService {
     const actor = await this.withStoreMember(user);
     const purchaseOrder = await this.prisma.purchaseOrder.findUnique({ where: { id: purchaseOrderId } });
     if (!purchaseOrder) throw new NotFoundException("采购订单不存在");
-    if (!PermissionPolicy.canManageInventory(actor, purchaseOrder.storeId)) {
+    if (!PermissionPolicy.canManagePurchase(actor, purchaseOrder.storeId)) {
       throw new ForbiddenException("无权限");
     }
     if (purchaseOrder.status !== PurchaseOrderStatus.DRAFT) {
@@ -357,7 +358,7 @@ export class InventoryService {
     const actor = await this.withStoreMember(user);
     const purchaseOrder = await this.prisma.purchaseOrder.findUnique({ where: { id: purchaseOrderId } });
     if (!purchaseOrder) throw new NotFoundException("采购订单不存在");
-    if (!PermissionPolicy.canManageInventory(actor, purchaseOrder.storeId)) {
+    if (!PermissionPolicy.canManagePurchase(actor, purchaseOrder.storeId)) {
       throw new ForbiddenException("无权限");
     }
     if (purchaseOrder.status !== PurchaseOrderStatus.DRAFT && purchaseOrder.status !== PurchaseOrderStatus.ORDERED) {
@@ -387,7 +388,7 @@ export class InventoryService {
 
   async listPurchaseOrders(user: AuthenticatedInventoryUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageInventory(actor, storeId)) {
+    if (!PermissionPolicy.canViewPurchase(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
     const purchaseOrders = await this.prisma.purchaseOrder.findMany({
@@ -437,9 +438,74 @@ export class InventoryService {
     }));
   }
 
+  async getPurchaseOverview(user: AuthenticatedInventoryUser, storeId: string) {
+    const [requirements, orders, suppliers] = await Promise.all([
+      this.listPurchaseRequirements(user, storeId),
+      this.listPurchaseOrders(user, storeId),
+      this.listSuppliers(user, storeId)
+    ]);
+    return {
+      openRequirementCount: requirements.filter((row) => row.status !== PurchaseRequirementStatus.FULFILLED && row.status !== PurchaseRequirementStatus.CANCELLED).length,
+      pendingApprovalCount: orders.filter((row) => row.status === PurchaseOrderStatus.DRAFT).length,
+      pendingInboundCount: orders.filter((row) => row.status === PurchaseOrderStatus.ORDERED || row.status === PurchaseOrderStatus.PARTIAL_RECEIVED).length,
+      supplierCount: suppliers.length,
+      requirements,
+      orders,
+      suppliers
+    };
+  }
+
+  async getPurchaseOrder(user: AuthenticatedInventoryUser, purchaseOrderId: string) {
+    const actor = await this.withStoreMember(user);
+    const purchaseOrder = await this.prisma.purchaseOrder.findUnique({
+      where: { id: purchaseOrderId },
+      include: { items: { include: { product: true } } }
+    });
+    if (!purchaseOrder) throw new NotFoundException("采购订单不存在");
+    if (!PermissionPolicy.canViewPurchase(actor, purchaseOrder.storeId)) {
+      throw new ForbiddenException("无权限");
+    }
+    const itemIds = purchaseOrder.items.map((item) => item.id);
+    if (itemIds.length === 0) return purchaseOrder;
+    const receivedMovements = await this.prisma.inventoryMovement.findMany({
+      where: {
+        storeId: purchaseOrder.storeId,
+        movementType: InventoryMovementType.PURCHASE_IN,
+        sourceType: "PURCHASE_ORDER_ITEM",
+        sourceId: { in: itemIds }
+      },
+      include: { batch: true },
+      orderBy: { createdAt: "desc" }
+    });
+    const receivedBatchesByItem = new Map<string, Array<{
+      batchId: string;
+      batchNo: string;
+      quantity: unknown;
+      receivedAt: Date;
+    }>>();
+    for (const movement of receivedMovements) {
+      if (!movement.sourceId || !movement.batch) continue;
+      const rows = receivedBatchesByItem.get(movement.sourceId) ?? [];
+      rows.push({
+        batchId: movement.batch.id,
+        batchNo: movement.batch.batchNo,
+        quantity: movement.quantity,
+        receivedAt: movement.batch.receivedAt ?? movement.createdAt
+      });
+      receivedBatchesByItem.set(movement.sourceId, rows);
+    }
+    return {
+      ...purchaseOrder,
+      items: purchaseOrder.items.map((item) => ({
+        ...item,
+        receivedBatches: receivedBatchesByItem.get(item.id) ?? []
+      }))
+    };
+  }
+
   async listPurchaseRequirements(user: AuthenticatedInventoryUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageInventory(actor, storeId)) {
+    if (!PermissionPolicy.canViewPurchase(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.purchaseRequirement.findMany({
@@ -462,7 +528,7 @@ export class InventoryService {
 
   async createPurchaseRequirement(user: AuthenticatedInventoryUser, dto: CreatePurchaseRequirementDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageInventory(actor, dto.storeId)) {
+    if (!PermissionPolicy.canManagePurchase(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     if (!dto.items?.length) {
@@ -488,7 +554,7 @@ export class InventoryService {
 
   async listPendingMatchOrders(user: AuthenticatedInventoryUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, storeId)) {
+    if (!PermissionPolicy.canViewInventory(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.order.findMany({
@@ -509,7 +575,7 @@ export class InventoryService {
       include: { items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } } }
     });
     if (!order) throw new NotFoundException("订单不存在");
-    if (!PermissionPolicy.canViewStoreData(actor, order.storeId)) {
+    if (!PermissionPolicy.canViewInventory(actor, order.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const items = await Promise.all(order.items.map(async (item) => ({
@@ -641,7 +707,7 @@ export class InventoryService {
         include: { items: true }
       });
       if (!requirement) throw new NotFoundException("采购需求不存在");
-      if (!PermissionPolicy.canManageInventory(actor, requirement.storeId)) {
+      if (!PermissionPolicy.canManagePurchase(actor, requirement.storeId)) {
         throw new ForbiddenException("无权限");
       }
       const openItems = requirement.items.filter((item) =>
@@ -691,7 +757,7 @@ export class InventoryService {
         include: { purchaseOrder: true }
       });
       if (!item) throw new NotFoundException("采购明细不存在");
-      if (!PermissionPolicy.canManageInventory(actor, item.purchaseOrder.storeId)) {
+      if (!PermissionPolicy.canManagePurchase(actor, item.purchaseOrder.storeId)) {
         throw new ForbiddenException("无权限");
       }
       if (item.purchaseOrder.status === PurchaseOrderStatus.DRAFT) {
@@ -1116,6 +1182,14 @@ export class InventoryService {
 function buildPurchaseOrderNo() {
   const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
   return `PO${stamp}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
+function buildDateRangeFilter(createdFrom?: string, createdTo?: string) {
+  if (!createdFrom && !createdTo) return undefined;
+  return {
+    ...(createdFrom ? { gte: new Date(`${createdFrom.slice(0, 10)}T00:00:00.000Z`) } : {}),
+    ...(createdTo ? { lte: new Date(`${createdTo.slice(0, 10)}T23:59:59.999Z`) } : {})
+  };
 }
 
 function decimalToNumber(value: number | { toNumber?: () => number; toString: () => string }) {

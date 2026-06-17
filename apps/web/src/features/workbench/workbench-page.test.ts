@@ -18,6 +18,8 @@ test("workbench and admin store detail pages expose prototype styled error state
   const cssSource = readFileSync("app/globals.css", "utf8");
 
   assert.match(workbenchSource, /无法加载门店工作台/);
+  assert.match(workbenchSource, /当前账号可能不属于该门店，或门店资料暂时无法读取。/);
+  assert.doesNotMatch(workbenchSource, /门店资料接口暂时不可用/);
   assert.match(adminStoreSource, /无法加载门店详情/);
   assert.match(cssSource, /\.workbench-data-alert\.ant-alert/);
   assert.match(workbenchSource, /workbench-empty-panel/);
@@ -69,6 +71,13 @@ test("workbench manager forms use prototype right-side drawers", () => {
   assert.doesNotMatch(workbenchSource, /width=\{560\}/);
 });
 
+test("workbench invite drawer guards member selection with business-safe copy", () => {
+  const workbenchSource = readFileSync("app/workbench/[storeId]/page.tsx", "utf8");
+
+  assert.match(workbenchSource, /请先选择邀请成员/);
+  assert.doesNotMatch(workbenchSource, /memberApi\.invite\(storeId, selected!\.id/);
+});
+
 test("workbench member removal uses inline confirmation instead of global modal", () => {
   const workbenchSource = readFileSync("app/workbench/[storeId]/page.tsx", "utf8");
 
@@ -92,7 +101,7 @@ test("workbench page follows the prototype operations dashboard layout", () => {
   assert.match(workbenchSource, /workbench-exception-panel/);
   assert.match(workbenchSource, /workbench-task-board/);
   assert.match(workbenchSource, /workbench-trend-card/);
-  assert.match(workbenchSource, /今日订单/);
+  assert.match(workbenchSource, /订单总数/);
   assert.match(workbenchSource, /今日施工容量/);
   assert.match(workbenchSource, /异常提醒/);
   assert.match(workbenchSource, /待处理任务/);
@@ -104,6 +113,26 @@ test("workbench page follows the prototype operations dashboard layout", () => {
   assert.match(cssSource, /\.workbench-schedule-card/);
   assert.match(cssSource, /\.workbench-task-board/);
   assert.match(cssSource, /\.workbench-trend-card/);
+});
+
+test("workbench dashboard data is derived from business APIs instead of hardcoded demo numbers", () => {
+  const workbenchSource = readFileSync("app/workbench/[storeId]/page.tsx", "utf8");
+
+  assert.match(workbenchSource, /reportsApi\.summary\(storeId\)/);
+  assert.match(workbenchSource, /orderApi\.list\(\{ storeId, status: "PENDING_DISPATCH"/);
+  assert.match(workbenchSource, /constructionApi\.capacities\(\{ storeId, from: todayDate, to: todayDate \}\)/);
+  assert.match(workbenchSource, /inventoryApi\.batches\(\{ storeId \}\)/);
+  assert.match(workbenchSource, /warrantiesApi\.list\(storeId\)/);
+  assert.match(workbenchSource, /buildWorkbenchKpis/);
+  assert.match(workbenchSource, /buildCapacityItems/);
+  assert.match(workbenchSource, /buildExceptionItems/);
+  assert.match(workbenchSource, /buildTaskRows/);
+  assert.match(workbenchSource, /buildWorkbenchTrendBars/);
+  assert.doesNotMatch(workbenchSource, /Math\.max\(3, workbenchSections/);
+  assert.doesNotMatch(workbenchSource, /value: isManager \? "4" : "2"/);
+  assert.doesNotMatch(workbenchSource, /value: "8\/12"/);
+  assert.doesNotMatch(workbenchSource, /value: "82%"/);
+  assert.doesNotMatch(workbenchSource, /\["05\.01", 64\]/);
 });
 
 test("admin store review forms use prototype right-side drawers", () => {

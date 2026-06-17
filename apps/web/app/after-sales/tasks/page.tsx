@@ -36,8 +36,8 @@ const tabs: Array<{ key: MobileAfterSaleTab; label: string; statuses: AfterSaleS
 ];
 
 const taskImages = [
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuBgT01t3zBnRNV_QlZUPVfbMJ6IYpZpB6_BOWMrNFVEY4tyztunj1ld1_AfhDGURFyQwPHqsvgLpUil8jnii02vTELzV2P18SNBEUAZL6Me9VPbtdmKhM47CEAskfg66YijhcvOEQUtBcpf3nHnXWJ-mz3oWn6QbR0kjGvFT9-GNjMMs2rvGajI80uf4OVlfqH5rCRna0eXrwhLtI1WBygZyoNyNvPYYpYQjuAJDw_fKd9S-cjX6uNa2yLW7_i5ywLMrJTOZLG3RfeK",
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuCI01okt5uoCDZvrYZz85xvIDdn0BHJ3RHhDnHZV48TuM-UFLSTN86CDIXGlcos7Mxh1bAHoyiu53kvuYfq-cPr48_cdpJTvoa0L-3OiMOW0MHiRaKTF1zejaLHcYHxGChZUGIZiD9CG8jAvdFS7afEYWdCIP4cA5neoltRbtrRYQ8Ma0_oFGUeiakMJtM65cM7vigxomhyWoVJPQjNP9g6eLBTSkQHJr5Umv8GXGea4c4QtJR0cSm4744mUBxW7uEiUYWdNu8f2Y53"
+  "/prototype-assets/after-sales-task-1.png",
+  "/prototype-assets/after-sales-task-2.png"
 ];
 
 export default function AfterSalesMobileTasksPage() {
@@ -128,13 +128,13 @@ export default function AfterSalesMobileTasksPage() {
 
             <div className="after-sales-mobile-warranty">
               <CheckCircleOutlined />
-              <span>{item.warrantyId ? `质保单：${item.warrantyId}` : "质保单待关联"}</span>
+              <span>{item.warrantyId ? "已关联质保单" : "质保单待关联"}</span>
               <em>{getAfterSaleResponsibilityLabel(item.responsibility)}</em>
             </div>
 
             <div className="after-sales-mobile-actions">
-              <Button href="/after-sales">查看详情</Button>
-              <Button type="primary" icon={<PlayCircleOutlined />} href="/after-sales">
+              <Button href={`/after-sales/${item.id}`}>查看详情</Button>
+              <Button type="primary" icon={<PlayCircleOutlined />} href={`/after-sales/${item.id}`}>
                 立即处理
               </Button>
             </div>
@@ -147,7 +147,7 @@ export default function AfterSalesMobileTasksPage() {
       </button>
 
       <nav className="after-sales-mobile-bottom-nav" aria-label="售后移动端导航">
-        <Link href="/workbench">
+        <Link href="/dashboard">
           <AppstoreOutlined />
           <span>控制台</span>
         </Link>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Tag } from "antd";
+import { Alert, Button, Card, Skeleton, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
@@ -9,12 +9,12 @@ import {
   FileProtectOutlined,
   HistoryOutlined,
   LinkOutlined,
-  SafetyCertificateOutlined
+  SafetyCertificateOutlined,
+  StopOutlined
 } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { warrantiesApi } from "../../../src/lib/api";
-import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import {
   getWarrantyCardRows,
   getWarrantyExpiryReminder,
@@ -41,11 +41,11 @@ export default function WarrantyDetailPage() {
 
   return (
     <div className="management-page">
-      <StorePageHeader title="质保详情" description="查看质保核心信息、关联订单和追溯入口" />
-
       {warrantyQuery.error ? (
         <Alert type="error" showIcon title="质保详情加载失败" description={(warrantyQuery.error as Error).message} />
       ) : null}
+
+      {warrantyQuery.isLoading ? <Skeleton active /> : null}
 
       {warranty ? (
         <>
@@ -54,7 +54,7 @@ export default function WarrantyDetailPage() {
               <div className="warranty-detail-breadcrumb">
                 <span>质保管理</span>
                 <span>/</span>
-                <span>质保详情</span>
+                <span>质保查询</span>
               </div>
               <div className="warranty-detail-title-row">
                 <h1>
@@ -66,9 +66,12 @@ export default function WarrantyDetailPage() {
             </div>
             <div className="warranty-detail-actions">
               <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/warranties")}>
-                返回质保管理
+                返回质保列表
               </Button>
               <Button icon={<HistoryOutlined />}>查看质保日志</Button>
+              <Button danger icon={<StopOutlined />}>
+                作废/重开质保
+              </Button>
               <Button type="primary" icon={<DownloadOutlined />}>
                 下载电子质保卡
               </Button>
@@ -113,7 +116,7 @@ export default function WarrantyDetailPage() {
                 <div>
                   <span>材料批次追溯</span>
                   <strong>订单库存分配后自动沉淀批次链路</strong>
-                  <p>批次、供应商和出库记录来自订单库存分配。当前页面不伪造批次数据，后续通过订单和库存流水承接完整追溯。</p>
+                  <p>该车辆使用的膜卷批次会随订单库存分配沉淀，并关联供应商、出库记录和施工留痕。</p>
                 </div>
                 <Button onClick={() => router.push("/inventory")}>进入库存追溯</Button>
               </Card>
@@ -169,6 +172,30 @@ export default function WarrantyDetailPage() {
                 </div>
               </Card>
 
+              <Card
+                className="warranty-detail-card warranty-after-sales-card"
+                title="售后服务记录"
+                extra={
+                  <Button type="link" disabled={!warranty.orderId} onClick={() => router.push(`/after-sales?orderId=${warranty.orderId}`)}>
+                    发起售后申请
+                  </Button>
+                }
+              >
+                <div className="warranty-after-sales-timeline">
+                  <div className="warranty-after-sales-event">
+                    <FileProtectOutlined />
+                    <div>
+                      <strong>电子质保单系统自动生成</strong>
+                      <span>订单完成审核后质保单已正式生效，有效期至 {formatDate(warranty.endDate)}。</span>
+                    </div>
+                  </div>
+                  <div className="warranty-after-sales-empty">
+                    <strong>暂无售后记录</strong>
+                    <span>该客户尚未提交售后、维修或复核申请。</span>
+                  </div>
+                </div>
+              </Card>
+
               <div className="warranty-evidence-note">
                 <FileProtectOutlined />
                 <div>
@@ -195,12 +222,12 @@ function splitWarrantyScope(scope?: string | null) {
     .filter(Boolean);
 }
 
-function getWarrantySummaryItems(warranty: Parameters<typeof getWarrantyOrderLabel>[0] & { endDate?: string | null }) {
+function getWarrantySummaryItems(warranty: Parameters<typeof getWarrantyOrderLabel>[0]) {
   const order = warranty.order;
   return [
     { label: "客户姓名", value: order?.customer?.companyName ?? order?.customer?.personalName ?? order?.customer?.name ?? "-" },
+    { label: "手机号码", value: "联系方式待确认" },
     { label: "车牌号码", value: order?.vehicle?.plateNo ?? order?.vehicle?.carPlate ?? "-" },
-    { label: "车辆型号", value: order?.vehicle?.model ?? order?.vehicle?.carModel ?? "-" },
-    { label: "质保到期", value: formatDate(warranty.endDate) }
+    { label: "车辆型号", value: order?.vehicle?.model ?? order?.vehicle?.carModel ?? "-" }
   ];
 }

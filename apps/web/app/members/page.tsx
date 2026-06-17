@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { App, Avatar, Button, Card, Drawer, Empty, Input, Popconfirm, Select, Space, Table, Tag, Typography } from "antd";
-import { DeleteOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UserSwitchOutlined } from "@ant-design/icons";
+import { CalendarOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { memberApi } from "../../src/features/members/api";
@@ -74,7 +75,11 @@ export default function MembersPage() {
   });
 
   const inviteMutation = useMutation({
-    mutationFn: () => memberApi.invite(storeId!, inviteUser!.id, invitePosition),
+    mutationFn: () => {
+      if (!storeId) throw new Error("当前账号未加入门店");
+      if (!inviteUser?.id) throw new Error("请先选择邀请成员");
+      return memberApi.invite(storeId, inviteUser.id, invitePosition);
+    },
     onSuccess: async () => {
       message.success("已发出邀请");
       setInviteOpen(false);
@@ -87,7 +92,10 @@ export default function MembersPage() {
   });
 
   const removeMutation = useMutation({
-    mutationFn: (userId: string) => memberApi.remove(storeId!, userId),
+    mutationFn: (userId: string) => {
+      if (!storeId) throw new Error("当前账号未加入门店");
+      return memberApi.remove(storeId, userId);
+    },
     onSuccess: async () => {
       message.success("已移除成员");
       await queryClient.invalidateQueries({ queryKey: ["members-store", storeId] });
@@ -127,6 +135,29 @@ export default function MembersPage() {
             邀请成员
           </Button>
         </StorePageHeader>
+
+        <nav className="members-module-tabs" aria-label="人员管理模块导航">
+          <Link href="/members" className="members-module-tab is-active">
+            <TeamOutlined />
+            人员管理
+          </Link>
+          <Link href="/members?position=CONSTRUCTION" className="members-module-tab">
+            <UserSwitchOutlined />
+            师傅档案
+          </Link>
+          <Link href="/construction/schedules" className="members-module-tab">
+            <CalendarOutlined />
+            请假审批
+          </Link>
+          <Link href="/construction/capacities" className="members-module-tab">
+            <CalendarOutlined />
+            施工排班
+          </Link>
+          <Link href="/construction/assignments" className="members-module-tab">
+            <TeamOutlined />
+            施工组合
+          </Link>
+        </nav>
 
         <section className="management-kpi-grid management-kpi-grid-five">
           {[
@@ -176,7 +207,7 @@ export default function MembersPage() {
             </div>
           </Card>
 
-          <Card className="members-table-card">
+          <Card className="members-table-card" title="人员列表">
             <div className="members-mobile-cards">
               {filteredMembers.length > 0 ? (
                 filteredMembers.map((member) => {

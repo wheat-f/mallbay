@@ -14,6 +14,7 @@ import { ObservabilityModule } from "./observability/observability.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ProductsModule } from "./products/products.module";
+import { PurchasesModule } from "./purchases/purchases.module";
 import { RebatesModule } from "./rebates/rebates.module";
 import { ReportsModule } from "./reports/reports.module";
 import { StoresModule } from "./stores/stores.module";
@@ -37,6 +38,7 @@ import { getApiEnvFilePaths } from "./config/env";
     RebatesModule,
     ReportsModule,
     ProductsModule,
+    PurchasesModule,
     OrdersModule,
     UsersModule,
     StoresModule,

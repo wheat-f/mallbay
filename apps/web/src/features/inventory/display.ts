@@ -8,8 +8,8 @@ import {
 
 type ProductLookup = Map<string, { brand?: string | null; name?: string | null; model?: string | null }>;
 
-export const INVENTORY_PRODUCT_MISSING_LABEL = "产品未加载";
-export const INVENTORY_BATCH_MISSING_LABEL = "批次未加载";
+export const INVENTORY_PRODUCT_MISSING_LABEL = "产品信息待确认";
+export const INVENTORY_BATCH_MISSING_LABEL = "批次信息待确认";
 
 export type PurchaseInboundItemLike = {
   product?: {
@@ -131,14 +131,14 @@ export function getPurchaseRequirementSourceOrderLabel(
   orderLookup?: Map<string, InventoryOrderLike>
 ) {
   const order = requirement.sourceOrder ?? (requirement.sourceOrderId ? orderLookup?.get(requirement.sourceOrderId) : undefined);
-  if (!order) return requirement.sourceOrderId ? "关联订单未加载" : "手工创建";
+  if (!order) return requirement.sourceOrderId ? "关联订单待确认" : "手工创建";
 
   return [
     order.orderNo,
     getInventoryOrderCustomerLabel(order),
     getInventoryOrderVehicleLabel(order),
     getInventoryOrderItemsSummary(order)
-  ].filter((part) => part && part !== "-").join(" · ") || (requirement.sourceOrderId ? "关联订单未加载" : "手工创建");
+  ].filter((part) => part && part !== "-").join(" · ") || (requirement.sourceOrderId ? "关联订单待确认" : "手工创建");
 }
 
 export function getPurchaseRequirementItemsSummary(
@@ -206,22 +206,22 @@ export const PURCHASE_ORDER_STATUS_LABEL: Record<string, string> = {
 
 export function getInventoryMovementTypeLabel(value?: string | null) {
   if (!value) return "-";
-  return INVENTORY_MOVEMENT_TYPE_LABEL[value] ?? value;
+  return INVENTORY_MOVEMENT_TYPE_LABEL[value] ?? "库存变动类型待确认";
 }
 
 export function getInventoryAllocationStatusLabel(value?: string | null) {
   if (!value) return "-";
-  return INVENTORY_ALLOCATION_STATUS_LABEL[value] ?? value;
+  return INVENTORY_ALLOCATION_STATUS_LABEL[value] ?? "库存分配状态待确认";
 }
 
 export function getPurchaseRequirementStatusLabel(value?: string | null) {
   if (!value) return "-";
-  return PURCHASE_REQUIREMENT_STATUS_LABEL[value] ?? value;
+  return PURCHASE_REQUIREMENT_STATUS_LABEL[value] ?? "采购需求状态待确认";
 }
 
 export function getPurchaseOrderStatusLabel(value?: string | null) {
   if (!value) return "-";
-  return PURCHASE_ORDER_STATUS_LABEL[value] ?? value;
+  return PURCHASE_ORDER_STATUS_LABEL[value] ?? "采购单状态待确认";
 }
 
 export type InventoryMovementSummaryRow = {

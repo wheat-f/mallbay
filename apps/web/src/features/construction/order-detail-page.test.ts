@@ -30,6 +30,7 @@ test("construction order detail page does not expose route ids as visible fallba
 test("construction order detail page follows the prototype quality workspace layout", () => {
   const pageSource = readFileSync("app/construction/orders/[id]/page.tsx", "utf8");
 
+  assert.match(pageSource, /施工质检 & 提成审核/);
   assert.match(pageSource, /construction-detail-shell/);
   assert.match(pageSource, /construction-detail-hero/);
   assert.match(pageSource, /construction-status-steps/);
@@ -40,4 +41,36 @@ test("construction order detail page follows the prototype quality workspace lay
   assert.doesNotMatch(pageSource, /StorePageHeader/);
   assert.doesNotMatch(pageSource, /management-kpi-grid/);
   assert.doesNotMatch(pageSource, /<Table/);
+});
+
+test("construction order detail uses business copy for photo link fields", () => {
+  const pageSource = readFileSync("app/construction/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /施工照片链接/);
+  assert.match(pageSource, /粘贴施工照片链接/);
+  assert.doesNotMatch(pageSource, /图片 URL/);
+  assert.doesNotMatch(pageSource, /粘贴图片 URL/);
+});
+
+test("construction order detail uses business-safe upload fallback copy", () => {
+  const pageSource = readFileSync("app/construction/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /施工记录待生成，暂不能上传照片/);
+  assert.doesNotMatch(pageSource, /施工记录未加载/);
+  assert.doesNotMatch(pageSource, /constructionApi\.uploadPhoto\(record!\.id/);
+});
+
+test("construction order detail uses business-safe quality fallback copy", () => {
+  const pageSource = readFileSync("app/construction/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /施工记录待生成，暂不能保存质检结果/);
+  assert.doesNotMatch(pageSource, /constructionApi\.qualityCheck\(record!\.id/);
+});
+
+test("construction order detail returns to the dispatch list instead of the workbench", () => {
+  const pageSource = readFileSync("app/construction/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /返回施工派单/);
+  assert.match(pageSource, /router\.push\("\/construction\/assignments"\)/);
+  assert.doesNotMatch(pageSource, /返回工作台/);
 });

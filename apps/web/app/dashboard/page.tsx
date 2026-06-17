@@ -47,7 +47,10 @@ function CreateStoreDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   });
 
   const createMutation = useMutation({
-    mutationFn: () => storeApi.create({ name: storeName, managerId: selectedUser!.id }),
+    mutationFn: () => {
+      if (!selectedUser?.id) throw new Error("请先选择店长");
+      return storeApi.create({ name: storeName, managerId: selectedUser.id });
+    },
     onSuccess: () => {
       message.success("门店创建成功");
       setStoreName("");
@@ -198,11 +201,6 @@ export default function DashboardPage() {
       label: "系统权限",
       value: user.isAuditor ? "管理员" : storeMember ? "门店成员" : "访客",
       description: "按角色展示菜单"
-    },
-    {
-      label: "个人中心",
-      value: displayName,
-      description: "资料、密码与账号绑定"
     }
   ];
 
@@ -219,17 +217,21 @@ export default function DashboardPage() {
           </Typography.Paragraph>
           <div className="dashboard-entry-actions">
             {storeMember ? (
-              <Button
-                type="primary"
-                icon={<ArrowRightOutlined />}
-                onClick={() => router.push(`/workbench/${storeMember.store.id}`)}
-              >
-                进入工作台
-              </Button>
+              <>
+                <Button
+                  type="primary"
+                  icon={<ArrowRightOutlined />}
+                  onClick={() => router.push(`/workbench/${storeMember.store.id}`)}
+                >
+                  进入工作台
+                </Button>
+                <Button icon={<TeamOutlined />} onClick={() => router.push("/customers")}>
+                  客户管理
+                </Button>
+              </>
             ) : (
               <Button disabled>等待门店邀请</Button>
             )}
-            <Button onClick={() => router.push("/profile")}>账号安全</Button>
           </div>
         </div>
 
@@ -322,8 +324,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="dashboard-action-button-row">
-            <Button block onClick={() => router.push("/stores")}>浏览门店</Button>
-            <Button block onClick={() => router.push("/profile")}>个人中心</Button>
+            <Button block onClick={() => router.push("/")}>浏览门店</Button>
           </div>
         </Card>
       </section>

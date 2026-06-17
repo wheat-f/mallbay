@@ -105,6 +105,8 @@ export class InvoicesService {
         order: {
           select: {
             orderNo: true,
+            status: true,
+            amount: { select: { paidAmountCents: true, outstandingCents: true } },
             customer: { select: { name: true, companyName: true, contactPerson: true } },
             vehicle: { select: { carPlate: true, carModel: true, carColor: true } }
           }

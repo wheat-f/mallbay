@@ -7,5 +7,5 @@ test("getCommissionRuleTypeLabel formats commission rule types", () => {
   assert.equal(getCommissionRuleTypeLabel("FIXED_AMOUNT"), "固定金额");
   assert.equal(getCommissionRuleTypeLabel("SALES_TIER"), "销售阶梯");
   assert.equal(getCommissionRuleTypeLabel("CONSTRUCTION_TYPE"), "施工类型");
-  assert.equal(getCommissionRuleTypeLabel("UNKNOWN"), "UNKNOWN");
+  assert.equal(getCommissionRuleTypeLabel("UNKNOWN"), "规则类型待确认");
 });

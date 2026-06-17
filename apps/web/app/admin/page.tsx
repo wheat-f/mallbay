@@ -55,7 +55,10 @@ function CreateStoreDrawer({ open, onClose, onCreated }: {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => storeApi.create({ name: storeName, managerId: selectedUser!.id }),
+    mutationFn: () => {
+      if (!selectedUser?.id) throw new Error("请先选择店长");
+      return storeApi.create({ name: storeName, managerId: selectedUser.id });
+    },
     onSuccess: () => {
       message.success("门店创建成功");
       setStoreName(""); setKeyword(""); setSelectedUser(null);
@@ -282,7 +285,7 @@ export default function AdminPage() {
           <Card className="admin-review-queue">
             <div className="admin-review-card-head">
               <div>
-                <span className="admin-review-eyebrow">Review Queue</span>
+                <span className="admin-review-eyebrow">审核队列</span>
                 <h2>待处理信息变更 ({pendingCount})</h2>
               </div>
               <Button type="link" onClick={() => setPage(1)}>
@@ -346,7 +349,7 @@ export default function AdminPage() {
 
           <aside className="admin-review-side">
             <Card className="admin-status-distribution">
-              <div className="admin-review-eyebrow">Store Status</div>
+              <div className="admin-review-eyebrow">门店状态</div>
               <h2>门店状态分布</h2>
               {[
                 ["公开经营", publishedCount, "is-success"],

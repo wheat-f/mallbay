@@ -26,7 +26,11 @@ export class PermissionPolicy {
   private static readonly orderCreators: StorePosition[] = [StorePosition.MANAGER, StorePosition.SALES, CUSTOMER_SERVICE];
   private static readonly customerViewers: StorePosition[] = [StorePosition.FINANCE, StorePosition.SCHEDULER, CUSTOMER_SERVICE];
   private static readonly constructionWorkers: StorePosition[] = [StorePosition.CONSTRUCTION, StorePosition.APPRENTICE];
-  private static readonly inventoryManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING, CUSTOMER_SERVICE];
+  private static readonly inventoryViewers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING, CUSTOMER_SERVICE];
+  private static readonly inventoryManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING];
+  private static readonly purchaseViewers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING, CUSTOMER_SERVICE];
+  private static readonly purchaseManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING];
+  private static readonly productManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING];
   private static readonly warrantyCreators: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER, CUSTOMER_SERVICE];
   private static readonly afterSalesManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER, CUSTOMER_SERVICE];
   private static readonly commissionManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.FINANCE];
@@ -116,6 +120,30 @@ export class PermissionPolicy {
     if (this.isAdmin(user)) return true;
     return this.isStoreMember(user, storeId) &&
       this.inventoryManagers.includes(user.storeMember!.position);
+  }
+
+  static canViewInventory(user: UserWithStoreMember, storeId: string) {
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      this.inventoryViewers.includes(user.storeMember!.position);
+  }
+
+  static canViewPurchase(user: UserWithStoreMember, storeId: string) {
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      this.purchaseViewers.includes(user.storeMember!.position);
+  }
+
+  static canManagePurchase(user: UserWithStoreMember, storeId: string) {
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      this.purchaseManagers.includes(user.storeMember!.position);
+  }
+
+  static canManageProduct(user: UserWithStoreMember, storeId: string) {
+    if (this.isAdmin(user)) return true;
+    return this.isStoreMember(user, storeId) &&
+      this.productManagers.includes(user.storeMember!.position);
   }
 
   static canCreateWarranty(user: UserWithStoreMember, storeId: string) {

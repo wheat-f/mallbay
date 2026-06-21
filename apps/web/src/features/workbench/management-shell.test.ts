@@ -67,7 +67,8 @@ test("management shell wraps business routes and excludes public and mobile rout
   assert.match(source, /"\/construction\/profile"/);
   assert.ok(mobilePrefixesStart > -1, "mobile prefixes should be declared");
   assert.doesNotMatch(mobilePrefixesSource, /"\/construction\/leave-approvals"/);
-  assert.match(source, /"\/after-sales\/tasks"/);
+  assert.doesNotMatch(mobilePrefixesSource, /"\/after-sales\/tasks"/);
+  assert.match(source, /pathname\.startsWith\("\/after-sales"\)/);
   assert.match(source, /"\/orders"/);
   assert.match(source, /"\/members"/);
   assert.match(source, /"\/settings"/);

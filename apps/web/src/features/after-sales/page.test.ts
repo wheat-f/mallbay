@@ -171,7 +171,7 @@ test("after-sales detail page follows the prototype detail penalty layout", () =
   assert.match(cssSource, /\.after-sale-detail-timeline/);
 });
 
-test("after-sales mobile task center follows the worker prototype", () => {
+test("after-sales task center is a web management task board", () => {
   const pagePath = "app/after-sales/tasks/page.tsx";
 
   assert.equal(existsSync(pagePath), true);
@@ -181,18 +181,19 @@ test("after-sales mobile task center follows the worker prototype", () => {
   const nextConfigSource = readFileSync("next.config.ts", "utf8");
 
   assert.match(pageSource, /售后任务中心/);
+  assert.match(pageSource, /StorePageHeader/);
   assert.match(pageSource, /from "next\/image"/);
   assert.match(pageSource, /unoptimized/);
   assert.match(pageSource, /afterSalesApi\.list/);
-  assert.match(pageSource, /after-sales-mobile-shell/);
-  assert.match(pageSource, /after-sales-mobile-hero/);
-  assert.match(pageSource, /after-sales-mobile-tabs/);
-  assert.match(pageSource, /after-sales-mobile-card/);
-  assert.match(pageSource, /after-sales-mobile-car-image/);
-  assert.match(pageSource, /after-sales-mobile-filter-fab/);
-  assert.match(pageSource, /after-sales-mobile-bottom-nav/);
-  assert.match(pageSource, /href="\/dashboard"/);
-  assert.doesNotMatch(pageSource, /href="\/workbench"/);
+  assert.match(pageSource, /worker-after-sales-task-page/);
+  assert.match(pageSource, /worker-after-sales-hero/);
+  assert.match(pageSource, /worker-after-sales-kpis/);
+  assert.match(pageSource, /worker-after-sales-tabs/);
+  assert.match(pageSource, /worker-after-sales-table/);
+  assert.match(pageSource, /worker-after-sales-mobile-cards/);
+  assert.doesNotMatch(pageSource, /after-sales-mobile-shell/);
+  assert.doesNotMatch(pageSource, /after-sales-mobile-bottom-nav/);
+  assert.doesNotMatch(pageSource, /href="\/dashboard"/);
   assert.match(pageSource, /待处理/);
   assert.match(pageSource, /处理中/);
   assert.match(pageSource, /已完成/);
@@ -205,12 +206,12 @@ test("after-sales mobile task center follows the worker prototype", () => {
   assert.match(pageSource, /description\.includes\("划痕"\)/);
   assert.match(pageSource, /item\.warrantyId \? "已关联质保单" : "质保单待关联"/);
   assert.doesNotMatch(pageSource, /`质保单：\$\{item\.warrantyId\}`/);
-  assert.match(cssSource, /\.after-sales-mobile-shell/);
-  assert.match(cssSource, /\.after-sales-mobile-hero/);
-  assert.match(cssSource, /\.after-sales-mobile-card/);
-  assert.match(cssSource, /\.after-sales-mobile-car-image/);
-  assert.match(cssSource, /\.after-sales-mobile-filter-fab/);
-  assert.match(cssSource, /\.after-sales-mobile-bottom-nav/);
+  assert.match(cssSource, /\.worker-after-sales-task-page/);
+  assert.match(cssSource, /\.worker-after-sales-hero/);
+  assert.match(cssSource, /\.worker-after-sales-kpis/);
+  assert.match(cssSource, /\.worker-after-sales-tabs/);
+  assert.match(cssSource, /\.worker-after-sales-table/);
+  assert.match(cssSource, /\.worker-after-sales-mobile-cards/);
   assert.match(pageSource, /\/prototype-assets\/after-sales-task-1\.png/);
   assert.match(pageSource, /\/prototype-assets\/after-sales-task-2\.png/);
   assert.doesNotMatch(pageSource, /lh3\.googleusercontent\.com/);

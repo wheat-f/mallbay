@@ -24,8 +24,7 @@ const POSITION_LABEL: Record<string, string> = {
 
 const publicPrefixes = ["/auth", "/stores/"];
 const mobilePrefixes = [
-  "/construction/camera",
-  "/after-sales/tasks"
+  "/construction/camera"
 ];
 
 export function shouldUseManagementShell(pathname: string) {

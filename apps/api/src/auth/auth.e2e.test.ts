@@ -3,7 +3,6 @@ import { afterEach, test } from "node:test";
 import { ValidationPipe } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { Test } from "@nestjs/testing";
-import * as bcrypt from "bcrypt";
 import { constants, publicEncrypt } from "crypto";
 import { ApiExceptionFilter } from "../common/api-exception.filter";
 import { PrismaModule } from "../prisma/prisma.module";
@@ -16,6 +15,11 @@ const jwtConfig = {
   JWT_REFRESH_SECRET: "test-refresh-secret",
   JWT_ACCESS_EXPIRES_IN: "15m",
   JWT_REFRESH_EXPIRES_IN: "7d"
+};
+
+const plaintextCredentialConfig = {
+  ...jwtConfig,
+  AUTH_CREDENTIAL_ENCRYPTION_ENABLED: "false"
 };
 
 type TestUser = {
@@ -46,7 +50,7 @@ test("auth refresh rotates cookie and logout invalidates the refresh session ove
       ConfigModule.forRoot({
         isGlobal: true,
         ignoreEnvFile: true,
-        load: [() => jwtConfig]
+        load: [() => plaintextCredentialConfig]
       }),
       PrismaModule,
       AuthModule

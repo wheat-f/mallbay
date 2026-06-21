@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -112,10 +113,18 @@ export class AuthService {
     }
 
     if (dto.password) {
+      if (this.credentialEncryptionEnabled) {
+        throw new BadRequestException("当前环境要求加密登录凭据");
+      }
       return dto.password;
     }
 
     throw new UnauthorizedException("账号或密码不正确");
+  }
+
+  private get credentialEncryptionEnabled() {
+    const value = this.config.get<string>("AUTH_CREDENTIAL_ENCRYPTION_ENABLED");
+    return !["false", "0", "off", "disabled"].includes((value ?? "").trim().toLowerCase());
   }
 
   async refresh(refreshToken: string) {

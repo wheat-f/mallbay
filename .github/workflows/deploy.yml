@@ -97,6 +97,7 @@ jobs:
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ steps.tag.outputs.branch }}
           build-args: |
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
 
@@ -141,6 +142,7 @@ jobs:
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ steps.tag.outputs.branch }}
           build-args: |
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
 
@@ -179,6 +181,8 @@ jobs:
 
             sed -i '/^IMAGE_TAG=/d' .env
             echo "IMAGE_TAG=${{ github.sha }}" >> .env
+            sed -i '/^AUTH_CREDENTIAL_ENCRYPTION_ENABLED=/d' .env
+            echo "AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}" >> .env
 
             docker compose -f docker-compose.prod.yml pull api web
             docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate api web
@@ -221,6 +225,8 @@ jobs:
 
             sed -i '/^IMAGE_TAG=/d' .env
             echo "IMAGE_TAG=${{ github.sha }}" >> .env
+            sed -i '/^AUTH_CREDENTIAL_ENCRYPTION_ENABLED=/d' .env
+            echo "AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}" >> .env
 
             docker compose -f docker-compose.prod.yml pull api web
             docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate api web

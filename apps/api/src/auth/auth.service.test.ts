@@ -25,7 +25,10 @@ test("issueAndPersistTokens fails fast when JWT secrets are missing", async () =
     signAsync: async () => "signed-token"
   };
   const config = {
-    get: () => undefined
+    get: (key: string) => {
+      if (key === "AUTH_CREDENTIAL_ENCRYPTION_ENABLED") return "false";
+      return undefined;
+    }
   };
   const service = new AuthService(prisma as never, jwt as never, config as never);
 
@@ -101,7 +104,12 @@ test("login failure increments observability metric without sensitive labels", a
   const service = new AuthService(
     prisma as never,
     {} as never,
-    {} as never,
+    {
+      get: (key: string) => {
+        if (key === "AUTH_CREDENTIAL_ENCRYPTION_ENABLED") return "false";
+        return undefined;
+      }
+    } as never,
     metrics as never
   );
 
@@ -116,6 +124,30 @@ test("login failure increments observability metric without sensitive labels", a
       labels: { reason: "not_found" }
     }
   ]);
+});
+
+test("resolvePassword rejects plaintext credentials when encryption is enabled by default", () => {
+  const service = new AuthService({} as never, {} as never, { get: () => undefined } as never);
+
+  assert.throws(
+    () => service["resolvePassword"]({ password: "password-123" }),
+    /当前环境要求加密登录凭据/
+  );
+});
+
+test("resolvePassword accepts plaintext credentials only when credential encryption is disabled", () => {
+  const service = new AuthService(
+    {} as never,
+    {} as never,
+    {
+      get: (key: string) => {
+        if (key === "AUTH_CREDENTIAL_ENCRYPTION_ENABLED") return "false";
+        return undefined;
+      }
+    } as never
+  );
+
+  assert.equal(service["resolvePassword"]({ password: "password-123" }), "password-123");
 });
 
 test("wechat mini login issues a session for bound open id", async () => {

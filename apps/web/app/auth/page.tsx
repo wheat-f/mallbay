@@ -12,6 +12,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { isCredentialEncryptionEnabled } from "../../src/features/auth/credential-encryption-config";
 import { authApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 
@@ -29,13 +30,18 @@ export default function AuthPage() {
   const router = useRouter();
   const { message } = App.useApp();
   const [form] = Form.useForm<AuthFormValues>();
+  const credentialEncryptionEnabled = isCredentialEncryptionEnabled();
 
   const authMutation = useMutation({
     mutationFn: (values: AuthFormValues) => {
       if (mode === "login") {
-        return authApi.loginEncrypted({ identifier: values.identifier, password: values.password });
+        return credentialEncryptionEnabled
+          ? authApi.loginEncrypted({ identifier: values.identifier, password: values.password })
+          : authApi.login({ identifier: values.identifier, password: values.password });
       }
-      return authApi.registerEncrypted({ username: values.username, password: values.password });
+      return credentialEncryptionEnabled
+        ? authApi.registerEncrypted({ username: values.username, password: values.password })
+        : authApi.register({ username: values.username, password: values.password });
     },
     onSuccess: (session) => {
       setSession(session);

@@ -34,11 +34,14 @@ test("auth page follows the prototype split-screen SaaS login layout", () => {
   assert.match(cssSource, /@media \(max-width: 900px\)[\s\S]*\.auth-hero-panel/);
 });
 
-test("auth page keeps encrypted credential submission behavior", () => {
+test("auth page chooses encrypted credential submission by configuration", () => {
   const pageSource = readFileSync("app/auth/page.tsx", "utf8");
 
+  assert.match(pageSource, /isCredentialEncryptionEnabled\(\)/);
   assert.match(pageSource, /authApi\.loginEncrypted\(\{ identifier: values\.identifier, password: values\.password \}\)/);
+  assert.match(pageSource, /authApi\.login\(\{ identifier: values\.identifier, password: values\.password \}\)/);
   assert.match(pageSource, /authApi\.registerEncrypted\(\{ username: values\.username, password: values\.password \}\)/);
+  assert.match(pageSource, /authApi\.register\(\{ username: values\.username, password: values\.password \}\)/);
   assert.match(pageSource, /setSession\(session\)/);
   assert.match(pageSource, /router\.push\("\/"\)/);
 });

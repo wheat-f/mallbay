@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { App, Avatar, Button, Card, Drawer, Empty, Input, Popconfirm, Select, Space, Table, Tag, Typography } from "antd";
 import { CalendarOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { memberApi } from "../../src/features/members/api";
 import { storeApi } from "../../src/features/stores/api";
 import type { StorePosition } from "../../src/features/workbench/navigation";
@@ -96,6 +96,14 @@ type InvitableUser = {
 };
 
 export default function MembersPage() {
+  return (
+    <Suspense fallback={<div className="management-page members-workspace" />}>
+      <MembersContent />
+    </Suspense>
+  );
+}
+
+function MembersContent() {
   const { message } = App.useApp();
   const router = useRouter();
   const searchParams = useSearchParams();

@@ -17457,6 +17457,228 @@ button.workbench-task-row:hover {
   font-weight: 900;
 }
 
+.worker-camera-page {
+  display: grid;
+  gap: 22px;
+}
+
+.worker-camera-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  align-items: end;
+  gap: 22px;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(15, 58, 95, 0.97), rgba(10, 91, 130, 0.9)),
+    var(--mb-primary);
+  color: var(--mb-on-primary);
+  padding: 22px 24px;
+  box-shadow: 0 18px 44px rgba(15, 58, 95, 0.22);
+}
+
+.worker-camera-hero .ant-tag {
+  margin: 0 0 10px;
+  border: 0;
+  background: rgb(255 255 255 / 0.16);
+  color: var(--mb-on-primary);
+  font-weight: 900;
+}
+
+.worker-camera-hero h2 {
+  margin: 0;
+  color: var(--mb-on-primary);
+  font-size: 26px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.worker-camera-hero p {
+  max-width: 720px;
+  margin: 10px 0 0;
+  color: rgb(255 255 255 / 0.82);
+  line-height: 1.7;
+}
+
+.worker-camera-hero-progress {
+  display: grid;
+  gap: 8px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.13);
+  padding: 14px;
+}
+
+.worker-camera-hero-progress strong {
+  color: var(--mb-on-primary);
+  font-size: 30px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.worker-camera-hero-progress span {
+  color: rgb(255 255 255 / 0.8);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.worker-camera-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.worker-camera-stat {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--mb-border);
+  border-radius: 8px;
+  background: var(--mb-surface);
+  padding: 16px;
+  box-shadow: var(--mb-shadow-sm);
+}
+
+.worker-camera-stat strong {
+  color: var(--mb-primary);
+  font-size: 28px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.worker-camera-stat span {
+  color: var(--mb-text-secondary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.worker-camera-stat.is-success strong {
+  color: var(--mb-success);
+}
+
+.worker-camera-stat.is-warning strong {
+  color: var(--mb-warning);
+}
+
+.worker-camera-stat.is-danger strong {
+  color: var(--mb-danger);
+}
+
+.worker-camera-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  align-items: start;
+  gap: 18px;
+}
+
+.worker-camera-page .construction-camera-workspace {
+  gap: 16px;
+}
+
+.worker-camera-page .construction-camera-photo-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.worker-camera-page .construction-camera-photo-card {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.worker-camera-side {
+  position: sticky;
+  top: 92px;
+  display: grid;
+  gap: 14px;
+}
+
+.worker-camera-check-card .ant-card-body,
+.worker-camera-sync-card .ant-card-body {
+  padding: 16px;
+}
+
+.worker-camera-check-card ol {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--mb-text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.worker-camera-sync-card dl {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.worker-camera-sync-card dl > div {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.worker-camera-sync-card dt {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.worker-camera-sync-card dd {
+  margin: 0;
+  color: var(--mb-text-primary);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.worker-camera-page .construction-camera-bottom-actions {
+  position: static;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: auto;
+  max-width: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-radius: 8px;
+  padding: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+@media (max-width: 1100px) {
+  .worker-camera-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .worker-camera-side {
+    position: static;
+  }
+}
+
+@media (max-width: 900px) {
+  .worker-camera-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .worker-camera-summary,
+  .worker-camera-page .construction-camera-photo-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .worker-camera-hero {
+    padding: 18px;
+  }
+
+  .worker-camera-hero h2 {
+    font-size: 22px;
+  }
+
+  .worker-camera-summary,
+  .worker-camera-page .construction-camera-photo-list,
+  .worker-camera-page .construction-camera-bottom-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .construction-materials-workspace {
   display: flex;
   flex-direction: column;
@@ -18754,449 +18976,6 @@ button.workbench-task-row:hover {
   }
 }
 
-.construction-mobile-tabs {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 180;
-  display: grid;
-  max-width: 430px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0;
-  margin: 0 auto;
-  border-top: 1px solid var(--mb-border-strong);
-  background: rgb(255 255 255 / 0.98);
-  padding: 8px 10px 10px;
-  box-shadow: 0 -10px 26px rgb(15 58 95 / 0.1);
-  backdrop-filter: blur(18px);
-}
-
-.construction-mobile-tab {
-  display: flex;
-  position: relative;
-  height: 64px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  border-radius: 0;
-  color: var(--mb-text-secondary);
-  font-size: 12px;
-  font-weight: 850;
-  text-decoration: none;
-}
-
-.construction-mobile-tab .anticon {
-  font-size: 22px;
-}
-
-.construction-mobile-tab--camera {
-  justify-content: flex-start;
-  transform: translateY(-20px);
-  color: var(--mb-primary);
-}
-
-.construction-mobile-tab--camera .anticon {
-  width: 56px;
-  height: 56px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 4px solid var(--mb-surface);
-  border-radius: 999px;
-  background: var(--mb-primary);
-  color: var(--mb-on-primary);
-  box-shadow: 0 12px 24px rgb(15 58 95 / 0.24);
-  font-size: 28px;
-}
-
-.construction-mobile-tab--camera .construction-mobile-tab-label {
-  position: absolute;
-  bottom: -14px;
-  color: var(--mb-text-secondary);
-  font-size: 10px;
-  line-height: 1;
-}
-
-.construction-mobile-tab.is-active {
-  color: var(--mb-primary);
-}
-
-.construction-mobile-tab.is-active::before {
-  content: "";
-  position: absolute;
-  top: -8px;
-  left: 12px;
-  right: 12px;
-  height: 3px;
-  border-radius: 0 0 999px 999px;
-  background: var(--mb-primary);
-}
-
-.construction-mobile-tab--camera.is-active::before {
-  display: none;
-}
-
-/* ─── After-sales worker mobile ─────────────────────────────── */
-.after-sales-mobile-shell {
-  min-height: 100vh;
-  overflow-x: clip;
-  background: var(--mb-background);
-  padding: 0 14px 132px;
-}
-
-.after-sales-mobile-header {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  display: flex;
-  width: auto;
-  max-width: 430px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 auto 18px;
-  background: var(--mb-surface);
-  padding: 18px 14px;
-  color: var(--mb-primary);
-  box-shadow: 0 1px 0 var(--mb-border-subtle);
-}
-
-.after-sales-mobile-header > div {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-}
-
-.after-sales-mobile-header h1 {
-  margin: 0;
-  color: var(--mb-primary);
-  font-size: 22px;
-  font-weight: 900;
-  line-height: 1.2;
-}
-
-.after-sales-mobile-header .anticon {
-  font-size: 22px;
-}
-
-.after-sales-mobile-header-actions {
-  color: var(--mb-text-primary);
-  font-size: 22px;
-}
-
-.after-sales-mobile-header-actions span {
-  display: inline-flex;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--mb-primary);
-  color: var(--mb-on-primary);
-  font-size: 15px;
-  font-weight: 800;
-}
-
-.after-sales-mobile-hero {
-  display: flex;
-  width: 100%;
-  max-width: 430px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin: 0 auto 22px;
-  border-radius: 22px;
-  background: var(--mb-primary);
-  padding: 22px;
-  color: var(--mb-on-primary);
-  box-shadow: 0 18px 36px rgba(15, 58, 95, 0.22);
-}
-
-.after-sales-mobile-hero div {
-  display: grid;
-  gap: 6px;
-}
-
-.after-sales-mobile-hero span,
-.after-sales-mobile-hero em {
-  color: rgb(255 255 255 / 0.78);
-  font-size: 15px;
-  font-style: normal;
-}
-
-.after-sales-mobile-hero strong {
-  color: var(--mb-on-primary);
-  font-size: 38px;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.after-sales-mobile-sync.ant-tag {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid rgb(255 255 255 / 0.18);
-  border-radius: 14px;
-  background: rgb(255 255 255 / 0.08);
-  color: var(--mb-on-primary);
-  font-size: 15px;
-  font-weight: 800;
-}
-
-.after-sales-mobile-sync.ant-tag::before {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 7px;
-  border-radius: 50%;
-  background: var(--mb-success);
-  content: "";
-}
-
-.after-sales-mobile-tabs {
-  display: grid;
-  width: 100%;
-  max-width: 430px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
-  margin: 0 auto 16px;
-  border-bottom: 1px solid var(--mb-border);
-}
-
-.after-sales-mobile-tabs button {
-  position: relative;
-  border: 0;
-  background: transparent;
-  padding: 12px 4px 14px;
-  color: var(--mb-text-secondary);
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: 850;
-}
-
-.after-sales-mobile-tabs button.is-active {
-  color: var(--mb-primary);
-}
-
-.after-sales-mobile-tabs button.is-active::after {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 3px;
-  border-radius: 99px;
-  background: var(--mb-primary);
-  content: "";
-}
-
-.after-sales-mobile-list {
-  display: grid;
-  width: 100%;
-  max-width: 430px;
-  gap: 14px;
-  margin: 0 auto;
-}
-
-.after-sales-mobile-loading {
-  border: 1px dashed var(--mb-border);
-  border-radius: 18px;
-  background: var(--mb-surface);
-  padding: 22px;
-  color: var(--mb-text-muted);
-  text-align: center;
-}
-
-.after-sales-mobile-card {
-  display: grid;
-  gap: 14px;
-  border: 1px solid var(--mb-border);
-  border-radius: 20px;
-  background: var(--mb-surface);
-  padding: 16px;
-  box-shadow: var(--mb-shadow-sm);
-}
-
-.after-sales-mobile-card-head,
-.after-sales-mobile-card-main,
-.after-sales-mobile-warranty,
-.after-sales-mobile-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.after-sales-mobile-card-head > span {
-  color: var(--mb-text-secondary);
-  font-size: 13px;
-}
-
-.after-sales-mobile-status.ant-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin: 0;
-  border: 0;
-  border-radius: 10px;
-  padding: 5px 9px;
-  font-size: 14px;
-  font-weight: 850;
-}
-
-.after-sales-mobile-status.is-pending {
-  background: var(--mb-warning-container);
-  color: var(--mb-warning);
-}
-
-.after-sales-mobile-status.is-processing {
-  background: var(--mb-info-container);
-  color: var(--mb-info);
-}
-
-.after-sales-mobile-status.is-done {
-  background: var(--mb-success-container);
-  color: var(--mb-success);
-}
-
-.after-sales-mobile-card-main {
-  justify-content: flex-start;
-}
-
-.after-sales-mobile-car-thumb {
-  width: 72px;
-  height: 72px;
-  flex: 0 0 auto;
-  border: 1px solid var(--mb-border);
-  border-radius: 14px;
-  background:
-    linear-gradient(145deg, rgb(15 58 95 / 0.08), rgb(37 99 235 / 0.08)),
-    var(--mb-surface-alt);
-  color: var(--mb-primary);
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.5);
-}
-
-.after-sales-mobile-car-image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.after-sales-mobile-card-main h2 {
-  margin: 0 0 5px;
-  color: var(--mb-primary);
-  font-size: 20px;
-  font-weight: 900;
-}
-
-.after-sales-mobile-card-main p {
-  margin: 0;
-  color: var(--mb-text-secondary);
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.after-sales-mobile-warranty {
-  border-radius: 13px;
-  background: var(--mb-surface-alt);
-  padding: 10px 12px;
-  color: var(--mb-text-secondary);
-  font-size: 13px;
-}
-
-.after-sales-mobile-warranty .anticon {
-  color: var(--mb-primary);
-}
-
-.after-sales-mobile-warranty span {
-  min-width: 0;
-  flex: 1;
-}
-
-.after-sales-mobile-warranty em {
-  color: var(--mb-text-secondary);
-  font-style: normal;
-}
-
-.after-sales-mobile-actions .ant-btn {
-  flex: 1;
-  height: 44px;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 800;
-}
-
-.after-sales-mobile-bottom-nav {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 180;
-  display: grid;
-  max-width: 430px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 2px;
-  margin: 0 auto;
-  border-top: 1px solid var(--mb-border);
-  background: rgb(255 255 255 / 0.96);
-  padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
-  box-shadow: 0 -16px 36px rgb(15 58 95 / 0.08);
-  backdrop-filter: blur(16px);
-}
-
-.after-sales-mobile-bottom-nav a {
-  display: inline-flex;
-  min-height: 54px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  border-radius: 16px;
-  color: var(--mb-text-secondary);
-  font-size: 12px;
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.after-sales-mobile-bottom-nav a.is-active {
-  color: var(--mb-primary);
-}
-
-.after-sales-mobile-bottom-nav a.is-create {
-  width: 58px;
-  height: 58px;
-  min-height: 58px;
-  align-self: center;
-  justify-self: center;
-  border-radius: 50%;
-  background: var(--mb-primary);
-  color: var(--mb-on-primary);
-  box-shadow: 0 16px 32px rgb(15 58 95 / 0.28);
-  font-size: 24px;
-}
-
-.after-sales-mobile-filter-fab {
-  position: fixed;
-  right: max(20px, calc((100vw - 430px) / 2 + 20px));
-  bottom: 96px;
-  z-index: 170;
-  display: inline-flex;
-  width: 56px;
-  height: 56px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 50%;
-  background: var(--mb-primary-container);
-  color: var(--mb-primary);
-  box-shadow: 0 18px 34px rgba(15, 58, 95, 0.2);
-  cursor: pointer;
-  font-size: 23px;
-}
-
 .worker-after-sales-task-page {
   display: grid;
   gap: 18px;
@@ -19337,6 +19116,15 @@ button.workbench-task-row:hover {
   display: none;
 }
 
+.worker-after-sales-loading {
+  border: 1px dashed var(--mb-border);
+  border-radius: 8px;
+  background: var(--mb-surface);
+  padding: 22px;
+  color: var(--mb-text-muted);
+  text-align: center;
+}
+
 .worker-after-sales-card {
   display: grid;
   gap: 14px;
@@ -19358,6 +19146,33 @@ button.workbench-task-row:hover {
 
 .worker-after-sales-card-main {
   justify-content: flex-start;
+}
+
+.worker-after-sales-status.ant-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.worker-after-sales-status.is-pending {
+  background: var(--mb-warning-container);
+  color: var(--mb-warning);
+}
+
+.worker-after-sales-status.is-processing {
+  background: var(--mb-info-container);
+  color: var(--mb-info);
+}
+
+.worker-after-sales-status.is-done {
+  background: var(--mb-success-container);
+  color: var(--mb-success);
 }
 
 .worker-after-sales-card-main h2 {

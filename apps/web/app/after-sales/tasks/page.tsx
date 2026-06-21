@@ -161,7 +161,7 @@ export default function AfterSalesTasksPage() {
         />
 
         <div className="worker-after-sales-mobile-cards">
-          {listQuery.isLoading ? <div className="after-sales-mobile-loading">售后任务加载中...</div> : null}
+          {listQuery.isLoading ? <div className="worker-after-sales-loading">售后任务加载中...</div> : null}
           {!listQuery.isLoading && visibleRows.length === 0 ? <Empty description="暂无售后任务" /> : null}
           {visibleRows.map((item) => (
             <article key={item.id} className="worker-after-sales-card">
@@ -216,9 +216,9 @@ function getMobileAfterSaleTitle(item: AfterSaleSummary) {
 }
 
 function getAfterSaleStatusClassName(status: AfterSaleStatus) {
-  if (status === "OPEN") return "after-sales-mobile-status is-pending";
-  if (status === "ASSIGNED") return "after-sales-mobile-status is-processing";
-  return "after-sales-mobile-status is-done";
+  if (status === "OPEN") return "worker-after-sales-status is-pending";
+  if (status === "ASSIGNED") return "worker-after-sales-status is-processing";
+  return "worker-after-sales-status is-done";
 }
 
 function getRelativeTaskTime(status: AfterSaleStatus) {

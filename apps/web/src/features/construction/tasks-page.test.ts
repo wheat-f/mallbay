@@ -118,7 +118,7 @@ test("construction mobile task detail uses business copy for photo link fields",
   assert.doesNotMatch(pageSource, /粘贴图片 URL/);
 });
 
-test("construction mobile pages use the worker mobile shell and bottom navigation", () => {
+test("construction worker pages use web management shell while keeping the mini shell source", () => {
   const tasksPageSource = readFileSync("app/construction/tasks/page.tsx", "utf8");
   const schedulesPageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
   const cameraPageSource = readFileSync("app/construction/camera/page.tsx", "utf8");
@@ -126,9 +126,10 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
   const leavesPageSource = readFileSync("app/construction/leaves/page.tsx", "utf8");
   const offlinePageSource = readFileSync("app/construction/offline/page.tsx", "utf8");
   const profilePageSource = readFileSync("app/construction/profile/page.tsx", "utf8");
-  const shellSource = readFileSync("src/features/construction/mobile-shell.tsx", "utf8");
+  const mobileShellPath = "src/features/construction/mobile-shell.tsx";
 
   assert.equal(existsSync(materialsPagePath), true);
+  assert.equal(existsSync(mobileShellPath), false);
   const materialsPageSource = readFileSync(materialsPagePath, "utf8");
 
   assert.doesNotMatch(tasksPageSource, /ConstructionMobileShell/);
@@ -136,7 +137,9 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
   assert.doesNotMatch(schedulesPageSource, /ConstructionMobileShell/);
   assert.match(schedulesPageSource, /StorePageHeader/);
   assert.match(schedulesPageSource, /constructionApi\.schedules/);
-  assert.match(cameraPageSource, /active="camera"/);
+  assert.doesNotMatch(cameraPageSource, /ConstructionMobileShell/);
+  assert.match(cameraPageSource, /StorePageHeader/);
+  assert.match(cameraPageSource, /worker-camera-page/);
   assert.doesNotMatch(materialsPageSource, /ConstructionMobileShell/);
   assert.match(materialsPageSource, /StorePageHeader/);
   assert.doesNotMatch(leavesPageSource, /ConstructionMobileShell/);
@@ -146,46 +149,22 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
   assert.match(offlinePageSource, /constructionApi\.offlineSync/);
   assert.doesNotMatch(profilePageSource, /ConstructionMobileShell/);
   assert.match(profilePageSource, /StorePageHeader/);
-  assert.match(shellSource, /mobile-worker-shell/);
-  assert.match(shellSource, /construction-mobile-tabs/);
-  assert.match(shellSource, /mobile-worker-bottom-nav/);
-  assert.match(shellSource, /mallbay 施工端/);
-  assert.doesNotMatch(shellSource, /MallBay 施工端/);
-  assert.match(shellSource, /label: "任务"/);
-  assert.match(shellSource, /label: "日程"/);
-  assert.match(shellSource, /label: "拍照"/);
-  assert.match(shellSource, /construction-mobile-tab--camera/);
-  assert.match(shellSource, /construction-mobile-tab-label/);
-  assert.match(shellSource, /label: "请假"/);
-  assert.match(shellSource, /label: "我的"/);
-  assert.match(shellSource, /active: "tasks" \| "schedules" \| "camera" \| "materials" \| "leaves" \| "profile"/);
-  assert.match(shellSource, /\/construction\/camera/);
-  assert.match(shellSource, /\/construction\/leaves/);
-  assert.match(shellSource, /\/construction\/offline/);
-  assert.match(shellSource, /\/construction\/profile/);
-  assert.doesNotMatch(shellSource, /label: "物料管理"/);
-  assert.doesNotMatch(shellSource, /label: "个人中心"/);
-  assert.doesNotMatch(shellSource, /href: "\/profile"/);
   const cssSource = readFileSync("app/globals.css", "utf8");
-  assert.match(cssSource, /grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
-  assert.match(cssSource, /\.construction-mobile-tab--camera\s*\{[^}]*transform: translateY\(-20px\);/);
-  assert.match(cssSource, /\.construction-mobile-tab--camera \.anticon\s*\{\s*width: 56px;/);
+  assert.doesNotMatch(cssSource, /\.construction-mobile-tabs/);
+  assert.doesNotMatch(cssSource, /\.construction-mobile-tab--camera/);
 });
 
-test("construction mobile pages redirect desktop web users to backend pages", () => {
-  const shellSource = readFileSync("src/features/construction/mobile-shell.tsx", "utf8");
+test("construction worker pages no longer redirect desktop web users through a mobile shell", () => {
   const schedulesPageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
   const cameraPageSource = readFileSync("app/construction/camera/page.tsx", "utf8");
   const materialsPageSource = readFileSync("app/construction/materials/page.tsx", "utf8");
   const offlinePageSource = readFileSync("app/construction/offline/page.tsx", "utf8");
   const profilePageSource = readFileSync("app/construction/profile/page.tsx", "utf8");
 
-  assert.match(shellSource, /desktopHref\?: string/);
-  assert.match(shellSource, /useLayoutEffect/);
-  assert.match(shellSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
-  assert.match(shellSource, /window\.location\.replace\(desktopHref\)/);
+  assert.equal(existsSync("src/features/construction/mobile-shell.tsx"), false);
   assert.doesNotMatch(schedulesPageSource, /desktopHref="\/construction\/capacities"/);
-  assert.match(cameraPageSource, /desktopHref="\/construction\/assignments"/);
+  assert.doesNotMatch(cameraPageSource, /desktopHref="\/construction\/assignments"/);
+  assert.match(cameraPageSource, /StorePageHeader/);
   assert.doesNotMatch(materialsPageSource, /desktopHref="\/inventory"/);
   assert.match(materialsPageSource, /StorePageHeader/);
   assert.doesNotMatch(offlinePageSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
@@ -251,12 +230,16 @@ test("construction materials page follows the prototype material management entr
   assert.match(cssSource, /\.construction-materials-actions/);
 });
 
-test("construction mobile camera and leave pages expose prototype quick actions", () => {
+test("construction camera and leave pages expose prototype quick actions in web layout", () => {
   const cameraPageSource = readFileSync("app/construction/camera/page.tsx", "utf8");
   const leavesPageSource = readFileSync("app/construction/leaves/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
   assert.match(cameraPageSource, /施工照片上传/);
+  assert.doesNotMatch(cameraPageSource, /ConstructionMobileShell/);
+  assert.match(cameraPageSource, /StorePageHeader/);
+  assert.match(cameraPageSource, /worker-camera-page/);
+  assert.match(cameraPageSource, /worker-camera-hero/);
   assert.match(cameraPageSource, /construction-camera-workspace/);
   assert.match(cameraPageSource, /construction-camera-offline-banner/);
   assert.match(cameraPageSource, /construction-camera-upload-section/);
@@ -306,6 +289,9 @@ test("construction mobile camera and leave pages expose prototype quick actions"
   assert.match(cssSource, /\.construction-camera-upload-placeholder/);
   assert.match(cssSource, /\.construction-camera-gallery/);
   assert.match(cssSource, /\.construction-camera-bottom-actions/);
+  assert.match(cssSource, /\.worker-camera-page/);
+  assert.match(cssSource, /\.worker-camera-hero/);
+  assert.match(cssSource, /\.worker-camera-grid/);
   assert.match(cssSource, /\.construction-leave-workspace/);
   assert.match(cssSource, /\.construction-leave-application-panel/);
   assert.match(cssSource, /\.worker-leave-page/);
@@ -358,7 +344,6 @@ test("construction schedules page uses business-safe copy for unknown schedule s
 test("construction schedules page renders prototype task-style schedule cards", () => {
   const pageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
-  const shellSource = readFileSync("src/features/construction/mobile-shell.tsx", "utf8");
 
   assert.doesNotMatch(pageSource, /variant="calendar"/);
   assert.match(pageSource, /construction-schedule-task-card/);
@@ -376,8 +361,7 @@ test("construction schedules page renders prototype task-style schedule cards", 
   assert.match(cssSource, /\.construction-schedule-task-main/);
   assert.match(cssSource, /\.construction-schedule-task-meta/);
   assert.match(cssSource, /\.worker-schedule-mobile-cards/);
-  assert.match(shellSource, /variant\?: "hero" \| "calendar"/);
-  assert.match(shellSource, /construction-mobile-shell-\$\{variant\}/);
+  assert.equal(existsSync("src/features/construction/mobile-shell.tsx"), false);
 });
 
 test("construction offline page follows the prototype upload queue layout", () => {

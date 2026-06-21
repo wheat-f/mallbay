@@ -23,9 +23,7 @@ const POSITION_LABEL: Record<string, string> = {
 };
 
 const publicPrefixes = ["/auth", "/stores/"];
-const mobilePrefixes = [
-  "/construction/camera"
-];
+const mobilePrefixes = [] as string[];
 
 export function shouldUseManagementShell(pathname: string) {
   if (pathname === "/") return false;
@@ -70,6 +68,7 @@ export function getManagementSearchPlaceholder(pathname: string) {
   if (pathname.startsWith("/after-sales")) return "搜索订单或售后单...";
   if (pathname.startsWith("/construction/assignments")) return "搜索订单号/客户名/车牌号...";
   if (pathname.startsWith("/construction/tasks")) return "搜索我的任务、订单号或客户...";
+  if (pathname.startsWith("/construction/camera")) return "搜索照片、订单或阶段...";
   if (pathname.startsWith("/construction/leave-approvals")) return "搜索师傅、请假日期或状态...";
   if (pathname.startsWith("/construction/leaves")) return "搜索请假日期或原因...";
   if (pathname.startsWith("/construction/schedules")) return "搜索排班日期或状态...";

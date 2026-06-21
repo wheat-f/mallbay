@@ -193,6 +193,7 @@ test("after-sales task center is a web management task board", () => {
   assert.match(pageSource, /worker-after-sales-mobile-cards/);
   assert.doesNotMatch(pageSource, /after-sales-mobile-shell/);
   assert.doesNotMatch(pageSource, /after-sales-mobile-bottom-nav/);
+  assert.doesNotMatch(pageSource, /after-sales-mobile-header/);
   assert.doesNotMatch(pageSource, /href="\/dashboard"/);
   assert.match(pageSource, /待处理/);
   assert.match(pageSource, /处理中/);
@@ -218,14 +219,14 @@ test("after-sales task center is a web management task board", () => {
   assert.doesNotMatch(nextConfigSource, /lh3\.googleusercontent\.com/);
 });
 
-test("after-sales mobile task header stays within the viewport", () => {
+test("after-sales task cards stay within the management viewport on small screens", () => {
   const cssSource = readFileSync("app/globals.css", "utf8");
-  const shellBlock = cssBlock(cssSource, ".after-sales-mobile-shell");
-  const headerBlock = cssBlock(cssSource, ".after-sales-mobile-header");
+  const cardsBlock = cssBlock(cssSource, ".worker-after-sales-mobile-cards");
+  const cardBlock = cssBlock(cssSource, ".worker-after-sales-card");
 
-  assert.match(shellBlock, /overflow-x:\s*clip;/);
-  assert.match(headerBlock, /width:\s*auto;/);
-  assert.match(headerBlock, /max-width:\s*430px;/);
-  assert.match(headerBlock, /margin:\s*0 auto 18px;/);
-  assert.doesNotMatch(headerBlock, /calc\(100% \+ 28px\)/);
+  assert.doesNotMatch(cssSource, /\.after-sales-mobile-shell/);
+  assert.doesNotMatch(cssSource, /\.after-sales-mobile-bottom-nav/);
+  assert.match(cardsBlock, /display:\s*none;/);
+  assert.match(cardBlock, /border-radius:\s*8px;/);
+  assert.match(cardBlock, /padding:\s*14px;/);
 });

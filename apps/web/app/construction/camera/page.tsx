@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Button, Progress } from "antd";
+import { Button, Card, Progress, Tag } from "antd";
 import {
   CameraOutlined,
   CheckCircleOutlined,
@@ -16,7 +16,7 @@ import {
   WarningOutlined
 } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
-import { ConstructionMobileShell } from "../../../src/features/construction/mobile-shell";
+import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 
 type PhotoStatus = "uploaded" | "local" | "uploading" | "empty" | "failed";
 
@@ -61,7 +61,7 @@ const beforePhotos: PhotoItem[] = [
     title: "车架号照片",
     status: "empty",
     statusText: "未上传",
-    placeholderText: "点击拍照或上传图片",
+    placeholderText: "补传车架号照片",
     placeholderIcon: "camera"
   }
 ];
@@ -77,82 +77,143 @@ const afterPhotos: PhotoItem[] = [
     title: "门头合影照片",
     status: "empty",
     statusText: "未上传",
-    placeholderText: "车主与门店招牌合影",
+    placeholderText: "补传车主与门店招牌合影",
     placeholderIcon: "store"
   }
 ];
 
 const processPhotos = [photoAssets.processA, photoAssets.processB];
 
+const cameraMetrics = [
+  { label: "必传照片", value: "6", tone: "primary" },
+  { label: "已完成", value: "3", tone: "success" },
+  { label: "待同步", value: "2", tone: "warning" },
+  { label: "异常", value: "1", tone: "danger" }
+];
+
 export default function ConstructionCameraPage() {
   const router = useRouter();
 
   return (
-    <ConstructionMobileShell
-      title="施工照片上传"
-      subtitle="按阶段留存验车、施工过程和完工凭证"
-      active="camera"
-      variant="calendar"
-      badgeCount={2}
-      desktopHref="/construction/assignments"
-    >
-      <div className="construction-camera-workspace">
-        <div className="construction-camera-offline-banner">
-          <CloudSyncOutlined />
-          <span>当前处于离线状态，照片已保存至本地队列，连接网络后自动同步。</span>
-        </div>
-
-        <PhotoSection title="施工前" required progressText="2/4 已完成" items={beforePhotos} />
-
-        <section className="construction-camera-upload-section">
-          <div className="construction-camera-section-head">
-            <h2>施工中</h2>
-          </div>
-          <article className="construction-camera-photo-card construction-camera-process-card">
-            <div className="construction-camera-photo-head">
-              <div>
-                <strong>施工过程照片</strong>
-                <span>可选上传多张照片记录进度</span>
-              </div>
-            </div>
-            <div className="construction-camera-gallery" aria-label="施工过程照片">
-              <button className="construction-camera-gallery-add" type="button">
-                <PlusOutlined />
-                <span>添加</span>
-              </button>
-              {processPhotos.map((src) => (
-                <div key={src} className="construction-camera-gallery-image">
-                  <Image
-                    className="construction-camera-gallery-thumb"
-                    src={src}
-                    alt="施工过程照片"
-                    width={112}
-                    height={112}
-                    sizes="112px"
-                    unoptimized
-                  />
-                  <button type="button" aria-label="移除施工过程照片">
-                    <CloseCircleOutlined />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <PhotoActions />
-          </article>
-        </section>
-
-        <PhotoSection title="施工后" required items={afterPhotos} />
-      </div>
-
-      <footer className="construction-camera-bottom-actions">
-        <Button icon={<SaveOutlined />} onClick={() => router.push("/construction/offline")}>
-          保存并同步
+    <div className="management-page worker-camera-page">
+      <StorePageHeader title="施工照片上传" description="在 Web 后台补传、核验和同步施工照片，现场拍照入口由小程序承接。">
+        <Button icon={<CloudSyncOutlined />} onClick={() => router.push("/construction/offline")}>
+          查看离线队列
         </Button>
         <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => router.push("/construction/tasks")}>
-          提交完工
+          返回我的任务
         </Button>
-      </footer>
-    </ConstructionMobileShell>
+      </StorePageHeader>
+
+      <section className="worker-camera-hero">
+        <div>
+          <Tag color="processing">当前工单</Tag>
+          <h2>ORD20260616850186</h2>
+          <p>宝马 5 系隔热膜施工，核验验车照片、膜箱膜桶照片、施工过程和完工凭证后再提交完工。</p>
+        </div>
+        <div className="worker-camera-hero-progress">
+          <strong>50%</strong>
+          <Progress percent={50} showInfo={false} />
+          <span>3 / 6 必传照片已完成</span>
+        </div>
+      </section>
+
+      <section className="worker-camera-summary" aria-label="照片上传状态">
+        {cameraMetrics.map((item) => (
+          <article key={item.label} className={`worker-camera-stat is-${item.tone}`}>
+            <strong>{item.value}</strong>
+            <span>{item.label}</span>
+          </article>
+        ))}
+      </section>
+
+      <div className="worker-camera-grid">
+        <div className="construction-camera-workspace">
+          <div className="construction-camera-offline-banner">
+            <CloudSyncOutlined />
+            <span>检测到 2 张照片仍在本地队列，连接稳定后可从离线队列继续同步。</span>
+          </div>
+
+          <PhotoSection title="施工前" required progressText="2/4 已完成" items={beforePhotos} />
+
+          <section className="construction-camera-upload-section">
+            <div className="construction-camera-section-head">
+              <h2>施工中</h2>
+            </div>
+            <article className="construction-camera-photo-card construction-camera-process-card">
+              <div className="construction-camera-photo-head">
+                <div>
+                  <strong>施工过程照片</strong>
+                  <span>可上传多张照片记录进度</span>
+                </div>
+              </div>
+              <div className="construction-camera-gallery" aria-label="施工过程照片">
+                <button className="construction-camera-gallery-add" type="button">
+                  <PlusOutlined />
+                  <span>添加</span>
+                </button>
+                {processPhotos.map((src) => (
+                  <div key={src} className="construction-camera-gallery-image">
+                    <Image
+                      className="construction-camera-gallery-thumb"
+                      src={src}
+                      alt="施工过程照片"
+                      width={112}
+                      height={112}
+                      sizes="112px"
+                      unoptimized
+                    />
+                    <button type="button" aria-label="移除施工过程照片">
+                      <CloseCircleOutlined />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <PhotoActions />
+            </article>
+          </section>
+
+          <PhotoSection title="施工后" required items={afterPhotos} />
+        </div>
+
+        <aside className="worker-camera-side">
+          <Card className="worker-camera-check-card" title="提交前检查">
+            <ol>
+              <li>施工前必传照片完整</li>
+              <li>膜箱、膜桶批次与物料核验一致</li>
+              <li>施工后照片和门头合影完成</li>
+              <li>上传失败照片已重试或标记异常</li>
+            </ol>
+          </Card>
+
+          <Card className="worker-camera-sync-card" title="同步状态">
+            <dl>
+              <div>
+                <dt>云端状态</dt>
+                <dd>等待 2 张照片同步</dd>
+              </div>
+              <div>
+                <dt>最近同步</dt>
+                <dd>今天 10:48</dd>
+              </div>
+              <div>
+                <dt>异常处理</dt>
+                <dd>施工后照片需重试</dd>
+              </div>
+            </dl>
+          </Card>
+
+          <footer className="construction-camera-bottom-actions">
+            <Button icon={<SaveOutlined />} onClick={() => router.push("/construction/offline")}>
+              保存并同步
+            </Button>
+            <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => router.push("/construction/tasks")}>
+              提交完工
+            </Button>
+          </footer>
+        </aside>
+      </div>
+    </div>
   );
 }
 
@@ -223,7 +284,7 @@ function PhotoPreview({ item }: { item: PhotoItem }) {
           alt={`${item.title}预览`}
           width={640}
           height={360}
-          sizes="(max-width: 430px) calc(100vw - 52px), 378px"
+          sizes="(max-width: 900px) calc(100vw - 64px), 360px"
           unoptimized
         />
         {item.status === "local" ? (

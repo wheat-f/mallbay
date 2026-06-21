@@ -60,7 +60,8 @@ test("management shell wraps business routes and excludes public and mobile rout
   assert.doesNotMatch(mobilePrefixesSource, /"\/construction\/tasks"/);
   assert.match(source, /pathname\.startsWith\("\/construction\/tasks"\)/);
   assert.doesNotMatch(mobilePrefixesSource, /"\/construction\/schedules"/);
-  assert.match(source, /"\/construction\/camera"/);
+  assert.doesNotMatch(mobilePrefixesSource, /"\/construction\/camera"/);
+  assert.match(source, /pathname\.startsWith\("\/construction\/camera"\)/);
   assert.match(source, /"\/construction\/materials"/);
   assert.doesNotMatch(mobilePrefixesSource, /"\/construction\/leaves"/);
   assert.match(source, /"\/construction\/offline"/);
@@ -126,6 +127,8 @@ test("management shell uses route-aware global search placeholders", () => {
   assert.match(source, /搜索订单号\/客户名\/车牌号\.\.\./);
   assert.match(source, /pathname\.startsWith\("\/construction\/tasks"\)/);
   assert.match(source, /搜索我的任务、订单号或客户\.\.\./);
+  assert.match(source, /pathname\.startsWith\("\/construction\/camera"\)/);
+  assert.match(source, /搜索照片、订单或阶段\.\.\./);
   assert.match(source, /pathname\.startsWith\("\/construction\/leave-approvals"\)/);
   assert.match(source, /搜索师傅、请假日期或状态\.\.\./);
   assert.match(source, /pathname\.startsWith\("\/construction\/leaves"\)/);

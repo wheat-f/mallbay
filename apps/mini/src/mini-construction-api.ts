@@ -1,5 +1,9 @@
 import { DEFAULT_OFFLINE_QUEUE_MAX_RETRIES, type OfflineOperation } from "./offline-queue";
-import type { CachedConstructionTask, ConstructionPhotoStage } from "./construction-task-view";
+import {
+  toCachedConstructionTask,
+  type ConstructionPhotoStage,
+  type MiniAssignmentRecord
+} from "./construction-task-view";
 import { API_BASE_URL_KEY, AUTH_TOKEN_KEY, STORE_ID_KEY } from "./mini-auth-config";
 
 export const TASK_CACHE_KEY = "mallbay_construction_tasks";
@@ -153,8 +157,8 @@ function markFailed(item: OfflineOperation, error: unknown): OfflineOperation {
   };
 }
 
-function normalizeAssignmentsResponse(response: unknown): unknown[] {
-  return normalizeListResponse(response);
+function normalizeAssignmentsResponse(response: unknown): MiniAssignmentRecord[] {
+  return normalizeListResponse(response) as MiniAssignmentRecord[];
 }
 
 function normalizeOfflineSyncResponse(response: unknown) {
@@ -193,58 +197,4 @@ function mergeById(cached: unknown[], records: unknown[]) {
 function getRecordId(item: unknown) {
   if (!item || typeof item !== "object") return "";
   return String((item as { id?: unknown }).id ?? "");
-}
-
-function toCachedConstructionTask(record: unknown): CachedConstructionTask {
-  const item = record as {
-    id?: string;
-    orderId?: string;
-    status?: CachedConstructionTask["status"];
-    order?: {
-      orderNo?: string;
-      constructionType?: string;
-      constructionLocation?: string;
-      appointmentDate?: string;
-      appointmentTimeSlot?: string;
-      outsideAddress?: string;
-    };
-    photos?: { stage?: ConstructionPhotoStage }[];
-  };
-  return {
-    id: item.id ?? "",
-    orderId: item.orderId ?? "",
-    orderNo: item.order?.orderNo ?? item.orderId ?? "",
-    customerName: "客户待同步",
-    vehicleLabel: "车辆待同步",
-    constructionType: getConstructionTypeLabel(item.order?.constructionType),
-    constructionLocation: getConstructionLocationLabel(item.order?.constructionLocation),
-    appointmentDate: formatDate(item.order?.appointmentDate),
-    appointmentTimeSlot: item.order?.appointmentTimeSlot,
-    outsideAddress: item.order?.outsideAddress,
-    status: item.status ?? "DISPATCHED",
-    photoStages: (item.photos ?? []).map((photo) => photo.stage).filter(Boolean) as ConstructionPhotoStage[]
-  };
-}
-
-function getConstructionTypeLabel(value?: string) {
-  const labels: Record<string, string> = {
-    PPF: "漆面保护膜",
-    COLOR_FILM: "改色膜",
-    HEAT_FILM: "玻璃膜",
-    INSPECTION: "复检"
-  };
-  return value ? labels[value] ?? value : "施工类型待同步";
-}
-
-function getConstructionLocationLabel(value?: string) {
-  const labels: Record<string, string> = {
-    IN_STORE: "到店",
-    OUTSIDE: "外出"
-  };
-  return value ? labels[value] ?? value : "施工地点待同步";
-}
-
-function formatDate(value?: string) {
-  if (!value) return undefined;
-  return value.slice(0, 10);
 }

@@ -44,6 +44,43 @@ const cachedTasks: CachedConstructionTask[] = [
   }
 ];
 
+test("toCachedConstructionTask maps assignment customer and vehicle summaries for offline use", async () => {
+  const { toCachedConstructionTask } = await import("./construction-task-view");
+
+  assert.deepEqual(
+    toCachedConstructionTask({
+      id: "record-10",
+      orderId: "order-10",
+      status: "DISPATCHED",
+      order: {
+        orderNo: "ORD20260621010",
+        constructionType: "PPF",
+        constructionLocation: "OUTSIDE",
+        appointmentDate: "2026-06-21T00:00:00.000Z",
+        appointmentTimeSlot: "09:00-12:00",
+        outsideAddress: "长沙市岳麓区",
+        customer: { name: "申周翰", phone: "13800000000" },
+        vehicle: { plateNo: "湘A101ZQ", brand: "宝马", model: "5系", color: "黑色" }
+      },
+      photos: [{ stage: "BEFORE" }]
+    }),
+    {
+      id: "record-10",
+      orderId: "order-10",
+      orderNo: "ORD20260621010",
+      customerName: "申周翰",
+      vehicleLabel: "湘A101ZQ / 宝马 / 5系 / 黑色",
+      constructionType: "漆面保护膜",
+      constructionLocation: "外出",
+      appointmentDate: "2026-06-21",
+      appointmentTimeSlot: "09:00-12:00",
+      outsideAddress: "长沙市岳麓区",
+      status: "DISPATCHED",
+      photoStages: ["BEFORE"]
+    }
+  );
+});
+
 test("buildTaskListItems formats cached construction tasks for mini list page", () => {
   assert.deepEqual(buildTaskListItems(cachedTasks), [
     {

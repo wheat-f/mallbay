@@ -46,6 +46,34 @@ export type CachedWorkerSchedule = {
   } | null;
 };
 
+export type MiniAssignmentRecord = {
+  id?: string;
+  orderId?: string;
+  status?: CachedConstructionTaskStatus;
+  order?: {
+    orderNo?: string | null;
+    constructionType?: string | null;
+    constructionLocation?: string | null;
+    appointmentDate?: string | null;
+    appointmentTimeSlot?: string | null;
+    outsideAddress?: string | null;
+    customer?: {
+      name?: string | null;
+      companyName?: string | null;
+      contactName?: string | null;
+      phone?: string | null;
+    } | null;
+    vehicle?: {
+      plateNo?: string | null;
+      brand?: string | null;
+      model?: string | null;
+      carModel?: string | null;
+      color?: string | null;
+    } | null;
+  } | null;
+  photos?: { stage?: ConstructionPhotoStage | null }[];
+};
+
 const PHOTO_STAGES: { stage: ConstructionPhotoStage; label: string }[] = [
   { stage: "BEFORE", label: getWorkerPhotoStageLabel("BEFORE") },
   { stage: "DURING", label: getWorkerPhotoStageLabel("DURING") },
@@ -100,6 +128,24 @@ export function buildTaskSegments(tasks: CachedConstructionTask[], today?: strin
 
 export function filterTasksBySegment(tasks: CachedConstructionTask[], segment: WorkerTaskSegmentKey, today?: string) {
   return filterWorkerTasks(tasks, segment, today) as CachedConstructionTask[];
+}
+
+export function toCachedConstructionTask(record: MiniAssignmentRecord): CachedConstructionTask {
+  const order = record.order ?? {};
+  return {
+    id: record.id ?? "",
+    orderId: record.orderId ?? "",
+    orderNo: order.orderNo ?? record.orderId ?? "",
+    customerName: getCustomerLabel(order.customer),
+    vehicleLabel: getVehicleLabel(order.vehicle),
+    constructionType: getConstructionTypeLabel(order.constructionType),
+    constructionLocation: getConstructionLocationLabel(order.constructionLocation),
+    appointmentDate: formatDate(order.appointmentDate ?? undefined),
+    appointmentTimeSlot: order.appointmentTimeSlot ?? undefined,
+    outsideAddress: order.outsideAddress ?? undefined,
+    status: record.status ?? "DISPATCHED",
+    photoStages: (record.photos ?? []).map((photo) => photo.stage).filter(Boolean) as ConstructionPhotoStage[]
+  };
 }
 
 export function buildOfflineQueueSummary(items: MiniOfflineOperation[]) {
@@ -192,4 +238,44 @@ function getScheduleFallbackNote(status: ScheduleStatus) {
   if (status === "OUTSIDE") return "外出施工";
   if (status === "REST") return "休息";
   return "排班待确认";
+}
+
+function getCustomerLabel(customer?: NonNullable<MiniAssignmentRecord["order"]>["customer"]) {
+  if (!customer) return "客户待同步";
+  return customer.name?.trim()
+    || customer.companyName?.trim()
+    || customer.contactName?.trim()
+    || customer.phone?.trim()
+    || "客户待同步";
+}
+
+function getVehicleLabel(vehicle?: NonNullable<MiniAssignmentRecord["order"]>["vehicle"]) {
+  if (!vehicle) return "车辆待同步";
+  return [vehicle.plateNo, vehicle.brand, vehicle.model ?? vehicle.carModel, vehicle.color]
+    .map((value) => value?.trim())
+    .filter(Boolean)
+    .join(" / ") || "车辆待同步";
+}
+
+function getConstructionTypeLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    PPF: "漆面保护膜",
+    COLOR_FILM: "改色膜",
+    HEAT_FILM: "玻璃膜",
+    INSPECTION: "复检"
+  };
+  return value ? labels[value] ?? value : "施工类型待同步";
+}
+
+function getConstructionLocationLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    IN_STORE: "到店",
+    OUTSIDE: "外出"
+  };
+  return value ? labels[value] ?? value : "施工地点待同步";
+}
+
+function formatDate(value?: string) {
+  if (!value) return undefined;
+  return value.slice(0, 10);
 }

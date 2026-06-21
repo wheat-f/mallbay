@@ -23,7 +23,9 @@ test("MiniConstructionApi pulls assigned construction tasks into local cache", a
           constructionType: "PPF",
           constructionLocation: "IN_STORE",
           appointmentDate: "2026-06-18T00:00:00.000Z",
-          appointmentTimeSlot: "09:00"
+          appointmentTimeSlot: "09:00",
+          customer: { name: "申周翰" },
+          vehicle: { plateNo: "湘A101ZQ", brand: "宝马", model: "5系", color: "黑色" }
         },
         photos: [{ stage: "BEFORE" }]
       }
@@ -43,8 +45,8 @@ test("MiniConstructionApi pulls assigned construction tasks into local cache", a
       id: "record-1",
       orderId: "order-1",
       orderNo: "MB20260606001",
-      customerName: "客户待同步",
-      vehicleLabel: "车辆待同步",
+      customerName: "申周翰",
+      vehicleLabel: "湘A101ZQ / 宝马 / 5系 / 黑色",
       constructionType: "漆面保护膜",
       constructionLocation: "到店",
       appointmentDate: "2026-06-18",

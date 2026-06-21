@@ -93,17 +93,17 @@ Page({
 function toCachedTask(record) {
   const order = record.order || {};
   return {
-    id: record.id,
-    orderId: record.orderId,
-    orderNo: order.orderNo || record.orderId,
-    customerName: "客户待同步",
-    vehicleLabel: "车辆待同步",
+    id: record.id || "",
+    orderId: record.orderId || "",
+    orderNo: order.orderNo || record.orderId || "",
+    customerName: getCustomerLabel(order.customer),
+    vehicleLabel: getVehicleLabel(order.vehicle),
     constructionType: getConstructionTypeLabel(order.constructionType),
     constructionLocation: getConstructionLocationLabel(order.constructionLocation),
     appointmentDate: order.appointmentDate ? order.appointmentDate.slice(0, 10) : "",
     appointmentTimeSlot: order.appointmentTimeSlot || "",
     outsideAddress: order.outsideAddress || "",
-    status: record.status,
+    status: record.status || "DISPATCHED",
     photoStages: (record.photos || []).map((photo) => photo.stage).filter(Boolean)
   };
 }
@@ -129,6 +129,23 @@ function toTaskListItem(task) {
     statusLabel: STATUS_LABELS[task.status] || task.status,
     photoProgress: `照片 ${photoCount}/3`
   };
+}
+
+function getCustomerLabel(customer) {
+  if (!customer) return "客户待同步";
+  return trimFirst([customer.name, customer.companyName, customer.contactName, customer.phone]) || "客户待同步";
+}
+
+function getVehicleLabel(vehicle) {
+  if (!vehicle) return "车辆待同步";
+  return [vehicle.plateNo, vehicle.brand, vehicle.model || vehicle.carModel, vehicle.color]
+    .map((value) => (value || "").trim())
+    .filter(Boolean)
+    .join(" / ") || "车辆待同步";
+}
+
+function trimFirst(values) {
+  return values.map((value) => (value || "").trim()).find(Boolean) || "";
 }
 
 function getConstructionTypeLabel(value) {

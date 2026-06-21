@@ -1,0 +1,30 @@
+<view class="page">
+  <view class="panel hero">
+    <text class="eyebrow">施工排班</text>
+    <text class="title">我的当日排班</text>
+    <text class="subtitle">同步后可离线查看当天施工地点、状态和备注。</text>
+  </view>
+
+  <view class="panel controls">
+    <view class="field">
+      <text class="label">日期</text>
+      <picker mode="date" value="{{selectedDate}}" bindchange="onDateChange">
+        <view class="picker">{{selectedDate}}</view>
+      </picker>
+    </view>
+    <button class="primary" loading="{{syncing}}" bindtap="syncSchedules">同步排班</button>
+  </view>
+
+  <view wx:if="{{schedules.length === 0}}" class="empty">
+    <text>{{emptyText}}</text>
+  </view>
+
+  <view wx:for="{{schedules}}" wx:key="id" class="schedule-card">
+    <view class="card-head">
+      <text class="card-title">{{item.statusLabel}}</text>
+      <text class="badge">{{item.date}}</text>
+    </view>
+    <text class="worker">{{item.workerName}}</text>
+    <text class="note">{{item.note}}</text>
+  </view>
+</view>

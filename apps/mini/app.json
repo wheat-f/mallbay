@@ -2,6 +2,7 @@
   "pages": [
     "pages/tasks/index",
     "pages/task-detail/index",
+    "pages/schedule/index",
     "pages/offline/index",
     "pages/leave/index",
     "pages/settings/index"

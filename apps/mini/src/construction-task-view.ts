@@ -3,7 +3,9 @@ import {
   buildWorkerTaskSegments,
   filterWorkerTasks,
   getWorkerPhotoStageLabel,
+  getWorkerScheduleStatusLabel,
   getWorkerTaskStatusLabel,
+  type ScheduleStatus,
   type WorkerTaskSegmentKey
 } from "@mallbay/shared";
 
@@ -31,6 +33,17 @@ export type MiniOfflineOperation = {
   type: OfflineOperationType;
   attempts: number;
   status: OfflineOperationStatus;
+};
+
+export type CachedWorkerSchedule = {
+  id: string;
+  date: string;
+  status: ScheduleStatus;
+  note?: string | null;
+  worker?: {
+    username?: string | null;
+    nickname?: string | null;
+  } | null;
 };
 
 const PHOTO_STAGES: { stage: ConstructionPhotoStage; label: string }[] = [
@@ -102,6 +115,16 @@ export function buildOfflineQueueSummary(items: MiniOfflineOperation[]) {
   };
 }
 
+export function buildScheduleListItems(items: CachedWorkerSchedule[]) {
+  return items.map((item) => ({
+    id: item.id,
+    date: item.date.slice(0, 10),
+    statusLabel: getWorkerScheduleStatusLabel(item.status),
+    note: item.note?.trim() || getScheduleFallbackNote(item.status),
+    workerName: item.worker?.nickname || item.worker?.username || "我的排班"
+  }));
+}
+
 export function buildPhotoUploadOperationInput(
   recordId: string,
   stage: ConstructionPhotoStage,
@@ -162,4 +185,11 @@ function countKnownPhotoStages(stages: ConstructionPhotoStage[]) {
 
 function formatSchedule(task: CachedConstructionTask) {
   return [task.appointmentDate, task.appointmentTimeSlot].filter(Boolean).join(" ");
+}
+
+function getScheduleFallbackNote(status: ScheduleStatus) {
+  if (status === "WORKING") return "店内可施工";
+  if (status === "OUTSIDE") return "外出施工";
+  if (status === "REST") return "休息";
+  return "排班待确认";
 }

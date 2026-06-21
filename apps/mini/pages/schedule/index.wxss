@@ -1,0 +1,126 @@
+.page {
+  min-height: 100vh;
+  padding: 32rpx;
+  background: #f8fafc;
+  box-sizing: border-box;
+}
+
+.panel {
+  margin-bottom: 20rpx;
+  padding: 28rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 18rpx;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.hero {
+  background: #0f3a5f;
+  color: #ffffff;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 8rpx;
+  color: #bfdbfe;
+  font-size: 24rpx;
+}
+
+.title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.subtitle {
+  display: block;
+  margin-top: 12rpx;
+  color: #dbeafe;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.controls {
+  display: grid;
+  gap: 20rpx;
+}
+
+.field {
+  display: grid;
+  gap: 12rpx;
+}
+
+.label {
+  color: #475569;
+  font-size: 26rpx;
+}
+
+.picker {
+  min-height: 84rpx;
+  padding: 22rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 16rpx;
+  background: #f8fafc;
+  color: #111827;
+  box-sizing: border-box;
+}
+
+.primary {
+  margin: 0;
+  background: #0f3a5f;
+  color: #ffffff;
+  border-radius: 16rpx;
+}
+
+.empty {
+  padding: 40rpx 28rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 18rpx;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 28rpx;
+  text-align: center;
+}
+
+.schedule-card {
+  margin-bottom: 20rpx;
+  padding: 28rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 18rpx;
+  background: #ffffff;
+  box-shadow: 0 12rpx 30rpx rgba(15, 23, 42, 0.06);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.card-title {
+  color: #0f172a;
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.badge {
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 24rpx;
+}
+
+.worker,
+.note {
+  display: block;
+  margin-top: 14rpx;
+  color: #475569;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.note {
+  color: #111827;
+}

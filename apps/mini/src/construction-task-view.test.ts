@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildLeaveRequestOperationInput,
   buildPhotoUploadOperationInput,
+  buildScheduleListItems,
   buildTaskStatusOperationInput,
   buildOfflineQueueSummary,
   buildTaskDetailView,
@@ -103,6 +105,43 @@ test("buildTaskSegments shares worker task grouping with web desktop worker page
   assert.deepEqual(filterTasksBySegment(rows, "completed", "2026-06-18").map((item) => item.id), ["record-3"]);
 });
 
+test("buildScheduleListItems formats worker schedules for the mini schedule page", () => {
+  assert.deepEqual(
+    buildScheduleListItems([
+      {
+        id: "schedule-1",
+        date: "2026-06-21T00:00:00.000Z",
+        status: "WORKING",
+        note: "漆面保护膜 09:00",
+        worker: { username: "shigong", nickname: "施工师傅" }
+      },
+      {
+        id: "schedule-2",
+        date: "2026-06-22",
+        status: "REST",
+        note: "",
+        worker: null
+      }
+    ]),
+    [
+      {
+        id: "schedule-1",
+        date: "2026-06-21",
+        statusLabel: "店内排班",
+        note: "漆面保护膜 09:00",
+        workerName: "施工师傅"
+      },
+      {
+        id: "schedule-2",
+        date: "2026-06-22",
+        statusLabel: "休息",
+        note: "休息",
+        workerName: "我的排班"
+      }
+    ]
+  );
+});
+
 test("buildOfflineQueueSummary groups pending failed and retrying operations", () => {
   assert.deepEqual(
     buildOfflineQueueSummary([
@@ -173,4 +212,17 @@ test("buildTaskStatusOperationInput stores local completion time for completed t
       completedAt: "2026-06-11T12:00:00.000Z"
     }
   });
+});
+
+test("mini app exposes a schedule page and task quick entry", () => {
+  const appConfig = JSON.parse(readFileSync("app.json", "utf8")) as { pages: string[] };
+  const taskPageSource = readFileSync("pages/tasks/index.js", "utf8");
+  const taskPageMarkup = readFileSync("pages/tasks/index.wxml", "utf8");
+  const schedulePageSource = readFileSync("pages/schedule/index.js", "utf8");
+
+  assert.ok(appConfig.pages.includes("pages/schedule/index"));
+  assert.match(taskPageSource, /openSchedule/);
+  assert.match(taskPageMarkup, /bindtap="openSchedule"/);
+  assert.match(schedulePageSource, /\/construction\/schedules/);
+  assert.match(schedulePageSource, /mallbay_construction_schedules/);
 });

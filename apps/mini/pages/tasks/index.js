@@ -43,6 +43,10 @@ Page({
     wx.navigateTo({ url: "/pages/leave/index" });
   },
 
+  openSchedule() {
+    wx.navigateTo({ url: "/pages/schedule/index" });
+  },
+
   openSettings() {
     wx.navigateTo({ url: "/pages/settings/index" });
   },

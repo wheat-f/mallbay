@@ -1,22 +1,19 @@
 "use client";
 
-import Image from "next/image";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { App, Button, Progress } from "antd";
+import { useMemo, useState, useSyncExternalStore } from "react";
+import { Alert, App, Button, Card, Progress, Space, Table, Tag } from "antd";
 import {
-  ArrowLeftOutlined,
   DeleteOutlined,
-  ExclamationCircleFilled,
   PauseOutlined,
   PlayCircleOutlined,
+  ReloadOutlined,
   SyncOutlined,
   WarningOutlined
 } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
 import type { OfflineSyncOperation, OfflineSyncResult } from "@mallbay/shared";
-import { useRouter } from "next/navigation";
 import { constructionApi } from "../../../src/lib/api";
-import { ConstructionMobileBottomNav } from "../../../src/features/construction/mobile-shell";
+import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 
 const queueStorageKey = "mallbay-construction-offline-queue";
 const lastSyncStorageKey = "mallbay-construction-last-sync-at";
@@ -35,7 +32,7 @@ type OfflineQueueRow = {
   sizeLabel: string;
   retryCount: number;
   status?: QueuedOperation["status"];
-  imageSrc: string;
+  imageSrc?: string;
 };
 
 const offlinePreviewImages = [
@@ -79,7 +76,6 @@ const offlinePreviewQueue: OfflineQueueRow[] = [
 
 export default function ConstructionOfflinePage() {
   const { message } = App.useApp();
-  const router = useRouter();
   const offlineSnapshot = useSyncExternalStore(
     subscribeOfflineStorage,
     getOfflineStorageSnapshot,
@@ -106,13 +102,6 @@ export default function ConstructionOfflinePage() {
   );
   const cacheUsedMb = operations.length > 0 ? getApproxCacheSizeMb(operations) : 45.2;
   const syncProgress = queueRows.length > 0 ? Math.round((syncedCount / queueRows.length) * 100) : 0;
-
-  useEffect(() => {
-    const desktopQuery = window.matchMedia("(min-width: 901px)");
-    if (desktopQuery.matches) {
-      router.replace("/construction/assignments");
-    }
-  }, [router]);
 
   const syncMutation = useMutation({
     mutationFn: () => constructionApi.offlineSync({ operations }),
@@ -154,43 +143,103 @@ export default function ConstructionOfflinePage() {
   };
 
   return (
-    <main className="construction-mobile-shell construction-offline-mobile-shell">
-      <header className="construction-offline-appbar">
-        <button type="button" aria-label="返回" onClick={() => router.back()}>
-          <ArrowLeftOutlined />
-        </button>
-        <h1>离线上传队列</h1>
-        <button type="button" onClick={() => window.location.reload()}>
-          刷新
-        </button>
-      </header>
-
-      <section className="construction-offline-alert">
-        <WarningOutlined />
-        <span>缓存接近上限（{maxCacheSizeMb}MB），请尽快连接网络同步数据。</span>
-      </section>
-
-      <section className="construction-offline-status-card">
-        <div>
-          <span>当前网络：<strong>{paused ? "已暂停" : syncMutation.isPending ? "同步中" : "弱网"}</strong></span>
-          <em>上次同步时间 {lastSyncAt}</em>
-        </div>
-        <div className="construction-offline-cache">
-          <strong>{cacheUsedMb.toFixed(1)} <small>MB</small></strong>
-          <span>/ {maxCacheSizeMb} MB 已用</span>
-        </div>
-        <Progress percent={Math.min(Math.round((cacheUsedMb / maxCacheSizeMb) * 100), 100)} showInfo={false} />
-      </section>
-
-      <div className="construction-offline-actions">
-        <Button type="primary" icon={<SyncOutlined spin={syncMutation.isPending} />} loading={syncMutation.isPending} onClick={handleSync}>
-          全部同步
-        </Button>
+    <div className="management-page worker-offline-page">
+      <StorePageHeader title="离线上传队列" description="查看施工照片、任务状态和请假申请的本地待同步记录。">
         <Button icon={paused ? <PlayCircleOutlined /> : <PauseOutlined />} onClick={() => setPaused((current) => !current)}>
           {paused ? "继续同步" : "暂停同步"}
         </Button>
-        <Button danger icon={<DeleteOutlined />} aria-label="清理缓存" onClick={clearQueue} />
-      </div>
+        <Button type="primary" icon={<SyncOutlined spin={syncMutation.isPending} />} loading={syncMutation.isPending} onClick={handleSync}>
+          全部同步
+        </Button>
+      </StorePageHeader>
+
+      <Alert
+        className="construction-offline-alert"
+        type="warning"
+        showIcon
+        icon={<WarningOutlined />}
+        message={`缓存接近上限（${maxCacheSizeMb}MB），请尽快连接网络同步数据。`}
+      />
+
+      <section className="worker-offline-grid">
+        <Card className="construction-offline-status-card">
+          <div>
+            <span>当前网络：<strong>{paused ? "已暂停" : syncMutation.isPending ? "同步中" : "弱网"}</strong></span>
+            <em>上次同步时间 {lastSyncAt}</em>
+          </div>
+          <div className="construction-offline-cache">
+            <strong>{cacheUsedMb.toFixed(1)} <small>MB</small></strong>
+            <span>/ {maxCacheSizeMb} MB 已用</span>
+          </div>
+          <Progress percent={Math.min(Math.round((cacheUsedMb / maxCacheSizeMb) * 100), 100)} showInfo={false} />
+        </Card>
+
+        <Card className="construction-offline-actions" title="队列操作">
+          <Space wrap>
+            <Button type="primary" icon={<SyncOutlined spin={syncMutation.isPending} />} loading={syncMutation.isPending} onClick={handleSync}>
+              全部同步
+            </Button>
+            <Button icon={paused ? <PlayCircleOutlined /> : <PauseOutlined />} onClick={() => setPaused((current) => !current)}>
+              {paused ? "继续同步" : "暂停同步"}
+            </Button>
+            <Button danger icon={<DeleteOutlined />} aria-label="清理缓存" onClick={clearQueue}>
+              清理缓存
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={() => window.location.reload()}>
+              刷新
+            </Button>
+          </Space>
+        </Card>
+      </section>
+
+      <Card className="construction-offline-table-card" title="待同步明细">
+        <Table<OfflineQueueRow>
+          rowKey="clientOperationId"
+          dataSource={queueRows}
+          pagination={false}
+          columns={[
+            { title: "订单", dataIndex: "orderNo" },
+            { title: "事项", dataIndex: "title" },
+            { title: "暂存时间", dataIndex: "capturedAt" },
+            { title: "大小", dataIndex: "sizeLabel" },
+            { title: "重试", dataIndex: "retryCount", render: (value: number) => `${value} 次` },
+            {
+              title: "状态",
+              dataIndex: "status",
+              render: (status: QueuedOperation["status"]) => (
+                <Tag className={`construction-offline-state-badge is-${status ?? "PENDING"}`}>
+                  {getQueueStatusLabel(status)}
+                </Tag>
+              )
+            },
+            {
+              title: "操作",
+              render: (_, row) => row.status === "FAILED" ? <Button size="small" onClick={handleSync}>重试同步</Button> : null
+            }
+          ]}
+        />
+
+        <div className="construction-offline-mobile-cards">
+          {queueRows.map((item) => (
+            <article key={item.clientOperationId} className="construction-offline-queue-item">
+              <div className="construction-offline-queue-main">
+                <div className="construction-offline-queue-title">
+                  <strong>{item.title}</strong>
+                  <span className={`construction-offline-state-badge is-${item.status ?? "PENDING"}`}>
+                    {getQueueStatusLabel(item.status)}
+                  </span>
+                </div>
+                <p>{item.orderNo} · {item.capturedAt}</p>
+                <div className="construction-offline-queue-meta">
+                  <span>{item.sizeLabel}</span>
+                  <span>重试 {item.retryCount} 次</span>
+                  {item.status === "FAILED" ? <button type="button" onClick={handleSync}>重试同步</button> : null}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </Card>
 
       <section className="construction-mobile-panel construction-offline-group">
         <div className="construction-offline-list">
@@ -200,19 +249,6 @@ export default function ConstructionOfflinePage() {
               <div>
                 {group.items.map((item) => (
                   <article key={item.clientOperationId} className="construction-offline-queue-item">
-                    <div className="construction-offline-thumb">
-                      <Image src={item.imageSrc} alt={item.title} width={80} height={80} sizes="80px" unoptimized />
-                      {item.status === "SYNCING" ? (
-                        <span className="construction-offline-thumb-overlay">
-                          <SyncOutlined spin />
-                        </span>
-                      ) : null}
-                      {item.status === "FAILED" ? (
-                        <span className="construction-offline-thumb-error">
-                          <ExclamationCircleFilled />
-                        </span>
-                      ) : null}
-                    </div>
                     <div className="construction-offline-queue-main">
                       <div className="construction-offline-queue-title">
                         <strong>{item.title}</strong>
@@ -235,15 +271,14 @@ export default function ConstructionOfflinePage() {
         </div>
       </section>
 
-      <footer className="construction-offline-footer construction-offline-progress">
+      <Card className="construction-offline-progress">
         <div>
           <span>共 {pendingCount} 个文件待上传</span>
           <span>预计还需：-- 分钟</span>
         </div>
         <Progress percent={syncProgress || 33} showInfo />
-      </footer>
-      <ConstructionMobileBottomNav active="profile" />
-    </main>
+      </Card>
+    </div>
   );
 }
 
@@ -291,7 +326,7 @@ function parseOfflineStorageSnapshot(snapshot: string): { operations: QueuedOper
   }
 }
 
-function mapOperationToQueueRow(operation: QueuedOperation, index: number): OfflineQueueRow {
+function mapOperationToQueueRow(operation: QueuedOperation): OfflineQueueRow {
   const payload = operation.payload;
   return {
     clientOperationId: operation.clientOperationId,
@@ -300,8 +335,7 @@ function mapOperationToQueueRow(operation: QueuedOperation, index: number): Offl
     capturedAt: getPayloadString(payload, "capturedAt") ?? getPayloadString(payload, "createdAt") ?? "本地暂存",
     sizeLabel: getPayloadString(payload, "sizeLabel") ?? "待计算",
     retryCount: getPayloadNumber(payload, "retryCount") ?? 0,
-    status: operation.status,
-    imageSrc: offlinePreviewImages[index % offlinePreviewImages.length]
+    status: operation.status
   };
 }
 

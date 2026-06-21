@@ -18650,6 +18650,78 @@ button.workbench-task-row:hover {
   font-weight: 850;
 }
 
+.worker-offline-page {
+  display: grid;
+  gap: 18px;
+}
+
+.worker-offline-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.worker-offline-page .construction-offline-alert {
+  border-radius: 8px;
+}
+
+.worker-offline-page .construction-offline-status-card {
+  height: 100%;
+  margin: 0;
+  border-radius: 8px;
+}
+
+.worker-offline-page .construction-offline-actions {
+  display: block;
+  height: 100%;
+  padding: 0;
+}
+
+.worker-offline-page .construction-offline-actions .ant-card-body {
+  display: grid;
+  height: 100%;
+  align-content: center;
+}
+
+.worker-offline-page .construction-offline-actions .ant-btn {
+  min-height: 40px;
+  border-radius: 8px;
+}
+
+.construction-offline-table-card.ant-card,
+.worker-offline-page .construction-offline-group,
+.worker-offline-page .construction-offline-progress {
+  border-radius: 8px;
+  background: var(--mb-surface);
+  box-shadow: var(--mb-shadow-sm);
+}
+
+.construction-offline-mobile-cards {
+  display: none;
+}
+
+.worker-offline-page .construction-offline-list {
+  padding-bottom: 0;
+}
+
+.worker-offline-page .construction-offline-order-group h3 {
+  border-top: 0;
+  background: var(--mb-surface-alt);
+}
+
+.worker-offline-page .construction-offline-queue-item {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.worker-offline-page .construction-offline-progress {
+  padding: 18px;
+}
+
+.worker-offline-page .construction-offline-progress .ant-progress-bg {
+  background: var(--mb-primary) !important;
+}
+
 @media (max-width: 390px) {
   .construction-offline-status-card {
     grid-template-columns: 1fr;
@@ -18665,6 +18737,20 @@ button.workbench-task-row:hover {
 
   .construction-offline-actions .ant-btn {
     padding-inline: 8px;
+  }
+}
+
+@media (max-width: 900px) {
+  .worker-offline-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .construction-offline-table-card .ant-table-wrapper {
+    display: none;
+  }
+
+  .construction-offline-mobile-cards {
+    display: grid;
   }
 }
 

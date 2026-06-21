@@ -24,7 +24,6 @@ const POSITION_LABEL: Record<string, string> = {
 
 const publicPrefixes = ["/auth", "/stores/"];
 const mobilePrefixes = [
-  "/construction/tasks/",
   "/construction/schedules",
   "/construction/camera",
   "/construction/materials",
@@ -76,7 +75,7 @@ export function getManagementSearchPlaceholder(pathname: string) {
   if (pathname.startsWith("/warranties")) return "搜索质保单、车牌或车架号...";
   if (pathname.startsWith("/after-sales")) return "搜索订单或售后单...";
   if (pathname.startsWith("/construction/assignments")) return "搜索订单号/客户名/车牌号...";
-  if (pathname === "/construction/tasks") return "搜索我的任务、订单号或客户...";
+  if (pathname.startsWith("/construction/tasks")) return "搜索我的任务、订单号或客户...";
   if (pathname.startsWith("/construction/leave-approvals")) return "搜索师傅、请假日期或状态...";
   if (pathname.startsWith("/construction/capacities")) return "搜索订单或日期...";
   if (pathname.startsWith("/construction/orders")) return "搜索订单号或客户姓名...";

@@ -64,7 +64,7 @@ test("construction tasks page is a desktop worker task center, not the mobile sh
   assert.match(cssSource, /\.worker-task-center-table/);
 });
 
-test("construction mobile task detail page covers photo upload and task actions", () => {
+test("construction task detail page is a desktop execution workspace", () => {
   const detailPagePath = "app/construction/tasks/[id]/page.tsx";
 
   assert.equal(existsSync(detailPagePath), true);
@@ -72,34 +72,41 @@ test("construction mobile task detail page covers photo upload and task actions"
   const pageSource = readFileSync(detailPagePath, "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
-  assert.match(pageSource, /ConstructionMobileShell/);
-  assert.match(pageSource, /active="tasks"/);
+  assert.doesNotMatch(pageSource, /ConstructionMobileShell/);
+  assert.match(pageSource, /StorePageHeader/);
   assert.match(pageSource, /施工任务详情/);
+  assert.match(pageSource, /返回任务列表/);
   assert.match(pageSource, /未找到该施工任务/);
   assert.doesNotMatch(pageSource, /施工任务未加载/);
+  assert.match(pageSource, /worker-task-detail-page/);
   assert.match(pageSource, /worker-task-detail-hero/);
   assert.match(pageSource, /worker-task-progress/);
-  assert.match(pageSource, /worker-task-sticky-actions/);
+  assert.match(pageSource, /worker-task-detail-actions/);
+  assert.match(pageSource, /worker-task-detail-grid/);
+  assert.match(pageSource, /worker-task-photo-card/);
+  assert.match(pageSource, /worker-task-photo-checklist/);
   assert.match(pageSource, /开始验车/);
   assert.match(pageSource, /上传照片/);
   assert.match(pageSource, /提交完工/);
-  assert.match(pageSource, /照片清单/);
-  assert.match(pageSource, /construction-mobile-task-detail/);
-  assert.match(pageSource, /construction-mobile-photo-checklist/);
+  assert.match(pageSource, /照片凭证/);
   assert.match(pageSource, /验车照片/);
   assert.match(pageSource, /膜箱照片/);
   assert.match(pageSource, /施工过程照片/);
   assert.match(pageSource, /施工后照片/);
+  assert.match(pageSource, /getWorkerTaskStatusLabel/);
+  assert.match(pageSource, /getWorkerPhotoStageLabel/);
   assert.match(pageSource, /constructionApi\.uploadPhoto/);
   assert.match(pageSource, /constructionApi\.startOrder/);
   assert.match(pageSource, /constructionApi\.completeOrder/);
   assert.doesNotMatch(pageSource, /params\.id<\/h1>/);
   assert.doesNotMatch(pageSource, /record\?\.order\?\.orderNo \?\? params\.id/);
+  assert.doesNotMatch(pageSource, /desktopHref=\{`\/construction\/orders\/\$\{params\.id\}`\}/);
+  assert.doesNotMatch(pageSource, /construction-mobile-task-detail/);
   assert.match(cssSource, /\.worker-task-detail-hero/);
   assert.match(cssSource, /\.worker-task-progress/);
-  assert.match(cssSource, /\.worker-task-sticky-actions/);
-  assert.match(cssSource, /construction-mobile-task-detail/);
-  assert.match(cssSource, /construction-mobile-photo-checklist/);
+  assert.match(cssSource, /\.worker-task-detail-actions/);
+  assert.match(cssSource, /\.worker-task-detail-grid/);
+  assert.match(cssSource, /\.worker-task-photo-checklist/);
 });
 
 test("construction mobile task detail uses business copy for photo link fields", () => {
@@ -160,7 +167,6 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
 
 test("construction mobile pages redirect desktop web users to backend pages", () => {
   const shellSource = readFileSync("src/features/construction/mobile-shell.tsx", "utf8");
-  const taskDetailPageSource = readFileSync("app/construction/tasks/[id]/page.tsx", "utf8");
   const schedulesPageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
   const cameraPageSource = readFileSync("app/construction/camera/page.tsx", "utf8");
   const materialsPageSource = readFileSync("app/construction/materials/page.tsx", "utf8");
@@ -172,7 +178,6 @@ test("construction mobile pages redirect desktop web users to backend pages", ()
   assert.match(shellSource, /useLayoutEffect/);
   assert.match(shellSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
   assert.match(shellSource, /window\.location\.replace\(desktopHref\)/);
-  assert.match(taskDetailPageSource, /desktopHref=\{`\/construction\/orders\/\$\{params\.id\}`\}/);
   assert.match(schedulesPageSource, /desktopHref="\/construction\/capacities"/);
   assert.match(cameraPageSource, /desktopHref="\/construction\/assignments"/);
   assert.match(materialsPageSource, /desktopHref="\/inventory"/);

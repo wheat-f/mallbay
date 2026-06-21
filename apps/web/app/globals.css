@@ -16285,6 +16285,163 @@ button.workbench-task-row:hover {
   white-space: normal;
 }
 
+.worker-task-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.worker-task-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-lg);
+  background: var(--mb-surface);
+  padding: 12px;
+  box-shadow: var(--mb-shadow-xs);
+}
+
+.worker-task-detail-actions .ant-btn {
+  min-width: 112px;
+}
+
+.worker-task-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 18px;
+  align-items: start;
+}
+
+.worker-task-detail-main,
+.worker-task-detail-side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.worker-task-photo-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+  border: 1px solid var(--mb-border-subtle);
+  border-radius: var(--mb-radius-lg);
+  background: var(--mb-surface-alt);
+  padding: 14px;
+}
+
+.worker-task-photo-form .ant-form-item {
+  margin-bottom: 0;
+}
+
+.worker-task-photo-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.worker-task-photo-item {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface);
+  padding: 14px;
+}
+
+.worker-task-photo-item.is-complete {
+  border-color: rgb(22 163 74 / 0.35);
+  background: #f7fdf9;
+}
+
+.worker-task-photo-icon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: var(--mb-primary-container);
+  color: var(--mb-primary);
+  font-size: 18px;
+}
+
+.worker-task-photo-item.is-complete .worker-task-photo-icon {
+  background: #dcfce7;
+  color: var(--mb-success);
+}
+
+.worker-task-photo-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.worker-task-photo-title strong {
+  color: var(--mb-text-primary);
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.worker-task-photo-item p {
+  margin: 8px 0;
+  color: var(--mb-text-secondary);
+  font-size: 13px;
+}
+
+.worker-task-photo-item span {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.worker-task-side-steps {
+  display: grid;
+  gap: 10px;
+}
+
+.worker-task-side-steps > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface);
+  padding: 10px;
+  color: var(--mb-text-secondary);
+  font-weight: 850;
+}
+
+.worker-task-side-steps i {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--mb-surface-alt);
+  color: var(--mb-text-muted);
+  font-style: normal;
+}
+
+.worker-task-side-steps .is-active,
+.worker-task-side-steps .is-done {
+  border-color: rgba(15, 58, 95, 0.24);
+  color: var(--mb-primary);
+}
+
+.worker-task-side-steps .is-active i,
+.worker-task-side-steps .is-done i {
+  background: var(--mb-primary);
+  color: var(--mb-on-primary);
+}
+
 .worker-task-center-page {
   display: flex;
   flex-direction: column;
@@ -16455,6 +16612,31 @@ button.workbench-task-row:hover {
 }
 
 @media (max-width: 900px) {
+  .worker-task-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .worker-task-detail-actions .ant-btn {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .worker-task-photo-form {
+    grid-template-columns: 1fr;
+  }
+
+  .worker-task-photo-checklist {
+    grid-template-columns: 1fr;
+  }
+
+  .worker-task-photo-item {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .worker-task-photo-item .ant-upload-wrapper {
+    grid-column: 1 / -1;
+  }
+
   .worker-task-center-hero {
     flex-direction: column;
     padding: 18px;

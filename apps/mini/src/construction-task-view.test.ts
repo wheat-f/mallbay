@@ -7,6 +7,8 @@ import {
   buildOfflineQueueSummary,
   buildTaskDetailView,
   buildTaskListItems,
+  buildTaskSegments,
+  filterTasksBySegment,
   type CachedConstructionTask
 } from "./construction-task-view";
 
@@ -80,6 +82,25 @@ test("buildTaskDetailView exposes photo stage actions and customer vehicle snaps
       { stage: "AFTER", label: "施工后", uploaded: false }
     ]
   });
+});
+
+test("buildTaskSegments shares worker task grouping with web desktop worker pages", () => {
+  const completedTask: CachedConstructionTask = {
+    ...cachedTasks[0],
+    id: "record-3",
+    orderId: "order-3",
+    status: "COMPLETED",
+    appointmentDate: "2026-06-17"
+  };
+  const rows = [...cachedTasks, completedTask];
+
+  assert.deepEqual(buildTaskSegments(rows, "2026-06-18").map((item) => [item.key, item.count]), [
+    ["today", 1],
+    ["pending", 1],
+    ["active", 1],
+    ["completed", 1]
+  ]);
+  assert.deepEqual(filterTasksBySegment(rows, "completed", "2026-06-18").map((item) => item.id), ["record-3"]);
 });
 
 test("buildOfflineQueueSummary groups pending failed and retrying operations", () => {

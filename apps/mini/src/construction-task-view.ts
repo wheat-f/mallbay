@@ -1,4 +1,11 @@
 import type { OfflineOperationStatus, OfflineOperationType } from "./offline-queue";
+import {
+  buildWorkerTaskSegments,
+  filterWorkerTasks,
+  getWorkerPhotoStageLabel,
+  getWorkerTaskStatusLabel,
+  type WorkerTaskSegmentKey
+} from "@mallbay/shared";
 
 export type CachedConstructionTaskStatus = "DISPATCHED" | "IN_CONSTRUCTION" | "COMPLETED";
 export type OfflineTaskStatus = "IN_CONSTRUCTION" | "COMPLETED";
@@ -26,16 +33,10 @@ export type MiniOfflineOperation = {
   status: OfflineOperationStatus;
 };
 
-const STATUS_LABELS: Record<CachedConstructionTaskStatus, string> = {
-  DISPATCHED: "待开工",
-  IN_CONSTRUCTION: "施工中",
-  COMPLETED: "已完工"
-};
-
 const PHOTO_STAGES: { stage: ConstructionPhotoStage; label: string }[] = [
-  { stage: "BEFORE", label: "施工前" },
-  { stage: "DURING", label: "施工中" },
-  { stage: "AFTER", label: "施工后" }
+  { stage: "BEFORE", label: getWorkerPhotoStageLabel("BEFORE") },
+  { stage: "DURING", label: getWorkerPhotoStageLabel("DURING") },
+  { stage: "AFTER", label: getWorkerPhotoStageLabel("AFTER") }
 ];
 
 const STATUS_ACTIONS: Record<CachedConstructionTaskStatus, { status: OfflineTaskStatus; label: string; disabled: boolean }[]> = {
@@ -56,7 +57,7 @@ export function buildTaskListItems(tasks: CachedConstructionTask[]) {
       title: `${task.orderNo} · ${task.customerName}`,
       meta: task.vehicleLabel,
       schedule,
-      statusLabel: STATUS_LABELS[task.status],
+      statusLabel: getWorkerTaskStatusLabel(task.status),
       photoProgress: `照片 ${countKnownPhotoStages(task.photoStages)}/3`
     };
   });
@@ -67,7 +68,7 @@ export function buildTaskDetailView(task: CachedConstructionTask) {
     id: task.id,
     orderId: task.orderId,
     title: task.orderNo,
-    statusLabel: STATUS_LABELS[task.status],
+    statusLabel: getWorkerTaskStatusLabel(task.status),
     customerVehicle: `${task.customerName} · ${task.vehicleLabel}`,
     construction: `${task.constructionType} · ${task.constructionLocation}`,
     schedule: formatSchedule(task),
@@ -78,6 +79,14 @@ export function buildTaskDetailView(task: CachedConstructionTask) {
       uploaded: task.photoStages.includes(item.stage)
     }))
   };
+}
+
+export function buildTaskSegments(tasks: CachedConstructionTask[], today?: string) {
+  return buildWorkerTaskSegments(tasks, today);
+}
+
+export function filterTasksBySegment(tasks: CachedConstructionTask[], segment: WorkerTaskSegmentKey, today?: string) {
+  return filterWorkerTasks(tasks, segment, today) as CachedConstructionTask[];
 }
 
 export function buildOfflineQueueSummary(items: MiniOfflineOperation[]) {

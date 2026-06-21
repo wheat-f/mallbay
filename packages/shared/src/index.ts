@@ -208,6 +208,8 @@ export type InventorySupplierSummary = {
   lastMasterDataUpdatedAt?: string | Date | null;
 };
 
+export * from "./construction-worker";
+
 export type WarrantySummary = {
   id: string;
   storeId: string;

@@ -1,3 +1,5 @@
+import { getWorkerPhotoStageLabel } from "@mallbay/shared";
+
 type ConstructionWorkerLike = {
   userId?: string | null;
   skillTags?: string[] | null;
@@ -36,7 +38,7 @@ export function getConstructionQualityResultLabel(result?: string | null) {
 
 export function getConstructionPhotoStageLabel(stage?: string | null) {
   if (!stage) return "-";
-  return CONSTRUCTION_PHOTO_STAGE_LABELS[stage] ?? "照片阶段待确认";
+  return getWorkerPhotoStageLabel(stage);
 }
 
 export function getConstructionWorkerLabel(worker?: ConstructionWorkerLike | string | null) {

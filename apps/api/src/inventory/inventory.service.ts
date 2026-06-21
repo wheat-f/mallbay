@@ -557,7 +557,7 @@ export class InventoryService {
     if (!PermissionPolicy.canViewInventory(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where: { storeId, status: { not: "CANCELLED" } },
       orderBy: { createdAt: "desc" },
       include: {
@@ -566,6 +566,7 @@ export class InventoryService {
         items: { include: { product: true, inventoryAllocations: true } }
       }
     });
+    return orders.filter((order) => isPendingInventoryMatchOrder(order));
   }
 
   async getOrderInventoryMatch(user: AuthenticatedInventoryUser, orderId: string) {
@@ -1196,6 +1197,38 @@ function decimalToNumber(value: number | { toNumber?: () => number; toString: ()
   if (typeof value === "number") return value;
   if (typeof value.toNumber === "function") return value.toNumber();
   return Number(value.toString());
+}
+
+function isPendingInventoryMatchOrder(order: {
+  items?: Array<{
+    quantity: number | { toNumber?: () => number; toString: () => string };
+    inventoryAllocations?: Array<{
+      status?: string | null;
+      lockedQuantity?: number | { toNumber?: () => number; toString: () => string } | null;
+      outboundQuantity?: number | { toNumber?: () => number; toString: () => string } | null;
+    }>;
+  }>;
+}) {
+  return (order.items ?? []).some((item) => {
+    const requiredQuantity = decimalToNumber(item.quantity);
+    if (requiredQuantity <= 0) return false;
+    const outboundQuantity = (item.inventoryAllocations ?? [])
+      .filter((allocation) => allocation.status === "OUTBOUND")
+      .reduce(
+        (sum, allocation) =>
+          sum + Math.max(
+            toNullableDecimalNumber(allocation.outboundQuantity),
+            toNullableDecimalNumber(allocation.lockedQuantity)
+          ),
+        0
+      );
+    return outboundQuantity < requiredQuantity;
+  });
+}
+
+function toNullableDecimalNumber(value?: number | { toNumber?: () => number; toString: () => string } | null) {
+  if (value === undefined || value === null) return 0;
+  return decimalToNumber(value);
 }
 
 function normalizeRequiredText(value: string | null | undefined, label: string) {

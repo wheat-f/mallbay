@@ -272,6 +272,18 @@ function countActiveWarranties(warranties: WarrantySummary[]) {
   return warranties.filter((warranty) => warranty.status === "ACTIVE").length;
 }
 
+function canViewWorkbenchReports(position?: string) {
+  return position === "MANAGER" || position === "SALES" || position === "FINANCE";
+}
+
+function canViewWorkbenchInventory(position?: string) {
+  return position === "MANAGER" || position === "PURCHASING" || position === "CUSTOMER_SERVICE";
+}
+
+function canViewWorkbenchWarranties(position?: string) {
+  return Boolean(position);
+}
+
 // ─── 邀请成员抽屉 ───────────────────────────────────────────────
 function InviteDrawer({ storeId, open, onClose, onDone }: {
   storeId: string; open: boolean; onClose: () => void; onDone: () => void;
@@ -616,10 +628,14 @@ export default function WorkbenchPage() {
     ? getWorkbenchSections(store.currentMember.position as StorePosition, store.id)
     : [];
   const todayDate = getTodayDateString();
+  const currentPosition = store?.currentMember.position;
+  const canLoadReportSummary = canViewWorkbenchReports(currentPosition);
+  const canLoadInventoryBatches = canViewWorkbenchInventory(currentPosition);
+  const canLoadWarranties = canViewWorkbenchWarranties(currentPosition);
   const summaryQuery = useQuery({
-    queryKey: ["workbench-summary", storeId],
+    queryKey: ["workbench-summary", storeId, currentPosition],
     queryFn: () => reportsApi.summary(storeId),
-    enabled: Boolean(store)
+    enabled: Boolean(store) && canLoadReportSummary
   });
   const pendingDispatchQuery = useQuery({
     queryKey: ["workbench-pending-dispatch", storeId],
@@ -632,14 +648,14 @@ export default function WorkbenchPage() {
     enabled: Boolean(store)
   });
   const inventoryBatchesQuery = useQuery({
-    queryKey: ["workbench-inventory-batches", storeId],
+    queryKey: ["workbench-inventory-batches", storeId, currentPosition],
     queryFn: () => inventoryApi.batches({ storeId }),
-    enabled: Boolean(store)
+    enabled: Boolean(store) && canLoadInventoryBatches
   });
   const warrantiesQuery = useQuery({
-    queryKey: ["workbench-warranties", storeId],
+    queryKey: ["workbench-warranties", storeId, currentPosition],
     queryFn: () => warrantiesApi.list(storeId),
-    enabled: Boolean(store)
+    enabled: Boolean(store) && canLoadWarranties
   });
   const summary = summaryQuery.data;
   const pendingDispatchTotal = pendingDispatchQuery.data?.total ?? 0;

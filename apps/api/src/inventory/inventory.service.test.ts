@@ -87,6 +87,60 @@ test("InventoryService filters inventory movements by product batch order type a
   });
 });
 
+test("InventoryService excludes fully outbound orders from pending inventory matching", async () => {
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    order: {
+      findMany: async () => [
+        {
+          id: "order-outbound",
+          items: [
+            {
+              quantity: 2,
+              inventoryAllocations: [
+                { status: "OUTBOUND", outboundQuantity: 2, lockedQuantity: 2 }
+              ]
+            }
+          ]
+        },
+        {
+          id: "order-locked",
+          items: [
+            {
+              quantity: 2,
+              inventoryAllocations: [
+                { status: "LOCKED", outboundQuantity: 0, lockedQuantity: 2 }
+              ]
+            }
+          ]
+        },
+        {
+          id: "order-partial-outbound",
+          items: [
+            {
+              quantity: 3,
+              inventoryAllocations: [
+                { status: "OUTBOUND", outboundQuantity: 1, lockedQuantity: 1 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  } as never);
+
+  const result = await service.listPendingMatchOrders(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    "store-1"
+  );
+
+  assert.deepEqual(result.map((order) => order.id), ["order-locked", "order-partial-outbound"]);
+});
+
 test("InventoryService locks stock through allocations and creates purchase requirement for missing quantity", async () => {
   const updates: unknown[] = [];
   const prisma = {

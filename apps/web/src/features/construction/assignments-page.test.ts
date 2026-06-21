@@ -131,3 +131,59 @@ test("construction assignments page memoizes pending order rows before selecting
   assert.match(pageSource, /\[pendingOrdersQuery\.data\?\.items\]/);
   assert.doesNotMatch(pageSource, /const selectedOrder = useMemo/);
 });
+
+test("construction assignments page combines pending orders and assigned construction records", () => {
+  const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
+
+  assert.match(pageSource, /buildConstructionWorkItems/);
+  assert.match(pageSource, /getVisibleConstructionWorkItems/);
+  assert.match(pageSource, /activeWorkOrderTab/);
+  assert.match(pageSource, /施工工单/);
+  assert.match(pageSource, /待派单/);
+  assert.match(pageSource, /已派工/);
+  assert.match(pageSource, /施工中/);
+  assert.match(pageSource, /已完工/);
+});
+
+test("construction assignments page keeps dispatch controls scoped to pending orders", () => {
+  const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
+
+  assert.match(pageSource, /selectedWorkItem\?\.kind === "pending"/);
+  assert.match(pageSource, /selectedPendingOrder/);
+  assert.match(pageSource, /selectedConstructionRecord/);
+  assert.match(pageSource, /查看施工工单/);
+});
+
+test("construction assignments page does not show work order actions in the empty state", () => {
+  const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
+
+  assert.match(pageSource, /\) : selectedConstructionRecord \? \(/);
+  assert.match(pageSource, /\) : null\}/);
+});
+
+test("construction assignments page exposes assigned work order detail entry", () => {
+  const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
+
+  assert.match(pageSource, /selectedConstructionRecord/);
+  assert.match(pageSource, /router\.push\(`\/construction\/orders\/\$\{selectedConstructionRecord\.orderId\}`\)/);
+  assert.match(pageSource, /施工团队/);
+  assert.match(pageSource, /施工照片/);
+  assert.match(pageSource, /质检状态/);
+});
+
+test("construction assignments page treats construction progress as navigable work orders", () => {
+  const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
+
+  assert.match(pageSource, /施工履约进度/);
+  assert.match(pageSource, /查看全部工单/);
+  assert.match(pageSource, /setActiveWorkOrderTab\("all"\)/);
+  assert.match(pageSource, /router\.push\(`\/construction\/orders\/\$\{record\.orderId\}`\)/);
+});
+
+test("construction assignments page has lifecycle tab and readonly action styles", () => {
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(cssSource, /\.dispatch-work-order-tabs/);
+  assert.match(cssSource, /\.dispatch-work-order-tabs button\.is-active/);
+  assert.match(cssSource, /\.dispatch-action-bar-readonly/);
+});

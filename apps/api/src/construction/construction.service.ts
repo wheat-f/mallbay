@@ -326,11 +326,32 @@ export class ConstructionService {
     if (!PermissionPolicy.canViewStoreData(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
-    return this.prisma.constructionWorkerProfile.findMany({
+    const profiles = await this.prisma.constructionWorkerProfile.findMany({
       where: { storeId },
       orderBy: { updatedAt: "desc" },
       include: { user: { select: { username: true, nickname: true } } }
     });
+    const profileUserIds = new Set(profiles.map((profile) => profile.userId));
+    const constructionMembers = await this.prisma.storeMember.findMany({
+      where: {
+        storeId,
+        position: { in: [StorePosition.CONSTRUCTION, StorePosition.APPRENTICE] }
+      },
+      orderBy: { updatedAt: "desc" },
+      include: { user: { select: { username: true, nickname: true } } }
+    });
+    const profilelessMembers = constructionMembers
+      .filter((member) => !profileUserIds.has(member.userId))
+      .map((member) => ({
+        storeId,
+        userId: member.userId,
+        canWorkOutside: false,
+        skillTags: [],
+        isActive: true,
+        user: member.user
+      }));
+
+    return [...profiles, ...profilelessMembers];
   }
 
   async createLeave(user: AuthenticatedConstructionUser, dto: LeaveRequestDto) {

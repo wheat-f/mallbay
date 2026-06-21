@@ -135,6 +135,20 @@ test("workbench dashboard data is derived from business APIs instead of hardcode
   assert.doesNotMatch(workbenchSource, /\["05\.01", 64\]/);
 });
 
+test("workbench dashboard queries are gated by the current role", () => {
+  const workbenchSource = readFileSync("app/workbench/[storeId]/page.tsx", "utf8");
+
+  assert.match(workbenchSource, /const canLoadReportSummary =/);
+  assert.match(workbenchSource, /const canLoadInventoryBatches =/);
+  assert.match(workbenchSource, /const canLoadWarranties =/);
+  assert.match(workbenchSource, /queryKey: \["workbench-summary", storeId, currentPosition\]/);
+  assert.match(workbenchSource, /queryKey: \["workbench-inventory-batches", storeId, currentPosition\]/);
+  assert.match(workbenchSource, /queryKey: \["workbench-warranties", storeId, currentPosition\]/);
+  assert.match(workbenchSource, /enabled: Boolean\(store\) && canLoadReportSummary/);
+  assert.match(workbenchSource, /enabled: Boolean\(store\) && canLoadInventoryBatches/);
+  assert.match(workbenchSource, /enabled: Boolean\(store\) && canLoadWarranties/);
+});
+
 test("admin store review forms use prototype right-side drawers", () => {
   const adminStoreSource = readFileSync("app/admin/stores/[id]/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");

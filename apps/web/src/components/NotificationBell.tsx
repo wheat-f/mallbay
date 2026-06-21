@@ -71,6 +71,8 @@ function InvitationCard({ inv, onDone }: {
       // 刷新 me，让首页门店入口立即出现
       queryClient.invalidateQueries({ queryKey: ["me"] });
       queryClient.invalidateQueries({ queryKey: ["invitations"] });
+      queryClient.invalidateQueries({ queryKey: ["notif-unread"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
       onDone();
     },
     onError: (e: Error) => message.error(e.message)
@@ -81,6 +83,8 @@ function InvitationCard({ inv, onDone }: {
     onSuccess: () => {
       message.success("已拒绝邀请");
       queryClient.invalidateQueries({ queryKey: ["invitations"] });
+      queryClient.invalidateQueries({ queryKey: ["notif-unread"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
     onError: (e: Error) => message.error(e.message)
   });
@@ -159,7 +163,7 @@ export function NotificationBell({ onJoined }: { onJoined?: () => void }) {
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
-    if (!next && (unreadQuery.data?.count ?? 0) > 0) {
+    if (next && (unreadQuery.data?.count ?? 0) > 0) {
       markAllMutation.mutate();
     }
   };
@@ -283,7 +287,9 @@ export function NotificationBell({ onJoined }: { onJoined?: () => void }) {
         <Badge count={unread} size="small" offset={[-2, 2]}>
           <BellOutlined style={{ fontSize: 18, color: "#475569" }} />
         </Badge>
-        <span className="notif-bell-prototype-dot" aria-hidden="true" />
+        {unread > 0 && (
+          <span className="notif-bell-prototype-dot" aria-hidden="true" />
+        )}
       </button>
     </Popover>
   );

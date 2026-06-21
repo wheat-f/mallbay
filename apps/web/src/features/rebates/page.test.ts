@@ -12,7 +12,7 @@ test("rebates page uses business selectors instead of manual ids", () => {
   assert.match(pageSource, /placeholder="选择返利订单"/);
   assert.match(pageSource, /options=\{rebateOrderOptions\}/);
   assert.match(pageSource, /placeholder="选择返利申请"/);
-  assert.match(pageSource, /options=\{rebateOptions\}/);
+  assert.match(pageSource, /options=\{stageRebateOptions\.length \? stageRebateOptions : rebateOptions\}/);
   assert.doesNotMatch(pageSource, /order\.orderNo \?\? order\.id/);
   assert.match(pageSource, /order\.orderNo \?\? "未编号订单"/);
   assert.doesNotMatch(pageSource, /<Input placeholder="订单 ID"/);
@@ -51,8 +51,8 @@ test("rebates page follows the prototype review workspace layout", () => {
   assert.match(pageSource, /rebate-application-list/);
   assert.match(pageSource, /rebate-review-panel/);
   assert.match(pageSource, /rebate-application-drawer/);
-  assert.match(pageSource, /返利申请列表/);
-  assert.match(pageSource, /审核详情/);
+  assert.match(pageSource, /rebate-stage-list-title/);
+  assert.match(pageSource, /activeWorkflow\.detailTitle/);
   assert.match(pageSource, /客户信息/);
   assert.match(pageSource, /getRebateCustomerLabel/);
   assert.match(pageSource, /发放操作预设/);
@@ -61,32 +61,44 @@ test("rebates page follows the prototype review workspace layout", () => {
   assert.doesNotMatch(pageSource, /rebate-apply-card/);
 });
 
-test("rebates workflow tabs jump to the matching workspace sections", () => {
+test("rebates workflow tabs switch to matching process queues", () => {
   const pageSource = readFileSync("app/rebates/page.tsx", "utf8");
+  const workflowSource = readFileSync("src/features/rebates/workflow.ts", "utf8");
 
   assert.match(pageSource, /REBATE_WORKFLOW_TABS/);
-  assert.match(pageSource, /rebateSectionRefs/);
-  assert.match(pageSource, /scrollRebateSectionIntoView/);
   assert.match(pageSource, /activeRebateSection/);
-  assert.match(pageSource, /ref=\{rebateRulesSectionRef\}/);
-  assert.match(pageSource, /ref=\{rebateReviewSectionRef\}/);
-  assert.match(pageSource, /ref=\{rebatePayoutSectionRef\}/);
+  assert.match(pageSource, /getRebateRowsForWorkflow/);
+  assert.match(pageSource, /getRebateWorkflowCounts/);
+  assert.match(pageSource, /const activeWorkflow =/);
+  assert.match(pageSource, /const stageRebateRows =/);
+  assert.match(pageSource, /rebate-stage-summary/);
+  assert.match(pageSource, /rebate-stage-list-title/);
+  assert.match(workflowSource, /业务审核队列/);
+  assert.match(workflowSource, /财务审批队列/);
+  assert.match(workflowSource, /待发放队列/);
   assert.match(pageSource, /aria-pressed=\{activeRebateSection === item\.key\}/);
-  assert.match(pageSource, /onClick=\{\(\) => scrollRebateSectionIntoView\(item\.key\)\}/);
+  assert.match(pageSource, /onClick=\{\(\) => setActiveRebateSection\(item\.key\)\}/);
+  assert.doesNotMatch(pageSource, /finance: rebateReviewSectionRef/);
+  assert.doesNotMatch(pageSource, /payout: rebatePayoutSectionRef/);
+  assert.doesNotMatch(pageSource, /scrollIntoView/);
   assert.doesNotMatch(pageSource, /\["返利申请", "返利审核", "财务审批", "返利发放", "返利报表"\]\.map\(\(item, index\)/);
   assert.doesNotMatch(pageSource, /className=\{index === 0 \? "is-active" : ""\}/);
 });
 
-test("rebates page combines review and payout actions in one side panel", () => {
+test("rebates page separates review finance and payout actions by rebate status", () => {
   const pageSource = readFileSync("app/rebates/page.tsx", "utf8");
 
   assert.match(pageSource, /selectedRebateId/);
   assert.match(pageSource, /rebateActionForm/);
   assert.match(pageSource, /期望发放方式/);
   assert.match(pageSource, /<span>客户信息<\/span>/);
-  assert.match(pageSource, /财务审批后核对转账凭证或抵扣确认单，再记录发放备注。/);
-  assert.match(pageSource, /审核通过/);
+  assert.match(pageSource, /canBusinessReviewSelected/);
+  assert.match(pageSource, /canFinanceApproveSelected/);
+  assert.match(pageSource, /canPaySelected/);
+  assert.match(pageSource, /业务审核通过/);
+  assert.match(pageSource, /财务审批通过/);
   assert.match(pageSource, /发放返利/);
+  assert.match(pageSource, /当前阶段暂无可执行操作/);
   assert.doesNotMatch(pageSource, /当前版本先记录发放备注/);
   assert.doesNotMatch(pageSource, /operation-action-grid/);
 });
@@ -113,8 +125,8 @@ test("rebates page derives the active rebate without sync setState effects", () 
   const pageSource = readFileSync("app/rebates/page.tsx", "utf8");
 
   assert.match(pageSource, /const rebateRows = useMemo\(\(\) => rebatesQuery\.data \?\? \[\], \[rebatesQuery\.data\]\);/);
-  assert.match(pageSource, /const activeRebateId = selectedRebateId \?\? rebateRows\[0\]\?\.id;/);
-  assert.match(pageSource, /rebateRows\.find\(\(rebate\) => rebate\.id === activeRebateId\)/);
+  assert.match(pageSource, /const activeRebateId = selectedRebateId \?\? stageRebateRows\[0\]\?\.id;/);
+  assert.match(pageSource, /stageRebateRows\.find\(\(rebate\) => rebate\.id === activeRebateId\)/);
   assert.doesNotMatch(pageSource, /setSelectedRebateId\(rebateRows\[0\]\.id\)/);
 });
 

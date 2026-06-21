@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { Avatar, Dropdown, Input, Space, Tag, Typography } from "antd";
-import { LogoutOutlined, SearchOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined } from "@ant-design/icons";
+import { HomeOutlined, LogoutOutlined, SearchOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { authApi } from "../../lib/api";
@@ -143,6 +143,8 @@ export function ManagementShell({ children }: { children: ReactNode }) {
       : [])
   ];
   const accountMenuItems = [
+    { key: "home", icon: <HomeOutlined />, label: "网站首页", onClick: () => router.push("/") },
+    { type: "divider" as const },
     { key: "profile", icon: <UserOutlined />, label: "个人中心", onClick: () => router.push("/profile") },
     { type: "divider" as const },
     { key: "logout", icon: <LogoutOutlined />, label: "退出登录", danger: true, onClick: () => logoutMutation.mutate() }
@@ -154,7 +156,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
   return (
     <div className="management-shell">
       <aside className="management-sidebar">
-        <button className="management-brand" type="button" onClick={() => router.push(storeMember ? `/workbench/${storeMember.store.id}` : "/")}>
+        <button className="management-brand" type="button" aria-label="返回网站首页" onClick={() => router.push("/")}>
           <span className="management-brand-title">mallbay</span>
           <span className="management-brand-subtitle">门店运营系统</span>
         </button>

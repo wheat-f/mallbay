@@ -8,7 +8,18 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { constructionApi, orderApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
-import { getConstructionStatusLabel, getConstructionWorkerLabel } from "../../../src/features/construction/display";
+import {
+  getConstructionQualityResultLabel,
+  getConstructionStatusLabel,
+  getConstructionWorkerLabel
+} from "../../../src/features/construction/display";
+import {
+  buildConstructionWorkItems,
+  getConstructionWorkOrderCounts,
+  getVisibleConstructionWorkItems,
+  type ConstructionWorkItem,
+  type ConstructionWorkOrderTab
+} from "../../../src/features/construction/work-orders";
 import {
   getConstructionLocationLabel,
   getConstructionTypeLabel,
@@ -43,8 +54,11 @@ type ConstructionRecordRow = {
   id: string;
   orderId: string;
   status: string;
-  order?: { orderNo: string };
+  qualityResult?: string | null;
+  qualityNote?: string | null;
+  order?: OrderRow & { orderNo?: string | null };
   assignments?: { workerUserId: string }[];
+  photos?: { id: string; stage: string; url: string; uploadedById: string }[];
 };
 
 export default function ConstructionAssignmentsPage() {
@@ -53,7 +67,8 @@ export default function ConstructionAssignmentsPage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const [selectedOrderId, setSelectedOrderId] = useState<string>();
+  const [activeWorkOrderTab, setActiveWorkOrderTab] = useState<ConstructionWorkOrderTab>("pending");
+  const [selectedWorkItemKey, setSelectedWorkItemKey] = useState<string>();
   const [selectedWorkerUserIds, setSelectedWorkerUserIds] = useState<string[]>([]);
   const [confirmDrawerOpen, setConfirmDrawerOpen] = useState(false);
   const [dispatchNote, setDispatchNote] = useState("");
@@ -77,16 +92,39 @@ export default function ConstructionAssignmentsPage() {
     enabled: Boolean(storeId)
   });
 
+  const pendingRows = useMemo(() => ((pendingOrdersQuery.data?.items ?? []) as OrderRow[]), [pendingOrdersQuery.data?.items]);
+  const records = useMemo(() => ((recordsQuery.data ?? []) as ConstructionRecordRow[]), [recordsQuery.data]);
+  const workers = useMemo(
+    () => ((workersQuery.data ?? []) as WorkerRow[]).filter((worker) => worker.isActive),
+    [workersQuery.data]
+  );
+  const filteredWorkers = useMemo(() => filterConstructionWorkers(workers, workerSearchKeyword), [workers, workerSearchKeyword]);
+  const workerMap = new Map(workers.map((worker) => [worker.userId, worker]));
+  const workItems = useMemo(
+    () => buildConstructionWorkItems({ pendingOrders: pendingRows, records }),
+    [pendingRows, records]
+  );
+  const workOrderCounts = useMemo(() => getConstructionWorkOrderCounts(workItems), [workItems]);
+  const visibleWorkItems = useMemo(
+    () => getVisibleConstructionWorkItems(workItems, activeWorkOrderTab),
+    [activeWorkOrderTab, workItems]
+  );
+  const selectedWorkItem =
+    visibleWorkItems.find((item) => getWorkItemKey(item) === selectedWorkItemKey) ?? visibleWorkItems[0] ?? workItems[0];
+  const selectedPendingOrder = selectedWorkItem?.kind === "pending" ? (selectedWorkItem.order as OrderRow) : undefined;
+  const selectedConstructionRecord = selectedWorkItem?.kind === "record" ? (selectedWorkItem.record as ConstructionRecordRow) : undefined;
+  const selectedOrder = selectedPendingOrder ?? selectedConstructionRecord?.order;
+
   const assignMutation = useMutation({
     mutationFn: () => {
-      if (!selectedOrder) {
+      if (!selectedPendingOrder) {
         throw new Error("请先选择待派单订单");
       }
-      return constructionApi.assignOrder(selectedOrder.id, { workerUserIds: selectedWorkerUserIds });
+      return constructionApi.assignOrder(selectedPendingOrder.id, { workerUserIds: selectedWorkerUserIds });
     },
     onSuccess: async () => {
       message.success("派工已保存");
-      setSelectedOrderId(undefined);
+      setSelectedWorkItemKey(undefined);
       setSelectedWorkerUserIds([]);
       setDispatchNote("");
       setConfirmDrawerOpen(false);
@@ -96,17 +134,33 @@ export default function ConstructionAssignmentsPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
-  const pendingRows = useMemo(() => ((pendingOrdersQuery.data?.items ?? []) as OrderRow[]), [pendingOrdersQuery.data?.items]);
-  const records = (recordsQuery.data ?? []) as ConstructionRecordRow[];
-  const workers = ((workersQuery.data ?? []) as WorkerRow[]).filter((worker) => worker.isActive);
-  const filteredWorkers = useMemo(() => filterConstructionWorkers(workers, workerSearchKeyword), [workers, workerSearchKeyword]);
-  const workerMap = new Map(workers.map((worker) => [worker.userId, worker]));
-  const selectedOrder = pendingRows.find((row) => row.id === selectedOrderId) ?? pendingRows[0];
-
   return (
     <div className="management-page dispatch-page">
       <section className="dispatch-canvas dispatch-board-shell">
-        <Card className="dispatch-order-list dispatch-board-rail" title={`待派单队列 (${pendingRows.length})`}>
+        <Card className="dispatch-order-list dispatch-board-rail" title={`施工工单 (${workOrderCounts.all})`}>
+          <div className="dispatch-work-order-tabs" role="tablist" aria-label="施工工单状态">
+            {[
+              { key: "pending" as const, label: "待派单", count: workOrderCounts.pending },
+              { key: "dispatched" as const, label: "已派工", count: workOrderCounts.dispatched },
+              { key: "active" as const, label: "施工中", count: workOrderCounts.active },
+              { key: "completed" as const, label: "已完工", count: workOrderCounts.completed },
+              { key: "all" as const, label: "全部", count: workOrderCounts.all }
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={activeWorkOrderTab === tab.key ? "is-active" : undefined}
+                onClick={() => {
+                  setActiveWorkOrderTab(tab.key);
+                  setSelectedWorkItemKey(undefined);
+                  setSelectedWorkerUserIds([]);
+                }}
+              >
+                {tab.label}
+                <em>{tab.count}</em>
+              </button>
+            ))}
+          </div>
           <div className="dispatch-filter-row">
             <Select
               allowClear
@@ -123,27 +177,26 @@ export default function ConstructionAssignmentsPage() {
             </div>
           </div>
 
-          {pendingOrdersQuery.isLoading ? (
-            <div className="operation-empty">待派单订单加载中...</div>
-          ) : pendingRows.length > 0 ? (
+          {pendingOrdersQuery.isLoading || recordsQuery.isLoading ? (
+            <div className="operation-empty">施工工单加载中...</div>
+          ) : visibleWorkItems.length > 0 ? (
             <div className="operation-queue-list">
-              {pendingRows.map((row) => {
-                const active = row.id === selectedOrder?.id;
+              {visibleWorkItems.map((item) => {
+                const row = getWorkItemOrder(item);
+                const active = getWorkItemKey(item) === (selectedWorkItem ? getWorkItemKey(selectedWorkItem) : "");
                 return (
                   <button
-                    key={row.id}
+                    key={getWorkItemKey(item)}
                     type="button"
                     className={`dispatch-order-card ${active ? "dispatch-order-card-active" : ""}`}
                     onClick={() => {
-                      setSelectedOrderId(row.id);
+                      setSelectedWorkItemKey(getWorkItemKey(item));
                       setSelectedWorkerUserIds([]);
                     }}
                   >
                     <div className="dispatch-order-card-head">
-                      <span>{row.orderNo}</span>
-                      <Tag color={row.constructionLocation === "OUTSIDE" ? "warning" : "processing"}>
-                        {getConstructionLocationLabel(row.constructionLocation)}
-                      </Tag>
+                      <span>{item.orderNo}</span>
+                      <Tag color={getWorkItemStatusColor(item)}>{getWorkItemStatusLabel(item)}</Tag>
                     </div>
                     <strong>{getOrderVehicleLabel(row)}</strong>
                     <div className="dispatch-order-tags">
@@ -154,114 +207,82 @@ export default function ConstructionAssignmentsPage() {
                       <span>{getOrderCustomerLabel(row)}</span>
                       <span>{formatDispatchAppointmentDate(row.appointmentDate)}</span>
                     </div>
+                    {item.kind === "record" ? (
+                      <small className="dispatch-order-workers">
+                        {formatAssignedWorkers(item.record as ConstructionRecordRow, workerMap)}
+                      </small>
+                    ) : null}
                   </button>
                 );
               })}
             </div>
           ) : (
-            <div className="operation-empty">暂无待派单订单</div>
+            <div className="operation-empty">暂无施工工单，待派单队列和施工履约记录会在这里统一呈现。</div>
           )}
         </Card>
 
         <div className="dispatch-main-column dispatch-board-center">
-          <Card className="dispatch-order-detail">
-            <div className="dispatch-detail-head">
-              <div className="dispatch-detail-title">
-                <span className="dispatch-detail-icon">
-                  <CarOutlined />
-                </span>
-                <div>
-                  <h2>{selectedOrder ? getOrderVehicleLabel(selectedOrder) : "请选择待派单订单"}</h2>
-                  <p>
-                    车牌/车型：{selectedOrder ? getOrderVehicleLabel(selectedOrder) : "-"} · 客户：
-                    {selectedOrder ? getOrderCustomerLabel(selectedOrder) : "-"}
-                  </p>
-                </div>
-              </div>
-              <div className="dispatch-detail-number">
-                <strong>{selectedOrder?.orderNo ?? "未选择订单"}</strong>
-                <span>预约 {formatDispatchAppointmentDate(selectedOrder?.appointmentDate, "-")} {selectedOrder?.appointmentTimeSlot ?? ""}</span>
-              </div>
-            </div>
+          {selectedConstructionRecord ? (
+            <AssignedConstructionRecordPanel
+              record={selectedConstructionRecord}
+              workerMap={workerMap}
+              onOpenDetail={() => router.push(`/construction/orders/${selectedConstructionRecord.orderId}`)}
+            />
+          ) : (
+            <PendingDispatchPanel
+              selectedOrder={selectedPendingOrder}
+              onOpenOrder={() => router.push(selectedPendingOrder ? `/orders/${selectedPendingOrder.id}` : "/orders")}
+            />
+          )}
 
-            <div className="dispatch-info-grid">
-              <div className="dispatch-info-panel">
-                <h3>订单施工信息</h3>
-                <div className="dispatch-info-row">
-                  <span>施工类型</span>
-                  <strong>{getConstructionTypeLabel(selectedOrder?.constructionType)}</strong>
-                </div>
-                <div className="dispatch-info-row">
-                  <span>施工地点</span>
-                  <strong>{getConstructionLocationLabel(selectedOrder?.constructionLocation)}</strong>
-                </div>
-                <div className="dispatch-info-row">
-                  <span>产品明细</span>
-                  <strong>{getOrderItemsSummary(selectedOrder)}</strong>
-                </div>
+          {selectedWorkItem?.kind === "pending" ? (
+            <Card className="dispatch-action-bar">
+              <div>
+                <span>已选择</span>
+                <strong>
+                  {selectedWorkerUserIds.length
+                    ? selectedWorkerUserIds.map((id) => getConstructionWorkerLabel(workerMap.get(id) ?? id)).join("、")
+                    : "尚未选择施工人员"}
+                </strong>
+                <p>最多选择 3 位施工人员，建议至少 1 位主贴师傅。</p>
               </div>
-
-              <div className="dispatch-info-panel dispatch-location-panel">
-                <h3>外出施工信息</h3>
-                <p>{selectedOrder?.outsideAddress || "到店施工或未填写外出地址"}</p>
-                <Button size="small" onClick={() => router.push(selectedOrder ? `/orders/${selectedOrder.id}` : "/orders")}>
-                  查看订单详情
+              <div className="dispatch-action-controls">
+                <Select
+                  mode="multiple"
+                  maxCount={3}
+                  value={selectedWorkerUserIds}
+                  onChange={setSelectedWorkerUserIds}
+                  placeholder="选择施工人员"
+                  showSearch
+                  filterOption={filterWorkerOption}
+                  options={filteredWorkers.map((worker) => ({
+                    value: worker.userId,
+                    label: getConstructionWorkerLabel(worker)
+                  }))}
+                />
+                <Button
+                  type="primary"
+                  icon={<SendOutlined />}
+                  loading={assignMutation.isPending}
+                  disabled={!selectedPendingOrder || selectedWorkerUserIds.length === 0}
+                  onClick={() => setConfirmDrawerOpen(true)}
+                >
+                  确认派单
                 </Button>
               </div>
-            </div>
-
-            <div className="dispatch-note-panel">
-              <h3>销售备注</h3>
-              <p>{selectedOrder?.note || "暂无销售备注。派单前可结合客户历史和施工复杂度安排主贴与副手。"}</p>
-            </div>
-
-            <div className="dispatch-fee-panel dispatch-cost-card">
+            </Card>
+          ) : selectedConstructionRecord ? (
+            <Card className="dispatch-action-bar dispatch-action-bar-readonly">
               <div>
-                <span>施工费</span>
-                <strong>{yuanCurrency(selectedOrder?.laborCostCents)}</strong>
+                <span>施工工单</span>
+                <strong>{selectedConstructionRecord ? getConstructionStatusLabel(selectedConstructionRecord.status) : "-"}</strong>
+                <p>已派工工单进入施工跟踪、照片和质检流程，不再重复显示派工提交按钮。</p>
               </div>
-              <div>
-                <span>订单总额</span>
-                <strong>{yuanCurrency(selectedOrder?.totalAmountCents)}</strong>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="dispatch-action-bar">
-            <div>
-              <span>已选择</span>
-              <strong>
-                {selectedWorkerUserIds.length
-                  ? selectedWorkerUserIds.map((id) => getConstructionWorkerLabel(workerMap.get(id) ?? id)).join("、")
-                  : "尚未选择施工人员"}
-              </strong>
-              <p>最多选择 3 位施工人员，建议至少 1 位主贴师傅。</p>
-            </div>
-            <div className="dispatch-action-controls">
-              <Select
-                mode="multiple"
-                maxCount={3}
-                value={selectedWorkerUserIds}
-                onChange={setSelectedWorkerUserIds}
-                placeholder="选择施工人员"
-                showSearch
-                filterOption={filterWorkerOption}
-                options={filteredWorkers.map((worker) => ({
-                  value: worker.userId,
-                  label: getConstructionWorkerLabel(worker)
-                }))}
-              />
-              <Button
-                type="primary"
-                icon={<SendOutlined />}
-                loading={assignMutation.isPending}
-                disabled={!selectedOrder || selectedWorkerUserIds.length === 0}
-                onClick={() => setConfirmDrawerOpen(true)}
-              >
-                确认派单
+              <Button onClick={() => selectedConstructionRecord && router.push(`/construction/orders/${selectedConstructionRecord.orderId}`)}>
+                查看施工工单
               </Button>
-            </div>
-          </Card>
+            </Card>
+          ) : null}
 
         </div>
 
@@ -318,7 +339,11 @@ export default function ConstructionAssignmentsPage() {
             </div>
           </Card>
 
-          <Card className="dispatch-progress-card" title="施工履约进度">
+          <Card
+            className="dispatch-progress-card"
+            title="施工履约进度"
+            extra={<Button size="small" onClick={() => setActiveWorkOrderTab("all")}>查看全部工单</Button>}
+          >
             {recordsQuery.isLoading ? (
               <div className="operation-empty">施工进度加载中...</div>
             ) : records.length ? (
@@ -364,7 +389,7 @@ export default function ConstructionAssignmentsPage() {
               icon={<SendOutlined />}
               block
               loading={assignMutation.isPending}
-              disabled={!selectedOrder || selectedWorkerUserIds.length === 0}
+              disabled={!selectedPendingOrder || selectedWorkerUserIds.length === 0}
               onClick={() => assignMutation.mutate()}
             >
               确认提交，进入派工流转
@@ -474,6 +499,164 @@ export default function ConstructionAssignmentsPage() {
 function getOrderCustomerLabel(order?: OrderRow) {
   if (!order) return "-";
   return order.customer?.companyName ?? order.customer?.name ?? "未登记客户";
+}
+
+function getWorkItemKey(item: ConstructionWorkItem) {
+  return `${item.kind}:${item.orderId}`;
+}
+
+function getWorkItemOrder(item: ConstructionWorkItem) {
+  return (item.kind === "pending" ? item.order : item.order) as OrderRow;
+}
+
+function getWorkItemStatusLabel(item: ConstructionWorkItem) {
+  if (item.kind === "pending") return "待派单";
+  return getConstructionStatusLabel(item.status);
+}
+
+function getWorkItemStatusColor(item: ConstructionWorkItem) {
+  if (item.status === "PENDING_DISPATCH") return "warning";
+  if (item.status === "IN_CONSTRUCTION") return "processing";
+  if (item.status === "COMPLETED") return "success";
+  return "default";
+}
+
+function formatAssignedWorkers(record: ConstructionRecordRow, workerMap: Map<string, WorkerRow>) {
+  if (!record.assignments?.length) return "未记录人员";
+  return record.assignments
+    .map((item) => getConstructionWorkerLabel(workerMap.get(item.workerUserId) ?? item.workerUserId))
+    .join("、");
+}
+
+function PendingDispatchPanel({
+  selectedOrder,
+  onOpenOrder
+}: {
+  selectedOrder?: OrderRow;
+  onOpenOrder: () => void;
+}) {
+  return (
+    <Card className="dispatch-order-detail">
+      <div className="dispatch-detail-head">
+        <div className="dispatch-detail-title">
+          <span className="dispatch-detail-icon">
+            <CarOutlined />
+          </span>
+          <div>
+            <h2>{selectedOrder ? getOrderVehicleLabel(selectedOrder) : "请选择待派单订单"}</h2>
+            <p>
+              车牌/车型：{selectedOrder ? getOrderVehicleLabel(selectedOrder) : "-"} · 客户：
+              {selectedOrder ? getOrderCustomerLabel(selectedOrder) : "-"}
+            </p>
+          </div>
+        </div>
+        <div className="dispatch-detail-number">
+          <strong>{selectedOrder?.orderNo ?? "未选择订单"}</strong>
+          <span>预约 {formatDispatchAppointmentDate(selectedOrder?.appointmentDate, "-")} {selectedOrder?.appointmentTimeSlot ?? ""}</span>
+        </div>
+      </div>
+
+      <div className="dispatch-info-grid">
+        <div className="dispatch-info-panel">
+          <h3>订单施工信息</h3>
+          <div className="dispatch-info-row">
+            <span>施工类型</span>
+            <strong>{getConstructionTypeLabel(selectedOrder?.constructionType)}</strong>
+          </div>
+          <div className="dispatch-info-row">
+            <span>施工地点</span>
+            <strong>{getConstructionLocationLabel(selectedOrder?.constructionLocation)}</strong>
+          </div>
+          <div className="dispatch-info-row">
+            <span>产品明细</span>
+            <strong>{getOrderItemsSummary(selectedOrder)}</strong>
+          </div>
+        </div>
+
+        <div className="dispatch-info-panel dispatch-location-panel">
+          <h3>外出施工信息</h3>
+          <p>{selectedOrder?.outsideAddress || "到店施工或未填写外出地址"}</p>
+          <Button size="small" onClick={onOpenOrder}>
+            查看订单详情
+          </Button>
+        </div>
+      </div>
+
+      <div className="dispatch-note-panel">
+        <h3>销售备注</h3>
+        <p>{selectedOrder?.note || "暂无销售备注。派单前可结合客户历史和施工复杂度安排主贴与副手。"}</p>
+      </div>
+
+      <div className="dispatch-fee-panel dispatch-cost-card">
+        <div>
+          <span>施工费</span>
+          <strong>{yuanCurrency(selectedOrder?.laborCostCents)}</strong>
+        </div>
+        <div>
+          <span>订单总额</span>
+          <strong>{yuanCurrency(selectedOrder?.totalAmountCents)}</strong>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function AssignedConstructionRecordPanel({
+  record,
+  workerMap,
+  onOpenDetail
+}: {
+  record: ConstructionRecordRow;
+  workerMap: Map<string, WorkerRow>;
+  onOpenDetail: () => void;
+}) {
+  return (
+    <Card className="dispatch-order-detail">
+      <div className="dispatch-detail-head">
+        <div className="dispatch-detail-title">
+          <span className="dispatch-detail-icon">
+            <CarOutlined />
+          </span>
+          <div>
+            <h2>{record.order?.orderNo ?? "施工工单"}</h2>
+            <p>当前状态：{getConstructionStatusLabel(record.status)}</p>
+          </div>
+        </div>
+        <Button type="primary" onClick={onOpenDetail}>查看施工工单</Button>
+      </div>
+
+      <div className="dispatch-info-grid">
+        <div className="dispatch-info-panel">
+          <h3>施工团队</h3>
+          <strong>{formatAssignedWorkers(record, workerMap)}</strong>
+        </div>
+        <div className="dispatch-info-panel">
+          <h3>施工照片</h3>
+          <strong>{record.photos?.length ?? 0} 张</strong>
+        </div>
+        <div className="dispatch-info-panel">
+          <h3>质检状态</h3>
+          <strong>{getConstructionQualityResultLabel(record.qualityResult)}</strong>
+        </div>
+      </div>
+
+      <div className="dispatch-note-panel">
+        <h3>质检备注</h3>
+        <p>{record.qualityNote || "暂无质检备注。进入施工工单可补充照片、开工完工和质检信息。"}</p>
+      </div>
+
+      <div className="dispatch-fee-panel dispatch-cost-card">
+        <div>
+          <span>施工类型</span>
+          <strong>{getConstructionTypeLabel(record.order?.constructionType)}</strong>
+        </div>
+        <div>
+          <span>施工地点</span>
+          <strong>{getConstructionLocationLabel(record.order?.constructionLocation)}</strong>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 function getOrderVehicleLabel(order?: OrderRow) {

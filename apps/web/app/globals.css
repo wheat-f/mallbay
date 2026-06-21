@@ -8243,6 +8243,38 @@ body {
   margin-bottom: 12px;
 }
 
+.dispatch-work-order-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.dispatch-work-order-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--mb-border);
+  border-radius: 8px;
+  background: var(--mb-surface-container-lowest);
+  color: var(--mb-text-secondary);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dispatch-work-order-tabs button.is-active {
+  border-color: var(--mb-primary);
+  background: rgba(15, 58, 95, 0.08);
+  color: var(--mb-primary);
+}
+
+.dispatch-work-order-tabs em {
+  color: var(--mb-text-muted);
+  font-style: normal;
+}
+
 .dispatch-filter-row .ant-select {
   width: 100%;
 }
@@ -8337,6 +8369,14 @@ body {
 .dispatch-order-meta {
   margin-top: 10px;
   color: var(--mb-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dispatch-order-workers {
+  display: block;
+  margin-top: 8px;
+  color: var(--mb-text-secondary);
   font-size: 12px;
   line-height: 18px;
 }
@@ -8503,6 +8543,14 @@ body {
   margin: 4px 0 0;
   color: var(--mb-text-muted);
   font-size: 12px;
+}
+
+.dispatch-action-bar-readonly {
+  border-color: rgba(15, 58, 95, 0.16);
+}
+
+.dispatch-action-bar-readonly .ant-card-body {
+  align-items: stretch;
 }
 
 .dispatch-action-controls {
@@ -10754,6 +10802,9 @@ body {
 }
 
 .rebate-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   border: 0;
   border-radius: var(--mb-radius-sm);
   background: transparent;
@@ -10768,6 +10819,22 @@ body {
 .rebate-tabs button.is-active {
   background: var(--mb-surface-alt);
   color: var(--mb-primary);
+}
+
+.rebate-tabs button em {
+  min-width: 22px;
+  border-radius: 999px;
+  background: var(--mb-surface-container-low);
+  color: var(--mb-text-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 18px;
+  text-align: center;
+}
+
+.rebate-tabs button.is-active em {
+  background: var(--mb-primary);
+  color: var(--mb-on-primary);
 }
 
 .rebate-workspace {
@@ -10823,6 +10890,62 @@ body {
 
 .rebate-rules-list li + li {
   margin-top: 4px;
+}
+
+.rebate-stage-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rebate-stage-summary button {
+  min-width: 0;
+  cursor: pointer;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface);
+  padding: 14px;
+  text-align: left;
+  box-shadow: var(--mb-shadow-sm);
+}
+
+.rebate-stage-summary button:hover {
+  border-color: rgba(15, 58, 95, 0.28);
+  background: var(--mb-primary-container);
+}
+
+.rebate-stage-summary span {
+  display: block;
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+}
+
+.rebate-stage-summary strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--mb-text-primary);
+  font-size: 22px;
+  line-height: 30px;
+}
+
+.rebate-stage-list-title {
+  display: grid;
+  gap: 3px;
+}
+
+.rebate-stage-list-title strong {
+  color: var(--mb-text-primary);
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.rebate-stage-list-title span {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
 }
 
 .rebate-apply-form {
@@ -11058,6 +11181,18 @@ body {
   gap: 10px;
   border-top: 1px solid var(--mb-border);
   padding-top: 14px;
+}
+
+.rebate-action-empty {
+  width: 100%;
+  border: 1px dashed var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-alt);
+  padding: 12px;
+  color: var(--mb-text-muted);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
 }
 
 .rebate-application-drawer .ant-drawer-content-wrapper {

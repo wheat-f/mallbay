@@ -38,6 +38,8 @@ test("management shell wraps business routes and excludes public and mobile rout
   assert.doesNotMatch(source, /Automotive SaaS/);
   assert.match(source, /management-mobile-nav/);
   assert.match(source, /management-role-switcher/);
+  assert.match(source, /aria-label="返回网站首页"/);
+  assert.match(source, /onClick=\{\(\) => router\.push\("\/"\)\}/);
   assert.match(source, /UserSwitchOutlined/);
   assert.match(source, /const roleSwitcherLabel/);
   assert.match(source, /<span>\{roleSwitcherLabel\}<\/span>/);
@@ -73,6 +75,7 @@ test("management shell wraps business routes and excludes public and mobile rout
   assert.doesNotMatch(roleMenuSource, /key: "settings"/);
   assert.doesNotMatch(roleMenuSource, /key: "profile"/);
   assert.match(source, /accountMenuItems/);
+  assert.match(accountMenuSource, /key: "home"[\s\S]*label: "网站首页"[\s\S]*router\.push\("\/"\)/);
   assert.match(accountMenuSource, /key: "profile", icon: <UserOutlined \/>[\s\S]*label: "个人中心"[\s\S]*router\.push\("\/profile"\)/);
   assert.doesNotMatch(source, /\{ key: "profile", label: "我的", href: "\/profile"/);
 });

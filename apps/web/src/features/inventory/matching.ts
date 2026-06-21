@@ -69,12 +69,16 @@ export function buildInventoryMatchRows(match: InventoryMatchInput | undefined):
     const lockedQuantity = (item.orderItem.inventoryAllocations ?? [])
       .filter((allocation) => allocation.status !== "RELEASED" && allocation.status !== "OUTBOUND")
       .reduce((sum, allocation) => sum + Math.max(0, toNumber(allocation.lockedQuantity) - toNumber(allocation.outboundQuantity)), 0);
+    const outboundQuantity = (item.orderItem.inventoryAllocations ?? [])
+      .filter((allocation) => allocation.status === "OUTBOUND")
+      .reduce((sum, allocation) => sum + Math.max(toNumber(allocation.outboundQuantity), toNumber(allocation.lockedQuantity)), 0);
     const availableBatches = (item.availableBatches ?? []).map((batch) => ({
       id: batch.id,
       batchNo: batch.batchNo,
       availableQuantity: toNumber(batch.availableQuantity)
     }));
     const availableQuantity = availableBatches.reduce((sum, batch) => sum + batch.availableQuantity, 0);
+    const coveredQuantity = lockedQuantity + outboundQuantity;
     return {
       orderItemId: item.orderItem.id,
       productId: item.orderItem.productId,
@@ -82,7 +86,7 @@ export function buildInventoryMatchRows(match: InventoryMatchInput | undefined):
       requiredQuantity,
       lockedQuantity,
       availableQuantity,
-      shortageQuantity: Math.max(0, requiredQuantity - lockedQuantity - availableQuantity),
+      shortageQuantity: Math.max(0, requiredQuantity - coveredQuantity - availableQuantity),
       unit: normalizeUnit(item.orderItem.product?.unit),
       availableBatches
     };

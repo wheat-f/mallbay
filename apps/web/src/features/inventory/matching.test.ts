@@ -36,13 +36,36 @@ test("buildInventoryMatchRows calculates required locked available and shortage 
     requiredQuantity: 6,
     lockedQuantity: 2,
     availableQuantity: 3,
-    shortageQuantity: 1,
+    shortageQuantity: 0,
     unit: "ROLL",
     availableBatches: [
       { id: "batch-1", batchNo: "B001", availableQuantity: 2 },
       { id: "batch-2", batchNo: "B002", availableQuantity: 1 }
     ]
   });
+});
+
+test("buildInventoryMatchRows treats outbound allocations as fulfilled demand", () => {
+  const rows = buildInventoryMatchRows({
+    items: [
+      {
+        orderItem: {
+          id: "item-1",
+          productId: "product-1",
+          quantity: 2,
+          product: { unit: "ROLL", brand: "品牌1", name: "漆面保护膜", model: "PPF-100" },
+          inventoryAllocations: [
+            { lockedQuantity: 2, outboundQuantity: 2, status: "OUTBOUND" }
+          ]
+        },
+        availableBatches: []
+      }
+    ]
+  });
+
+  assert.equal(rows[0]?.lockedQuantity, 0);
+  assert.equal(rows[0]?.availableQuantity, 0);
+  assert.equal(rows[0]?.shortageQuantity, 0);
 });
 
 test("buildPurchaseRequirementFromShortages creates payload only for shortage rows", () => {

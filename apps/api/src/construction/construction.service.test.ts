@@ -98,6 +98,73 @@ test("ConstructionService limits sales assignment list to their own orders", asy
   });
 });
 
+test("ConstructionService lists construction store members even before profiles are maintained", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    constructionWorkerProfile: {
+      findMany: async () => [{
+        id: "profile-1",
+        storeId: "store-1",
+        userId: "worker-with-profile",
+        canWorkOutside: true,
+        skillTags: ["PPF"],
+        isActive: true,
+        user: { username: "worker1", nickname: "熟练师傅" }
+      }]
+    },
+    storeMember: {
+      findUnique: async () => null,
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [
+          {
+            userId: "worker-with-profile",
+            position: StorePosition.CONSTRUCTION,
+            user: { username: "worker1", nickname: "熟练师傅" }
+          },
+          {
+            userId: "worker-without-profile",
+            position: StorePosition.APPRENTICE,
+            user: { username: "worker2", nickname: "新学徒" }
+          }
+        ];
+      }
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  const result = await service.listWorkers(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    "store-1"
+  );
+
+  assert.equal(JSON.stringify(calls[0] ?? {}).includes("CONSTRUCTION"), true);
+  assert.equal(JSON.stringify(calls[0] ?? {}).includes("APPRENTICE"), true);
+  assert.deepEqual(result, [
+    {
+      id: "profile-1",
+      storeId: "store-1",
+      userId: "worker-with-profile",
+      canWorkOutside: true,
+      skillTags: ["PPF"],
+      isActive: true,
+      user: { username: "worker1", nickname: "熟练师傅" }
+    },
+    {
+      storeId: "store-1",
+      userId: "worker-without-profile",
+      canWorkOutside: false,
+      skillTags: [],
+      isActive: true,
+      user: { username: "worker2", nickname: "新学徒" }
+    }
+  ]);
+});
+
 test("ConstructionService lists store schedules for construction dispatchers", async () => {
   const calls: unknown[] = [];
   const prisma = {

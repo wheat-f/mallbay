@@ -5,7 +5,7 @@ import type { ApplyRebatePayload } from "../../src/lib/api";
 import { App, Button, Card, Drawer, Form, Input, InputNumber, Select, Table, Tag } from "antd";
 import { CheckCircleOutlined, InfoCircleOutlined, PayCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { orderApi, rebatesApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -17,6 +17,13 @@ import {
   getRebateReviewOptionsForRole,
   getRebateStatusLabel
 } from "../../src/features/rebates/display";
+import {
+  getRebateRowsForWorkflow,
+  getRebateWorkflowCounts,
+  getRebateWorkflowStep,
+  REBATE_WORKFLOW_TABS,
+  type RebateWorkflowSectionKey
+} from "../../src/features/rebates/workflow";
 
 type ApplyRebateFormValues = Omit<ApplyRebatePayload, "amountCents"> & {
   amountYuan: number;
@@ -36,16 +43,6 @@ type RebateOrderOption = {
   vehicle?: { plateNo?: string | null } | null;
 };
 
-type RebateWorkflowSectionKey = "application" | "review" | "finance" | "payout" | "report";
-
-const REBATE_WORKFLOW_TABS: Array<{ key: RebateWorkflowSectionKey; label: string }> = [
-  { key: "application", label: "返利申请" },
-  { key: "review", label: "返利审核" },
-  { key: "finance", label: "财务审批" },
-  { key: "payout", label: "返利发放" },
-  { key: "report", label: "返利报表" }
-];
-
 export default function RebatesPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -57,20 +54,6 @@ export default function RebatesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [applicationDrawerOpen, setApplicationDrawerOpen] = useState(false);
   const [activeRebateSection, setActiveRebateSection] = useState<RebateWorkflowSectionKey>("application");
-  const rebateRulesSectionRef = useRef<HTMLDivElement | null>(null);
-  const rebateReviewSectionRef = useRef<HTMLDivElement | null>(null);
-  const rebatePayoutSectionRef = useRef<HTMLDivElement | null>(null);
-  const rebateReportSectionRef = useRef<HTMLDivElement | null>(null);
-  const rebateSectionRefs = useMemo(
-    () => ({
-      application: rebateRulesSectionRef,
-      review: rebateReviewSectionRef,
-      finance: rebateReviewSectionRef,
-      payout: rebatePayoutSectionRef,
-      report: rebateReportSectionRef
-    }),
-    []
-  );
 
   const rebatesQuery = useQuery({
     queryKey: ["rebates", storeId],
@@ -91,18 +74,44 @@ export default function RebatesPage() {
     ].filter(Boolean).join(" / ")
   }));
   const rebateRows = useMemo(() => rebatesQuery.data ?? [], [rebatesQuery.data]);
+  const rebateWorkflowCounts = useMemo(() => getRebateWorkflowCounts(rebateRows), [rebateRows]);
+  const activeWorkflow = getRebateWorkflowStep(activeRebateSection);
+  const stageBaseRebateRows = useMemo(
+    () => getRebateRowsForWorkflow(rebateRows, activeRebateSection),
+    [activeRebateSection, rebateRows]
+  );
+  const stageRebateRows = useMemo(
+    () =>
+      activeRebateSection === "report" && statusFilter !== "ALL"
+        ? stageBaseRebateRows.filter((rebate) => rebate.status === statusFilter)
+        : stageBaseRebateRows,
+    [activeRebateSection, stageBaseRebateRows, statusFilter]
+  );
   const rebateOptions = rebateRows.map((rebate) => ({
     value: rebate.id,
     label: getRebateBusinessLabel(rebate)
   }));
-  const activeRebateId = selectedRebateId ?? rebateRows[0]?.id;
+  const stageRebateOptions = stageRebateRows.map((rebate) => ({
+    value: rebate.id,
+    label: getRebateBusinessLabel(rebate)
+  }));
+  const activeRebateId = selectedRebateId ?? stageRebateRows[0]?.id;
   const selectedRebate = useMemo(
-    () => rebateRows.find((rebate) => rebate.id === activeRebateId) ?? rebateRows[0],
-    [activeRebateId, rebateRows]
+    () => stageRebateRows.find((rebate) => rebate.id === activeRebateId) ?? stageRebateRows[0] ?? rebateRows[0],
+    [activeRebateId, rebateRows, stageRebateRows]
   );
-  const filteredRebateRows =
-    statusFilter === "ALL" ? rebateRows : rebateRows.filter((rebate) => rebate.status === statusFilter);
   const rebateReviewOptions = getRebateReviewOptionsForRole(user?.storeMember?.position, user?.isAuditor);
+  const canBusinessReviewSelected =
+    selectedRebate?.status === "APPLIED" && rebateReviewOptions.some((option) => option.value === "REVIEWED");
+  const canFinanceApproveSelected =
+    selectedRebate?.status === "REVIEWED" && rebateReviewOptions.some((option) => option.value === "APPROVED");
+  const canRejectSelected =
+    Boolean(selectedRebate) &&
+    (selectedRebate?.status === "APPLIED" || selectedRebate?.status === "REVIEWED") &&
+    rebateReviewOptions.some((option) => option.value === "REJECTED");
+  const canPaySelected =
+    selectedRebate?.status === "APPROVED" &&
+    (Boolean(user?.isAuditor) || user?.storeMember?.position === "FINANCE");
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["rebates", storeId] });
 
   useEffect(() => {
@@ -148,21 +157,14 @@ export default function RebatesPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
-  const handleReview = async (status?: RebateStatus) => {
-    const values = await rebateActionForm.validateFields(status ? ["id", "note"] : ["id", "status", "note"]);
-    reviewRebate.mutate({ ...(values as RebateActionValues), status: status ?? (values as RebateActionValues).status });
+  const handleReview = async (status: RebateStatus) => {
+    const values = await rebateActionForm.validateFields(["id", "note"]);
+    reviewRebate.mutate({ ...(values as RebateActionValues), status });
   };
   const handlePay = async () => {
     const values = await rebateActionForm.validateFields(["id", "note"]);
     payRebate.mutate(values as RebateActionValues);
   };
-  const scrollRebateSectionIntoView = useCallback(
-    (sectionKey: RebateWorkflowSectionKey) => {
-      setActiveRebateSection(sectionKey);
-      rebateSectionRefs[sectionKey].current?.scrollIntoView({ block: "start", behavior: "smooth" });
-    },
-    [rebateSectionRefs]
-  );
 
   return (
     <div className="management-page">
@@ -175,38 +177,62 @@ export default function RebatesPage() {
             className={activeRebateSection === item.key ? "is-active" : ""}
             type="button"
             aria-pressed={activeRebateSection === item.key}
-            onClick={() => scrollRebateSectionIntoView(item.key)}
+            onClick={() => setActiveRebateSection(item.key)}
           >
             {item.label}
+            <em>{rebateWorkflowCounts[item.key]}</em>
           </button>
         ))}
       </div>
 
       <section className="rebate-workspace">
         <div className="rebate-main-column">
-          <div ref={rebateRulesSectionRef}>
-            <Card className="rebate-rules-card">
-              <h2>
-                <InfoCircleOutlined />
-                申请规则说明
-              </h2>
-              <ul className="rebate-rules-list">
-                <li>关联订单必须处于「已完成」且「全额付款」状态。</li>
-                <li>返利金额必须 &gt; 0，且必须填写明确的返利原因。</li>
-              </ul>
-            </Card>
+          <Card className="rebate-rules-card">
+            <h2>
+              <InfoCircleOutlined />
+              申请规则说明
+            </h2>
+            <ul className="rebate-rules-list">
+              <li>关联订单必须处于「已完成」且「全额付款」状态。</li>
+              <li>返利金额必须 &gt; 0，且必须填写明确的返利原因。</li>
+              <li>流程为「返利申请 → 业务审核 → 财务审批 → 返利发放」，已驳回和已发放进入报表追踪。</li>
+            </ul>
+          </Card>
+
+          <div className="rebate-stage-summary">
+            <button type="button" onClick={() => setActiveRebateSection("review")}>
+              <span>待业务审核</span>
+              <strong>{rebateWorkflowCounts.review}</strong>
+            </button>
+            <button type="button" onClick={() => setActiveRebateSection("finance")}>
+              <span>待财务审批</span>
+              <strong>{rebateWorkflowCounts.finance}</strong>
+            </button>
+            <button type="button" onClick={() => setActiveRebateSection("payout")}>
+              <span>待返利发放</span>
+              <strong>{rebateWorkflowCounts.payout}</strong>
+            </button>
+            <button type="button" onClick={() => setActiveRebateSection("report")}>
+              <span>已发放 / 已驳回</span>
+              <strong>{rebateWorkflowCounts.paid} / {rebateWorkflowCounts.rejected}</strong>
+            </button>
           </div>
 
-          <div ref={rebateReportSectionRef}>
-            <Card
-              className="rebate-application-list"
-              title="返利申请列表"
-              extra={
-                <Button type="primary" icon={<PlusOutlined />} onClick={() => setApplicationDrawerOpen(true)}>
-                  新建申请
-                </Button>
-              }
-            >
+          <Card
+            className="rebate-application-list"
+            title={
+              <div className="rebate-stage-list-title">
+                <strong>{activeWorkflow.title}</strong>
+                <span>{activeWorkflow.description}</span>
+              </div>
+            }
+            extra={
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setApplicationDrawerOpen(true)}>
+                新建申请
+              </Button>
+            }
+          >
+            {activeRebateSection === "report" ? (
               <div className="rebate-filter-row">
                 <span>状态</span>
                 <Select
@@ -223,10 +249,11 @@ export default function RebatesPage() {
                 />
                 <Button onClick={() => setStatusFilter("ALL")}>清除过滤</Button>
               </div>
+            ) : null}
 
             <div className="rebate-mobile-cards">
-              {filteredRebateRows.length > 0 ? (
-                filteredRebateRows.map((rebate) => (
+              {stageRebateRows.length > 0 ? (
+                stageRebateRows.map((rebate) => (
                   <article
                     key={rebate.id}
                     className={`rebate-mobile-card${rebate.id === selectedRebate?.id ? " is-selected" : ""}`}
@@ -260,7 +287,7 @@ export default function RebatesPage() {
                   </article>
                 ))
               ) : (
-                <div className="rebate-mobile-empty">暂无返利申请</div>
+                <div className="rebate-mobile-empty">{activeWorkflow.emptyText}</div>
               )}
             </div>
 
@@ -268,7 +295,8 @@ export default function RebatesPage() {
               className="rebate-desktop-table"
               rowKey="id"
               loading={rebatesQuery.isLoading}
-              dataSource={filteredRebateRows}
+              dataSource={stageRebateRows}
+              locale={{ emptyText: activeWorkflow.emptyText }}
               pagination={{ pageSize: 8 }}
               onRow={(row) => ({
                 onClick: () => setSelectedRebateId(row.id)
@@ -283,68 +311,63 @@ export default function RebatesPage() {
                 { title: "状态", render: (_, row) => <Tag>{getRebateStatusLabel(row.status)}</Tag> }
               ]}
             />
-            </Card>
-          </div>
+          </Card>
         </div>
 
-        <div ref={rebateReviewSectionRef}>
-          <Card className="rebate-review-panel">
-            <div className="rebate-review-head">
-              <div>
-                <h2>审核详情</h2>
-                <p>{selectedRebate ? getRebateBusinessLabel(selectedRebate) : "选择左侧返利申请后进行审核和发放"}</p>
-              </div>
-              <Tag color={selectedRebate?.status === "PAID" ? "success" : "processing"}>
-                {getRebateStatusLabel(selectedRebate?.status)}
-              </Tag>
+        <Card className="rebate-review-panel">
+          <div className="rebate-review-head">
+            <div>
+              <h2>{activeWorkflow.detailTitle}</h2>
+              <p>{selectedRebate ? getRebateBusinessLabel(selectedRebate) : activeWorkflow.detailDescription}</p>
             </div>
+            <Tag color={selectedRebate?.status === "PAID" ? "success" : selectedRebate?.status === "REJECTED" ? "error" : "processing"}>
+              {getRebateStatusLabel(selectedRebate?.status)}
+            </Tag>
+          </div>
 
-            <div className="rebate-summary-box">
-              <div>
-                <span>关联订单</span>
-                <strong>{selectedRebate ? getRebateOrderLabel(selectedRebate) : "-"}</strong>
-              </div>
-              <div>
-                <span>客户信息</span>
-                <strong>{selectedRebate ? getRebateCustomerLabel(selectedRebate) : "-"}</strong>
-              </div>
-              <div>
-                <span>申请返利金额</span>
-                <InputNumber
-                  className="rebate-review-amount-field"
-                  min={0.01}
-                  precision={2}
-                  prefix="¥"
-                  readOnly
-                  value={selectedRebate ? selectedRebate.amountCents / 100 : undefined}
-                />
-                <em className="rebate-review-amount-help">
-                  原订单金额:{" "}
-                  {selectedRebate?.order?.amount?.paidAmountCents
-                    ? formatCentsAsYuan(selectedRebate.order.amount.paidAmountCents)
-                    : "待确认"}{" "}
-                  (推荐比例 10%)
-                </em>
-              </div>
-              <div className="rebate-summary-full">
-                <span>返利原因</span>
-                <strong>{selectedRebate?.reason ?? "-"}</strong>
-              </div>
+          <div className="rebate-summary-box">
+            <div>
+              <span>关联订单</span>
+              <strong>{selectedRebate ? getRebateOrderLabel(selectedRebate) : "-"}</strong>
             </div>
+            <div>
+              <span>客户信息</span>
+              <strong>{selectedRebate ? getRebateCustomerLabel(selectedRebate) : "-"}</strong>
+            </div>
+            <div>
+              <span>申请返利金额</span>
+              <InputNumber
+                className="rebate-review-amount-field"
+                min={0.01}
+                precision={2}
+                prefix="¥"
+                readOnly
+                value={selectedRebate ? selectedRebate.amountCents / 100 : undefined}
+              />
+              <em className="rebate-review-amount-help">
+                原订单金额:{" "}
+                {selectedRebate?.order?.amount?.paidAmountCents
+                  ? formatCentsAsYuan(selectedRebate.order.amount.paidAmountCents)
+                  : "待确认"}{" "}
+                (推荐比例 10%)
+              </em>
+            </div>
+            <div className="rebate-summary-full">
+              <span>返利原因</span>
+              <strong>{selectedRebate?.reason ?? "-"}</strong>
+            </div>
+          </div>
 
-            <Form form={rebateActionForm} layout="vertical" className="rebate-action-form">
+          <Form form={rebateActionForm} layout="vertical" className="rebate-action-form">
             <Form.Item name="id" label="返利申请" rules={[{ required: true, message: "请选择返利申请" }]}>
               <Select
                 showSearch
                 optionFilterProp="label"
                 loading={rebatesQuery.isLoading}
                 placeholder="选择返利申请"
-                options={rebateOptions}
+                options={stageRebateOptions.length ? stageRebateOptions : rebateOptions}
                 onChange={(value) => setSelectedRebateId(value)}
               />
-            </Form.Item>
-            <Form.Item name="status" label="审核结果" rules={[{ required: true, message: "请选择结果" }]}>
-              <Select placeholder="审核结果" options={rebateReviewOptions} />
             </Form.Item>
 
             <div className="rebate-payout-card">
@@ -359,9 +382,9 @@ export default function RebatesPage() {
               </Form.Item>
             </div>
 
-            <div ref={rebatePayoutSectionRef} className="rebate-payout-preview">
+            <div className="rebate-payout-preview">
               <h3>发放操作预设</h3>
-              <p>财务审批后核对转账凭证或抵扣确认单，再记录发放备注。</p>
+              <p>{activeWorkflow.detailDescription}</p>
             </div>
 
             <Form.Item name="note" label="审核 / 发放备注">
@@ -369,38 +392,42 @@ export default function RebatesPage() {
             </Form.Item>
 
             <div className="rebate-action-buttons">
-              <Button
-                icon={<CheckCircleOutlined />}
-                loading={reviewRebate.isPending}
-                disabled={!selectedRebate}
-                onClick={() => handleReview()}
-              >
-                审核
-              </Button>
-              <Button danger disabled={!selectedRebate} onClick={() => handleReview("REJECTED")}>
+              {canBusinessReviewSelected ? (
+                <Button
+                  type="primary"
+                  icon={<CheckCircleOutlined />}
+                  loading={reviewRebate.isPending}
+                  onClick={() => handleReview("REVIEWED")}
+                >
+                  业务审核通过
+                </Button>
+              ) : null}
+              {canFinanceApproveSelected ? (
+                <Button
+                  type="primary"
+                  icon={<CheckCircleOutlined />}
+                  loading={reviewRebate.isPending}
+                  onClick={() => handleReview("APPROVED")}
+                >
+                  财务审批通过
+                </Button>
+              ) : null}
+              {canRejectSelected ? (
+                <Button danger disabled={!selectedRebate} onClick={() => handleReview("REJECTED")}>
                 驳回
-              </Button>
-              <Button
-                type="primary"
-                icon={<CheckCircleOutlined />}
-                loading={reviewRebate.isPending}
-                disabled={!selectedRebate}
-                onClick={() => handleReview("APPROVED")}
-              >
-                审核通过
-              </Button>
-              <Button
-                icon={<PayCircleOutlined />}
-                loading={payRebate.isPending}
-                disabled={!selectedRebate}
-                onClick={handlePay}
-              >
-                发放返利
-              </Button>
+                </Button>
+              ) : null}
+              {canPaySelected ? (
+                <Button icon={<PayCircleOutlined />} loading={payRebate.isPending} onClick={handlePay}>
+                  发放返利
+                </Button>
+              ) : null}
+              {!canBusinessReviewSelected && !canFinanceApproveSelected && !canRejectSelected && !canPaySelected ? (
+                <div className="rebate-action-empty">当前阶段暂无可执行操作</div>
+              ) : null}
             </div>
-            </Form>
-          </Card>
-        </div>
+          </Form>
+        </Card>
       </section>
 
       <Drawer

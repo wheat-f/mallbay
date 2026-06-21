@@ -36,6 +36,7 @@
 - [features/phase-6-mini-offline.md](./features/phase-6-mini-offline.md)：Phase 6 微信小程序与离线功能说明。
 - [features/phase-6-mini-program-integration-plan.md](./features/phase-6-mini-program-integration-plan.md)：Phase 6 微信小程序联调与发布实施计划。
 - [features/phase-6-mini-program-acceptance.md](./features/phase-6-mini-program-acceptance.md)：Phase 6 微信小程序真机验收脚本。
+- [features/phase-6-mini-program-requirements-coverage.md](./features/phase-6-mini-program-requirements-coverage.md)：Phase 6 微信小程序需求覆盖矩阵与验收记录。
 - [features/phase-6-mini-program-release-checklist.md](./features/phase-6-mini-program-release-checklist.md)：Phase 6 微信小程序发布前检查清单。
 
 ### 部署与环境

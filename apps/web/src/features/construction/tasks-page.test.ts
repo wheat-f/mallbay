@@ -133,6 +133,8 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
 
   assert.doesNotMatch(tasksPageSource, /ConstructionMobileShell/);
   assert.match(tasksPageSource, /StorePageHeader/);
+  assert.doesNotMatch(schedulesPageSource, /ConstructionMobileShell/);
+  assert.match(schedulesPageSource, /StorePageHeader/);
   assert.match(schedulesPageSource, /constructionApi\.schedules/);
   assert.match(cameraPageSource, /active="camera"/);
   assert.match(materialsPageSource, /active="materials"/);
@@ -178,7 +180,7 @@ test("construction mobile pages redirect desktop web users to backend pages", ()
   assert.match(shellSource, /useLayoutEffect/);
   assert.match(shellSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
   assert.match(shellSource, /window\.location\.replace\(desktopHref\)/);
-  assert.match(schedulesPageSource, /desktopHref="\/construction\/capacities"/);
+  assert.doesNotMatch(schedulesPageSource, /desktopHref="\/construction\/capacities"/);
   assert.match(cameraPageSource, /desktopHref="\/construction\/assignments"/);
   assert.match(materialsPageSource, /desktopHref="\/inventory"/);
   assert.match(offlinePageSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
@@ -304,25 +306,30 @@ test("construction schedules page follows the prototype weekly schedule layout",
   const pageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
-  assert.match(pageSource, /construction-schedule-tabs/);
+  assert.doesNotMatch(pageSource, /ConstructionMobileShell/);
+  assert.match(pageSource, /StorePageHeader/);
+  assert.match(pageSource, /worker-schedule-page/);
+  assert.match(pageSource, /worker-schedule-summary/);
+  assert.match(pageSource, /worker-schedule-grid/);
   assert.match(pageSource, /我的排班/);
   assert.match(pageSource, /请假申请/);
-  assert.match(pageSource, /历史记录/);
+  assert.match(pageSource, /我的当日记录/);
   assert.match(pageSource, /weekDays/);
   assert.match(pageSource, /construction-schedule-week/);
   assert.match(pageSource, /construction-schedule-card/);
-  assert.match(pageSource, /construction-leave-fab/);
-  assert.match(cssSource, /\.construction-schedule-tabs/);
+  assert.match(pageSource, /getWorkerScheduleStatusLabel/);
+  assert.match(cssSource, /\.worker-schedule-page/);
+  assert.match(cssSource, /\.worker-schedule-summary/);
+  assert.match(cssSource, /\.worker-schedule-grid/);
   assert.match(cssSource, /\.construction-schedule-week/);
   assert.match(cssSource, /\.construction-schedule-card/);
-  assert.match(cssSource, /\.construction-leave-fab/);
 });
 
 test("construction schedules page avoids future implementation copy", () => {
   const pageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
 
-  assert.match(pageSource, /提交后将同步到当日排班，店长可据此安排任务。/);
-  assert.match(pageSource, /按当前日期展示排班记录，便于复盘当天出勤与任务安排。/);
+  assert.match(pageSource, /用于补充外出、休息或店内可施工状态。正式请假请走请假申请。/);
+  assert.match(pageSource, /查看周排班、当日安排和本人出勤状态/);
   assert.doesNotMatch(pageSource, /审批流后续接入/);
   assert.doesNotMatch(pageSource, /完整历史筛选后续接入/);
 });
@@ -330,7 +337,7 @@ test("construction schedules page avoids future implementation copy", () => {
 test("construction schedules page uses business-safe copy for unknown schedule status", () => {
   const pageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
 
-  assert.match(pageSource, /排班状态待确认/);
+  assert.match(pageSource, /getWorkerScheduleStatusLabel/);
   assert.match(pageSource, /排班说明待确认/);
   assert.doesNotMatch(pageSource, /\?\? status/);
 });
@@ -340,24 +347,22 @@ test("construction schedules page renders prototype task-style schedule cards", 
   const cssSource = readFileSync("app/globals.css", "utf8");
   const shellSource = readFileSync("src/features/construction/mobile-shell.tsx", "utf8");
 
-  assert.match(pageSource, /variant="calendar"/);
+  assert.doesNotMatch(pageSource, /variant="calendar"/);
   assert.match(pageSource, /construction-schedule-task-card/);
   assert.match(pageSource, /construction-schedule-task-section/);
   assert.match(pageSource, /construction-schedule-task-main/);
   assert.match(pageSource, /construction-schedule-task-meta/);
-  assert.match(pageSource, /construction-schedule-task-actions/);
   assert.match(pageSource, /getScheduleTaskTitle/);
   assert.match(pageSource, /getScheduleTaskMeta/);
   assert.match(pageSource, /useRouter/);
-  assert.match(pageSource, /查看详情/);
-  assert.match(pageSource, /立即接单/);
+  assert.match(pageSource, /查看任务/);
+  assert.match(pageSource, /查看排班/);
   assert.match(pageSource, /router\.push\("\/construction\/tasks"\)/);
   assert.match(cssSource, /\.construction-schedule-task-card/);
   assert.match(cssSource, /\.construction-schedule-task-section/);
   assert.match(cssSource, /\.construction-schedule-task-main/);
   assert.match(cssSource, /\.construction-schedule-task-meta/);
-  assert.match(cssSource, /\.construction-schedule-task-actions/);
-  assert.match(cssSource, /\.construction-mobile-shell-calendar/);
+  assert.match(cssSource, /\.worker-schedule-mobile-cards/);
   assert.match(shellSource, /variant\?: "hero" \| "calendar"/);
   assert.match(shellSource, /construction-mobile-shell-\$\{variant\}/);
 });

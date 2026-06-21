@@ -1,36 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { App, Button, DatePicker, Empty, Form, Input, Select, Tag, Typography } from "antd";
-import {
-  ClockCircleOutlined,
-  EnvironmentOutlined,
-  LeftOutlined,
-  PlusOutlined,
-  RightOutlined,
-  UserOutlined
-} from "@ant-design/icons";
+import { App, Button, Card, DatePicker, Empty, Form, Input, Select, Space, Statistic, Table, Tag, Typography } from "antd";
+import { ClockCircleOutlined, EnvironmentOutlined, LeftOutlined, RightOutlined, UserOutlined } from "@ant-design/icons";
+import { getWorkerScheduleStatusLabel } from "@mallbay/shared";
+import type { ScheduleStatus, ScheduleSummary } from "@mallbay/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
-import { ConstructionMobileShell } from "../../../src/features/construction/mobile-shell";
-import type { ScheduleStatus, ScheduleSummary } from "@mallbay/shared";
+import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 
 const scheduleStatusOptions = [
   { value: "WORKING", label: "店内排班" },
   { value: "OUTSIDE", label: "外出施工" },
   { value: "REST", label: "休息" }
 ] satisfies Array<{ value: ScheduleStatus; label: string }>;
-
-type ScheduleView = "schedule" | "leave" | "history";
-
-const scheduleViewTabs: Array<{ key: ScheduleView; label: string }> = [
-  { key: "schedule", label: "我的排班" },
-  { key: "leave", label: "请假申请" },
-  { key: "history", label: "历史记录" }
-];
 
 const weekLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -39,7 +25,6 @@ export default function ConstructionSchedulesPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [date, setDate] = useState(dayjs());
-  const [scheduleView, setScheduleView] = useState<ScheduleView>("schedule");
   const [form] = Form.useForm<{ date: dayjs.Dayjs; status: ScheduleStatus; note?: string }>();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
@@ -58,196 +43,194 @@ export default function ConstructionSchedulesPage() {
   });
 
   const upsertMutation = useMutation({
-    mutationFn: (values: { date: dayjs.Dayjs; status: ScheduleStatus; note?: string }) =>
-      constructionApi.upsertSchedule({
-        storeId: storeId!,
-        workerId: workerId!,
+    mutationFn: (values: { date: dayjs.Dayjs; status: ScheduleStatus; note?: string }) => {
+      if (!storeId || !workerId) throw new Error("缺少门店或施工人员信息");
+      return constructionApi.upsertSchedule({
+        storeId,
+        workerId,
         date: values.date.format("YYYY-MM-DD"),
         status: values.status,
         note: values.note
-      }),
+      });
+    },
     onSuccess: async () => {
-      message.success("排班已保存");
+      message.success("排班状态已保存");
       await queryClient.invalidateQueries({ queryKey: ["construction-schedules", storeId] });
     },
     onError: (error: Error) => message.error(error.message)
   });
 
   const rows = useMemo(() => (schedulesQuery.data ?? []) as ScheduleSummary[], [schedulesQuery.data]);
+  const myRows = useMemo(() => rows.filter((item) => item.workerId === workerId), [rows, workerId]);
   const workingCount = rows.filter((item) => item.status === "WORKING").length;
   const outsideCount = rows.filter((item) => item.status === "OUTSIDE").length;
+  const restCount = rows.filter((item) => item.status === "REST").length;
 
   const handleDateSelect = (value: dayjs.Dayjs) => {
     setDate(value);
     form.setFieldsValue({ date: value });
   };
 
-  const showLeaveForm = () => {
-    setScheduleView("leave");
-    form.setFieldsValue({ date, status: "REST" });
-  };
-
   return (
-    <ConstructionMobileShell title="我的排班" subtitle="查看当日安排，提交休息或外出状态" active="schedules" variant="calendar" desktopHref="/construction/capacities">
-      <div className="construction-schedule-tabs" role="tablist" aria-label="排班视图">
-        {scheduleViewTabs.map((tab) => (
-          <button
-            key={tab.key}
-            className={scheduleView === tab.key ? "is-active" : undefined}
-            type="button"
-            onClick={() => setScheduleView(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+    <div className="management-page worker-schedule-page">
+      <StorePageHeader title="我的排班" description="查看周排班、当日安排和本人出勤状态">
+        <Space wrap>
+          <Button onClick={() => router.push("/construction/leaves")}>提交请假申请</Button>
+          <Button type="primary" onClick={() => router.push("/construction/tasks")}>查看我的任务</Button>
+        </Space>
+      </StorePageHeader>
 
-      <section className="construction-schedule-week">
-        <div className="construction-schedule-week-head">
-          <Typography.Title level={2}>{monthLabel}</Typography.Title>
-          <div>
-            <Button shape="circle" icon={<LeftOutlined />} onClick={() => handleDateSelect(date.subtract(7, "day"))} />
-            <Button shape="circle" icon={<RightOutlined />} onClick={() => handleDateSelect(date.add(7, "day"))} />
-          </div>
-        </div>
-        <div className="construction-schedule-week-grid">
-          {weekLabels.map((label) => (
-            <span key={label} className="construction-schedule-week-label">
-              {label}
-            </span>
-          ))}
-          {weekDays.map((day) => {
-            const selected = day.isSame(date, "day");
-            return (
-              <button
-                key={day.format("YYYY-MM-DD")}
-                className={selected ? "construction-schedule-day is-active" : "construction-schedule-day"}
-                type="button"
-                onClick={() => handleDateSelect(day)}
-              >
-                <span>{day.date()}</span>
-                {selected ? <i /> : null}
-              </button>
-            );
-          })}
-        </div>
+      <section className="worker-schedule-summary">
+        <Card><Statistic title="当日排班" value={rows.length} suffix="条" /></Card>
+        <Card><Statistic title="店内施工" value={workingCount} suffix="人" /></Card>
+        <Card><Statistic title="外出施工" value={outsideCount} suffix="人" /></Card>
+        <Card><Statistic title="休息/请假" value={restCount} suffix="人" /></Card>
       </section>
 
-      {scheduleView === "schedule" ? (
-        <section className="construction-schedule-panel construction-schedule-task-section">
-          <div className="construction-mobile-section-head">
-            <div>
-              <h2>当日排班 ({rows.length})</h2>
-              <p>店内 {workingCount} 个，外出 {outsideCount} 个</p>
+      <section className="worker-schedule-grid">
+        <div className="worker-schedule-main">
+          <Card className="construction-schedule-week worker-schedule-week-card">
+            <div className="construction-schedule-week-head">
+              <Typography.Title level={2}>{monthLabel}</Typography.Title>
+              <div>
+                <Button shape="circle" icon={<LeftOutlined />} onClick={() => handleDateSelect(date.subtract(7, "day"))} />
+                <Button shape="circle" icon={<RightOutlined />} onClick={() => handleDateSelect(date.add(7, "day"))} />
+              </div>
             </div>
-            <Tag className="construction-schedule-date-tag">{dateValue}</Tag>
-          </div>
-        {rows.length === 0 ? (
-          <Empty description="暂无排班" />
-        ) : (
-          <div className="construction-schedule-card-list">
-            {rows.map((item) => {
-              const taskMeta = getScheduleTaskMeta(item, workerId);
-              return (
-                <article key={item.id} className="construction-schedule-card construction-schedule-task-card">
-                  <div className="construction-schedule-card-head construction-schedule-task-main">
-                    <div>
-                      <Tag className={`construction-schedule-status ${getScheduleStatusClassName(item.status)}`}>
-                        {getScheduleStatusLabel(item.status)}
-                      </Tag>
-                      <Typography.Title level={3}>{getScheduleTaskTitle(item)}</Typography.Title>
-                    </div>
-                    <span>{getScheduleTaskBadge(item, workerId)}</span>
-                  </div>
-                  <div className="construction-schedule-card-meta construction-schedule-task-meta">
-                    <span>
-                      <ClockCircleOutlined /> {taskMeta.time}
-                    </span>
-                    <span>
-                      <UserOutlined /> {taskMeta.person}
-                    </span>
-                    <span className="construction-schedule-card-note">
-                      <EnvironmentOutlined /> {taskMeta.note}
-                    </span>
-                  </div>
-                  <div className="construction-schedule-task-actions">
-                    <Button type={item.status === "OUTSIDE" ? "primary" : "default"} onClick={() => router.push("/construction/tasks")}>
-                      {item.status === "OUTSIDE" ? "立即接单" : "查看详情"}
-                    </Button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-        </section>
-      ) : null}
-
-      {scheduleView === "leave" ? (
-        <section className="construction-mobile-panel construction-schedule-form-panel">
-          <div className="construction-mobile-section-head">
-            <div>
-              <h2>请假申请</h2>
-              <p>提交后将同步到当日排班，店长可据此安排任务。</p>
-            </div>
-          </div>
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{ date, status: "WORKING" }}
-          onFinish={(values) => upsertMutation.mutate(values)}
-        >
-          <Form.Item name="date" label="日期" rules={[{ required: true, message: "请选择日期" }]}>
-            <DatePicker className="w-full" allowClear={false} />
-          </Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-            <Select options={scheduleStatusOptions} />
-          </Form.Item>
-          <Form.Item name="note" label="备注">
-            <Input.TextArea rows={3} placeholder="例如外出地址、休息原因或排班说明" />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" loading={upsertMutation.isPending} block>
-            保存排班
-          </Button>
-        </Form>
-        </section>
-      ) : null}
-
-      {scheduleView === "history" ? (
-        <section className="construction-mobile-panel construction-schedule-panel">
-          <div className="construction-mobile-section-head">
-            <div>
-              <h2>历史记录</h2>
-              <p>按当前日期展示排班记录，便于复盘当天出勤与任务安排。</p>
-            </div>
-          </div>
-          {rows.length === 0 ? (
-            <Empty description="暂无历史记录" />
-          ) : (
-            <div className="operation-queue-list">
-              {rows.map((item) => (
-                <div key={item.id} className="operation-queue-item detail-list-item">
-                  <div>
-                    <Typography.Text strong>{item.date}</Typography.Text>
-                    <div className="management-kpi-desc">{item.note ?? getScheduleStatusFallbackNote(item.status)}</div>
-                  </div>
-                  <Tag>{getScheduleStatusLabel(item.status)}</Tag>
-                </div>
+            <div className="construction-schedule-week-grid">
+              {weekLabels.map((label) => (
+                <span key={label} className="construction-schedule-week-label">
+                  {label}
+                </span>
               ))}
+              {weekDays.map((day) => {
+                const selected = day.isSame(date, "day");
+                return (
+                  <button
+                    key={day.format("YYYY-MM-DD")}
+                    className={selected ? "construction-schedule-day is-active" : "construction-schedule-day"}
+                    type="button"
+                    onClick={() => handleDateSelect(day)}
+                  >
+                    <span>{day.date()}</span>
+                    {selected ? <i /> : null}
+                  </button>
+                );
+              })}
             </div>
-          )}
-        </section>
-      ) : null}
+          </Card>
 
-      <button className="construction-leave-fab" type="button" onClick={showLeaveForm} aria-label="申请请假">
-        <PlusOutlined />
-      </button>
-    </ConstructionMobileShell>
+          <Card className="construction-schedule-task-section" title={`当日排班 (${rows.length})`} extra={<Tag>{dateValue}</Tag>}>
+            <Table<ScheduleSummary>
+              rowKey="id"
+              loading={schedulesQuery.isLoading}
+              dataSource={rows}
+              pagination={false}
+              locale={{ emptyText: <Empty description="暂无排班" /> }}
+              columns={[
+                {
+                  title: "状态",
+                  dataIndex: "status",
+                  render: (status: ScheduleStatus) => (
+                    <Tag className={`construction-schedule-status ${getScheduleStatusClassName(status)}`}>
+                      {getWorkerScheduleStatusLabel(status)}
+                    </Tag>
+                  )
+                },
+                {
+                  title: "安排",
+                  render: (_, item) => getScheduleTaskTitle(item)
+                },
+                {
+                  title: "人员",
+                  render: (_, item) => getScheduleTaskMeta(item, workerId).person
+                },
+                {
+                  title: "说明",
+                  render: (_, item) => getScheduleTaskMeta(item, workerId).note
+                },
+                {
+                  title: "操作",
+                  render: (_, item) => (
+                    <Button type={item.workerId === workerId ? "primary" : "default"} onClick={() => router.push("/construction/tasks")}>
+                      {item.workerId === workerId ? "查看任务" : "查看排班"}
+                    </Button>
+                  )
+                }
+              ]}
+            />
+
+            <div className="construction-schedule-card-list worker-schedule-mobile-cards">
+              {rows.map((item) => {
+                const taskMeta = getScheduleTaskMeta(item, workerId);
+                return (
+                  <article key={item.id} className="construction-schedule-card construction-schedule-task-card">
+                    <div className="construction-schedule-card-head construction-schedule-task-main">
+                      <div>
+                        <Tag className={`construction-schedule-status ${getScheduleStatusClassName(item.status)}`}>
+                          {getWorkerScheduleStatusLabel(item.status)}
+                        </Tag>
+                        <Typography.Title level={3}>{getScheduleTaskTitle(item)}</Typography.Title>
+                      </div>
+                      <span>{getScheduleTaskBadge(item, workerId)}</span>
+                    </div>
+                    <div className="construction-schedule-card-meta construction-schedule-task-meta">
+                      <span><ClockCircleOutlined /> {taskMeta.time}</span>
+                      <span><UserOutlined /> {taskMeta.person}</span>
+                      <span className="construction-schedule-card-note"><EnvironmentOutlined /> {taskMeta.note}</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
+
+        <aside className="worker-schedule-side">
+          <Card className="construction-schedule-form-panel" title="登记我的状态">
+            <p className="worker-schedule-side-copy">用于补充外出、休息或店内可施工状态。正式请假请走请假申请。</p>
+            <Form
+              form={form}
+              layout="vertical"
+              initialValues={{ date, status: "WORKING" }}
+              onFinish={(values) => upsertMutation.mutate(values)}
+            >
+              <Form.Item name="date" label="日期" rules={[{ required: true, message: "请选择日期" }]}>
+                <DatePicker className="w-full" allowClear={false} />
+              </Form.Item>
+              <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+                <Select options={scheduleStatusOptions} />
+              </Form.Item>
+              <Form.Item name="note" label="备注">
+                <Input.TextArea rows={4} placeholder="例如外出地址、休息原因或排班说明" />
+              </Form.Item>
+              <Button type="primary" htmlType="submit" loading={upsertMutation.isPending} block>
+                保存排班状态
+              </Button>
+            </Form>
+          </Card>
+
+          <Card title="我的当日记录">
+            {myRows.length === 0 ? (
+              <Empty description="暂无我的排班" />
+            ) : (
+              <div className="operation-queue-list">
+                {myRows.map((item) => (
+                  <div key={item.id} className="operation-queue-item detail-list-item">
+                    <div>
+                      <Typography.Text strong>{item.date}</Typography.Text>
+                      <div className="management-kpi-desc">{item.note ?? getScheduleStatusFallbackNote(item.status)}</div>
+                    </div>
+                    <Tag>{getWorkerScheduleStatusLabel(item.status)}</Tag>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </aside>
+      </section>
+    </div>
   );
-}
-
-function getScheduleStatusLabel(status: ScheduleStatus) {
-  return scheduleStatusOptions.find((item) => item.value === status)?.label ?? "排班状态待确认";
 }
 
 function getScheduleStatusClassName(status: ScheduleStatus) {

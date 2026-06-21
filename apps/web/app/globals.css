@@ -16091,6 +16091,82 @@ button.workbench-task-row:hover {
   margin-bottom: 14px;
 }
 
+.worker-schedule-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.worker-schedule-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.worker-schedule-summary .ant-card {
+  border: 1px solid var(--mb-border);
+  box-shadow: var(--mb-shadow-xs);
+}
+
+.worker-schedule-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 18px;
+  align-items: start;
+}
+
+.worker-schedule-main,
+.worker-schedule-side {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.worker-schedule-week-card.ant-card {
+  padding: 0;
+}
+
+.worker-schedule-week-card .ant-card-body {
+  padding: 18px;
+}
+
+.worker-schedule-mobile-cards {
+  display: none;
+}
+
+.worker-schedule-side-copy {
+  margin: 0 0 14px;
+  color: var(--mb-text-muted);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+  .worker-schedule-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .worker-schedule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .construction-schedule-task-section .ant-table-wrapper {
+    display: none;
+  }
+
+  .worker-schedule-mobile-cards {
+    display: grid;
+  }
+}
+
+@media (max-width: 560px) {
+  .worker-schedule-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
 .construction-leave-fab {
   position: fixed;
   right: max(22px, calc((100vw - 430px) / 2 + 22px));

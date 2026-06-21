@@ -47,6 +47,31 @@
   font-weight: 700;
 }
 
+.task-picker-card {
+  margin-bottom: 20rpx;
+  padding: 24rpx;
+  border-radius: 18rpx;
+  background: #ffffff;
+  box-shadow: 0 10rpx 30rpx rgba(15, 58, 95, 0.08);
+}
+
+.section-label {
+  display: block;
+  margin-bottom: 12rpx;
+  color: #64748b;
+  font-size: 24rpx;
+}
+
+.task-picker-value {
+  min-height: 72rpx;
+  padding: 18rpx 20rpx;
+  border: 1rpx solid #dbe4ef;
+  border-radius: 14rpx;
+  color: #0f3a5f;
+  font-size: 26rpx;
+  background: #f8fafc;
+}
+
 .task,
 .batch {
   display: grid;

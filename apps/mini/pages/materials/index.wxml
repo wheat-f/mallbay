@@ -7,6 +7,12 @@
 
   <view class="panel">
     <text class="section-title">当前任务</text>
+    <view class="task-picker-card" wx:if="{{taskOptions.length > 1}}">
+      <text class="section-label">选择施工任务</text>
+      <picker mode="selector" range="{{taskOptions}}" value="{{selectedTaskIndex}}" bindchange="onTaskChange">
+        <view class="task-picker-value">{{taskOptions[selectedTaskIndex]}}</view>
+      </picker>
+    </view>
     <view wx:if="{{currentTask}}" class="task">
       <text class="task-title">{{currentTask.orderNo}}</text>
       <text class="meta">{{currentTask.customerName}} · {{currentTask.vehicleLabel}}</text>

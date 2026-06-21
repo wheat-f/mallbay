@@ -280,6 +280,11 @@ test("mini app exposes material verification and after-sales task entries", () =
   assert.match(taskPageSource, /openAfterSales/);
   assert.match(taskPageMarkup, /bindtap="openMaterials"/);
   assert.match(taskPageMarkup, /bindtap="openAfterSales"/);
+  assert.match(materialsPageSource, /selectedTaskIndex/);
+  assert.match(materialsPageSource, /onTaskChange/);
+  assert.match(materialsPageSource, /loadCachedMaterials\(currentTask && currentTask\.orderId\)/);
+  assert.match(readFileSync("pages/materials/index.wxml", "utf8"), /picker/);
+  assert.match(readFileSync("pages/materials/index.wxml", "utf8"), /bindchange="onTaskChange"/);
   assert.match(materialsPageSource, /mallbay_construction_tasks/);
   assert.match(materialsPageSource, /\/construction\/orders\/\$\{encodeURIComponent\(task\.orderId\)\}\/materials/);
   assert.match(materialsPageSource, /mallbay_construction_materials_/);

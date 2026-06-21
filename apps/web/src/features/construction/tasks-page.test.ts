@@ -142,7 +142,8 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
   assert.doesNotMatch(leavesPageSource, /ConstructionMobileShell/);
   assert.match(leavesPageSource, /StorePageHeader/);
   assert.match(offlinePageSource, /constructionApi\.offlineSync/);
-  assert.match(profilePageSource, /active="profile"/);
+  assert.doesNotMatch(profilePageSource, /ConstructionMobileShell/);
+  assert.match(profilePageSource, /StorePageHeader/);
   assert.match(shellSource, /mobile-worker-shell/);
   assert.match(shellSource, /construction-mobile-tabs/);
   assert.match(shellSource, /mobile-worker-bottom-nav/);
@@ -187,7 +188,8 @@ test("construction mobile pages redirect desktop web users to backend pages", ()
   assert.match(materialsPageSource, /StorePageHeader/);
   assert.match(offlinePageSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
   assert.match(offlinePageSource, /router\.replace\("\/construction\/assignments"\)/);
-  assert.match(profilePageSource, /desktopHref="\/profile"/);
+  assert.doesNotMatch(profilePageSource, /desktopHref="\/profile"/);
+  assert.match(profilePageSource, /StorePageHeader/);
 });
 
 test("construction profile page shows store business name instead of technical store id", () => {
@@ -422,8 +424,10 @@ test("construction profile page follows the prototype connection and offline set
   const pageSource = readFileSync("app/construction/profile/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
-  assert.match(pageSource, /title="连接与离线设置"/);
-  assert.match(pageSource, /variant="settings"/);
+  assert.doesNotMatch(pageSource, /ConstructionMobileShell/);
+  assert.match(pageSource, /StorePageHeader/);
+  assert.match(pageSource, /worker-profile-page/);
+  assert.match(pageSource, /worker-profile-grid/);
   assert.match(pageSource, /construction-profile-status-card/);
   assert.match(pageSource, /construction-profile-config-section/);
   assert.match(pageSource, /construction-profile-config-list/);
@@ -436,6 +440,8 @@ test("construction profile page follows the prototype connection and offline set
   assert.match(pageSource, /已加密连接/);
   assert.match(pageSource, /离线缓存空间/);
   assert.match(pageSource, /建议限制/);
+  assert.match(pageSource, /router\.push\("\/construction\/offline"\)/);
+  assert.match(pageSource, /router\.push\(`\/workbench\/\$\{storeMember\.store\.id\}`\)/);
   assert.doesNotMatch(pageSource, /API 终端地址/);
   assert.doesNotMatch(pageSource, /服务连接地址/);
   assert.doesNotMatch(pageSource, /https:\/\/api\.mallbay-cloud\.com\/v2/);
@@ -447,6 +453,8 @@ test("construction profile page follows the prototype connection and offline set
   assert.match(pageSource, /mallbay 施工端/);
   assert.doesNotMatch(pageSource, /v\d+\.\d+\.\d+-dev/);
   assert.doesNotMatch(pageSource, /localhost:3001/);
+  assert.match(cssSource, /\.worker-profile-page/);
+  assert.match(cssSource, /\.worker-profile-grid/);
   assert.match(cssSource, /\.construction-profile-status-card/);
   assert.match(cssSource, /\.construction-mobile-shell-settings/);
   assert.match(cssSource, /\.construction-mobile-settings-header/);

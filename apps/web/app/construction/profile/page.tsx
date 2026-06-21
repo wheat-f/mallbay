@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, Progress, Switch } from "antd";
+import { Button, Card, Progress, Switch, Tag } from "antd";
 import {
   ApiOutlined,
   CloudSyncOutlined,
@@ -12,7 +12,7 @@ import {
   SyncOutlined
 } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
-import { ConstructionMobileShell } from "../../../src/features/construction/mobile-shell";
+import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../src/stores/auth-store";
 
 const queueStorageKey = "mallbay-construction-offline-queue";
@@ -43,8 +43,17 @@ export default function ConstructionProfilePage() {
   }, []);
 
   return (
-    <ConstructionMobileShell title="连接与离线设置" subtitle="管理施工端网络、终端和本地缓存" active="profile" variant="settings" desktopHref="/profile">
-      <section className="construction-profile-status-card">
+    <div className="management-page worker-profile-page">
+      <StorePageHeader title="连接与离线设置" description="管理施工端网络、云端同步和本地缓存策略。">
+        <Button icon={<SyncOutlined />} onClick={() => router.push("/construction/offline")}>
+          查看离线队列
+        </Button>
+        <Button type="primary" icon={<CloudSyncOutlined />} onClick={() => router.push("/construction/tasks")}>
+          返回我的任务
+        </Button>
+      </StorePageHeader>
+
+      <section className="construction-profile-status-card worker-profile-status-card">
         <div>
           <span>当前网络状态</span>
           <strong>
@@ -63,72 +72,78 @@ export default function ConstructionProfilePage() {
             <dt>最后同步</dt>
             <dd>{lastSyncAt}</dd>
           </div>
+          <div>
+            <dt>终端</dt>
+            <dd>Web 后台</dd>
+          </div>
         </dl>
       </section>
 
-      <section className="construction-profile-config-section">
-        <h2>基础配置</h2>
-        <div className="construction-profile-config-list">
-          <button
-            type="button"
-            className="construction-profile-setting-row"
-            onClick={() => storeMember && router.push(`/workbench/${storeMember.store.id}`)}
-            disabled={!storeMember}
-          >
-            <ShopOutlined />
-            <span>
-              <strong>门店名称</strong>
-              <em>{storeMember?.store.name ?? "未加入门店"}</em>
-            </span>
-            <b>{storeMember ? "修改" : "待邀请"}</b>
-          </button>
-          <button type="button" className="construction-profile-setting-row" onClick={() => router.push("/construction/offline")}>
-            <ApiOutlined />
-            <span>
-              <strong>云端服务</strong>
-              <em>已加密连接，点击查看离线同步队列</em>
-            </span>
-            <SafetyCertificateOutlined />
-          </button>
-        </div>
-      </section>
-
-      <section className="construction-profile-cache-card">
-        <div className="construction-mobile-section-head">
-          <div>
-            <h2>离线缓存空间</h2>
-            <p>建议限制：{maxCacheSizeMb}MB</p>
+      <section className="worker-profile-grid">
+        <Card className="construction-profile-config-section" title="基础配置">
+          <div className="construction-profile-config-list">
+            <button
+              type="button"
+              className="construction-profile-setting-row"
+              onClick={() => storeMember && router.push(`/workbench/${storeMember.store.id}`)}
+              disabled={!storeMember}
+            >
+              <ShopOutlined />
+              <span>
+                <strong>门店名称</strong>
+                <em>{storeMember?.store.name ?? "未加入门店"}</em>
+              </span>
+              <b>{storeMember ? "进入工作台" : "待邀请"}</b>
+            </button>
+            <button type="button" className="construction-profile-setting-row" onClick={() => router.push("/construction/offline")}>
+              <ApiOutlined />
+              <span>
+                <strong>云端服务</strong>
+                <em>已加密连接，点击查看离线同步队列</em>
+              </span>
+              <SafetyCertificateOutlined />
+            </button>
           </div>
-          <strong>{cacheUsedMb.toFixed(1)} MB</strong>
-        </div>
-        <Progress percent={cachePercent} showInfo={false} />
-        <div className="construction-profile-cache-actions">
-          <Button type="primary" icon={<SyncOutlined />} onClick={() => router.push("/construction/offline")}>
-            立即同步
-          </Button>
-          <Button danger icon={<DeleteOutlined />} onClick={() => router.push("/construction/offline")}>
-            清理缓存
-          </Button>
-        </div>
-      </section>
+        </Card>
 
-      <section className="construction-profile-toggle-list">
-        <label>
-          <DatabaseOutlined />
-          <span>仅在 Wi-Fi 下下载数据</span>
-          <Switch checked={wifiOnly} onChange={setWifiOnly} />
-        </label>
-        <label>
-          <CloudSyncOutlined />
-          <span>自动保存操作日志</span>
-          <Switch checked={autoLog} onChange={setAutoLog} />
-        </label>
-      </section>
+        <Card className="construction-profile-cache-card" title="离线缓存空间">
+          <div className="construction-mobile-section-head">
+            <div>
+              <h2>离线缓存空间</h2>
+              <p>建议限制：{maxCacheSizeMb}MB</p>
+            </div>
+            <strong>{cacheUsedMb.toFixed(1)} MB</strong>
+          </div>
+          <Progress percent={cachePercent} showInfo={false} />
+          <div className="construction-profile-cache-actions">
+            <Button type="primary" icon={<SyncOutlined />} onClick={() => router.push("/construction/offline")}>
+              立即同步
+            </Button>
+            <Button danger icon={<DeleteOutlined />} onClick={() => router.push("/construction/offline")}>
+              清理缓存
+            </Button>
+          </div>
+        </Card>
 
-      <footer className="construction-profile-version">
-        <span>mallbay 施工端</span>
-        <span>门店施工协同解决方案</span>
-      </footer>
-    </ConstructionMobileShell>
+        <Card className="construction-profile-toggle-list" title="同步策略">
+          <label>
+            <DatabaseOutlined />
+            <span>仅在 Wi-Fi 下下载数据</span>
+            <Switch checked={wifiOnly} onChange={setWifiOnly} />
+          </label>
+          <label>
+            <CloudSyncOutlined />
+            <span>自动保存操作日志</span>
+            <Switch checked={autoLog} onChange={setAutoLog} />
+          </label>
+        </Card>
+
+        <Card className="worker-profile-version-card">
+          <Tag color="processing">mallbay 施工端</Tag>
+          <h2>施工人员 Web 工作区</h2>
+          <p>Web 后台用于查看任务、排班、物料与离线队列；小程序作为外出施工和现场拍照的移动入口。</p>
+        </Card>
+      </section>
+    </div>
   );
 }

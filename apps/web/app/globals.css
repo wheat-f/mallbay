@@ -15816,6 +15816,96 @@ button.workbench-task-row:hover {
   line-height: 20px;
 }
 
+.worker-profile-page {
+  display: grid;
+  gap: 22px;
+}
+
+.worker-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: stretch;
+}
+
+.worker-profile-status-card {
+  grid-template-columns: minmax(0, 1fr) 64px;
+  border-radius: 8px;
+  padding: 22px;
+}
+
+.worker-profile-status-card dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.worker-profile-status-card dl > div {
+  display: grid;
+  gap: 6px;
+  border-radius: 8px;
+  background: var(--mb-surface-alt);
+  padding: 12px;
+}
+
+.worker-profile-status-card dd {
+  text-align: left;
+}
+
+.worker-profile-page .construction-profile-config-section,
+.worker-profile-page .construction-profile-cache-card,
+.worker-profile-page .construction-profile-toggle-list,
+.worker-profile-version-card.ant-card {
+  border-radius: 8px;
+  box-shadow: var(--mb-shadow-sm);
+}
+
+.worker-profile-page .construction-profile-config-section .ant-card-body,
+.worker-profile-page .construction-profile-cache-card .ant-card-body,
+.worker-profile-page .construction-profile-toggle-list .ant-card-body {
+  display: grid;
+  gap: 14px;
+}
+
+.worker-profile-page .construction-profile-cache-card {
+  padding: 0;
+}
+
+.worker-profile-page .construction-profile-toggle-list {
+  padding: 0;
+}
+
+.worker-profile-page .construction-profile-cache-actions .ant-btn {
+  min-height: 44px;
+  border-radius: 8px;
+}
+
+.worker-profile-page .construction-profile-cache-actions .ant-btn .ant-btn-icon {
+  display: inline-flex;
+  margin: 0 4px 0 0;
+  font-size: 14px;
+}
+
+.worker-profile-version-card h2 {
+  margin: 16px 0 8px;
+  color: var(--mb-text-primary);
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.worker-profile-version-card p {
+  margin: 0;
+  color: var(--mb-text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+@media (max-width: 900px) {
+  .worker-profile-grid,
+  .worker-profile-status-card dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .construction-mobile-date.ant-picker {
   width: 100%;
   border-radius: var(--mb-radius-md);

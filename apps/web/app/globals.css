@@ -17581,6 +17581,12 @@ button.workbench-task-row:hover {
   box-shadow: none;
 }
 
+.worker-camera-page .construction-camera-form,
+.worker-camera-page .construction-camera-form .ant-select,
+.worker-camera-page .construction-camera-form .ant-input {
+  width: 100%;
+}
+
 .worker-camera-side {
   position: sticky;
   top: 92px;
@@ -17730,6 +17736,10 @@ button.workbench-task-row:hover {
 .worker-materials-hero .ant-btn {
   border-radius: 8px;
   font-weight: 850;
+}
+
+.worker-materials-task-select {
+  min-width: 280px;
 }
 
 .worker-materials-grid {

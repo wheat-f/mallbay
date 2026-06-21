@@ -8,11 +8,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
-    "paths": {
-      "@mallbay/shared": ["packages/shared/src/index.ts"]
-    }
+    "isolatedModules": true
   }
 }

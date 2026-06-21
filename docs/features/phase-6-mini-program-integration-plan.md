@@ -7,12 +7,12 @@
 
 ## 目标
 
-Phase 6 已完成本地离线任务、拍照、请假、同步和微信 code 登录初版。下一阶段目标是把这些本地能力推进到微信开发者工具和真机可验收状态。
+Phase 6 已完成本地离线任务、拍照、请假、排班、物料、售后任务、同步和微信 code 登录初版。下一阶段目标是把这些本地能力推进到微信开发者工具和真机可验收状态。
 
 MUST：
 
 - 明确小程序联调需要的微信平台、后端环境和本地配置边界。
-- 保持现有 Web 施工主流程不变，小程序只作为师傅端任务执行入口。
+- Web 和小程序是两个入口：Web 保留施工人员桌面自助页面，小程序作为师傅端移动执行入口。
 - 保持离线队列、三次重试、100 条缓存上限和逐条同步语义不变。
 - 任何真机环境配置 MUST 走本地 `.local`、开发者工具配置或环境变量，不写入 Git。
 
@@ -30,8 +30,12 @@ MUST NOT：
 - `apps/mini/pages/task-detail` 可查看任务详情，离线记录开工、完工和照片。
 - `apps/mini/pages/offline` 可手动同步离线队列。
 - `apps/mini/pages/leave` 可离线提交请假。
+- `apps/mini/pages/schedule` 可同步并缓存本人排班。
+- `apps/mini/pages/materials` 可按当前施工任务同步订单物料、锁定批次和核验状态。
+- `apps/mini/pages/after-sales` 和 `apps/mini/pages/after-sales-detail` 可同步售后任务并查看缓存详情。
 - `apps/mini/pages/settings` 可维护 API 地址、token、门店 ID，并可发起微信 code 登录。
 - `POST /construction/offline-sync` 可逐条处理照片、状态和请假操作。
+- `GET /construction/orders/:orderId/materials` 已提供施工物料清单，Web 和 Mini 共用该合同。
 - `POST /auth/wechat-login` 已有初版接口和配置模块。
 
 本计划已完成：
@@ -166,6 +170,8 @@ git diff --check
 
 - 微信开发者工具导入 `apps/mini` 后能打开任务页。
 - 配置本地 API 地址和 token 后，任务页能拉取当前施工人员任务。
+- 排班页能同步本人排班，物料页能同步当前任务的订单物料和锁定批次。
+- 售后页能同步分配给当前施工人员的售后任务，并打开详情。
 - 断网后开工、完工、拍照和请假进入离线队列。
 - 恢复网络后同步成功项从队列移除，失败项按三次重试规则处理。
 - 微信 code 登录在配置完整时返回 token 和门店上下文，配置缺失时返回明确业务错误。

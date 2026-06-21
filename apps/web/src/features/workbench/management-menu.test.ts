@@ -50,6 +50,19 @@ test("management menu scopes sales users to sales workflow", () => {
   assert.deepEqual(labels, ["工作台", "客户管理", "销售订单", "报表分析"]);
 });
 
+test("management menu exposes desktop worker self-service entries for construction staff", () => {
+  const items = getManagementMenuItems({ position: "CONSTRUCTION", storeId: "store-1" });
+  const labels = items.map((item) => item.label);
+
+  assert.deepEqual(labels, ["工作台", "我的施工任务", "我的排班", "请假申请", "施工物料", "施工档案", "售后任务"]);
+  assert.equal(items.find((item) => item.label === "我的施工任务")?.href, "/construction/tasks");
+  assert.equal(items.find((item) => item.label === "我的排班")?.href, "/construction/schedules");
+  assert.equal(items.find((item) => item.label === "请假申请")?.href, "/construction/leaves");
+  assert.equal(items.find((item) => item.label === "施工物料")?.href, "/construction/materials");
+  assert.equal(items.find((item) => item.label === "施工档案")?.href, "/construction/profile");
+  assert.equal(items.find((item) => item.label === "售后任务")?.href, "/after-sales/tasks");
+});
+
 test("management menu exposes auditor review entry", () => {
   const items = getManagementMenuItems({ isAuditor: true });
   const labels = items.map((item) => item.label);
@@ -63,6 +76,12 @@ test("management menu exposes auditor review entry", () => {
 
 test("active management menu key follows route groups", () => {
   assert.equal(getActiveManagementMenuKey("/orders/create"), "orders");
+  assert.equal(getActiveManagementMenuKey("/construction/tasks"), "construction-tasks");
+  assert.equal(getActiveManagementMenuKey("/construction/schedules"), "construction-schedules");
+  assert.equal(getActiveManagementMenuKey("/construction/leaves"), "construction-leaves");
+  assert.equal(getActiveManagementMenuKey("/construction/materials"), "construction-materials");
+  assert.equal(getActiveManagementMenuKey("/construction/profile"), "construction-profile");
+  assert.equal(getActiveManagementMenuKey("/after-sales/tasks"), "after-sales-tasks");
   assert.equal(getActiveManagementMenuKey("/construction/capacities"), "construction");
   assert.equal(getActiveManagementMenuKey("/construction/assignments"), "construction");
   assert.equal(getActiveManagementMenuKey("/products"), "products");

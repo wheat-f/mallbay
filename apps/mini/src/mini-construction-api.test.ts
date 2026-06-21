@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  MATERIAL_CACHE_KEY_PREFIX,
   OFFLINE_QUEUE_KEY,
+  SCHEDULE_CACHE_KEY,
   TASK_CACHE_KEY,
   MiniConstructionApi,
   type MiniPlatform
@@ -110,6 +112,50 @@ test("MiniConstructionApi syncs local photo uploads and batched status operation
     ]
   });
   assert.deepEqual(storage.get(OFFLINE_QUEUE_KEY), []);
+});
+
+test("MiniConstructionApi pulls schedules into local cache", async () => {
+  const calls: unknown[] = [];
+  const storage = new Map<string, unknown>();
+  const api = new MiniConstructionApi(createPlatform(storage, calls, [
+    { id: "schedule-1", date: "2026-06-21T00:00:00.000Z", status: "WORKING" }
+  ]));
+
+  const schedules = await api.pullSchedules({
+    apiBaseUrl: "http://localhost:3001",
+    token: "token-1",
+    storeId: "store-1",
+    from: "2026-06-21",
+    to: "2026-06-21"
+  });
+
+  assert.equal(
+    (calls[0] as { url: string }).url,
+    "http://localhost:3001/construction/schedules?storeId=store-1&from=2026-06-21&to=2026-06-21"
+  );
+  assert.deepEqual(schedules, [{ id: "schedule-1", date: "2026-06-21T00:00:00.000Z", status: "WORKING" }]);
+  assert.deepEqual(storage.get(SCHEDULE_CACHE_KEY), schedules);
+});
+
+test("MiniConstructionApi pulls order materials into per-order cache", async () => {
+  const calls: unknown[] = [];
+  const storage = new Map<string, unknown>();
+  const response = {
+    order: { id: "order-1", orderNo: "ORD20260621001" },
+    summary: { requiredItems: 1, allocatedBatches: 1, verifiedBatches: 0, pickedBatches: 0, photoCount: 0 },
+    materials: []
+  };
+  const api = new MiniConstructionApi(createPlatform(storage, calls, response));
+
+  const materials = await api.pullOrderMaterials({
+    apiBaseUrl: "http://localhost:3001",
+    token: "token-1",
+    orderId: "order-1"
+  });
+
+  assert.equal((calls[0] as { url: string }).url, "http://localhost:3001/construction/orders/order-1/materials");
+  assert.deepEqual(materials, response);
+  assert.deepEqual(storage.get(`${MATERIAL_CACHE_KEY_PREFIX}order-1`), response);
 });
 
 test("MiniConstructionApi retries failed offline operations three times before marking failed", async () => {

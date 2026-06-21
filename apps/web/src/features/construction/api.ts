@@ -87,6 +87,53 @@ export type OfflineSyncPayload = {
   operations: OfflineSyncOperation[];
 };
 
+export type ConstructionMaterialBatch = {
+  allocationId: string;
+  batchId: string;
+  batchNo: string;
+  supplierName?: string | null;
+  unit: string;
+  lockedQuantity: number;
+  outboundQuantity: number;
+  availableQuantity: number;
+  status: string;
+  verified: boolean;
+  pickedUp: boolean;
+};
+
+export type ConstructionMaterialItem = {
+  orderItemId: string;
+  productId: string;
+  productLabel: string;
+  quantity: number;
+  unit: string;
+  requiredQuantity: number;
+  allocatedQuantity: number;
+  pickedQuantity: number;
+  verifiedQuantity: number;
+  batches: ConstructionMaterialBatch[];
+};
+
+export type ConstructionOrderMaterials = {
+  order: {
+    id: string;
+    orderNo: string;
+    status: string;
+    constructionType: string;
+    constructionLocation: string;
+    appointmentDate?: string | null;
+    appointmentTimeSlot?: string | null;
+  };
+  summary: {
+    requiredItems: number;
+    allocatedBatches: number;
+    verifiedBatches: number;
+    pickedBatches: number;
+    photoCount: number;
+  };
+  materials: ConstructionMaterialItem[];
+};
+
 export const constructionApi = {
   capacities: (query: ConstructionListQuery) =>
     request<DailyCapacitySummary[]>(`/construction/capacities${toQueryString(query)}`),
@@ -141,6 +188,27 @@ export const constructionApi = {
 
   qualityCheck: (recordId: string, payload: QualityCheckPayload) =>
     request<unknown>(`/construction/records/${recordId}/quality-check`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  orderMaterials: (orderId: string) =>
+    request<ConstructionOrderMaterials>(`/construction/orders/${orderId}/materials`),
+
+  verifyMaterialBatch: (orderId: string, payload: { batchId: string; note?: string }) =>
+    request<ConstructionOrderMaterials>(`/construction/orders/${orderId}/materials/verify-batch`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  pickupMaterials: (orderId: string, payload: { allocationIds: string[]; note?: string }) =>
+    request<ConstructionOrderMaterials>(`/construction/orders/${orderId}/materials/pickup`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  recordMaterialLoss: (orderId: string, payload: { batchId: string; quantity: number; note?: string }) =>
+    request<ConstructionOrderMaterials>(`/construction/orders/${orderId}/materials/losses`, {
       method: "POST",
       body: JSON.stringify(payload)
     }),

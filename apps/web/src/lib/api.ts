@@ -19,6 +19,7 @@ export type { CreateAfterSalePayload, JudgeAfterSalePayload } from "../features/
 export type { CreateSalesCommissionRulePayload, GenerateWorkerCommissionsPayload } from "../features/commissions/api";
 export type {
   CapacityPayload,
+  ConstructionOrderMaterials,
   ConstructionListQuery,
   OfflineSyncPayload,
   SchedulePayload

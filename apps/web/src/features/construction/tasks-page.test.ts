@@ -218,6 +218,13 @@ test("construction materials page follows the prototype material management entr
   assert.match(pageSource, /异常损耗记录后同步库存流水/);
   assert.doesNotMatch(pageSource, /异常损耗后续进入库存流水/);
   assert.match(pageSource, /施工照片上传/);
+  assert.match(pageSource, /constructionApi\.orderMaterials/);
+  assert.match(pageSource, /constructionApi\.verifyMaterialBatch/);
+  assert.match(pageSource, /constructionApi\.pickupMaterials/);
+  assert.match(pageSource, /constructionApi\.recordMaterialLoss/);
+  assert.doesNotMatch(pageSource, /const materialBatches/);
+  assert.doesNotMatch(pageSource, /MB20260614008/);
+  assert.doesNotMatch(pageSource, /XPEL Ultimate Plus/);
   assert.match(pageSource, /router\.push\("\/construction\/camera"\)/);
   assert.match(pageSource, /router\.push\("\/inventory\/movements"\)/);
   assert.match(pageSource, /router\.push\("\/construction\/tasks"\)/);
@@ -235,8 +242,12 @@ test("construction camera and leave pages expose prototype quick actions in web 
   const leavesPageSource = readFileSync("app/construction/leaves/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
+  assert.match(cameraPageSource, /施工照片凭证/);
+  assert.match(cameraPageSource, /选择施工任务/);
   assert.match(cameraPageSource, /施工照片上传/);
   assert.doesNotMatch(cameraPageSource, /ConstructionMobileShell/);
+  assert.doesNotMatch(cameraPageSource, /from "next\/image"/);
+  assert.doesNotMatch(cameraPageSource, /prototype-assets/);
   assert.match(cameraPageSource, /StorePageHeader/);
   assert.match(cameraPageSource, /worker-camera-page/);
   assert.match(cameraPageSource, /worker-camera-hero/);
@@ -248,15 +259,12 @@ test("construction camera and leave pages expose prototype quick actions in web 
   assert.match(cameraPageSource, /construction-camera-upload-placeholder/);
   assert.match(cameraPageSource, /construction-camera-gallery/);
   assert.match(cameraPageSource, /construction-camera-bottom-actions/);
-  assert.match(cameraPageSource, /验车照片/);
   assert.match(cameraPageSource, /膜箱照片/);
   assert.match(cameraPageSource, /膜桶照片/);
-  assert.match(cameraPageSource, /车架号照片/);
   assert.match(cameraPageSource, /施工过程照片/);
-  assert.match(cameraPageSource, /施工后照片/);
-  assert.match(cameraPageSource, /门头合影照片/);
-  assert.match(cameraPageSource, /保存并同步/);
-  assert.match(cameraPageSource, /提交完工/);
+  assert.match(cameraPageSource, /constructionApi\.assignments/);
+  assert.match(cameraPageSource, /constructionApi\.uploadPhoto/);
+  assert.match(cameraPageSource, /getWorkerPhotoStageLabel/);
   assert.match(leavesPageSource, /请假申请/);
   assert.match(leavesPageSource, /construction-leave-workspace/);
   assert.doesNotMatch(leavesPageSource, /ConstructionMobileShell/);

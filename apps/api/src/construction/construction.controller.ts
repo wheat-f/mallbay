@@ -23,14 +23,17 @@ import {
   LeaveRequestDto,
   ListConstructionDto,
   OfflineSyncDto,
+  PickupConstructionMaterialDto,
   QualityCheckDto,
+  RecordMaterialLossDto,
   StartConstructionDto,
   UpdateDailyCapacityDto,
   UpdateLeaveRequestDto,
   UploadConstructionPhotoDto,
   UpsertDailyCapacityDto,
   UpsertScheduleDto,
-  UpsertWorkerProfileDto
+  UpsertWorkerProfileDto,
+  VerifyMaterialBatchDto
 } from "./dto/construction.dto";
 
 type AuthRequest = Request & {
@@ -95,6 +98,38 @@ export class ConstructionController {
   @Post("records/:recordId/quality-check")
   qualityCheck(@Req() req: AuthRequest, @Param("recordId") recordId: string, @Body() dto: QualityCheckDto) {
     return this.construction.qualityCheck(req.user, recordId, dto);
+  }
+
+  @Get("orders/:orderId/materials")
+  getOrderMaterials(@Req() req: AuthRequest, @Param("orderId") orderId: string) {
+    return this.construction.getOrderMaterials(req.user, orderId);
+  }
+
+  @Post("orders/:orderId/materials/verify-batch")
+  verifyMaterialBatch(
+    @Req() req: AuthRequest,
+    @Param("orderId") orderId: string,
+    @Body() dto: VerifyMaterialBatchDto
+  ) {
+    return this.construction.verifyMaterialBatch(req.user, orderId, dto);
+  }
+
+  @Post("orders/:orderId/materials/pickup")
+  pickupMaterials(
+    @Req() req: AuthRequest,
+    @Param("orderId") orderId: string,
+    @Body() dto: PickupConstructionMaterialDto
+  ) {
+    return this.construction.pickupMaterials(req.user, orderId, dto);
+  }
+
+  @Post("orders/:orderId/materials/losses")
+  recordMaterialLoss(
+    @Req() req: AuthRequest,
+    @Param("orderId") orderId: string,
+    @Body() dto: RecordMaterialLossDto
+  ) {
+    return this.construction.recordMaterialLoss(req.user, orderId, dto);
   }
 
   @Get("workers")

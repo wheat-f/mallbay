@@ -6,7 +6,7 @@
 
   <view wx:if="{{tasks.length === 0}}" class="empty">{{emptyText}}</view>
 
-  <view wx:for="{{tasks}}" wx:key="id" class="task">
+  <view wx:for="{{tasks}}" wx:key="id" class="task" data-id="{{item.id}}" bindtap="openAfterSale">
     <view class="task-head">
       <text class="task-title">{{item.title}}</text>
       <text class="badge">{{item.statusLabel}}</text>

@@ -3,6 +3,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import {
   ConstructionPhotoStage,
   ConstructionTaskStatus,
+  InventoryMovementType,
   LeaveRequestStatus,
   OrderStatus,
   Prisma,
@@ -23,14 +24,17 @@ import {
   OfflineSyncDto,
   OfflineSyncOperationDto,
   OfflineTaskStatusPayloadDto,
+  PickupConstructionMaterialDto,
   QualityCheckDto,
+  RecordMaterialLossDto,
   StartConstructionDto,
   UpdateDailyCapacityDto,
   UpdateLeaveRequestDto,
   UploadConstructionPhotoDto,
   UpsertDailyCapacityDto,
   UpsertScheduleDto,
-  UpsertWorkerProfileDto
+  UpsertWorkerProfileDto,
+  VerifyMaterialBatchDto
 } from "./dto/construction.dto";
 
 export type AuthenticatedConstructionUser = UserWithStoreMember & {
@@ -299,6 +303,194 @@ export class ConstructionService {
     });
   }
 
+  async getOrderMaterials(user: AuthenticatedConstructionUser, orderId: string) {
+    const actor = await this.withStoreMember(user);
+    const record = await this.findRecordForOrder(orderId);
+    this.assertCanAccessOrderMaterials(actor, record);
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: {
+          include: {
+            product: true,
+            inventoryAllocations: {
+              include: { batch: true },
+              orderBy: { lockedAt: "desc" }
+            }
+          }
+        },
+        inventoryMovements: {
+          where: {
+            sourceType: { in: ["CONSTRUCTION_MATERIAL_VERIFY", "CONSTRUCTION_MATERIAL_PICKUP", "CONSTRUCTION_MATERIAL_LOSS"] }
+          },
+          orderBy: { createdAt: "desc" }
+        }
+      }
+    });
+    if (!order) {
+      throw new NotFoundException("订单不存在");
+    }
+
+    const verifiedBatchIds = new Set(
+      order.inventoryMovements
+        .filter((movement) => movement.sourceType === "CONSTRUCTION_MATERIAL_VERIFY" && movement.batchId)
+        .map((movement) => movement.batchId)
+    );
+    const pickedAllocationIds = new Set(
+      order.inventoryMovements
+        .filter((movement) => movement.sourceType === "CONSTRUCTION_MATERIAL_PICKUP" && movement.sourceId)
+        .map((movement) => movement.sourceId)
+    );
+
+    const materials = order.items.map((item) => {
+      const batches = item.inventoryAllocations.map((allocation) => ({
+        allocationId: allocation.id,
+        batchId: allocation.batchId,
+        batchNo: allocation.batch.batchNo,
+        supplierName: allocation.batch.supplierName,
+        unit: allocation.batch.unit,
+        lockedQuantity: decimalToNumber(allocation.lockedQuantity),
+        outboundQuantity: decimalToNumber(allocation.outboundQuantity),
+        availableQuantity: decimalToNumber(allocation.batch.availableQuantity),
+        status: allocation.status,
+        verified: verifiedBatchIds.has(allocation.batchId),
+        pickedUp: pickedAllocationIds.has(allocation.id)
+      }));
+      return {
+        orderItemId: item.id,
+        productId: item.productId,
+        productLabel: formatProductLabel(item.product),
+        quantity: item.quantity,
+        unit: item.product.salesUnit,
+        requiredQuantity: item.quantity,
+        allocatedQuantity: batches.reduce((sum, batch) => sum + batch.lockedQuantity, 0),
+        pickedQuantity: batches.filter((batch) => batch.pickedUp).reduce((sum, batch) => sum + batch.lockedQuantity, 0),
+        verifiedQuantity: batches.filter((batch) => batch.verified).length,
+        batches
+      };
+    });
+
+    return {
+      order: {
+        id: order.id,
+        orderNo: order.orderNo,
+        status: order.status,
+        constructionType: order.constructionType,
+        constructionLocation: order.constructionLocation,
+        appointmentDate: order.appointmentDate,
+        appointmentTimeSlot: order.appointmentTimeSlot
+      },
+      summary: {
+        requiredItems: materials.length,
+        allocatedBatches: materials.reduce((sum, item) => sum + item.batches.length, 0),
+        verifiedBatches: materials.reduce((sum, item) => sum + item.batches.filter((batch) => batch.verified).length, 0),
+        pickedBatches: materials.reduce((sum, item) => sum + item.batches.filter((batch) => batch.pickedUp).length, 0),
+        photoCount: record.photos.length
+      },
+      materials
+    };
+  }
+
+  async verifyMaterialBatch(user: AuthenticatedConstructionUser, orderId: string, dto: VerifyMaterialBatchDto) {
+    const actor = await this.withStoreMember(user);
+    const record = await this.findRecordForOrder(orderId);
+    this.assertCanAccessOrderMaterials(actor, record);
+    const allocation = await this.prisma.orderInventoryAllocation.findFirst({
+      where: { orderId, batchId: dto.batchId },
+      include: { batch: true }
+    });
+    if (!allocation) {
+      throw new NotFoundException("订单未锁定该批次");
+    }
+    await this.prisma.inventoryMovement.create({
+      data: {
+        storeId: allocation.storeId,
+        batchId: allocation.batchId,
+        productId: allocation.productId,
+        orderId,
+        movementType: InventoryMovementType.STOCK_ADJUST,
+        quantity: 0,
+        unit: allocation.batch.unit,
+        sourceType: "CONSTRUCTION_MATERIAL_VERIFY",
+        sourceId: allocation.id,
+        createdById: actor.id,
+        note: dto.note ?? `施工物料批次核验：${allocation.batch.batchNo}`
+      }
+    });
+    return this.getOrderMaterials(user, orderId);
+  }
+
+  async pickupMaterials(user: AuthenticatedConstructionUser, orderId: string, dto: PickupConstructionMaterialDto) {
+    const actor = await this.withStoreMember(user);
+    const record = await this.findRecordForOrder(orderId);
+    this.assertCanAccessOrderMaterials(actor, record);
+    const allocationIds = [...new Set(dto.allocationIds)];
+    const allocations = await this.prisma.orderInventoryAllocation.findMany({
+      where: { orderId, id: { in: allocationIds } },
+      include: { batch: true }
+    });
+    if (allocations.length !== allocationIds.length) {
+      throw new BadRequestException("存在不属于该订单的锁定批次");
+    }
+    await this.prisma.inventoryMovement.createMany({
+      data: allocations.map((allocation) => ({
+        storeId: allocation.storeId,
+        batchId: allocation.batchId,
+        productId: allocation.productId,
+        orderId,
+        movementType: InventoryMovementType.STOCK_ADJUST,
+        quantity: 0,
+        unit: allocation.batch.unit,
+        sourceType: "CONSTRUCTION_MATERIAL_PICKUP",
+        sourceId: allocation.id,
+        createdById: actor.id,
+        note: dto.note ?? `施工领取物料：${allocation.batch.batchNo}`
+      }))
+    });
+    return this.getOrderMaterials(user, orderId);
+  }
+
+  async recordMaterialLoss(user: AuthenticatedConstructionUser, orderId: string, dto: RecordMaterialLossDto) {
+    const actor = await this.withStoreMember(user);
+    const record = await this.findRecordForOrder(orderId);
+    this.assertCanAccessOrderMaterials(actor, record);
+    await this.prisma.$transaction(async (tx) => {
+      const batch = await tx.inventoryBatch.findFirst({
+        where: { id: dto.batchId, allocations: { some: { orderId } } }
+      });
+      if (!batch) {
+        throw new NotFoundException("订单未锁定该批次");
+      }
+      if (dto.quantity > decimalToNumber(batch.availableQuantity)) {
+        throw new BadRequestException("损耗数量超出可用库存");
+      }
+      await tx.inventoryBatch.update({
+        where: { id: batch.id },
+        data: {
+          availableQuantity: { decrement: dto.quantity },
+          outboundQuantity: { increment: dto.quantity }
+        }
+      });
+      await tx.inventoryMovement.create({
+        data: {
+          storeId: batch.storeId,
+          batchId: batch.id,
+          productId: batch.productId,
+          orderId,
+          movementType: InventoryMovementType.DAMAGE_OUT,
+          quantity: dto.quantity,
+          unit: batch.unit,
+          sourceType: "CONSTRUCTION_MATERIAL_LOSS",
+          sourceId: orderId,
+          createdById: actor.id,
+          note: dto.note ?? "施工现场损耗"
+        }
+      });
+    });
+    return this.getOrderMaterials(user, orderId);
+  }
+
   async upsertWorker(user: AuthenticatedConstructionUser, dto: UpsertWorkerProfileDto) {
     const actor = await this.withStoreMember(user);
     if (!PermissionPolicy.canDispatchConstruction(actor, dto.storeId)) {
@@ -524,6 +716,16 @@ export class ConstructionService {
     }
   }
 
+  private assertCanAccessOrderMaterials(user: UserWithStoreMember, record: ConstructionRecordWithRelations) {
+    const assignedWorkerId = this.getAssignedWorkerId(user.id, record);
+    if (
+      !PermissionPolicy.canDispatchConstruction(user, record.storeId) &&
+      !PermissionPolicy.canWorkOnConstructionTask(user, record.storeId, assignedWorkerId)
+    ) {
+      throw new ForbiddenException("无权限");
+    }
+  }
+
   private async createCommissionSnapshots(createdById: string, record: ConstructionRecordWithRelations) {
     const existing = await this.prisma.workerCommissionSnapshot.findFirst({
       where: { recordId: record.id }
@@ -584,4 +786,19 @@ function buildDateRange(from?: string, to?: string) {
     gte: from ? normalizeDate(from) : undefined,
     lte: to ? normalizeDate(to) : undefined
   };
+}
+
+function decimalToNumber(value: Prisma.Decimal | number | string) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return Number(value);
+  return value.toNumber();
+}
+
+function formatProductLabel(product: { brand: string; name: string; model: string; specification?: string | null }) {
+  return [
+    product.brand,
+    product.name,
+    product.model,
+    product.specification
+  ].filter(Boolean).join(" / ");
 }

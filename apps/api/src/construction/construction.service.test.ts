@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { LeaveRequestStatus, OrderStatus, QualityCheckResult, ScheduleStatus, StorePosition } from "@prisma/client";
+import {
+  InventoryMovementType,
+  LeaveRequestStatus,
+  OrderStatus,
+  ProductUnit,
+  QualityCheckResult,
+  ScheduleStatus,
+  StorePosition
+} from "@prisma/client";
 import { ConstructionService } from "./construction.service";
 
 test("ConstructionService assigns one to three available workers and dispatches the order", async () => {
@@ -228,6 +236,151 @@ test("ConstructionService limits worker schedules to their own rows", async () =
     date: undefined,
     workerId: "worker-1"
   });
+});
+
+test("ConstructionService builds order material checklist for assigned workers", async () => {
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    constructionRecord: {
+      findUnique: async () => ({
+        id: "record-1",
+        storeId: "store-1",
+        orderId: "order-1",
+        order: { id: "order-1", status: OrderStatus.DISPATCHED },
+        assignments: [{ workerUserId: "worker-1" }],
+        photos: [{ id: "photo-1", stage: "BEFORE" }]
+      })
+    },
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        orderNo: "ORD20260621001",
+        status: OrderStatus.DISPATCHED,
+        constructionType: "PPF",
+        constructionLocation: "IN_STORE",
+        appointmentDate: new Date("2026-06-21T00:00:00.000Z"),
+        appointmentTimeSlot: "09:00-12:00",
+        items: [
+          {
+            id: "item-1",
+            productId: "product-1",
+            quantity: 1,
+            product: {
+              brand: "品牌A",
+              name: "漆面保护膜",
+              model: "M-001",
+              specification: "1.52m",
+              salesUnit: ProductUnit.ROLL
+            },
+            inventoryAllocations: [
+              {
+                id: "allocation-1",
+                batchId: "batch-1",
+                lockedQuantity: 1,
+                outboundQuantity: 0,
+                status: "LOCKED",
+                batch: {
+                  batchNo: "BATCH-001",
+                  supplierName: "供应商A",
+                  unit: ProductUnit.ROLL,
+                  availableQuantity: 2
+                }
+              }
+            ]
+          }
+        ],
+        inventoryMovements: [
+          { sourceType: "CONSTRUCTION_MATERIAL_VERIFY", sourceId: "allocation-1", batchId: "batch-1" }
+        ]
+      })
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  const result = await service.getOrderMaterials(
+    {
+      id: "worker-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+    },
+    "order-1"
+  ) as {
+    summary: { requiredItems: number; allocatedBatches: number; verifiedBatches: number; photoCount: number };
+    materials: Array<{ productLabel: string; batches: Array<{ batchNo: string; verified: boolean }> }>;
+  };
+
+  assert.deepEqual(result.summary, {
+    requiredItems: 1,
+    allocatedBatches: 1,
+    verifiedBatches: 1,
+    pickedBatches: 0,
+    photoCount: 1
+  });
+  assert.equal(result.materials[0]?.productLabel, "品牌A / 漆面保护膜 / M-001 / 1.52m");
+  assert.equal(result.materials[0]?.batches[0]?.batchNo, "BATCH-001");
+  assert.equal(result.materials[0]?.batches[0]?.verified, true);
+});
+
+test("ConstructionService records material loss through inventory movement", async () => {
+  const calls: unknown[] = [];
+  const tx = {
+    inventoryBatch: {
+      findFirst: async () => ({
+        id: "batch-1",
+        storeId: "store-1",
+        productId: "product-1",
+        unit: ProductUnit.ROLL,
+        availableQuantity: 3
+      }),
+      update: async (args: unknown) => calls.push(args)
+    },
+    inventoryMovement: {
+      create: async (args: unknown) => calls.push(args)
+    }
+  };
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    constructionRecord: {
+      findUnique: async () => ({
+        id: "record-1",
+        storeId: "store-1",
+        orderId: "order-1",
+        order: { id: "order-1", status: OrderStatus.DISPATCHED },
+        assignments: [{ workerUserId: "worker-1" }],
+        photos: []
+      })
+    },
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        orderNo: "ORD20260621001",
+        status: OrderStatus.DISPATCHED,
+        constructionType: "PPF",
+        constructionLocation: "IN_STORE",
+        appointmentDate: null,
+        appointmentTimeSlot: null,
+        items: [],
+        inventoryMovements: []
+      })
+    },
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  await service.recordMaterialLoss(
+    {
+      id: "worker-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+    },
+    "order-1",
+    { batchId: "batch-1", quantity: 1, note: "裁切损耗" }
+  );
+
+  const serialized = JSON.stringify(calls);
+  assert.equal(serialized.includes(InventoryMovementType.DAMAGE_OUT), true);
+  assert.equal(serialized.includes("CONSTRUCTION_MATERIAL_LOSS"), true);
+  assert.equal(serialized.includes("裁切损耗"), true);
 });
 
 test("ConstructionService lists leave requests with worker summaries for manager approval", async () => {

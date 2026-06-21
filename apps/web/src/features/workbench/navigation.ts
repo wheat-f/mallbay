@@ -93,8 +93,15 @@ export function getWorkbenchSections(position: StorePosition, storeId: string): 
   if (position === "CONSTRUCTION" || position === "APPRENTICE") {
     return [{
       title: "施工任务",
-      description: "查看分配给自己的任务并上传施工照片",
-      items: [{ label: "我的施工任务", description: "在 Web 后台查看施工任务和派工记录", href: "/construction/assignments", primary: true }]
+      description: "查看分配给自己的任务、排班、物料和售后协同",
+      items: [
+        { label: "我的施工任务", description: "查看施工任务、开工完工和照片凭证", href: "/construction/tasks", primary: true },
+        { label: "我的排班", description: "查看当周排班和外出安排", href: "/construction/schedules" },
+        { label: "请假申请", description: "提交请假申请并查看审批进度", href: "/construction/leaves" },
+        { label: "施工物料", description: "核验订单物料、锁定批次和损耗记录", href: "/construction/materials" },
+        { label: "售后任务", description: "查看分配给自己的售后处理任务", href: "/after-sales/tasks" },
+        { label: "施工档案", description: "查看账号、门店和同步状态", href: "/construction/profile" }
+      ]
     }];
   }
 

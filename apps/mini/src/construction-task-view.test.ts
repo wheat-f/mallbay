@@ -233,15 +233,23 @@ test("mini app exposes material verification and after-sales task entries", () =
   const taskPageMarkup = readFileSync("pages/tasks/index.wxml", "utf8");
   const materialsPageSource = readFileSync("pages/materials/index.js", "utf8");
   const afterSalesPageSource = readFileSync("pages/after-sales/index.js", "utf8");
+  const afterSalesDetailSource = readFileSync("pages/after-sales-detail/index.js", "utf8");
+  const afterSalesDetailMarkup = readFileSync("pages/after-sales-detail/index.wxml", "utf8");
 
   assert.ok(appConfig.pages.includes("pages/materials/index"));
   assert.ok(appConfig.pages.includes("pages/after-sales/index"));
+  assert.ok(appConfig.pages.includes("pages/after-sales-detail/index"));
   assert.match(taskPageSource, /openMaterials/);
   assert.match(taskPageSource, /openAfterSales/);
   assert.match(taskPageMarkup, /bindtap="openMaterials"/);
   assert.match(taskPageMarkup, /bindtap="openAfterSales"/);
   assert.match(materialsPageSource, /mallbay_construction_tasks/);
-  assert.match(materialsPageSource, /待扫码/);
+  assert.match(materialsPageSource, /\/construction\/orders\/\$\{encodeURIComponent\(task\.orderId\)\}\/materials/);
+  assert.match(materialsPageSource, /mallbay_construction_materials_/);
   assert.match(afterSalesPageSource, /\/after-sales/);
+  assert.match(afterSalesPageSource, /openAfterSale/);
+  assert.match(afterSalesPageSource, /\/pages\/after-sales-detail\/index/);
   assert.match(afterSalesPageSource, /mallbay_after_sales_tasks/);
+  assert.match(afterSalesDetailSource, /mallbay_after_sales_tasks/);
+  assert.match(afterSalesDetailMarkup, /责任判定/);
 });

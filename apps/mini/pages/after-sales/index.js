@@ -52,6 +52,12 @@ Page({
         this.setData({ syncing: false });
       }
     });
+  },
+
+  openAfterSale(event) {
+    wx.navigateTo({
+      url: `/pages/after-sales-detail/index?id=${event.currentTarget.dataset.id}`
+    });
   }
 });
 

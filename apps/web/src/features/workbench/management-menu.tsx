@@ -5,9 +5,11 @@ import React from "react";
 import {
   AppstoreOutlined,
   AuditOutlined,
+  CalendarOutlined,
   DashboardOutlined,
   FileDoneOutlined,
   FileProtectOutlined,
+  FormOutlined,
   GiftOutlined,
   IdcardOutlined,
   ReconciliationOutlined,
@@ -42,6 +44,12 @@ const storePositions: StorePosition[] = [
 
 export const managementMenuItems: ManagementMenuItem[] = [
   { key: "workbench", label: "工作台", href: "/workbench", icon: <AppstoreOutlined />, positions: storePositions },
+  { key: "construction-tasks", label: "我的施工任务", href: "/construction/tasks", icon: <ToolOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
+  { key: "construction-schedules", label: "我的排班", href: "/construction/schedules", icon: <CalendarOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
+  { key: "construction-leaves", label: "请假申请", href: "/construction/leaves", icon: <FormOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
+  { key: "construction-materials", label: "施工物料", href: "/construction/materials", icon: <AppstoreOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
+  { key: "construction-profile", label: "施工档案", href: "/construction/profile", icon: <IdcardOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
+  { key: "after-sales-tasks", label: "售后任务", href: "/after-sales/tasks", icon: <ReconciliationOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
   { key: "customers", label: "客户管理", href: "/customers", icon: <TeamOutlined />, positions: ["MANAGER", "SALES", "CUSTOMER_SERVICE"] },
   { key: "orders", label: "销售订单", href: "/orders", icon: <ShoppingCartOutlined />, positions: ["MANAGER", "SALES", "CUSTOMER_SERVICE", "FINANCE"] },
   { key: "products", label: "产品管理", href: "/products", icon: <ShopOutlined />, positions: ["MANAGER", "PURCHASING"] },
@@ -79,6 +87,12 @@ export function getManagementMenuItems(input: {
 
 export function getActiveManagementMenuKey(pathname: string) {
   if (pathname.startsWith("/workbench")) return "workbench";
+  if (pathname.startsWith("/construction/tasks")) return "construction-tasks";
+  if (pathname.startsWith("/construction/schedules")) return "construction-schedules";
+  if (pathname.startsWith("/construction/leaves")) return "construction-leaves";
+  if (pathname.startsWith("/construction/materials")) return "construction-materials";
+  if (pathname.startsWith("/construction/profile")) return "construction-profile";
+  if (pathname.startsWith("/after-sales/tasks")) return "after-sales-tasks";
   if (pathname.startsWith("/customers")) return "customers";
   if (pathname.startsWith("/orders")) return "orders";
   if (pathname.startsWith("/products")) return "products";

@@ -5,6 +5,7 @@
     "pages/schedule/index",
     "pages/materials/index",
     "pages/after-sales/index",
+    "pages/after-sales-detail/index",
     "pages/offline/index",
     "pages/leave/index",
     "pages/settings/index"

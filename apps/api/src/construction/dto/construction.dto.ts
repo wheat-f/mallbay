@@ -7,6 +7,7 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
@@ -119,6 +120,43 @@ export class UploadConstructionPhotoDto {
   @IsOptional()
   @IsDateString()
   takenAt?: string;
+}
+
+export class VerifyMaterialBatchDto {
+  @IsString()
+  batchId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+}
+
+export class PickupConstructionMaterialDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  allocationIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+}
+
+export class RecordMaterialLossDto {
+  @IsString()
+  batchId!: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  quantity!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
 }
 
 export class QualityCheckDto {

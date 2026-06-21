@@ -41,13 +41,20 @@ test("manager workbench exposes full store operations", () => {
   assert.equal(labels.includes("经营报表"), false);
 });
 
-test("construction roles only expose assigned task workflow", () => {
+test("construction roles expose desktop worker self-service workflow", () => {
   const items = getWorkbenchSections("CONSTRUCTION", "store-1")
     .flatMap((section) => section.items);
   const labels = items.map((item) => item.label);
 
-  assert.deepEqual(labels, ["我的施工任务"]);
-  assert.deepEqual(items.map((item) => item.href), ["/construction/assignments"]);
+  assert.deepEqual(labels, ["我的施工任务", "我的排班", "请假申请", "施工物料", "售后任务", "施工档案"]);
+  assert.deepEqual(items.map((item) => item.href), [
+    "/construction/tasks",
+    "/construction/schedules",
+    "/construction/leaves",
+    "/construction/materials",
+    "/after-sales/tasks",
+    "/construction/profile"
+  ]);
 });
 
 test("apprentice workbench uses the same task workflow as construction workers", () => {
@@ -55,8 +62,15 @@ test("apprentice workbench uses the same task workflow as construction workers",
     .flatMap((section) => section.items);
   const labels = items.map((item) => item.label);
 
-  assert.deepEqual(labels, ["我的施工任务"]);
-  assert.deepEqual(items.map((item) => item.href), ["/construction/assignments"]);
+  assert.deepEqual(labels, ["我的施工任务", "我的排班", "请假申请", "施工物料", "售后任务", "施工档案"]);
+  assert.deepEqual(items.map((item) => item.href), [
+    "/construction/tasks",
+    "/construction/schedules",
+    "/construction/leaves",
+    "/construction/materials",
+    "/after-sales/tasks",
+    "/construction/profile"
+  ]);
 });
 
 test("scheduler workbench exposes construction management actions", () => {

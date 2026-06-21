@@ -4,6 +4,8 @@ import { API_BASE_URL_KEY, AUTH_TOKEN_KEY, STORE_ID_KEY } from "./mini-auth-conf
 
 export const TASK_CACHE_KEY = "mallbay_construction_tasks";
 export const OFFLINE_QUEUE_KEY = "mallbay_offline_queue";
+export const SCHEDULE_CACHE_KEY = "mallbay_construction_schedules";
+export const MATERIAL_CACHE_KEY_PREFIX = "mallbay_construction_materials_";
 export { API_BASE_URL_KEY, AUTH_TOKEN_KEY, STORE_ID_KEY };
 
 export type MiniPlatform = {
@@ -40,6 +42,27 @@ export class MiniConstructionApi {
     const tasks = normalizeAssignmentsResponse(response).map(toCachedConstructionTask);
     this.platform.setStorageSync(TASK_CACHE_KEY, tasks);
     return tasks;
+  }
+
+  async pullSchedules(input: { apiBaseUrl: string; token: string; storeId: string; from: string; to: string }) {
+    const response = await this.platform.request({
+      url: `${input.apiBaseUrl}/construction/schedules?storeId=${encodeURIComponent(input.storeId)}&from=${encodeURIComponent(input.from)}&to=${encodeURIComponent(input.to)}`,
+      method: "GET",
+      header: authHeader(input.token)
+    });
+    const schedules = normalizeListResponse(response);
+    this.platform.setStorageSync(SCHEDULE_CACHE_KEY, mergeById(readArrayStorage(this.platform, SCHEDULE_CACHE_KEY), schedules));
+    return schedules;
+  }
+
+  async pullOrderMaterials(input: { apiBaseUrl: string; token: string; orderId: string }) {
+    const response = await this.platform.request({
+      url: `${input.apiBaseUrl}/construction/orders/${encodeURIComponent(input.orderId)}/materials`,
+      method: "GET",
+      header: authHeader(input.token)
+    });
+    this.platform.setStorageSync(`${MATERIAL_CACHE_KEY_PREFIX}${input.orderId}`, response);
+    return response;
   }
 
   async syncOfflineQueue(input: { apiBaseUrl: string; token: string }) {
@@ -117,8 +140,7 @@ function authHeader(token: string) {
 }
 
 function readOfflineQueue(platform: MiniPlatform): OfflineOperation[] {
-  const value = platform.getStorageSync(OFFLINE_QUEUE_KEY);
-  return Array.isArray(value) ? value as OfflineOperation[] : [];
+  return readArrayStorage(platform, OFFLINE_QUEUE_KEY) as OfflineOperation[];
 }
 
 function markFailed(item: OfflineOperation, error: unknown): OfflineOperation {
@@ -132,11 +154,7 @@ function markFailed(item: OfflineOperation, error: unknown): OfflineOperation {
 }
 
 function normalizeAssignmentsResponse(response: unknown): unknown[] {
-  if (Array.isArray(response)) return response;
-  if (response && typeof response === "object" && Array.isArray((response as { items?: unknown[] }).items)) {
-    return (response as { items: unknown[] }).items;
-  }
-  return [];
+  return normalizeListResponse(response);
 }
 
 function normalizeOfflineSyncResponse(response: unknown) {
@@ -144,6 +162,37 @@ function normalizeOfflineSyncResponse(response: unknown) {
     return (response as { items: { clientOperationId: string; status: string }[] }).items;
   }
   return [];
+}
+
+function normalizeListResponse(response: unknown): unknown[] {
+  if (Array.isArray(response)) return response;
+  if (response && typeof response === "object" && Array.isArray((response as { items?: unknown[] }).items)) {
+    return (response as { items: unknown[] }).items;
+  }
+  return [];
+}
+
+function readArrayStorage(platform: MiniPlatform, key: string) {
+  const value = platform.getStorageSync(key);
+  return Array.isArray(value) ? value : [];
+}
+
+function mergeById(cached: unknown[], records: unknown[]) {
+  const byId = new Map<string, unknown>();
+  for (const item of cached) {
+    const id = getRecordId(item);
+    if (id) byId.set(id, item);
+  }
+  for (const item of records) {
+    const id = getRecordId(item);
+    if (id) byId.set(id, item);
+  }
+  return Array.from(byId.values());
+}
+
+function getRecordId(item: unknown) {
+  if (!item || typeof item !== "object") return "";
+  return String((item as { id?: unknown }).id ?? "");
 }
 
 function toCachedConstructionTask(record: unknown): CachedConstructionTask {

@@ -10,28 +10,35 @@
     <view wx:if="{{currentTask}}" class="task">
       <text class="task-title">{{currentTask.orderNo}}</text>
       <text class="meta">{{currentTask.customerName}} · {{currentTask.vehicleLabel}}</text>
+      <button class="primary" loading="{{syncing}}" bindtap="syncMaterials">同步物料</button>
       <button class="secondary" bindtap="openTaskDetail">查看任务详情</button>
     </view>
     <view wx:else class="empty">暂无缓存任务，请先同步施工任务</view>
   </view>
 
   <view class="panel">
-    <text class="section-title">批次追溯</text>
-    <view wx:for="{{batches}}" wx:key="batchNo" class="batch">
-      <view>
-        <text class="batch-no">{{item.batchNo}}</text>
-        <text class="meta">{{item.product}}</text>
-        <text class="meta">{{item.spec}}</text>
-      </view>
-      <text class="badge">{{item.status}}</text>
-      <text class="meta">{{item.location}}</text>
+    <text class="section-title">物料概览</text>
+    <view wx:if="{{summary}}" class="chips">
+      <text>订单物料 {{summary.requiredItems}}</text>
+      <text>锁定批次 {{summary.allocatedBatches}}</text>
+      <text>已核验 {{summary.verifiedBatches}}</text>
     </view>
+    <view wx:else class="empty">{{emptyText}}</view>
   </view>
 
   <view class="panel">
-    <text class="section-title">施工耗材</text>
-    <view class="chips">
-      <text wx:for="{{consumables}}" wx:key="*this">{{item}}</text>
+    <text class="section-title">批次追溯</text>
+    <view wx:if="{{materials.length === 0}}" class="empty">{{emptyText}}</view>
+    <view wx:for="{{materials}}" wx:key="orderItemId" class="batch material-item">
+      <view>
+        <text class="batch-no">{{item.productLabel}}</text>
+        <text class="meta">需求 {{item.requiredQuantity}} {{item.unit}}</text>
+      </view>
+      <view wx:for="{{item.batches}}" wx:for-item="batch" wx:key="allocationId" class="batch-line">
+        <text class="meta">{{batch.batchNo}} · {{batch.supplierName}}</text>
+        <text class="badge">{{batch.statusLabel}}</text>
+        <text class="meta">锁定 {{batch.lockedQuantity}} {{batch.unit}} · {{batch.pickupLabel}}</text>
+      </view>
     </view>
   </view>
 </view>

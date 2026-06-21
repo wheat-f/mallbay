@@ -137,7 +137,8 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
   assert.match(schedulesPageSource, /StorePageHeader/);
   assert.match(schedulesPageSource, /constructionApi\.schedules/);
   assert.match(cameraPageSource, /active="camera"/);
-  assert.match(materialsPageSource, /active="materials"/);
+  assert.doesNotMatch(materialsPageSource, /ConstructionMobileShell/);
+  assert.match(materialsPageSource, /StorePageHeader/);
   assert.doesNotMatch(leavesPageSource, /ConstructionMobileShell/);
   assert.match(leavesPageSource, /StorePageHeader/);
   assert.match(offlinePageSource, /constructionApi\.offlineSync/);
@@ -182,7 +183,8 @@ test("construction mobile pages redirect desktop web users to backend pages", ()
   assert.match(shellSource, /window\.location\.replace\(desktopHref\)/);
   assert.doesNotMatch(schedulesPageSource, /desktopHref="\/construction\/capacities"/);
   assert.match(cameraPageSource, /desktopHref="\/construction\/assignments"/);
-  assert.match(materialsPageSource, /desktopHref="\/inventory"/);
+  assert.doesNotMatch(materialsPageSource, /desktopHref="\/inventory"/);
+  assert.match(materialsPageSource, /StorePageHeader/);
   assert.match(offlinePageSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
   assert.match(offlinePageSource, /router\.replace\("\/construction\/assignments"\)/);
   assert.match(profilePageSource, /desktopHref="\/profile"/);
@@ -214,8 +216,10 @@ test("construction materials page follows the prototype material management entr
   const pageSource = readFileSync(materialsPagePath, "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
-  assert.match(pageSource, /title="物料管理"/);
-  assert.match(pageSource, /active="materials"/);
+  assert.doesNotMatch(pageSource, /ConstructionMobileShell/);
+  assert.match(pageSource, /StorePageHeader/);
+  assert.match(pageSource, /worker-materials-page/);
+  assert.match(pageSource, /worker-materials-hero/);
   assert.match(pageSource, /construction-materials-workspace/);
   assert.match(pageSource, /construction-materials-summary/);
   assert.match(pageSource, /construction-materials-card/);
@@ -231,6 +235,10 @@ test("construction materials page follows the prototype material management entr
   assert.doesNotMatch(pageSource, /异常损耗后续进入库存流水/);
   assert.match(pageSource, /施工照片上传/);
   assert.match(pageSource, /router\.push\("\/construction\/camera"\)/);
+  assert.match(pageSource, /router\.push\("\/inventory\/movements"\)/);
+  assert.match(pageSource, /router\.push\("\/construction\/tasks"\)/);
+  assert.match(cssSource, /\.worker-materials-page/);
+  assert.match(cssSource, /\.worker-materials-hero/);
   assert.match(cssSource, /\.construction-materials-workspace/);
   assert.match(cssSource, /\.construction-materials-summary/);
   assert.match(cssSource, /\.construction-materials-card/);

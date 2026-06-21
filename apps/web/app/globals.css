@@ -17373,6 +17373,137 @@ button.workbench-task-row:hover {
   gap: 14px;
 }
 
+.worker-materials-page {
+  display: grid;
+  gap: 22px;
+}
+
+.worker-materials-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 18px;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(15, 58, 95, 0.97), rgba(10, 91, 130, 0.9)),
+    var(--mb-primary);
+  color: var(--mb-on-primary);
+  padding: 22px 24px;
+  box-shadow: 0 18px 44px rgba(15, 58, 95, 0.22);
+}
+
+.worker-materials-hero .ant-tag {
+  margin: 0 0 10px;
+  border: 0;
+  background: rgb(255 255 255 / 0.16);
+  color: var(--mb-on-primary);
+  font-weight: 900;
+}
+
+.worker-materials-hero h2 {
+  margin: 0 0 8px;
+  color: var(--mb-on-primary);
+  font-size: 28px;
+  font-weight: 950;
+}
+
+.worker-materials-hero p {
+  max-width: 760px;
+  margin: 0;
+  color: rgb(255 255 255 / 0.78);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.worker-materials-hero .ant-btn {
+  border-radius: 8px;
+  font-weight: 850;
+}
+
+.worker-materials-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 18px;
+  align-items: start;
+}
+
+.worker-materials-side {
+  display: grid;
+  gap: 18px;
+}
+
+.worker-materials-main-card .ant-card-body {
+  display: grid;
+  gap: 16px;
+}
+
+.worker-materials-card-copy {
+  margin: 0;
+  color: var(--mb-text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.worker-materials-product {
+  display: grid;
+  gap: 3px;
+}
+
+.worker-materials-product strong {
+  color: var(--mb-text-primary);
+  font-weight: 900;
+}
+
+.worker-materials-product span {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+}
+
+.worker-materials-page .construction-materials-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.worker-materials-page .construction-materials-stat {
+  min-height: 100px;
+  border-radius: 8px;
+  text-align: left;
+  padding: 18px;
+}
+
+.worker-materials-page .construction-materials-stat strong {
+  font-size: 30px;
+}
+
+.worker-materials-page .construction-materials-stat span {
+  font-size: 13px;
+}
+
+.worker-materials-page .construction-materials-card {
+  border-radius: 8px;
+  padding: 0;
+}
+
+.worker-materials-page .construction-materials-batch-list {
+  display: none;
+}
+
+.worker-materials-page .construction-materials-actions {
+  position: static;
+  z-index: auto;
+  grid-template-columns: minmax(0, 1fr);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.worker-materials-page .construction-materials-actions .ant-btn:first-child {
+  grid-column: auto;
+}
+
 .construction-materials-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -17638,6 +17769,25 @@ button.workbench-task-row:hover {
 
 .construction-materials-actions .ant-btn:first-child {
   grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .worker-materials-hero,
+  .worker-materials-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .worker-materials-page .construction-materials-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .worker-materials-page .construction-materials-batch-list {
+    display: grid;
+  }
+
+  .worker-materials-main-card .ant-table-wrapper {
+    display: none;
+  }
 }
 
 .construction-leave-summary {

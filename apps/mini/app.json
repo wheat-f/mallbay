@@ -3,6 +3,8 @@
     "pages/tasks/index",
     "pages/task-detail/index",
     "pages/schedule/index",
+    "pages/materials/index",
+    "pages/after-sales/index",
     "pages/offline/index",
     "pages/leave/index",
     "pages/settings/index"

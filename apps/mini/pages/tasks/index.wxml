@@ -6,6 +6,8 @@
       <button class="queue-button" bindtap="openOfflineQueue">离线 {{offlineCount}}</button>
       <button class="queue-button" bindtap="openLeaveRequest">请假</button>
       <button class="queue-button" bindtap="openSchedule">排班</button>
+      <button class="queue-button" bindtap="openMaterials">物料</button>
+      <button class="queue-button" bindtap="openAfterSales">售后</button>
       <button class="queue-button" bindtap="openSettings">配置</button>
     </view>
   </view>

@@ -226,3 +226,22 @@ test("mini app exposes a schedule page and task quick entry", () => {
   assert.match(schedulePageSource, /\/construction\/schedules/);
   assert.match(schedulePageSource, /mallbay_construction_schedules/);
 });
+
+test("mini app exposes material verification and after-sales task entries", () => {
+  const appConfig = JSON.parse(readFileSync("app.json", "utf8")) as { pages: string[] };
+  const taskPageSource = readFileSync("pages/tasks/index.js", "utf8");
+  const taskPageMarkup = readFileSync("pages/tasks/index.wxml", "utf8");
+  const materialsPageSource = readFileSync("pages/materials/index.js", "utf8");
+  const afterSalesPageSource = readFileSync("pages/after-sales/index.js", "utf8");
+
+  assert.ok(appConfig.pages.includes("pages/materials/index"));
+  assert.ok(appConfig.pages.includes("pages/after-sales/index"));
+  assert.match(taskPageSource, /openMaterials/);
+  assert.match(taskPageSource, /openAfterSales/);
+  assert.match(taskPageMarkup, /bindtap="openMaterials"/);
+  assert.match(taskPageMarkup, /bindtap="openAfterSales"/);
+  assert.match(materialsPageSource, /mallbay_construction_tasks/);
+  assert.match(materialsPageSource, /待扫码/);
+  assert.match(afterSalesPageSource, /\/after-sales/);
+  assert.match(afterSalesPageSource, /mallbay_after_sales_tasks/);
+});

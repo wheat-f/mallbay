@@ -1,0 +1,104 @@
+.page {
+  min-height: 100vh;
+  padding: 32rpx;
+  background: #f8fafc;
+  box-sizing: border-box;
+}
+
+.panel {
+  margin-bottom: 20rpx;
+  padding: 28rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 18rpx;
+  background: #ffffff;
+}
+
+.hero {
+  background: #0f3a5f;
+  color: #ffffff;
+}
+
+.eyebrow,
+.subtitle,
+.meta {
+  display: block;
+  color: #64748b;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.hero .eyebrow,
+.hero .subtitle {
+  color: #dbeafe;
+}
+
+.title {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.section-title {
+  display: block;
+  margin-bottom: 18rpx;
+  color: #111827;
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.task,
+.batch {
+  display: grid;
+  gap: 14rpx;
+  padding: 22rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 16rpx;
+  background: #f8fafc;
+}
+
+.task-title,
+.batch-no {
+  color: #0f3a5f;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.batch {
+  margin-bottom: 16rpx;
+}
+
+.badge {
+  display: inline-flex;
+  align-self: start;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 24rpx;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+.chips text {
+  padding: 12rpx 18rpx;
+  border-radius: 999rpx;
+  background: #eef6ff;
+  color: #0f3a5f;
+  font-size: 26rpx;
+}
+
+.secondary {
+  margin: 0;
+  border-radius: 14rpx;
+  color: #0f3a5f;
+}
+
+.empty {
+  color: #64748b;
+  font-size: 28rpx;
+}

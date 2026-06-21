@@ -47,6 +47,14 @@ Page({
     wx.navigateTo({ url: "/pages/schedule/index" });
   },
 
+  openMaterials() {
+    wx.navigateTo({ url: "/pages/materials/index" });
+  },
+
+  openAfterSales() {
+    wx.navigateTo({ url: "/pages/after-sales/index" });
+  },
+
   openSettings() {
     wx.navigateTo({ url: "/pages/settings/index" });
   },

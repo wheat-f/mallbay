@@ -136,7 +136,8 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
   assert.match(schedulesPageSource, /constructionApi\.schedules/);
   assert.match(cameraPageSource, /active="camera"/);
   assert.match(materialsPageSource, /active="materials"/);
-  assert.match(leavesPageSource, /active="leaves"/);
+  assert.doesNotMatch(leavesPageSource, /ConstructionMobileShell/);
+  assert.match(leavesPageSource, /StorePageHeader/);
   assert.match(offlinePageSource, /constructionApi\.offlineSync/);
   assert.match(profilePageSource, /active="profile"/);
   assert.match(shellSource, /mobile-worker-shell/);
@@ -170,7 +171,6 @@ test("construction mobile pages redirect desktop web users to backend pages", ()
   const schedulesPageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
   const cameraPageSource = readFileSync("app/construction/camera/page.tsx", "utf8");
   const materialsPageSource = readFileSync("app/construction/materials/page.tsx", "utf8");
-  const leavesPageSource = readFileSync("app/construction/leaves/page.tsx", "utf8");
   const offlinePageSource = readFileSync("app/construction/offline/page.tsx", "utf8");
   const profilePageSource = readFileSync("app/construction/profile/page.tsx", "utf8");
 
@@ -181,7 +181,6 @@ test("construction mobile pages redirect desktop web users to backend pages", ()
   assert.match(schedulesPageSource, /desktopHref="\/construction\/capacities"/);
   assert.match(cameraPageSource, /desktopHref="\/construction\/assignments"/);
   assert.match(materialsPageSource, /desktopHref="\/inventory"/);
-  assert.match(leavesPageSource, /desktopHref="\/construction\/leave-approvals"/);
   assert.match(offlinePageSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
   assert.match(offlinePageSource, /router\.replace\("\/construction\/assignments"\)/);
   assert.match(profilePageSource, /desktopHref="\/profile"/);
@@ -262,14 +261,19 @@ test("construction mobile camera and leave pages expose prototype quick actions"
   assert.match(cameraPageSource, /提交完工/);
   assert.match(leavesPageSource, /请假申请/);
   assert.match(leavesPageSource, /construction-leave-workspace/);
-  assert.match(leavesPageSource, /variant="calendar"/);
+  assert.doesNotMatch(leavesPageSource, /ConstructionMobileShell/);
+  assert.match(leavesPageSource, /StorePageHeader/);
   assert.match(leavesPageSource, /提交请假申请/);
   assert.match(leavesPageSource, /construction-leave-application-panel/);
-  assert.match(leavesPageSource, /construction-leave-date-card/);
-  assert.match(leavesPageSource, /construction-leave-type-pills/);
+  assert.match(leavesPageSource, /worker-leave-page/);
+  assert.match(leavesPageSource, /worker-leave-summary/);
+  assert.match(leavesPageSource, /worker-leave-grid/);
+  assert.match(leavesPageSource, /DatePicker\.RangePicker/);
   assert.match(leavesPageSource, /construction-leave-rule-card/);
   assert.match(leavesPageSource, /construction-leave-history-card/);
   assert.match(leavesPageSource, /constructionApi\.createLeave/);
+  assert.match(leavesPageSource, /constructionApi\.leaves/);
+  assert.match(leavesPageSource, /getWorkerLeaveStatusLabel/);
   assert.match(leavesPageSource, /请假时间/);
   assert.match(leavesPageSource, /请假类型/);
   assert.match(leavesPageSource, /请假事由/);
@@ -278,8 +282,7 @@ test("construction mobile camera and leave pages expose prototype quick actions"
   assert.match(leavesPageSource, /年假/);
   assert.match(leavesPageSource, /其他/);
   assert.match(leavesPageSource, /审批通过后/);
-  assert.match(leavesPageSource, /if \(status === "REJECTED"\) return "已驳回";/);
-  assert.doesNotMatch(leavesPageSource, /if \(status === "REJECTED"\) return "已拒绝";/);
+  assert.match(leavesPageSource, /item\.workerId === workerId \|\| item\.worker\?\.id === workerId/);
   assert.match(cssSource, /\.construction-camera-workspace/);
   assert.match(cssSource, /\.construction-camera-offline-banner/);
   assert.match(cssSource, /\.construction-camera-upload-section/);
@@ -290,8 +293,9 @@ test("construction mobile camera and leave pages expose prototype quick actions"
   assert.match(cssSource, /\.construction-camera-bottom-actions/);
   assert.match(cssSource, /\.construction-leave-workspace/);
   assert.match(cssSource, /\.construction-leave-application-panel/);
-  assert.match(cssSource, /\.construction-leave-date-card/);
-  assert.match(cssSource, /\.construction-leave-type-pills/);
+  assert.match(cssSource, /\.worker-leave-page/);
+  assert.match(cssSource, /\.worker-leave-summary/);
+  assert.match(cssSource, /\.worker-leave-grid/);
   assert.match(cssSource, /\.construction-leave-rule-card/);
   assert.match(cssSource, /\.construction-leave-history-card/);
 });

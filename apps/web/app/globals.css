@@ -17866,6 +17866,57 @@ button.workbench-task-row:hover {
   line-height: 1.5;
 }
 
+.worker-leave-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.worker-leave-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.worker-leave-summary .ant-card {
+  border: 1px solid var(--mb-border);
+  box-shadow: var(--mb-shadow-xs);
+}
+
+.worker-leave-grid {
+  display: grid;
+  grid-template-columns: 420px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.worker-leave-form-card.ant-card,
+.worker-leave-history-card.ant-card {
+  padding: 0;
+}
+
+.worker-leave-card-desc {
+  margin: 0 0 16px;
+  color: var(--mb-text-muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.worker-leave-range-picker {
+  width: 100%;
+}
+
+.worker-leave-tip-card.construction-leave-tip-card {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .worker-leave-summary,
+  .worker-leave-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .construction-offline-mobile-shell {
   display: flex;
   width: 100%;

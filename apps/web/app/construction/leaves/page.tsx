@@ -1,35 +1,30 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { FormEvent } from "react";
-import { App, Button, Empty, Tag } from "antd";
-import {
-  CalendarOutlined,
-  ClockCircleOutlined,
-  EnvironmentOutlined,
-  InfoCircleOutlined,
-  SendOutlined
-} from "@ant-design/icons";
+import { useMemo } from "react";
+import { App, Button, Card, DatePicker, Empty, Form, Input, Select, Statistic, Table, Tag } from "antd";
+import { CalendarOutlined, InfoCircleOutlined, SendOutlined } from "@ant-design/icons";
+import { getWorkerLeaveStatusLabel } from "@mallbay/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import dayjs from "dayjs";
-import { ConstructionMobileShell } from "../../../src/features/construction/mobile-shell";
+import dayjs, { type Dayjs } from "dayjs";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 
 type LeaveFormValues = {
-  startDate: string;
-  endDate: string;
+  dateRange?: [Dayjs, Dayjs];
   leaveType: "PERSONAL" | "SICK" | "ANNUAL" | "OTHER";
-  reason: string;
+  reason?: string;
 };
 
 type LeaveRequestRow = {
   id: string;
+  workerId?: string;
   startDate: string;
   endDate: string;
   status?: string;
   reason?: string | null;
   createdAt?: string;
+  worker?: { id: string; username: string; nickname?: string | null } | null;
 };
 
 const leaveTypeOptions = [
@@ -42,12 +37,7 @@ const leaveTypeOptions = [
 export default function ConstructionLeavesPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const [formValues, setFormValues] = useState<LeaveFormValues>({
-    startDate: "",
-    endDate: "",
-    leaveType: "PERSONAL",
-    reason: ""
-  });
+  const [form] = Form.useForm<LeaveFormValues>();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const workerId = user?.id;
@@ -59,163 +49,126 @@ export default function ConstructionLeavesPage() {
   });
 
   const createLeaveMutation = useMutation({
-    mutationFn: (values: LeaveFormValues) =>
-      constructionApi.createLeave({
-        storeId: storeId!,
-        workerId: workerId!,
-        startDate: dayjs(values.startDate).startOf("day").toISOString(),
-        endDate: dayjs(values.endDate).endOf("day").toISOString(),
+    mutationFn: (values: LeaveFormValues) => {
+      if (!storeId || !workerId) throw new Error("缺少门店或施工人员信息");
+      const [startDate, endDate] = values.dateRange ?? [];
+      if (!startDate || !endDate) throw new Error("请选择时间范围");
+      return constructionApi.createLeave({
+        storeId,
+        workerId,
+        startDate: startDate.startOf("day").toISOString(),
+        endDate: endDate.endOf("day").toISOString(),
         reason: formatLeaveReason(values)
-      }),
+      });
+    },
     onSuccess: async () => {
       message.success("请假申请已提交");
-      setFormValues({ startDate: "", endDate: "", leaveType: "PERSONAL", reason: "" });
+      form.resetFields();
       await queryClient.invalidateQueries({ queryKey: ["construction-leaves", storeId] });
     },
     onError: (error: Error) => message.error(error.message)
   });
 
-  const rows = useMemo(() => (leavesQuery.data ?? []) as LeaveRequestRow[], [leavesQuery.data]);
+  const allRows = useMemo(() => (leavesQuery.data ?? []) as LeaveRequestRow[], [leavesQuery.data]);
+  const rows = useMemo(
+    () => allRows.filter((item) => item.workerId === workerId || item.worker?.id === workerId),
+    [allRows, workerId]
+  );
   const pendingCount = rows.filter((item) => item.status === "PENDING").length;
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!storeId || !workerId) {
-      message.error("缺少门店或施工人员信息");
-      return;
-    }
-    if (!formValues.startDate || !formValues.endDate) {
-      message.error("请选择时间范围");
-      return;
-    }
-    if (dayjs(formValues.endDate).isBefore(dayjs(formValues.startDate), "day")) {
-      message.error("结束日期不能早于开始日期");
-      return;
-    }
-    createLeaveMutation.mutate(formValues);
-  };
+  const approvedCount = rows.filter((item) => item.status === "APPROVED").length;
 
   return (
-    <ConstructionMobileShell title="请假申请" subtitle="提交请假状态，方便主管派单" active="leaves" variant="calendar" desktopHref="/construction/leave-approvals">
-      <div className="construction-leave-workspace">
-        <section className="construction-leave-application-panel">
-          <div className="construction-mobile-section-head">
-            <div>
-              <h2>提交请假申请</h2>
-              <p>审批通过后，请假日期会自动锁定为不可派单。</p>
-            </div>
-            <Tag>{pendingCount} 待处理</Tag>
-          </div>
-          <form className="construction-leave-native-form" onSubmit={handleSubmit}>
-            <div className="construction-leave-field">
-              <span>请假时间</span>
-              <div className="construction-leave-date-card">
-                <CalendarOutlined />
-                <div className="construction-leave-date-range">
-                  <input
-                    aria-label="请假开始日期"
-                    type="date"
-                    value={formValues.startDate}
-                    onChange={(event) => setFormValues((current) => ({ ...current, startDate: event.target.value }))}
-                  />
-                  <em>至</em>
-                  <input
-                    aria-label="请假结束日期"
-                    type="date"
-                    value={formValues.endDate}
-                    onChange={(event) => setFormValues((current) => ({ ...current, endDate: event.target.value }))}
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="construction-leave-field">
-              <span>请假类型</span>
-              <div className="construction-leave-type-pills">
-                {leaveTypeOptions.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    aria-pressed={formValues.leaveType === item.value}
-                    className={formValues.leaveType === item.value ? "is-active" : undefined}
-                    onClick={() => setFormValues((current) => ({ ...current, leaveType: item.value }))}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <label className="construction-leave-field">
-              <span>请假事由</span>
-              <textarea
-                rows={4}
-                placeholder="请输入详细原因..."
-                value={formValues.reason}
-                onChange={(event) => setFormValues((current) => ({ ...current, reason: event.target.value }))}
-              />
-            </label>
+    <div className="management-page worker-leave-page construction-leave-workspace">
+      <StorePageHeader title="请假申请" description="提交施工人员请假申请，查看审批状态和历史记录" />
+
+      <section className="worker-leave-summary">
+        <Card>
+          <Statistic title="我的申请" value={rows.length} suffix="条" />
+        </Card>
+        <Card>
+          <Statistic title="待审批" value={pendingCount} suffix="条" />
+        </Card>
+        <Card>
+          <Statistic title="已批准" value={approvedCount} suffix="条" />
+        </Card>
+      </section>
+
+      <section className="worker-leave-grid">
+        <Card className="construction-leave-application-panel worker-leave-form-card" title="提交请假申请">
+          <p className="worker-leave-card-desc">审批通过后，请假日期会自动锁定为不可派单。</p>
+          <Form
+            form={form}
+            layout="vertical"
+            initialValues={{ leaveType: "PERSONAL" }}
+            onFinish={(values) => createLeaveMutation.mutate(values)}
+          >
+            <Form.Item name="dateRange" label="请假时间" rules={[{ required: true, message: "请选择时间范围" }]}>
+              <DatePicker.RangePicker className="worker-leave-range-picker" />
+            </Form.Item>
+            <Form.Item name="leaveType" label="请假类型" rules={[{ required: true, message: "请选择请假类型" }]}>
+              <Select options={leaveTypeOptions} />
+            </Form.Item>
+            <Form.Item name="reason" label="请假事由">
+              <Input.TextArea rows={5} placeholder="请输入详细原因..." />
+            </Form.Item>
             <div className="construction-leave-rule-card">
               <InfoCircleOutlined />
-              <p>审批通过后，请假日期不可派单，系统将自动锁定。</p>
+              <p>已批准的休息会阻止同日派单；外出施工安排请同步写入排班页，便于主管查看当日工位。</p>
             </div>
-            <Button type="primary" icon={<SendOutlined />} htmlType="submit" loading={createLeaveMutation.isPending} block>
-              提交请假
+            <Button type="primary" icon={<SendOutlined />} htmlType="submit" loading={createLeaveMutation.isPending}>
+              提交请假申请
             </Button>
-          </form>
-        </section>
+          </Form>
+        </Card>
 
-        <section className="construction-leave-history-card">
-          <div className="construction-mobile-section-head">
-            <div>
-              <h2>申请记录</h2>
-              <p>用于派单可用性判断，审批状态会持续保留。</p>
-            </div>
-            <Tag>{rows.length} 条</Tag>
-          </div>
-          {rows.length === 0 ? (
-            <Empty description="暂无请假申请" />
-          ) : (
-            <div className="construction-leave-history-list">
-              {rows.map((item) => (
-                <article key={item.id} className="construction-leave-history-item">
-                  <div>
-                    <Tag>{getLeaveStatusLabel(item.status)}</Tag>
-                    <strong>{formatLeaveDateRange(item.startDate, item.endDate)}</strong>
-                    <em>{item.reason || "未填写说明"}</em>
-                  </div>
-                  <span>
-                    <CalendarOutlined /> {formatCreatedAt(item.createdAt)}
-                  </span>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+        <Card className="construction-leave-history-card worker-leave-history-card" title="申请记录">
+          <Table<LeaveRequestRow>
+            rowKey="id"
+            loading={leavesQuery.isLoading}
+            dataSource={rows}
+            pagination={false}
+            locale={{ emptyText: <Empty description="暂无请假申请" /> }}
+            columns={[
+              {
+                title: "请假时间",
+                key: "dateRange",
+                render: (_, row) => formatLeaveDateRange(row.startDate, row.endDate)
+              },
+              {
+                title: "审批状态",
+                dataIndex: "status",
+                render: (status?: string) => <Tag color={getLeaveStatusColor(status)}>{getWorkerLeaveStatusLabel(status ?? "PENDING")}</Tag>
+              },
+              {
+                title: "请假事由",
+                dataIndex: "reason",
+                render: (reason?: string | null) => reason || "未填写说明"
+              },
+              {
+                title: "提交时间",
+                dataIndex: "createdAt",
+                render: (createdAt?: string) => formatCreatedAt(createdAt)
+              }
+            ]}
+          />
+        </Card>
+      </section>
 
-        <section className="construction-leave-tip-card">
-          <ClockCircleOutlined />
-          <div>
-            <strong>派单提醒</strong>
-            <p>
-              已批准的休息会阻止同日派单；外出施工信息请同步写入排班页，便于主管查看当日工位。
-            </p>
-          </div>
-          <EnvironmentOutlined />
-        </section>
-      </div>
-    </ConstructionMobileShell>
+      <section className="construction-leave-tip-card worker-leave-tip-card">
+        <CalendarOutlined />
+        <div>
+          <strong>派单提醒</strong>
+          <p>审批通过的请假会进入施工派单可用性判断；若需要调整已批准记录，请联系施工主管在请假审批页处理。</p>
+        </div>
+      </section>
+    </div>
   );
 }
 
 function formatLeaveReason(values: LeaveFormValues) {
   const typeLabel = leaveTypeOptions.find((item) => item.value === values.leaveType)?.label ?? "休息";
-  const note = values.reason.trim();
+  const note = values.reason?.trim();
   return note ? `${typeLabel}: ${note}` : typeLabel;
-}
-
-function getLeaveStatusLabel(status?: string) {
-  if (status === "APPROVED") return "已批准";
-  if (status === "REJECTED") return "已驳回";
-  return "待处理";
 }
 
 function formatLeaveDateRange(startDate: string, endDate: string) {
@@ -224,4 +177,10 @@ function formatLeaveDateRange(startDate: string, endDate: string) {
 
 function formatCreatedAt(createdAt?: string) {
   return createdAt ? dayjs(createdAt).format("MM-DD HH:mm") : "刚刚";
+}
+
+function getLeaveStatusColor(status?: string) {
+  if (status === "APPROVED") return "success";
+  if (status === "REJECTED") return "error";
+  return "processing";
 }

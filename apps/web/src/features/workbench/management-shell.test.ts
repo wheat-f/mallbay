@@ -26,6 +26,9 @@ test("management shell wraps business routes and excludes public and mobile rout
   const source = readFileSync("src/features/workbench/management-shell.tsx", "utf8");
   const roleMenuStart = source.indexOf("const roleMenuItems = [");
   const accountMenuStart = source.indexOf("const accountMenuItems = [");
+  const mobilePrefixesStart = source.indexOf("const mobilePrefixes = [");
+  const shouldUseShellStart = source.indexOf("export function shouldUseManagementShell");
+  const mobilePrefixesSource = source.slice(mobilePrefixesStart, shouldUseShellStart);
   const roleMenuSource = source.slice(roleMenuStart, accountMenuStart);
   const accountMenuSource = source.slice(accountMenuStart);
 
@@ -61,6 +64,8 @@ test("management shell wraps business routes and excludes public and mobile rout
   assert.match(source, /"\/construction\/leaves"/);
   assert.match(source, /"\/construction\/offline"/);
   assert.match(source, /"\/construction\/profile"/);
+  assert.ok(mobilePrefixesStart > -1, "mobile prefixes should be declared");
+  assert.doesNotMatch(mobilePrefixesSource, /"\/construction\/leave-approvals"/);
   assert.match(source, /"\/after-sales\/tasks"/);
   assert.match(source, /"\/orders"/);
   assert.match(source, /"\/members"/);
@@ -117,6 +122,8 @@ test("management shell uses route-aware global search placeholders", () => {
   assert.match(source, /搜索订单或售后单\.\.\./);
   assert.match(source, /pathname\.startsWith\("\/construction\/assignments"\)/);
   assert.match(source, /搜索订单号\/客户名\/车牌号\.\.\./);
+  assert.match(source, /pathname\.startsWith\("\/construction\/leave-approvals"\)/);
+  assert.match(source, /搜索师傅、请假日期或状态\.\.\./);
   assert.match(source, /pathname\.startsWith\("\/construction\/capacities"\)/);
   assert.match(source, /搜索订单或日期\.\.\./);
   assert.match(source, /pathname\.startsWith\("\/construction\/orders"\)/);

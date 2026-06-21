@@ -378,7 +378,13 @@ export class ConstructionService {
     if (!PermissionPolicy.canViewStoreData(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
-    return this.prisma.leaveRequest.findMany({ where: { storeId }, orderBy: { createdAt: "desc" } });
+    return this.prisma.leaveRequest.findMany({
+      where: { storeId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        worker: { select: { id: true, username: true, nickname: true, avatarUrl: true } }
+      }
+    });
   }
 
   async updateLeave(user: AuthenticatedConstructionUser, id: string, dto: UpdateLeaveRequestDto) {
@@ -392,7 +398,10 @@ export class ConstructionService {
     }
     return this.prisma.leaveRequest.update({
       where: { id },
-      data: { status: dto.status as LeaveRequestStatus | undefined }
+      data: { status: dto.status as LeaveRequestStatus | undefined },
+      include: {
+        worker: { select: { id: true, username: true, nickname: true, avatarUrl: true } }
+      }
     });
   }
 

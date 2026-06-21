@@ -7,7 +7,7 @@ import { App, Button, Card, Form, Input, InputNumber, Select, Table, Tag } from 
 import { AuditOutlined, DollarOutlined, DownloadOutlined, EyeOutlined, FileAddOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { financeApi, orderApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -74,19 +74,6 @@ export default function FinancePage() {
   const [selectedAccount, setSelectedAccount] = useState<PaymentAccountOption | null>(null);
   const [ledgerFilter, setLedgerFilter] = useState<"ALL" | "INCOME" | "EXPENSE">("ALL");
   const [activeFinanceSection, setActiveFinanceSection] = useState<FinanceSectionKey>("expense");
-  const expenseSectionRef = useRef<HTMLElement | null>(null);
-  const reimbursementSectionRef = useRef<HTMLDivElement | null>(null);
-  const accountSectionRef = useRef<HTMLDivElement | null>(null);
-  const ledgerSectionRef = useRef<HTMLDivElement | null>(null);
-  const financeSectionRefs = useMemo(
-    () => ({
-      expense: expenseSectionRef,
-      reimbursement: reimbursementSectionRef,
-      account: accountSectionRef,
-      ledger: ledgerSectionRef
-    }),
-    []
-  );
 
   const expensesQuery = useQuery({
     queryKey: ["finance-expenses", storeId],
@@ -212,13 +199,6 @@ export default function FinancePage() {
     const values = await reviewForm.validateFields(["id", "note"]);
     reviewReimbursement.mutate({ ...(values as ReviewFormValues), status });
   };
-  const scrollFinanceSectionIntoView = useCallback(
-    (sectionKey: FinanceSectionKey) => {
-      setActiveFinanceSection(sectionKey);
-      financeSectionRefs[sectionKey].current?.scrollIntoView({ block: "start", behavior: "smooth" });
-    },
-    [financeSectionRefs]
-  );
 
   return (
     <div className="management-page">
@@ -232,21 +212,57 @@ export default function FinancePage() {
               type="button"
               className={activeFinanceSection === item.key ? "is-active" : ""}
               aria-pressed={activeFinanceSection === item.key}
-              onClick={() => scrollFinanceSectionIntoView(item.key)}
+              onClick={() => setActiveFinanceSection(item.key)}
             >
               {item.label}
             </button>
           ))}
         </div>
         <div className="finance-command-actions">
-          <Button icon={<DownloadOutlined />}>导出流水</Button>
-          <Button type="primary" icon={<FileAddOutlined />} onClick={() => expenseForm.submit()}>
+          <Button icon={<DownloadOutlined />} onClick={() => setActiveFinanceSection("ledger")}>
+            导出流水
+          </Button>
+          <Button
+            type="primary"
+            icon={<FileAddOutlined />}
+            onClick={() => {
+              if (activeFinanceSection === "expense") {
+                expenseForm.submit();
+                return;
+              }
+              setActiveFinanceSection("expense");
+            }}
+          >
             新增费用
           </Button>
         </div>
       </div>
 
-      <section ref={expenseSectionRef} className="finance-operation-hero">
+      <section className="finance-stage-summary" aria-label="财务工作台概览">
+        <div>
+          <span>费用申请</span>
+          <strong>{financeSummary.expenses}</strong>
+          <small>已登记费用</small>
+        </div>
+        <div>
+          <span>报销审核</span>
+          <strong>{financeSummary.pendingReimbursements}</strong>
+          <small>待处理单据</small>
+        </div>
+        <div>
+          <span>打款管理</span>
+          <strong>{paymentAccountRows.length}</strong>
+          <small>可用账户</small>
+        </div>
+        <div>
+          <span>财务流水</span>
+          <strong>{financeSummary.paymentRecords}</strong>
+          <small>流水记录</small>
+        </div>
+      </section>
+
+      {activeFinanceSection === "expense" ? (
+      <section className="finance-operation-hero finance-section-panel is-active">
         <Card className="finance-application-panel" title="新建费用申请">
           <Form
             form={expenseForm}
@@ -340,10 +356,11 @@ export default function FinancePage() {
           </Card>
         </aside>
       </section>
+      ) : null}
 
-      <section className="finance-workspace">
+      {activeFinanceSection === "ledger" ? (
+      <section className="finance-workspace finance-section-panel finance-workspace-single is-active">
         <div className="finance-main-column">
-          <div ref={ledgerSectionRef}>
             <Card className="finance-ledger-list" title="财务流水">
             <div className="finance-ledger-toolbar">
               {[
@@ -430,7 +447,6 @@ export default function FinancePage() {
               ]}
             />
             </Card>
-          </div>
 
           <Card className="finance-application-list" title="费用 / 报销单据">
             <div className="finance-application-tables">
@@ -445,9 +461,61 @@ export default function FinancePage() {
             </div>
           </Card>
         </div>
+      </section>
+      ) : null}
+
+      {activeFinanceSection === "reimbursement" ? (
+      <section className="finance-workspace finance-section-panel is-active">
+        <div className="finance-main-column">
+          <Card className="finance-reimbursement-panel" title="新建报销申请">
+            <Form
+              form={reimbursementForm}
+              layout="vertical"
+              className="finance-reimbursement-form"
+              onFinish={(values) => createReimbursement.mutate(values)}
+            >
+              <div className="finance-form-grid">
+                <Form.Item name="title" label="报销标题" rules={[{ required: true, message: "请输入报销标题" }]}>
+                  <Input placeholder="报销标题" />
+                </Form.Item>
+                <Form.Item name="amountYuan" label="金额（元）" rules={[{ required: true, message: "请输入金额" }]}>
+                  <InputNumber className="w-full" min={0.01} precision={2} placeholder="金额（元）" />
+                </Form.Item>
+              </div>
+              <Form.Item name="reason" label="事由" rules={[{ required: true, message: "请输入事由" }]}>
+                <Input placeholder="事由" />
+              </Form.Item>
+              <Form.Item name="expenseId" label="关联费用">
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  loading={expensesQuery.isLoading}
+                  placeholder="选择关联费用"
+                  options={expenseOptions}
+                />
+              </Form.Item>
+              <div className="finance-form-actions">
+                <Button>取消</Button>
+                <Button type="primary" htmlType="submit" icon={<DollarOutlined />} loading={createReimbursement.isPending}>
+                  申请报销
+                </Button>
+              </div>
+            </Form>
+          </Card>
+
+          <Card className="finance-application-list" title="报销单据队列">
+            <FinanceTable
+              title="报销审批"
+              rows={reimbursementRows}
+              loading={reimbursementsQuery.isLoading}
+              onSelect={(row) => setSelectedReimbursementId(row.id)}
+              selectedId={selectedReimbursement?.id}
+            />
+          </Card>
+        </div>
 
         <aside className="finance-side-column">
-          <div ref={reimbursementSectionRef}>
             <Card className="finance-approval-panel">
             <div className="finance-approval-head">
               <div>
@@ -528,9 +596,13 @@ export default function FinancePage() {
               </div>
             </Form>
             </Card>
-          </div>
+        </aside>
+      </section>
+      ) : null}
 
-          <div ref={accountSectionRef}>
+      {activeFinanceSection === "account" ? (
+      <section className="finance-workspace finance-section-panel finance-workspace-single is-active">
+        <div className="finance-main-column">
             <Card className="finance-account-audit-panel" title="打款管理与对账">
             <div className="finance-subsection-title">待打款列表</div>
             <div className="finance-account-mobile-cards">
@@ -635,9 +707,9 @@ export default function FinancePage() {
               ]}
             />
             </Card>
-          </div>
-        </aside>
+        </div>
       </section>
+      ) : null}
     </div>
   );
 }

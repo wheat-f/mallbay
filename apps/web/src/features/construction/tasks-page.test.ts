@@ -156,14 +156,15 @@ test("construction mobile pages redirect desktop web users to backend pages", ()
   const profilePageSource = readFileSync("app/construction/profile/page.tsx", "utf8");
 
   assert.match(shellSource, /desktopHref\?: string/);
+  assert.match(shellSource, /useLayoutEffect/);
   assert.match(shellSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
-  assert.match(shellSource, /router\.replace\(desktopHref\)/);
+  assert.match(shellSource, /window\.location\.replace\(desktopHref\)/);
   assert.match(tasksPageSource, /desktopHref="\/construction\/assignments"/);
   assert.match(taskDetailPageSource, /desktopHref=\{`\/construction\/orders\/\$\{params\.id\}`\}/);
   assert.match(schedulesPageSource, /desktopHref="\/construction\/capacities"/);
   assert.match(cameraPageSource, /desktopHref="\/construction\/assignments"/);
   assert.match(materialsPageSource, /desktopHref="\/inventory"/);
-  assert.match(leavesPageSource, /desktopHref="\/construction\/capacities"/);
+  assert.match(leavesPageSource, /desktopHref="\/construction\/leave-approvals"/);
   assert.match(offlinePageSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
   assert.match(offlinePageSource, /router\.replace\("\/construction\/assignments"\)/);
   assert.match(profilePageSource, /desktopHref="\/profile"/);

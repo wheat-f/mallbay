@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { OrderStatus, QualityCheckResult, ScheduleStatus, StorePosition } from "@prisma/client";
+import { LeaveRequestStatus, OrderStatus, QualityCheckResult, ScheduleStatus, StorePosition } from "@prisma/client";
 import { ConstructionService } from "./construction.service";
 
 test("ConstructionService assigns one to three available workers and dispatches the order", async () => {
@@ -228,6 +228,45 @@ test("ConstructionService limits worker schedules to their own rows", async () =
     date: undefined,
     workerId: "worker-1"
   });
+});
+
+test("ConstructionService lists leave requests with worker summaries for manager approval", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    leaveRequest: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [
+          {
+            id: "leave-1",
+            storeId: "store-1",
+            workerId: "worker-1",
+            startDate: new Date("2026-06-21T00:00:00.000Z"),
+            endDate: new Date("2026-06-22T00:00:00.000Z"),
+            status: LeaveRequestStatus.PENDING,
+            worker: { id: "worker-1", username: "shigong", nickname: "施工师傅", avatarUrl: null }
+          }
+        ];
+      }
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  const result = await service.listLeaves(
+    {
+      id: "scheduler-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
+    },
+    "store-1"
+  );
+
+  assert.equal(JSON.stringify(calls[0] ?? {}).includes("\"worker\""), true);
+  assert.deepEqual((calls[0] as { include: unknown }).include, {
+    worker: { select: { id: true, username: true, nickname: true, avatarUrl: true } }
+  });
+  assert.equal(result[0].worker.nickname, "施工师傅");
 });
 
 test("ConstructionService rejects schedule lists for unrelated store roles", async () => {

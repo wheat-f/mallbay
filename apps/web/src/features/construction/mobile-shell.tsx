@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge, Button } from "antd";
@@ -83,13 +83,13 @@ export function ConstructionMobileShell({
   const router = useRouter();
   const isSettings = variant === "settings";
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!desktopHref) return;
     const desktopQuery = window.matchMedia("(min-width: 901px)");
     if (desktopQuery.matches) {
-      router.replace(desktopHref);
+      window.location.replace(desktopHref);
     }
-  }, [desktopHref, router]);
+  }, [desktopHref]);
 
   return (
     <main className={`construction-mobile-shell mobile-worker-shell construction-mobile-shell-${variant}`}>

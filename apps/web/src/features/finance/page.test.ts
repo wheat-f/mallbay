@@ -44,17 +44,25 @@ test("finance page follows the prototype ledger workspace layout", () => {
   assert.doesNotMatch(pageSource, /finance-application-strip/);
 });
 
-test("finance command tabs jump to the matching workspace sections", () => {
+test("finance command tabs switch isolated workflow workspaces", () => {
   const pageSource = readFileSync("app/finance/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
 
   assert.match(pageSource, /FINANCE_SECTION_NAV_ITEMS/);
-  assert.match(pageSource, /financeSectionRefs/);
-  assert.match(pageSource, /scrollFinanceSectionIntoView/);
-  assert.match(pageSource, /ref=\{expenseSectionRef\}/);
-  assert.match(pageSource, /ref=\{reimbursementSectionRef\}/);
-  assert.match(pageSource, /ref=\{ledgerSectionRef\}/);
-  assert.match(pageSource, /ref=\{accountSectionRef\}/);
-  assert.match(pageSource, /onClick=\{\(\) => scrollFinanceSectionIntoView\(item\.key\)\}/);
+  assert.match(pageSource, /activeFinanceSection === "expense"/);
+  assert.match(pageSource, /activeFinanceSection === "reimbursement"/);
+  assert.match(pageSource, /activeFinanceSection === "account"/);
+  assert.match(pageSource, /activeFinanceSection === "ledger"/);
+  assert.match(pageSource, /onClick=\{\(\) => setActiveFinanceSection\(item\.key\)\}/);
+  assert.match(pageSource, /finance-stage-summary/);
+  assert.match(pageSource, /finance-section-panel/);
+  assert.match(pageSource, /finance-workspace-single/);
+  assert.match(cssSource, /\.finance-stage-summary\s*\{[\s\S]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
+  assert.match(cssSource, /\.finance-workspace-single\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(cssSource, /\.finance-prototype-tabs\s*\{[\s\S]*position: sticky;[\s\S]*top: 72px;[\s\S]*z-index: 30;/);
+  assert.match(cssSource, /\.finance-tab-list\s*\{[\s\S]*overflow-x: auto;/);
+  assert.doesNotMatch(pageSource, /financeSectionRefs/);
+  assert.doesNotMatch(pageSource, /scrollIntoView/);
   assert.doesNotMatch(pageSource, /\{\\["费用申请", "报销审核", "打款管理", "财务流水"\\]\.map\(\(item, index\)/);
 });
 

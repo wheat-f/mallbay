@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { App, Avatar, Button, Card, Drawer, Empty, Input, Popconfirm, Select, Space, Table, Tag, Typography } from "antd";
 import { CalendarOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,6 +33,50 @@ const INVITE_POSITION_OPTIONS = [
   { label: "学徒", value: "APPRENTICE" }
 ];
 
+type MemberViewKey = "all" | "craftsman" | "salesService" | "backOffice" | "permission";
+
+const MEMBER_VIEW_TABS: Array<{
+  key: MemberViewKey;
+  label: string;
+  description: string;
+  icon: "team" | "worker";
+}> = [
+  { key: "all", label: "全部成员", description: "门店团队总览", icon: "team" },
+  { key: "craftsman", label: "师傅档案", description: "施工主管、师傅与学徒", icon: "worker" },
+  { key: "salesService", label: "销售客服", description: "销售与客服协同", icon: "team" },
+  { key: "backOffice", label: "后勤岗位", description: "采购与财务支持", icon: "team" },
+  { key: "permission", label: "权限视图", description: "岗位权限范围核对", icon: "worker" }
+];
+
+const MEMBER_RELATED_WORKSPACES = [
+  {
+    title: "施工派单",
+    description: "为待施工订单安排主贴和协作人员",
+    href: "/construction/assignments",
+    icon: "team"
+  },
+  {
+    title: "施工容量",
+    description: "维护到店、外出、玻璃膜和复检容量",
+    href: "/construction/capacities",
+    icon: "calendar"
+  },
+  {
+    title: "请假审批",
+    description: "处理施工人员请假申请和排班影响",
+    href: "/construction/leave-approvals",
+    icon: "calendar"
+  }
+] as const;
+
+const DEFAULT_INVITE_POSITION_BY_VIEW: Record<MemberViewKey, string> = {
+  all: "SALES",
+  craftsman: "CONSTRUCTION",
+  salesService: "SALES",
+  backOffice: "PURCHASING",
+  permission: "SALES"
+};
+
 type MemberRow = {
   id: string;
   position: string;
@@ -52,6 +97,8 @@ type InvitableUser = {
 
 export default function MembersPage() {
   const { message } = App.useApp();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
@@ -61,6 +108,14 @@ export default function MembersPage() {
   const [inviteKeyword, setInviteKeyword] = useState("");
   const [inviteUser, setInviteUser] = useState<InvitableUser | null>(null);
   const [invitePosition, setInvitePosition] = useState<string>("SALES");
+
+  const activeMemberView = useMemo<MemberViewKey>(() => {
+    const viewParam = searchParams.get("view");
+    const positionParam = searchParams.get("position");
+    if (positionParam === "CONSTRUCTION") return "craftsman";
+    if (isMemberViewKey(viewParam)) return viewParam;
+    return "all";
+  }, [searchParams]);
 
   const storeQuery = useQuery({
     queryKey: ["members-store", storeId],
@@ -107,15 +162,16 @@ export default function MembersPage() {
   const filteredMembers = useMemo(() => {
     const normalized = keyword.trim().toLowerCase();
     return members.filter((member) => {
+      const matchesView = memberBelongsToView(member.position, activeMemberView);
       const matchesKeyword = !normalized || [
         member.user.username,
         member.user.nickname ?? "",
         POSITION_LABEL[member.position as StorePosition] ?? member.position
       ].some((value) => value.toLowerCase().includes(normalized));
       const matchesPosition = positionFilter === "ALL" || member.position === positionFilter;
-      return matchesKeyword && matchesPosition;
+      return matchesView && matchesKeyword && matchesPosition;
     });
-  }, [keyword, members, positionFilter]);
+  }, [activeMemberView, keyword, members, positionFilter]);
 
   const constructionCount = members.filter((member) => member.position === "CONSTRUCTION" || member.position === "APPRENTICE").length;
   const operationCount = members.filter((member) => member.position === "SALES" || member.position === "CUSTOMER_SERVICE").length;
@@ -126,37 +182,44 @@ export default function MembersPage() {
     setInviteUser(null);
     setInviteKeyword("");
   };
+  const openInviteDrawer = () => {
+    setInvitePosition(DEFAULT_INVITE_POSITION_BY_VIEW[activeMemberView]);
+    setInviteOpen(true);
+  };
+  const switchMemberView = (view: MemberViewKey) => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("position");
+    if (view === "all") {
+      nextParams.delete("view");
+    } else {
+      nextParams.set("view", view);
+    }
+    setPositionFilter("ALL");
+    const queryString = nextParams.toString();
+    router.replace(queryString ? `/members?${queryString}` : "/members");
+  };
 
   return (
     <>
       <div className="management-page members-workspace">
         <StorePageHeader title="人员管理" description="管理门店团队成员、岗位权限、邀请和移除流程">
-          <Button type="primary" icon={<PlusOutlined />} disabled={!storeId} onClick={() => setInviteOpen(true)}>
+          <Button type="primary" icon={<PlusOutlined />} disabled={!storeId} onClick={openInviteDrawer}>
             邀请成员
           </Button>
         </StorePageHeader>
 
-        <nav className="members-module-tabs" aria-label="人员管理模块导航">
-          <Link href="/members" className="members-module-tab is-active">
-            <TeamOutlined />
-            人员管理
-          </Link>
-          <Link href="/members?position=CONSTRUCTION" className="members-module-tab">
-            <UserSwitchOutlined />
-            师傅档案
-          </Link>
-          <Link href="/construction/schedules" className="members-module-tab">
-            <CalendarOutlined />
-            请假审批
-          </Link>
-          <Link href="/construction/capacities" className="members-module-tab">
-            <CalendarOutlined />
-            施工排班
-          </Link>
-          <Link href="/construction/assignments" className="members-module-tab">
-            <TeamOutlined />
-            施工组合
-          </Link>
+        <nav className="members-module-tabs" aria-label="人员视图切换">
+          {MEMBER_VIEW_TABS.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className={`members-module-tab${activeMemberView === item.key ? " is-active" : ""}`}
+              onClick={() => switchMemberView(item.key)}
+            >
+              {item.icon === "worker" ? <UserSwitchOutlined /> : <TeamOutlined />}
+              <span>{item.label}</span>
+            </button>
+          ))}
         </nav>
 
         <section className="management-kpi-grid management-kpi-grid-five">
@@ -173,6 +236,26 @@ export default function MembersPage() {
               <div className="management-kpi-desc">{description}</div>
             </Card>
           ))}
+        </section>
+
+        <section className="members-related-workspaces" aria-label="相关工作区">
+          <div className="members-related-heading">
+            <CalendarOutlined />
+            <span>相关工作区</span>
+          </div>
+          <div className="members-related-grid">
+            {MEMBER_RELATED_WORKSPACES.map((item) => (
+              <Link key={item.href} href={item.href} className="members-related-workspace">
+                <span className="members-related-icon">
+                  {item.icon === "calendar" ? <CalendarOutlined /> : <TeamOutlined />}
+                </span>
+                <span>
+                  <strong>{item.title}</strong>
+                  <small>{item.description}</small>
+                </span>
+              </Link>
+            ))}
+          </div>
         </section>
 
         <section className="members-layout">
@@ -382,6 +465,17 @@ export default function MembersPage() {
       </Drawer>
     </>
   );
+}
+
+function isMemberViewKey(value: string | null): value is MemberViewKey {
+  return MEMBER_VIEW_TABS.some((item) => item.key === value);
+}
+
+function memberBelongsToView(position: string, view: MemberViewKey) {
+  if (view === "craftsman") return position === "SCHEDULER" || position === "CONSTRUCTION" || position === "APPRENTICE";
+  if (view === "salesService") return position === "SALES" || position === "CUSTOMER_SERVICE";
+  if (view === "backOffice") return position === "PURCHASING" || position === "FINANCE";
+  return true;
 }
 
 function getPositionScope(position: string) {

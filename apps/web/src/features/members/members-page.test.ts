@@ -29,22 +29,50 @@ test("members management page keeps member operations out of the workbench-only 
   assert.doesNotMatch(source, /返回工作台/);
 });
 
-test("members management page exposes the prototype staff module tabs", () => {
+test("members management module tabs are internal member views", () => {
   const source = readFileSync(pagePath, "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
   assert.match(source, /members-module-tabs/);
-  assert.match(source, /人员管理/);
+  assert.match(source, /MEMBER_VIEW_TABS/);
+  assert.match(source, /全部成员/);
   assert.match(source, /师傅档案/);
-  assert.match(source, /请假审批/);
-  assert.match(source, /施工排班/);
-  assert.match(source, /施工组合/);
-  assert.match(source, /href="\/members"/);
-  assert.match(source, /href="\/construction\/schedules"/);
-  assert.match(source, /href="\/construction\/capacities"/);
-  assert.match(source, /href="\/construction\/assignments"/);
+  assert.match(source, /销售客服/);
+  assert.match(source, /后勤岗位/);
+  assert.match(source, /权限视图/);
+  assert.match(source, /aria-label="人员视图切换"/);
+  assert.doesNotMatch(source, /href="\/construction\/schedules"/);
+  assert.doesNotMatch(source, /href="\/construction\/capacities"/);
+  assert.doesNotMatch(source, /href="\/construction\/assignments"/);
   assert.match(cssSource, /\.members-module-tabs/);
   assert.match(cssSource, /\.members-module-tab\.is-active/);
+});
+
+test("members management maps legacy construction position query to craftsman view", () => {
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /useSearchParams/);
+  assert.match(source, /positionParam === "CONSTRUCTION"/);
+  assert.match(source, /activeMemberView/);
+  assert.match(source, /craftsman/);
+  assert.match(source, /router\.replace/);
+});
+
+test("members management exposes construction workspaces as related links", () => {
+  const source = readFileSync(pagePath, "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(source, /MEMBER_RELATED_WORKSPACES/);
+  assert.match(source, /相关工作区/);
+  assert.match(source, /施工派单/);
+  assert.match(source, /施工容量/);
+  assert.match(source, /请假审批/);
+  assert.match(source, /href: "\/construction\/assignments"/);
+  assert.match(source, /href: "\/construction\/capacities"/);
+  assert.match(source, /href: "\/construction\/leave-approvals"/);
+  assert.doesNotMatch(source, /href: "\/construction\/schedules"/);
+  assert.match(cssSource, /\.members-related-workspaces/);
+  assert.match(cssSource, /\.members-related-workspace/);
 });
 
 test("members management filter uses a horizontal prototype toolbar", () => {

@@ -16285,6 +16285,223 @@ button.workbench-task-row:hover {
   white-space: normal;
 }
 
+.worker-task-center-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.worker-task-center-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 58, 95, 0.08);
+  border-radius: var(--mb-radius-lg);
+  background:
+    linear-gradient(135deg, rgba(15, 58, 95, 0.96) 0%, rgba(20, 87, 135, 0.92) 100%),
+    var(--mb-primary);
+  color: var(--mb-on-primary);
+  padding: 22px 24px;
+  box-shadow: var(--mb-shadow-sm);
+}
+
+.worker-task-center-hero span {
+  display: inline-flex;
+  margin-bottom: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--mb-primary-fixed-dim);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.worker-task-center-hero h2 {
+  margin: 0;
+  color: inherit;
+  font-size: 26px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.worker-task-center-hero p {
+  max-width: 640px;
+  margin: 10px 0 0;
+  color: var(--mb-primary-fixed-dim);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.worker-task-center-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.worker-task-center-filters button {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface);
+  color: var(--mb-text-secondary);
+  cursor: pointer;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 900;
+  text-align: left;
+  box-shadow: var(--mb-shadow-xs);
+}
+
+.worker-task-center-filters button.is-active {
+  border-color: rgba(15, 58, 95, 0.32);
+  background: var(--mb-surface-alt);
+  color: var(--mb-primary);
+}
+
+.worker-task-center-filters em {
+  min-width: 32px;
+  border-radius: 999px;
+  background: rgba(15, 58, 95, 0.1);
+  color: var(--mb-primary);
+  padding: 3px 8px;
+  font-style: normal;
+  text-align: center;
+}
+
+.worker-task-center-table-card .ant-card-body {
+  padding: 0;
+}
+
+.worker-task-center-table .ant-table {
+  border-radius: 0 0 var(--mb-radius-lg) var(--mb-radius-lg);
+  overflow: hidden;
+}
+
+.worker-task-center-actions .ant-btn {
+  min-width: 96px;
+}
+
+.worker-task-center-mobile-cards {
+  display: none;
+}
+
+.worker-task-center-card {
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface);
+  padding: 14px;
+  box-shadow: var(--mb-shadow-xs);
+}
+
+.worker-task-center-card + .worker-task-center-card {
+  margin-top: 12px;
+}
+
+.worker-task-center-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.worker-task-center-card-head span {
+  display: block;
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.worker-task-center-card-head strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--mb-text-primary);
+  font-size: 16px;
+  font-weight: 950;
+  word-break: break-word;
+}
+
+.worker-task-center-card dl {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.worker-task-center-card dl div {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.worker-task-center-card dt {
+  color: var(--mb-text-muted);
+  font-weight: 800;
+}
+
+.worker-task-center-card dd {
+  margin: 0;
+  color: var(--mb-text-secondary);
+  font-weight: 750;
+  word-break: break-word;
+}
+
+.worker-task-center-empty {
+  padding: 28px 12px;
+}
+
+@media (max-width: 900px) {
+  .worker-task-center-hero {
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .worker-task-center-hero h2 {
+    font-size: 22px;
+  }
+
+  .worker-task-center-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .worker-task-center-table {
+    display: none;
+  }
+
+  .worker-task-center-mobile-cards {
+    display: block;
+    padding: 14px;
+  }
+
+  .worker-task-center-actions.ant-space {
+    width: 100%;
+  }
+
+  .worker-task-center-actions .ant-space-item {
+    flex: 1 1 140px;
+  }
+
+  .worker-task-center-actions .ant-btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .worker-task-center-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .worker-task-center-card dl div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
 .worker-task-status-hero {
   display: flex;
   min-height: 132px;

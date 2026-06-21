@@ -5,7 +5,7 @@ import { test } from "node:test";
 test("construction tasks page renders status with business labels", () => {
   const pageSource = readFileSync("app/construction/tasks/page.tsx", "utf8");
 
-  assert.match(pageSource, /getConstructionStatusLabel/);
+  assert.match(pageSource, /getWorkerTaskStatusLabel/);
   assert.doesNotMatch(pageSource, /<Tag>\{row\.status\}<\/Tag>/);
 });
 
@@ -28,27 +28,40 @@ test("construction offline queue does not show technical order ids as order labe
   assert.doesNotMatch(pageSource, /orderNo: getPayloadString\(payload, "orderNo"\) \?\? getPayloadString\(payload, "orderId"\)/);
 });
 
-test("construction tasks page opens the mobile task detail instead of the desktop construction record", () => {
+test("construction tasks page opens the worker execution detail instead of the manager construction record", () => {
   const pageSource = readFileSync("app/construction/tasks/page.tsx", "utf8");
 
   assert.match(pageSource, /router\.push\(`\/construction\/tasks\/\$\{row\.orderId\}`\)/);
   assert.doesNotMatch(pageSource, /router\.push\(`\/construction\/orders\/\$\{row\.orderId\}`\)/);
 });
 
-test("construction tasks page follows the prototype worker task center layout", () => {
+test("construction tasks page is a desktop worker task center, not the mobile shell", () => {
   const pageSource = readFileSync("app/construction/tasks/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
-  assert.match(pageSource, /worker-task-status-hero/);
-  assert.match(pageSource, /construction-task-segments/);
+  assert.doesNotMatch(pageSource, /ConstructionMobileShell/);
+  assert.match(pageSource, /StorePageHeader/);
+  assert.match(pageSource, /worker-task-center-page/);
+  assert.match(pageSource, /worker-task-center-hero/);
+  assert.match(pageSource, /worker-task-center-kpis/);
+  assert.match(pageSource, /worker-task-center-filters/);
+  assert.match(pageSource, /worker-task-center-table/);
+  assert.match(pageSource, /worker-task-center-mobile-cards/);
+  assert.match(pageSource, /我的施工任务/);
+  assert.match(pageSource, /刷新任务/);
   assert.match(pageSource, /今日任务/);
-  assert.match(pageSource, /待接单/);
+  assert.match(pageSource, /待开工/);
   assert.match(pageSource, /施工中/);
   assert.match(pageSource, /已完成/);
-  assert.match(pageSource, /worker-task-empty-card/);
-  assert.match(cssSource, /\.worker-task-status-hero/);
-  assert.match(cssSource, /\.construction-task-segments/);
-  assert.match(cssSource, /\.worker-task-empty-card/);
+  assert.match(pageSource, /buildWorkerTaskSegments/);
+  assert.match(pageSource, /filterWorkerTasks/);
+  assert.match(pageSource, /canStartTask/);
+  assert.match(pageSource, /canCompleteTask/);
+  assert.doesNotMatch(pageSource, /router\.push\("\/construction\/camera"\)/);
+  assert.match(cssSource, /\.worker-task-center-page/);
+  assert.match(cssSource, /\.worker-task-center-hero/);
+  assert.match(cssSource, /\.worker-task-center-filters/);
+  assert.match(cssSource, /\.worker-task-center-table/);
 });
 
 test("construction mobile task detail page covers photo upload and task actions", () => {
@@ -111,7 +124,8 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
   assert.equal(existsSync(materialsPagePath), true);
   const materialsPageSource = readFileSync(materialsPagePath, "utf8");
 
-  assert.match(tasksPageSource, /ConstructionMobileShell/);
+  assert.doesNotMatch(tasksPageSource, /ConstructionMobileShell/);
+  assert.match(tasksPageSource, /StorePageHeader/);
   assert.match(schedulesPageSource, /constructionApi\.schedules/);
   assert.match(cameraPageSource, /active="camera"/);
   assert.match(materialsPageSource, /active="materials"/);
@@ -146,7 +160,6 @@ test("construction mobile pages use the worker mobile shell and bottom navigatio
 
 test("construction mobile pages redirect desktop web users to backend pages", () => {
   const shellSource = readFileSync("src/features/construction/mobile-shell.tsx", "utf8");
-  const tasksPageSource = readFileSync("app/construction/tasks/page.tsx", "utf8");
   const taskDetailPageSource = readFileSync("app/construction/tasks/[id]/page.tsx", "utf8");
   const schedulesPageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");
   const cameraPageSource = readFileSync("app/construction/camera/page.tsx", "utf8");
@@ -159,7 +172,6 @@ test("construction mobile pages redirect desktop web users to backend pages", ()
   assert.match(shellSource, /useLayoutEffect/);
   assert.match(shellSource, /window\.matchMedia\("\(min-width: 901px\)"\)/);
   assert.match(shellSource, /window\.location\.replace\(desktopHref\)/);
-  assert.match(tasksPageSource, /desktopHref="\/construction\/assignments"/);
   assert.match(taskDetailPageSource, /desktopHref=\{`\/construction\/orders\/\$\{params\.id\}`\}/);
   assert.match(schedulesPageSource, /desktopHref="\/construction\/capacities"/);
   assert.match(cameraPageSource, /desktopHref="\/construction\/assignments"/);

@@ -1,21 +1,19 @@
 "use client";
 
-import { App, Button, Empty, Space, Tag } from "antd";
+import { App, Button, Card, Empty, Space, Table, Tag } from "antd";
 import {
-  CalendarOutlined,
-  CameraOutlined,
   CheckOutlined,
-  ClockCircleOutlined,
-  EnvironmentOutlined,
-  PlayCircleOutlined
+  EyeOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined
 } from "@ant-design/icons";
+import { buildWorkerTaskSegments, filterWorkerTasks, getWorkerTaskStatusLabel, type WorkerTaskSegmentKey } from "@mallbay/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
-import { getConstructionStatusLabel } from "../../../src/features/construction/display";
-import { ConstructionMobileShell } from "../../../src/features/construction/mobile-shell";
+import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 
 type TaskRow = {
   id: string;
@@ -30,9 +28,8 @@ type TaskRow = {
     constructionLocation?: string | null;
     outsideAddress?: string | null;
   };
+  photos?: { stage?: string | null }[];
 };
-
-type TaskSegmentKey = "today" | "pending" | "active" | "completed";
 
 export default function ConstructionTasksPage() {
   const { message } = App.useApp();
@@ -40,7 +37,7 @@ export default function ConstructionTasksPage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const [activeSegment, setActiveSegment] = useState<TaskSegmentKey>("today");
+  const [activeSegment, setActiveSegment] = useState<WorkerTaskSegmentKey>("today");
 
   const tasksQuery = useQuery({
     queryKey: ["construction-tasks", storeId],
@@ -66,44 +63,61 @@ export default function ConstructionTasksPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
-  const rows = (tasksQuery.data ?? []) as TaskRow[];
-  const activeCount = rows.filter((row) => row.status !== "COMPLETED").length;
+  const rows = useMemo(() => (tasksQuery.data ?? []) as TaskRow[], [tasksQuery.data]);
   const todayKey = new Date().toISOString().slice(0, 10);
-  const pendingRows = rows.filter((row) => row.status === "DISPATCHED" || row.status === "PENDING_DISPATCH");
-  const activeRows = rows.filter((row) => row.status === "IN_CONSTRUCTION");
-  const completedRows = rows.filter((row) => row.status === "COMPLETED");
-  const todayRows = rows.filter((row) => row.order?.appointmentDate?.slice(0, 10) === todayKey);
-  const taskSegments = useMemo(
-    () => [
-      { key: "today" as const, label: "今日任务", count: todayRows.length || activeCount },
-      { key: "pending" as const, label: "待接单", count: pendingRows.length },
-      { key: "active" as const, label: "施工中", count: activeRows.length },
-      { key: "completed" as const, label: "已完成", count: completedRows.length }
-    ],
-    [activeCount, activeRows.length, completedRows.length, pendingRows.length, todayRows.length]
+  const workerRows = useMemo(
+    () => rows.map((row) => ({
+      id: row.id,
+      orderId: row.orderId,
+      status: row.status,
+      appointmentDate: row.order?.appointmentDate
+    })),
+    [rows]
   );
-  const visibleRows = getVisibleRows(activeSegment, rows, todayRows, pendingRows, activeRows, completedRows);
+  const taskSegments = useMemo(() => buildWorkerTaskSegments(workerRows, todayKey), [todayKey, workerRows]);
+  const visibleRows = useMemo(() => {
+    const visibleIds = new Set(filterWorkerTasks(workerRows, activeSegment, todayKey).map((row) => row.id));
+    return rows.filter((row) => visibleIds.has(row.id));
+  }, [activeSegment, rows, todayKey, workerRows]);
+  const activeCount = rows.filter((row) => row.status !== "COMPLETED").length;
+  const pendingCount = taskSegments.find((item) => item.key === "pending")?.count ?? 0;
+  const inProgressCount = taskSegments.find((item) => item.key === "active")?.count ?? 0;
+  const completedCount = taskSegments.find((item) => item.key === "completed")?.count ?? 0;
+  const todayCount = taskSegments.find((item) => item.key === "today")?.count ?? 0;
 
   return (
-    <ConstructionMobileShell
-      title="我的施工任务"
-      subtitle="查看派工、开工、拍照和完工"
-      active="tasks"
-      badgeCount={activeCount}
-      desktopHref="/construction/assignments"
-    >
-      <section className="worker-task-status-hero">
+    <div className="management-page worker-task-center-page">
+      <StorePageHeader title="我的施工任务" description="查看派工任务、开工状态、照片凭证和完工记录">
+        <Button icon={<ReloadOutlined />} loading={tasksQuery.isFetching} onClick={() => tasksQuery.refetch()}>
+          刷新任务
+        </Button>
+      </StorePageHeader>
+
+      <section className="worker-task-center-hero">
         <div>
+          <span>施工人员任务中心</span>
           <h2>{getWorkerDisplayName(user)}，你好</h2>
-          <p>今天有 {activeCount} 个待办任务</p>
+          <p>当前有 {activeCount} 个待处理施工事项，可在 Web 桌面端完成开工、完工和凭证补录。</p>
         </div>
-        <span>
-          <i />
-          在线
-        </span>
+        <Tag color="processing">实时同步</Tag>
       </section>
 
-      <nav className="construction-task-segments" aria-label="施工任务状态筛选">
+      <section className="management-kpi-grid management-kpi-grid-four worker-task-center-kpis">
+        {[
+          ["今日任务", todayCount, "按预约日期统计"],
+          ["待开工", pendingCount, "已派工待执行"],
+          ["施工中", inProgressCount, "正在履约"],
+          ["已完成", completedCount, "已提交完工"]
+        ].map(([label, value, description]) => (
+          <Card key={label} className="management-kpi-card">
+            <div className="management-kpi-label">{label}</div>
+            <div className="management-kpi-value">{value}</div>
+            <div className="management-kpi-desc">{description}</div>
+          </Card>
+        ))}
+      </section>
+
+      <nav className="worker-task-center-filters" aria-label="施工任务状态筛选">
         {taskSegments.map((segment) => (
           <button
             key={segment.key}
@@ -112,69 +126,136 @@ export default function ConstructionTasksPage() {
             onClick={() => setActiveSegment(segment.key)}
           >
             {segment.label}
-            {segment.key !== "completed" ? <em>{segment.count}</em> : null}
+            <em>{segment.count}</em>
           </button>
         ))}
       </nav>
 
-      {tasksQuery.isLoading ? (
-        <div className="construction-mobile-loading">任务加载中...</div>
-      ) : visibleRows.length === 0 ? (
-        <div className="worker-task-empty-card">
-          <Empty description="暂无施工任务" />
-        </div>
-      ) : (
-        <div className="construction-task-list">
+      <Card className="worker-task-center-table-card" title="施工任务列表">
+        <div className="worker-task-center-mobile-cards">
           {visibleRows.map((row) => (
-            <article key={row.id} className="construction-task-card">
-              <div className="construction-task-card-header">
+            <article key={row.id} className="worker-task-center-card">
+              <div className="worker-task-center-card-head">
                 <div>
-                  <span className="construction-task-label">订单</span>
-                  <h2>{row.order?.orderNo ?? "订单信息待确认"}</h2>
+                  <span>订单</span>
+                  <strong>{row.order?.orderNo ?? "订单信息待确认"}</strong>
                 </div>
-                <Tag color={getStatusColor(row.status)}>{getConstructionStatusLabel(row.status)}</Tag>
+                <Tag color={getStatusColor(row.status)}>{getWorkerTaskStatusLabel(row.status)}</Tag>
               </div>
-              <div className="construction-task-meta">
-                <span><CalendarOutlined /> {formatDate(row.order?.appointmentDate)}</span>
-                <span><ClockCircleOutlined /> {row.order?.appointmentTimeSlot ?? "时段待定"}</span>
-              </div>
-              <p className="construction-task-location">
-                <EnvironmentOutlined />
-                {row.order?.constructionLocation === "OUTSIDE"
-                  ? row.order.outsideAddress ?? "外出地址待补充"
-                  : "到店施工"}
-              </p>
-              <Space className="construction-task-actions" wrap>
-                <Button icon={<PlayCircleOutlined />} onClick={() => startMutation.mutate(row.orderId)}>
-                  开工
+              <dl>
+                <div>
+                  <dt>预约</dt>
+                  <dd>{formatSchedule(row)}</dd>
+                </div>
+                <div>
+                  <dt>地点</dt>
+                  <dd>{formatLocation(row)}</dd>
+                </div>
+                <div>
+                  <dt>照片</dt>
+                  <dd>{formatPhotoProgress(row)}</dd>
+                </div>
+              </dl>
+              <Space wrap className="worker-task-center-actions">
+                <Button icon={<EyeOutlined />} onClick={() => router.push(`/construction/tasks/${row.orderId}`)}>
+                  查看执行详情
                 </Button>
-                <Button icon={<CameraOutlined />} onClick={() => router.push(`/construction/tasks/${row.orderId}`)}>
-                  拍照
-                </Button>
-                <Button type="primary" icon={<CheckOutlined />} onClick={() => completeMutation.mutate(row.orderId)}>
-                  完工
-                </Button>
+                {canStartTask(row.status) ? (
+                  <Button
+                    icon={<PlayCircleOutlined />}
+                    loading={startMutation.isPending}
+                    onClick={() => startMutation.mutate(row.orderId)}
+                  >
+                    开工
+                  </Button>
+                ) : null}
+                {canCompleteTask(row.status) ? (
+                  <Button
+                    type="primary"
+                    icon={<CheckOutlined />}
+                    loading={completeMutation.isPending}
+                    onClick={() => completeMutation.mutate(row.orderId)}
+                  >
+                    完工
+                  </Button>
+                ) : null}
               </Space>
             </article>
           ))}
+          {!tasksQuery.isLoading && visibleRows.length === 0 ? (
+            <div className="worker-task-center-empty">
+              <Empty description="暂无施工任务" />
+            </div>
+          ) : null}
         </div>
-      )}
-    </ConstructionMobileShell>
+        <Table<TaskRow>
+          className="worker-task-center-table"
+          rowKey={(row) => row.id}
+          loading={tasksQuery.isLoading}
+          dataSource={visibleRows}
+          pagination={false}
+          locale={{ emptyText: <Empty description="暂无施工任务" /> }}
+          columns={[
+            {
+              title: "订单号",
+              dataIndex: ["order", "orderNo"],
+              render: (_, row) => row.order?.orderNo ?? "订单信息待确认"
+            },
+            {
+              title: "预约",
+              key: "schedule",
+              render: (_, row) => formatSchedule(row)
+            },
+            {
+              title: "地点",
+              key: "location",
+              render: (_, row) => formatLocation(row)
+            },
+            {
+              title: "状态",
+              dataIndex: "status",
+              render: (status: string) => <Tag color={getStatusColor(status)}>{getWorkerTaskStatusLabel(status)}</Tag>
+            },
+            {
+              title: "照片进度",
+              key: "photos",
+              render: (_, row) => formatPhotoProgress(row)
+            },
+            {
+              title: "操作",
+              key: "actions",
+              render: (_, row) => (
+                <Space wrap className="worker-task-center-actions">
+                  <Button icon={<EyeOutlined />} onClick={() => router.push(`/construction/tasks/${row.orderId}`)}>
+                    查看执行详情
+                  </Button>
+                  {canStartTask(row.status) ? (
+                    <Button
+                      icon={<PlayCircleOutlined />}
+                      loading={startMutation.isPending}
+                      onClick={() => startMutation.mutate(row.orderId)}
+                    >
+                      开工
+                    </Button>
+                  ) : null}
+                  {canCompleteTask(row.status) ? (
+                    <Button
+                      type="primary"
+                      icon={<CheckOutlined />}
+                      loading={completeMutation.isPending}
+                      onClick={() => completeMutation.mutate(row.orderId)}
+                    >
+                      完工
+                    </Button>
+                  ) : null}
+                </Space>
+              )
+            }
+          ]}
+        />
+      </Card>
+    </div>
   );
-}
-
-function getVisibleRows(
-  activeSegment: TaskSegmentKey,
-  rows: TaskRow[],
-  todayRows: TaskRow[],
-  pendingRows: TaskRow[],
-  activeRows: TaskRow[],
-  completedRows: TaskRow[]
-) {
-  if (activeSegment === "pending") return pendingRows;
-  if (activeSegment === "active") return activeRows;
-  if (activeSegment === "completed") return completedRows;
-  return todayRows.length > 0 ? todayRows : rows;
 }
 
 function getWorkerDisplayName(user: ReturnType<typeof useAuthStore.getState>["user"]) {
@@ -187,7 +268,29 @@ function getStatusColor(status: string) {
   return "default";
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "日期待定";
-  return value.slice(0, 10);
+function canStartTask(status: string) {
+  return status === "DISPATCHED" || status === "PENDING_DISPATCH";
+}
+
+function canCompleteTask(status: string) {
+  return status === "IN_CONSTRUCTION";
+}
+
+function formatSchedule(row: TaskRow) {
+  return [
+    row.order?.appointmentDate ? row.order.appointmentDate.slice(0, 10) : "日期待定",
+    row.order?.appointmentTimeSlot ?? "时段待定"
+  ].join(" ");
+}
+
+function formatLocation(row: TaskRow) {
+  if (row.order?.constructionLocation === "OUTSIDE") {
+    return row.order.outsideAddress ?? "外出地址待补充";
+  }
+  return "到店施工";
+}
+
+function formatPhotoProgress(row: TaskRow) {
+  const count = new Set((row.photos ?? []).map((photo) => photo.stage).filter(Boolean)).size;
+  return `照片 ${count}/3`;
 }

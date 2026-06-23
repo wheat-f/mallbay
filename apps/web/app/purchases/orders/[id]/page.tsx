@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Alert, App, Button, Card, DatePicker, Form, Input, InputNumber, Select, Table, Tag } from "antd";
+import type { InventorySupplierSummary } from "@mallbay/shared";
+import { useMemo, useState } from "react";
+import { Alert, App, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Radio, Select, Table, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
@@ -9,6 +10,8 @@ import {
   HistoryOutlined,
   InboxOutlined,
   InfoCircleOutlined,
+  MinusCircleOutlined,
+  PlusOutlined,
   PrinterOutlined,
   QrcodeOutlined,
   StopOutlined
@@ -23,6 +26,7 @@ import {
   getPurchaseOrderStatusLabel,
   type PurchaseInboundItemLike
 } from "../../../../src/features/inventory/display";
+import { PurchaseModuleNav } from "../../../../src/features/purchases/purchase-module-nav";
 import { parseInboundScanLines } from "../../../../src/features/inventory/inbound-scan";
 
 type PurchaseOrderItemRow = PurchaseInboundItemLike & {
@@ -40,10 +44,19 @@ type PurchaseOrderDetail = {
   items?: PurchaseOrderItemRow[];
 };
 
+type ReceiveBatchFormRow = {
+  batchNo?: string;
+  quantity?: number;
+  supplierName?: string;
+};
+
+type ScanImportMode = "append" | "replace";
+
 export default function PurchaseOrderDetailPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const [receiveForm] = Form.useForm();
   const params = useParams<{ id: string }>();
   const purchaseOrderId = params.id;
   const user = useAuthStore((state) => state.user);
@@ -52,30 +65,20 @@ export default function PurchaseOrderDetailPage() {
     user?.storeMember?.position === "MANAGER" ||
     user?.storeMember?.position === "PURCHASING";
   const [rejectReason, setRejectReason] = useState("");
+  const [scanImportOpen, setScanImportOpen] = useState(false);
+  const [scanImportText, setScanImportText] = useState("");
+  const [scanImportMode, setScanImportMode] = useState<ScanImportMode>("append");
 
-  const purchaseOrdersQuery = useQuery({
-    queryKey: ["purchase-orders", storeId],
-    queryFn: () => purchaseApi.orders(storeId!),
-    enabled: Boolean(storeId)
+  const purchaseOrderQuery = useQuery({
+    queryKey: ["purchase-order", purchaseOrderId],
+    queryFn: () => purchaseApi.order(purchaseOrderId),
+    enabled: Boolean(purchaseOrderId)
   });
-  const purchaseOrder = ((purchaseOrdersQuery.data ?? []) as PurchaseOrderDetail[]).find((order) => order.id === purchaseOrderId);
-
-  const receivePurchaseItem = useMutation({
-    mutationFn: (values: { itemId: string; quantity: number; batchNo: string; supplierName?: string }) =>
-      purchaseApi.receiveOrderItem(values.itemId, {
-        quantity: values.quantity,
-        batchNo: values.batchNo,
-        supplierName: values.supplierName
-      }),
-    onSuccess: async () => {
-      message.success("采购明细已入库");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
+  const purchaseOrder = purchaseOrderQuery.data as PurchaseOrderDetail | undefined;
+  const suppliersQuery = useQuery({
+    queryKey: ["purchase-order-detail-suppliers", storeId],
+    queryFn: () => purchaseApi.suppliers(storeId!),
+    enabled: Boolean(storeId)
   });
 
   const receivePurchaseItemBatches = useMutation({
@@ -89,6 +92,7 @@ export default function PurchaseOrderDetailPage() {
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] }),
+        queryClient.invalidateQueries({ queryKey: ["purchase-order", purchaseOrderId] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
       ]);
@@ -100,7 +104,10 @@ export default function PurchaseOrderDetailPage() {
     mutationFn: (id: string) => purchaseApi.approveOrder(id),
     onSuccess: async () => {
       message.success("采购订单已审批通过");
-      await queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] }),
+        queryClient.invalidateQueries({ queryKey: ["purchase-order", purchaseOrderId] })
+      ]);
     },
     onError: (error: Error) => message.error(error.message)
   });
@@ -109,7 +116,10 @@ export default function PurchaseOrderDetailPage() {
     mutationFn: (values: { id: string; reason: string }) => purchaseApi.cancelOrder(values.id, { reason: values.reason }),
     onSuccess: async () => {
       message.success("采购订单已取消");
-      await queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] }),
+        queryClient.invalidateQueries({ queryKey: ["purchase-order", purchaseOrderId] })
+      ]);
     },
     onError: (error: Error) => message.error(error.message)
   });
@@ -132,16 +142,89 @@ export default function PurchaseOrderDetailPage() {
     value: item.id,
     label: getPurchaseInboundItemDetails(item).product
   }));
+  const supplierOptions = useMemo(
+    () => buildSupplierOptions((suppliersQuery.data ?? []) as InventorySupplierSummary[], purchaseOrder?.supplierName),
+    [purchaseOrder?.supplierName, suppliersQuery.data]
+  );
+  const selectedReceiveItemId = Form.useWatch("itemId", receiveForm);
+  const selectedReceiveItem = items.find((item) => item.id === selectedReceiveItemId);
+  const remainingReceiveQuantity = getRemainingPurchaseQuantity(selectedReceiveItem);
   const purchaseSteps = getPurchaseSteps(purchaseOrder?.status);
+  const getDefaultSupplierName = () =>
+    (receiveForm.getFieldValue("supplierName") as string | undefined) || purchaseOrder?.supplierName || undefined;
+  const createEmptyBatchRow = (): ReceiveBatchFormRow => ({
+    batchNo: "",
+    quantity: selectedReceiveItem ? Math.min(1, remainingReceiveQuantity || 1) : 1,
+    supplierName: getDefaultSupplierName()
+  });
+  const ensureReceiveItemSelected = () => {
+    if (!selectedReceiveItem) {
+      message.error("请先选择验收物料");
+      return false;
+    }
+    if (remainingReceiveQuantity <= 0) {
+      message.error("该采购明细已全部入库");
+      return false;
+    }
+    return true;
+  };
+  const handleGenerateBatchRows = () => {
+    if (!ensureReceiveItemSelected()) return;
+    const remaining = getRemainingPurchaseQuantity(selectedReceiveItem);
+    const wholeRows = Number.isInteger(remaining) ? remaining : Math.ceil(remaining);
+    const rowCount = Math.min(wholeRows, 50);
+    const defaultSupplierName = getDefaultSupplierName();
+    receiveForm.setFieldsValue({
+      batches: Array.from({ length: rowCount }, (_, index) => ({
+        batchNo: "",
+        quantity: index === rowCount - 1 ? Number((remaining - (rowCount - 1)).toFixed(3)) : 1,
+        supplierName: defaultSupplierName || purchaseOrder?.supplierName || undefined
+      }))
+    });
+  };
+  const handleOpenScanImport = () => {
+    if (!ensureReceiveItemSelected()) return;
+    setScanImportOpen(true);
+  };
+  const handleImportScannedBatches = () => {
+    if (!ensureReceiveItemSelected()) return;
+    const parsed = parseInboundScanLines(scanImportText);
+    if (parsed.errors.length > 0) {
+      message.error(`扫码内容有误：第 ${parsed.errors[0].line} 行 ${parsed.errors[0].message}`);
+      return;
+    }
+    if (parsed.batches.length === 0) {
+      message.error("请粘贴或扫描入库批次");
+      return;
+    }
+    const defaultSupplierName = getDefaultSupplierName();
+    const importedBatches = parsed.batches.map((batch) => ({
+      ...batch,
+      supplierName: batch.supplierName || defaultSupplierName
+    }));
+    const existingBatches = ((receiveForm.getFieldValue("batches") ?? []) as ReceiveBatchFormRow[]).filter(Boolean);
+    const nextBatches = scanImportMode === "replace" ? importedBatches : [...existingBatches, ...importedBatches];
+    const totalQuantity = nextBatches.reduce((sum, batch) => sum + Number(batch.quantity ?? 0), 0);
+    if (remainingReceiveQuantity > 0 && totalQuantity > remainingReceiveQuantity) {
+      message.error(`批次数量合计不能超过剩余待入库数量 ${remainingReceiveQuantity}`);
+      return;
+    }
+    receiveForm.setFieldsValue({ batches: nextBatches });
+    setScanImportOpen(false);
+    setScanImportText("");
+  };
 
   return (
-    <div className="management-page">
-      {!purchaseOrder && !purchaseOrdersQuery.isLoading ? (
-        <Alert type="warning" showIcon title="采购订单未找到" description="请从采购列表重新进入采购订单详情。" />
-      ) : null}
+    <div className="management-page purchase-order-detail-page">
+      <div className="purchase-module-layout">
+        <PurchaseModuleNav activeKey="orders" />
+        <div className="purchase-module-content">
+          {!purchaseOrder && !purchaseOrderQuery.isLoading ? (
+            <Alert type="warning" showIcon title="采购订单未找到" description="请从采购列表重新进入采购订单详情。" />
+          ) : null}
 
-      {purchaseOrder ? (
-        <>
+          {purchaseOrder ? (
+            <>
           <section className="purchase-detail-hero">
             <div>
               <span className="purchase-detail-eyebrow">采购订单详情</span>
@@ -271,85 +354,153 @@ export default function PurchaseOrderDetailPage() {
             <aside className="purchase-detail-side">
               <Card className="purchase-receiving-panel" title="到货验收录入">
                 <Form
+                  form={receiveForm}
                   layout="vertical"
-                  initialValues={{ supplierName: purchaseOrder.supplierName ?? undefined, warehouseName: "华东 1 号中心仓 - A区" }}
+                  initialValues={{ supplierName: purchaseOrder.supplierName ?? undefined, warehouseName: "华东 1 号中心仓 - A区", batches: [] }}
                   onFinish={(values: {
                     itemId: string;
-                    batchNo: string;
-                    quantity: number;
                     supplierName?: string;
+                    batches?: ReceiveBatchFormRow[];
                     productionDate?: unknown;
                     warehouseName?: string;
                     acceptanceNote?: string;
                   }) => {
-                    receivePurchaseItem.mutate({
-                      itemId: values.itemId,
-                      batchNo: values.batchNo,
-                      quantity: values.quantity,
-                      supplierName: values.supplierName
-                    });
+                    const selectedItem = items.find((item) => item.id === values.itemId);
+                    const remaining = getRemainingPurchaseQuantity(selectedItem);
+                    const batches = (values.batches ?? [])
+                      .map((batch) => ({
+                        batchNo: batch.batchNo?.trim() ?? "",
+                        quantity: Number(batch.quantity ?? 0),
+                        supplierName: batch.supplierName?.trim() || values.supplierName?.trim() || purchaseOrder.supplierName || undefined
+                      }))
+                      .filter((batch) => batch.batchNo && batch.quantity > 0);
+                    if (batches.length === 0) {
+                      message.error("请至少录入一个批次明细");
+                      return;
+                    }
+                    if (batches.some((batch) => !batch.supplierName)) {
+                      message.error("请选择或填写供应商");
+                      return;
+                    }
+                    if (hasDuplicateBatchNo(batches)) {
+                      message.error("批次号不能重复");
+                      return;
+                    }
+                    const totalQuantity = batches.reduce((sum, batch) => sum + batch.quantity, 0);
+                    if (remaining > 0 && totalQuantity > remaining) {
+                      message.error(`入库数量不能超过剩余待入库数量 ${remaining}`);
+                      return;
+                    }
+                    receivePurchaseItemBatches.mutate({ itemId: values.itemId, batches });
                   }}
                 >
                   <Form.Item name="itemId" label="验收物料" rules={[{ required: true, message: "请选择验收物料" }]}>
                     <Select placeholder="选择采购明细" options={itemOptions} />
                   </Form.Item>
-                  <Form.Item name="quantity" label="实收数量" rules={[{ required: true, message: "请输入入库数量" }]}>
-                    <InputNumber className="w-full" min={0.001} placeholder="输入接收数量" />
-                  </Form.Item>
-                  <Form.Item name="batchNo" label="批次号" rules={[{ required: true, message: "请输入批次号" }]}>
-                    <Input placeholder="例如：231024-XP-01" />
-                  </Form.Item>
-                  <Form.Item name="productionDate" label="生产日期">
-                    <DatePicker className="w-full" />
-                  </Form.Item>
-                  <Form.Item name="warehouseName" label="存放仓库" rules={[{ required: true, message: "请选择存放仓库" }]}>
-                    <Select
-                      options={[
-                        { value: "华东 1 号中心仓 - A区", label: "华东 1 号中心仓 - A区" },
-                        { value: "华东 1 号中心仓 - B区", label: "华东 1 号中心仓 - B区" },
-                        { value: "华南分仓 - A区", label: "华南分仓 - A区" }
-                      ]}
-                    />
-                  </Form.Item>
+                  <div className="purchase-receive-default-grid">
+                    <Form.Item name="supplierName" label="默认供应商">
+                      <Select
+                        showSearch
+                        allowClear
+                        optionFilterProp="label"
+                        placeholder="未填批次供应商时使用该供应商"
+                        options={supplierOptions}
+                      />
+                    </Form.Item>
+                    <Form.Item name="productionDate" label="生产日期">
+                      <DatePicker className="w-full" />
+                    </Form.Item>
+                    <Form.Item name="warehouseName" label="存放仓库" rules={[{ required: true, message: "请选择存放仓库" }]}>
+                      <Select
+                        options={[
+                          { value: "华东 1 号中心仓 - A区", label: "华东 1 号中心仓 - A区" },
+                          { value: "华东 1 号中心仓 - B区", label: "华东 1 号中心仓 - B区" },
+                          { value: "华南分仓 - A区", label: "华南分仓 - A区" }
+                        ]}
+                      />
+                    </Form.Item>
+                  </div>
                   <Form.Item name="acceptanceNote" label="验收备注">
                     <Input.TextArea rows={2} placeholder="如包装破损、数量不符等情况请在此说明" />
                   </Form.Item>
-                  <Button block type="primary" htmlType="submit" icon={<InboxOutlined />} loading={receivePurchaseItem.isPending} disabled={!canManagePurchase}>
+                  <div className="purchase-receive-batch-toolbar">
+                    <div>
+                      <strong>批次明细</strong>
+                      <span>{selectedReceiveItem ? `剩余待入库 ${remainingReceiveQuantity}` : "先选择验收物料后录入批次"}</span>
+                    </div>
+                    <div className="purchase-receive-batch-actions">
+                      <Button
+                        type="default"
+                        icon={<PlusOutlined />}
+                        onClick={() => {
+                          if (!ensureReceiveItemSelected()) return;
+                          const current = ((receiveForm.getFieldValue("batches") ?? []) as ReceiveBatchFormRow[]).filter(Boolean);
+                          receiveForm.setFieldsValue({ batches: [...current, createEmptyBatchRow()] });
+                        }}
+                      >
+                        手工新增批次
+                      </Button>
+                      <Button type="default" icon={<PlusOutlined />} onClick={handleGenerateBatchRows}>
+                        按剩余数量生成批次行
+                      </Button>
+                      <Button type="default" icon={<QrcodeOutlined />} onClick={handleOpenScanImport}>
+                        扫码/粘贴导入
+                      </Button>
+                    </div>
+                  </div>
+                  <Form.List name="batches">
+                    {(fields, { remove }) => (
+                      <div className="purchase-receive-batch-list">
+                        {fields.map((field, index) => {
+                          const { key, ...restField } = field;
+
+                          return (
+                            <div className="purchase-receive-batch-row" key={key}>
+                              <Form.Item
+                                {...restField}
+                                name={[field.name, "batchNo"]}
+                                label={index === 0 ? "批次号" : " "}
+                                rules={[{ required: true, message: "请输入批次号" }]}
+                              >
+                                <Input placeholder={`第 ${index + 1} 卷/批次号`} />
+                              </Form.Item>
+                              <Form.Item
+                                {...restField}
+                                name={[field.name, "quantity"]}
+                                label={index === 0 ? "数量" : " "}
+                                rules={[{ required: true, message: "请输入数量" }]}
+                              >
+                                <InputNumber className="w-full" min={0.001} placeholder="数量" />
+                              </Form.Item>
+                              <Form.Item
+                                {...restField}
+                                name={[field.name, "supplierName"]}
+                                label={index === 0 ? "供应商" : " "}
+                              >
+                                <Select
+                                  showSearch
+                                  allowClear
+                                  optionFilterProp="label"
+                                  placeholder={purchaseOrder.supplierName ?? "选择供应商"}
+                                  options={supplierOptions}
+                                />
+                              </Form.Item>
+                              <Button
+                                aria-label="移除批次明细"
+                                icon={<MinusCircleOutlined />}
+                                disabled={fields.length <= 1}
+                                onClick={() => remove(field.name)}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Form.List>
+                  <Button block type="primary" htmlType="submit" icon={<InboxOutlined />} loading={receivePurchaseItemBatches.isPending} disabled={!canManagePurchase}>
                     确认验收并入库
                   </Button>
                 </Form>
-
-                <div className="purchase-scan-panel">
-                  <div className="purchase-scan-title">
-                    <QrcodeOutlined />
-                    <span>批量扫码录入</span>
-                  </div>
-                  <Form
-                    layout="vertical"
-                    onFinish={(values: { itemId: string; scanText: string }) => {
-                      const parsed = parseInboundScanLines(values.scanText);
-                      if (parsed.errors.length > 0) {
-                        message.error(`扫码内容有误：第 ${parsed.errors[0].line} 行 ${parsed.errors[0].message}`);
-                        return;
-                      }
-                      if (parsed.batches.length === 0) {
-                        message.error("请粘贴或扫描入库批次");
-                        return;
-                      }
-                      receivePurchaseItemBatches.mutate({ itemId: values.itemId, batches: parsed.batches });
-                    }}
-                  >
-                    <Form.Item name="itemId" label="扫码物料" rules={[{ required: true, message: "请选择扫码物料" }]}>
-                      <Select placeholder="选择采购明细" options={itemOptions} />
-                    </Form.Item>
-                    <Form.Item name="scanText" label="批量扫码入库">
-                      <Input.TextArea rows={3} placeholder="每行：批次号 数量 供应商（供应商可选），例如 B001 1 3M" />
-                    </Form.Item>
-                    <Button block htmlType="submit" loading={receivePurchaseItemBatches.isPending} disabled={!canManagePurchase}>
-                      批量入库
-                    </Button>
-                  </Form>
-                </div>
 
                 <div className="purchase-reject-panel">
                   <div className="purchase-reject-title">
@@ -383,8 +534,41 @@ export default function PurchaseOrderDetailPage() {
               </div>
             </aside>
           </section>
-        </>
-      ) : null}
+          <Modal
+            title="扫码/粘贴导入批次明细"
+            open={scanImportOpen}
+            okText="导入到批次明细"
+            cancelText="取消"
+            onOk={handleImportScannedBatches}
+            onCancel={() => setScanImportOpen(false)}
+            destroyOnHidden
+          >
+            <div className="purchase-scan-import-modal">
+              <Radio.Group
+                value={scanImportMode}
+                onChange={(event) => setScanImportMode(event.target.value as ScanImportMode)}
+                optionType="button"
+                buttonStyle="solid"
+              >
+                <Radio.Button value="append">追加到现有批次</Radio.Button>
+                <Radio.Button value="replace">覆盖当前批次</Radio.Button>
+              </Radio.Group>
+              <label>
+                <span>导入方式</span>
+                <Input.TextArea
+                  rows={5}
+                  value={scanImportText}
+                  onChange={(event) => setScanImportText(event.target.value)}
+                  placeholder="每行：批次号 数量 供应商（供应商可选），例如 B001 1 3M"
+                />
+              </label>
+              <p>导入后会回填到批次明细列表，仍需人工核对批次号、数量和供应商后再确认入库。</p>
+            </div>
+          </Modal>
+            </>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -392,6 +576,21 @@ export default function PurchaseOrderDetailPage() {
 function toNumber(value?: number | string | null) {
   if (value === undefined || value === null || value === "") return 0;
   return Number(value);
+}
+
+function getRemainingPurchaseQuantity(item?: PurchaseOrderItemRow) {
+  if (!item) return 0;
+  return Math.max(0, Number((toNumber(item.quantity) - toNumber(item.receivedQuantity)).toFixed(3)));
+}
+
+function hasDuplicateBatchNo(batches: Array<{ batchNo: string }>) {
+  const seen = new Set<string>();
+  for (const batch of batches) {
+    const normalized = batch.batchNo.trim().toLocaleLowerCase();
+    if (seen.has(normalized)) return true;
+    seen.add(normalized);
+  }
+  return false;
 }
 
 function getPurchaseSteps(status?: string) {
@@ -409,6 +608,16 @@ function getPurchaseSteps(status?: string) {
     description: index < currentIndex ? "已完成" : index === currentIndex ? "当前阶段" : "待处理",
     state: index < currentIndex ? "done" : index === currentIndex ? "active" : "pending"
   }));
+}
+
+function buildSupplierOptions(suppliers: InventorySupplierSummary[], purchaseOrderSupplierName?: string | null) {
+  const names = new Set<string>();
+  for (const supplier of suppliers) {
+    if (supplier.name?.trim()) names.add(supplier.name.trim());
+  }
+  if (purchaseOrderSupplierName?.trim()) names.add(purchaseOrderSupplierName.trim());
+
+  return Array.from(names).map((name) => ({ value: name, label: name }));
 }
 
 function formatDate(value?: string | null) {

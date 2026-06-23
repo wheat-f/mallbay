@@ -24,6 +24,15 @@ test("purchase order detail page keeps arrival review and inbound actions togeth
   assert.doesNotMatch(detailSource, /title="采购清单与到货验收"/);
   assert.match(detailSource, /receivePurchaseItemBatches/);
   assert.match(detailSource, /parseInboundScanLines/);
+  assert.match(detailSource, /批次明细/);
+  assert.match(detailSource, /手工新增批次/);
+  assert.match(detailSource, /按剩余数量生成批次行/);
+  assert.match(detailSource, /扫码\/粘贴导入/);
+  assert.match(detailSource, /导入方式/);
+  assert.match(detailSource, /Form\.List name="batches"/);
+  assert.match(detailSource, /getRemainingPurchaseQuantity/);
+  assert.match(detailSource, /批次号不能重复/);
+  assert.match(detailSource, /请选择或填写供应商/);
   assert.match(detailSource, /生产日期/);
   assert.match(detailSource, /存放仓库/);
   assert.match(detailSource, /验收备注/);
@@ -34,11 +43,13 @@ test("purchase order detail page keeps arrival review and inbound actions togeth
   assert.match(detailSource, /拒绝收货/);
   assert.match(detailSource, /拒收订单/);
   assert.match(detailSource, /rejectReason/);
+  assert.doesNotMatch(detailSource, /receivePurchaseItem\.mutate/);
   assert.doesNotMatch(detailSource, /window\.prompt/);
 });
 
 test("purchase order detail page follows the prototype receiving workspace layout", () => {
   const detailSource = readFileSync("app/purchases/orders/[id]/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
 
   assert.match(detailSource, /purchase-detail-hero/);
   assert.match(detailSource, /purchase-detail-stepper/);
@@ -52,6 +63,11 @@ test("purchase order detail page follows the prototype receiving workspace layou
   assert.match(detailSource, /入库指南/);
   assert.match(detailSource, /防伪编码/);
   assert.match(detailSource, /拍摄外箱照片存档/);
+  assert.match(cssSource, /\.purchase-scan-import-modal \.ant-radio-button-wrapper-checked/);
+  assert.match(cssSource, /\.purchase-scan-import-modal \.ant-radio-button-wrapper-checked\s*\{[\s\S]*color: #fff(?: !important)?;/);
+  assert.match(cssSource, /\.purchase-scan-import-modal \.ant-radio-button-wrapper-checked[\s\S]*\.ant-radio-button-label[\s\S]*color: #fff(?: !important)?;/);
+  assert.doesNotMatch(detailSource, /purchase-scan-panel-inline/);
+  assert.doesNotMatch(detailSource, /<Form\.Item name="scanText"/);
   assert.doesNotMatch(detailSource, /management-kpi-grid/);
   assert.doesNotMatch(detailSource, /StorePageHeader/);
   assert.doesNotMatch(detailSource, /detail-layout/);

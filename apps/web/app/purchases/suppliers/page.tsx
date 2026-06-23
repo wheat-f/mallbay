@@ -35,6 +35,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { purchaseApi } from "../../../src/lib/api";
+import { PurchaseModuleNav } from "../../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../src/stores/auth-store";
 
@@ -166,51 +167,54 @@ export default function InventorySuppliersPage() {
         />
       ) : null}
 
-      <div className="supplier-command-bar">
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          disabled={!storeId || !canManagePurchase}
-          onClick={() => setCreateOpen(true)}
-        >
-          新增供应商
-        </Button>
-        <Button icon={<DownloadOutlined />}>导出列表</Button>
-      </div>
+      <div className="purchase-module-layout">
+        <PurchaseModuleNav activeKey="suppliers" />
+        <div className="purchase-module-content">
+          <div className="supplier-command-bar">
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              disabled={!storeId || !canManagePurchase}
+              onClick={() => setCreateOpen(true)}
+            >
+              新增供应商
+            </Button>
+            <Button icon={<DownloadOutlined />}>导出列表</Button>
+          </div>
 
-      <div className="supplier-filter-row">
-        <Input
-          allowClear
-          value={keyword}
-          placeholder="搜索供应商、联系人或分类..."
-          onChange={(event) => setKeyword(event.target.value)}
-        />
-        <Select
-          value={statusFilter}
-          onChange={setStatusFilter}
-          options={[
-            { value: "ALL", label: "全部状态" },
-            { value: "ACTIVE", label: "合作中" },
-            { value: "INACTIVE", label: "已暂停" },
-            { value: "PENDING", label: "审核中" }
-          ]}
-        />
-        <Select
-          value={categoryFilter}
-          onChange={setCategoryFilter}
-          options={[
-            { value: "ALL", label: "所有分类" },
-            { value: "TPU", label: "TPU基材" },
-            { value: "胶", label: "背胶材料" },
-            { value: "膜", label: "高端原膜" },
-            { value: "辅料", label: "辅料耗材" }
-          ]}
-        />
-      </div>
+          <div className="supplier-filter-row">
+            <Input
+              allowClear
+              value={keyword}
+              placeholder="搜索供应商、联系人或分类..."
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+            <Select
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: "ALL", label: "全部状态" },
+                { value: "ACTIVE", label: "合作中" },
+                { value: "INACTIVE", label: "已暂停" },
+                { value: "PENDING", label: "审核中" }
+              ]}
+            />
+            <Select
+              value={categoryFilter}
+              onChange={setCategoryFilter}
+              options={[
+                { value: "ALL", label: "所有分类" },
+                { value: "TPU", label: "TPU基材" },
+                { value: "胶", label: "背胶材料" },
+                { value: "膜", label: "高端原膜" },
+                { value: "辅料", label: "辅料耗材" }
+              ]}
+            />
+          </div>
 
-      <section className="supplier-workspace">
-        <div className="supplier-main-stack">
-          <Card className="supplier-table-card">
+          <section className="supplier-workspace">
+            <div className="supplier-main-stack">
+              <Card className="supplier-table-card">
             <div className="supplier-mobile-cards">
               {filteredSuppliers.length > 0 ? (
                 filteredSuppliers.map((supplier) => (
@@ -289,28 +293,28 @@ export default function InventorySuppliersPage() {
                 { title: "操作", width: 80, render: () => <Button type="text" icon={<MoreOutlined />} /> }
               ]}
             />
-          </Card>
+              </Card>
 
-          <div className="supplier-metric-grid">
-            <Card className="supplier-metric-card">
-              <TeamOutlined />
-              <span>活跃供应商</span>
-              <strong>{supplierMetrics.active}</strong>
-            </Card>
-            <Card className="supplier-metric-card">
-              <SafetyCertificateOutlined />
-              <span>月度准时交付率</span>
-              <strong>{supplierMetrics.onTimeDeliveryRate}</strong>
-            </Card>
-            <Card className="supplier-metric-card">
-              <StarFilled />
-              <span>平均采购周期</span>
-              <strong>{supplierMetrics.averagePurchaseCycle}</strong>
-            </Card>
-          </div>
-        </div>
+              <div className="supplier-metric-grid">
+                <Card className="supplier-metric-card">
+                  <TeamOutlined />
+                  <span>活跃供应商</span>
+                  <strong>{supplierMetrics.active}</strong>
+                </Card>
+                <Card className="supplier-metric-card">
+                  <SafetyCertificateOutlined />
+                  <span>月度准时交付率</span>
+                  <strong>{supplierMetrics.onTimeDeliveryRate}</strong>
+                </Card>
+                <Card className="supplier-metric-card">
+                  <StarFilled />
+                  <span>平均采购周期</span>
+                  <strong>{supplierMetrics.averagePurchaseCycle}</strong>
+                </Card>
+              </div>
+            </div>
 
-        <aside className="supplier-detail-drawer">
+            <aside className="supplier-detail-drawer">
           {selectedSupplier ? (
             <>
               <div className="supplier-detail-head">
@@ -467,8 +471,10 @@ export default function InventorySuppliersPage() {
           ) : (
             <Empty description="暂无供应商档案" />
           )}
-        </aside>
-      </section>
+            </aside>
+          </section>
+        </div>
+      </div>
 
       <Drawer
         className="supplier-create-drawer"

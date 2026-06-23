@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { purchaseApi } from "../../../src/lib/api";
 import { getPurchaseInboundItemDetails, getPurchaseOrderArrivalReminder, getPurchaseOrderStatusLabel } from "../../../src/features/inventory/display";
+import { PurchaseModuleNav } from "../../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../src/stores/auth-store";
 
@@ -45,22 +46,27 @@ export default function PurchasesOrdersPage() {
         <Alert className="management-readonly-alert" type="info" showIcon message="只读模式" description="客服可查看采购订单和到货状态，不能审批、取消或入库。" />
       ) : null}
 
-      <Card className="management-table-card">
-        <Table<PurchaseOrderRow>
-          rowKey="id"
-          loading={ordersQuery.isLoading}
-          dataSource={rows}
-          pagination={{ pageSize: 10 }}
-          onRow={(row) => ({ onClick: () => router.push(`/purchases/orders/${row.id}`) })}
-          columns={[
-            { title: "采购单", render: (_, row) => row.orderNo ?? "未编号采购单" },
-            { title: "供应商", render: (_, row) => row.supplierName ?? "供应商待确认" },
-            { title: "状态", render: (_, row) => <Tag>{getPurchaseOrderStatusLabel(row.status)}</Tag> },
-            { title: "采购明细", render: (_, row) => (row.items ?? []).map((item) => getPurchaseInboundItemDetails(item as never).product).join(" / ") || "明细待确认" },
-            { title: "到货验收", render: (_, row) => getPurchaseOrderArrivalReminder(row as never) }
-          ]}
-        />
-      </Card>
+      <div className="purchase-module-layout">
+        <PurchaseModuleNav activeKey="orders" />
+        <div className="purchase-module-content">
+          <Card className="management-table-card">
+            <Table<PurchaseOrderRow>
+              rowKey="id"
+              loading={ordersQuery.isLoading}
+              dataSource={rows}
+              pagination={{ pageSize: 10 }}
+              onRow={(row) => ({ onClick: () => router.push(`/purchases/orders/${row.id}`) })}
+              columns={[
+                { title: "采购单", render: (_, row) => row.orderNo ?? "未编号采购单" },
+                { title: "供应商", render: (_, row) => row.supplierName ?? "供应商待确认" },
+                { title: "状态", render: (_, row) => <Tag>{getPurchaseOrderStatusLabel(row.status)}</Tag> },
+                { title: "采购明细", render: (_, row) => (row.items ?? []).map((item) => getPurchaseInboundItemDetails(item as never).product).join(" / ") || "明细待确认" },
+                { title: "到货验收", render: (_, row) => getPurchaseOrderArrivalReminder(row as never) }
+              ]}
+            />
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

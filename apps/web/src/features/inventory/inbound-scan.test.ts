@@ -32,6 +32,8 @@ test("inventory page exposes batch scan inbound on purchase order items", () => 
 
   assert.match(pageSource, /parseInboundScanLines/);
   assert.match(pageSource, /receivePurchaseItemBatches/);
-  assert.match(pageSource, /批量扫码入库/);
+  assert.match(pageSource, /扫码\/粘贴导入/);
   assert.match(pageSource, /每行：批次号 数量 供应商/);
+  assert.match(pageSource, /setScanImportOpen\(true\)/);
+  assert.doesNotMatch(pageSource, /purchase-scan-panel-inline/);
 });

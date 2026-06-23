@@ -521,6 +521,24 @@ export class InventoryService {
             vehicle: { select: { carPlate: true, carModel: true, carColor: true } },
             items: { include: { product: true } }
           }
+        },
+        purchaseOrders: {
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            orderNo: true,
+            supplierName: true,
+            status: true,
+            expectedAt: true,
+            createdAt: true,
+            items: {
+              select: {
+                productId: true,
+                quantity: true,
+                receivedQuantity: true
+              }
+            }
+          }
         }
       }
     });
@@ -705,17 +723,33 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const requirement = await tx.purchaseRequirement.findUnique({
         where: { id: purchaseRequirementId },
-        include: { items: true }
+        include: {
+          items: {
+            include: {
+              purchaseOrderItems: {
+                include: { purchaseOrder: true }
+              }
+            }
+          }
+        }
       });
       if (!requirement) throw new NotFoundException("采购需求不存在");
       if (!PermissionPolicy.canManagePurchase(actor, requirement.storeId)) {
         throw new ForbiddenException("无权限");
       }
-      const openItems = requirement.items.filter((item) =>
-        decimalToNumber(item.requiredQuantity) > decimalToNumber(item.fulfilledQuantity)
-      );
+      const openItems = requirement.items
+        .map((item) => {
+          const orderedQuantity = (item.purchaseOrderItems ?? [])
+            .filter((orderItem) => orderItem.purchaseOrder.status !== PurchaseOrderStatus.CANCELLED)
+            .reduce((sum, orderItem) => sum + decimalToNumber(orderItem.quantity), 0);
+          return {
+            ...item,
+            remainingToOrder: decimalToNumber(item.requiredQuantity) - orderedQuantity
+          };
+        })
+        .filter((item) => item.remainingToOrder > 0);
       if (openItems.length === 0) {
-        throw new BadRequestException("采购需求已完成");
+        throw new BadRequestException("采购需求已全部转采购单");
       }
 
       const purchaseOrder = await tx.purchaseOrder.create({
@@ -731,7 +765,7 @@ export class InventoryService {
             create: openItems.map((item) => ({
               purchaseRequirementItemId: item.id,
               productId: item.productId,
-              quantity: decimalToNumber(item.requiredQuantity) - decimalToNumber(item.fulfilledQuantity)
+              quantity: item.remainingToOrder
             }))
           }
         },

@@ -240,6 +240,86 @@ test("InventoryService creates purchase order from purchase requirement items", 
   assert.equal(serialized.includes("\"status\":\"ORDERED\""), true);
 });
 
+test("InventoryService returns related purchase orders with purchase requirements", async () => {
+  let findManyArgs: unknown;
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    purchaseRequirement: {
+      findMany: async (args: unknown) => {
+        findManyArgs = args;
+        return [
+          {
+            id: "pr-1",
+            purchaseOrders: [{ id: "po-1", orderNo: "PO-1", status: "ORDERED" }]
+          }
+        ];
+      }
+    }
+  } as never);
+
+  const result = await service.listPurchaseRequirements(
+    {
+      id: "cs-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.CUSTOMER_SERVICE }
+    },
+    "store-1"
+  );
+
+  assert.equal((result[0] as { purchaseOrders: unknown[] }).purchaseOrders.length, 1);
+  assert.match(JSON.stringify(findManyArgs), /purchaseOrders/);
+  assert.match(JSON.stringify(findManyArgs), /orderNo/);
+});
+
+test("InventoryService creates purchase orders only for un-ordered requirement quantities", async () => {
+  const writes: unknown[] = [];
+  const tx = {
+    purchaseRequirement: {
+      findUnique: async () => ({
+        id: "pr-1",
+        storeId: "store-1",
+        items: [
+          {
+            id: "pri-1",
+            productId: "product-1",
+            requiredQuantity: 10,
+            fulfilledQuantity: 2,
+            purchaseOrderItems: [
+              { quantity: 7, purchaseOrder: { status: "ORDERED" } },
+              { quantity: 3, purchaseOrder: { status: "CANCELLED" } }
+            ]
+          }
+        ]
+      }),
+      update: async (args: unknown) => writes.push(args)
+    },
+    purchaseOrder: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "po-1", items: [{ id: "poi-1" }] };
+      }
+    }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  await service.createPurchaseOrderFromRequirement(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    "pr-1",
+    { supplierName: "3M" }
+  );
+
+  const serialized = JSON.stringify(writes);
+  assert.match(serialized, /"quantity":3/);
+  assert.doesNotMatch(serialized, /"quantity":8/);
+});
+
 test("InventoryService rejects sales viewing purchase orders", async () => {
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },

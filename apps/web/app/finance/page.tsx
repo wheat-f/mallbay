@@ -7,7 +7,7 @@ import { App, Button, Card, Form, Input, InputNumber, Select, Table, Tag } from 
 import { AuditOutlined, DollarOutlined, DownloadOutlined, EyeOutlined, FileAddOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { financeApi, orderApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -62,6 +62,14 @@ const FINANCE_SECTION_NAV_ITEMS: Array<{ key: FinanceSectionKey; label: string }
 ];
 
 export default function FinancePage() {
+  return (
+    <Suspense fallback={<div className="management-page" />}>
+      <FinanceContent />
+    </Suspense>
+  );
+}
+
+function FinanceContent() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const router = useRouter();

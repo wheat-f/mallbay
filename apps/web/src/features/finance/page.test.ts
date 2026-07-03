@@ -122,6 +122,8 @@ test("finance ledger rows link to the prototype payment record detail page", () 
 test("finance page opens the ledger workspace from order payment links", () => {
   const pageSource = readFileSync("app/finance/page.tsx", "utf8");
 
+  assert.match(pageSource, /<Suspense fallback=\{<div className="management-page" \/>\}>/);
+  assert.match(pageSource, /<FinanceContent \/>/);
   assert.match(pageSource, /const financeSectionParam = searchParams\.get\("section"\)/);
   assert.match(pageSource, /const financeActionParam = searchParams\.get\("action"\)/);
   assert.match(pageSource, /financeActionParam === "record-payment"/);

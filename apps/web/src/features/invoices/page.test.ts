@@ -125,6 +125,8 @@ test("invoices list links records to the prototype invoice detail page", () => {
 test("invoices page opens the application drawer from order invoice links", () => {
   const pageSource = readFileSync("app/invoices/page.tsx", "utf8");
 
+  assert.match(pageSource, /<Suspense fallback=\{<div className="management-page" \/>\}>/);
+  assert.match(pageSource, /<InvoicesContent \/>/);
   assert.match(pageSource, /const invoiceActionParam = searchParams\.get\("action"\)/);
   assert.match(pageSource, /const requestedInvoiceOrderId = searchParams\.get\("orderId"\)/);
   assert.match(pageSource, /invoiceActionParam !== "create-invoice"/);

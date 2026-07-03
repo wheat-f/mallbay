@@ -14,7 +14,7 @@ import {
 } from "@ant-design/icons";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { invoicesApi, orderApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -54,6 +54,14 @@ type InvoiceOrderOption = {
 };
 
 export default function InvoicesPage() {
+  return (
+    <Suspense fallback={<div className="management-page" />}>
+      <InvoicesContent />
+    </Suspense>
+  );
+}
+
+function InvoicesContent() {
   const { message } = App.useApp();
   const router = useRouter();
   const searchParams = useSearchParams();

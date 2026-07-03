@@ -122,6 +122,17 @@ test("invoices list links records to the prototype invoice detail page", () => {
   assert.match(pageSource, /查看详情/);
 });
 
+test("invoices page opens the application drawer from order invoice links", () => {
+  const pageSource = readFileSync("app/invoices/page.tsx", "utf8");
+
+  assert.match(pageSource, /const invoiceActionParam = searchParams\.get\("action"\)/);
+  assert.match(pageSource, /const requestedInvoiceOrderId = searchParams\.get\("orderId"\)/);
+  assert.match(pageSource, /invoiceActionParam !== "create-invoice"/);
+  assert.match(pageSource, /setApplicationDrawerOpen\(true\)/);
+  assert.match(pageSource, /applyForm\.setFieldsValue\(\{ orderId: requestedInvoiceOrderId \}\)/);
+  assert.match(pageSource, /label: `当前订单 \$\{requestedInvoiceOrderId\}`/);
+});
+
 test("invoices page uses mobile invoice cards instead of squeezing the desktop table", () => {
   const pageSource = readFileSync("app/invoices/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
@@ -130,8 +141,8 @@ test("invoices page uses mobile invoice cards instead of squeezing the desktop t
   assert.match(pageSource, /invoice-mobile-card/);
   assert.match(pageSource, /invoice-desktop-table/);
   assert.match(cssSource, /\.invoice-mobile-cards/);
-  assert.match(cssSource, /@media \(max-width: 900px\) \{\n\s{2}\.invoice-desktop-table \{\n\s{4}display: none;/);
-  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.invoice-mobile-cards \{\n\s{4}display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{\r?\n\s{2}\.invoice-desktop-table \{\r?\n\s{4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.invoice-mobile-cards \{\r?\n\s{4}display: grid;/);
 });
 
 test("invoices mobile metrics stack to keep money values readable", () => {
@@ -139,7 +150,7 @@ test("invoices mobile metrics stack to keep money values readable", () => {
 
   assert.match(
     cssSource,
-    /@media \(max-width: 900px\) \{[\s\S]*\.invoice-mobile-cards\s*\{[\s\S]*\}\n\n {2}\.invoice-metric-grid\s*\{\n {4}grid-template-columns: minmax\(0, 1fr\);\n {2}\}/
+    /@media \(max-width: 900px\) \{[\s\S]*\.invoice-mobile-cards\s*\{[\s\S]*\}\r?\n\r?\n {2}\.invoice-metric-grid\s*\{\r?\n {4}grid-template-columns: minmax\(0, 1fr\);\r?\n {2}\}/
   );
 });
 
@@ -209,7 +220,7 @@ test("invoice detail page follows the prototype invoice detail and operation log
   assert.match(cssSource, /\.invoice-detail-line-items/);
   assert.match(
     cssSource,
-    /\.invoice-detail-line-head,\n\.invoice-detail-line-row\s*\{\n\s*display: grid;\n\s*grid-template-columns: minmax\(220px, 1\.5fr\) minmax\(120px, 0\.7fr\) minmax\(64px, 0\.4fr\) minmax\(100px, 0\.55fr\) minmax\(110px, 0\.6fr\);/
+    /\.invoice-detail-line-head,\r?\n\.invoice-detail-line-row\s*\{\r?\n\s*display: grid;\r?\n\s*grid-template-columns: minmax\(220px, 1\.5fr\) minmax\(120px, 0\.7fr\) minmax\(64px, 0\.4fr\) minmax\(100px, 0\.55fr\) minmax\(110px, 0\.6fr\);/
   );
   assert.match(cssSource, /\.invoice-detail-timeline/);
 });

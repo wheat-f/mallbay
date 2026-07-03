@@ -1,4 +1,4 @@
-import type { CreateCustomerPayload } from "./api";
+import type { CreateCustomerPayload, CreateVehiclePayload } from "./api";
 
 type DatePickerValue = {
   format: (pattern: string) => string;
@@ -16,6 +16,18 @@ export type CreateCustomerFormValues = {
   sourceType?: CreateCustomerPayload["sourceType"];
   sourceDetail?: string;
   referrerId?: string;
+  carPlate?: string;
+  vin?: string;
+  carModel?: string;
+  carColor?: string;
+  photoUrl?: string;
+  vehicles?: Array<{
+    carPlate?: string;
+    vin?: string;
+    carModel?: string;
+    carColor?: string;
+    photoUrl?: string;
+  }>;
 };
 
 export function toCreateCustomerPayload(
@@ -38,6 +50,44 @@ export function toCreateCustomerPayload(
   });
 }
 
+export function toCreateVehiclePayload(
+  customerId: string,
+  values: CreateCustomerFormValues
+): CreateVehiclePayload | undefined {
+  const carModel = trimOptional(values.carModel);
+  if (!carModel) return undefined;
+
+  return compactVehiclePayload({
+    customerId,
+    carModel,
+    carPlate: trimOptional(values.carPlate),
+    vin: trimOptional(values.vin),
+    carColor: trimOptional(values.carColor),
+    photoUrl: trimOptional(values.photoUrl)
+  });
+}
+
+export function toCreateVehiclePayloads(
+  customerId: string,
+  values: CreateCustomerFormValues
+): CreateVehiclePayload[] {
+  const vehicleDrafts = values.vehicles?.length
+    ? values.vehicles
+    : [
+        {
+          carModel: values.carModel,
+          carPlate: values.carPlate,
+          vin: values.vin,
+          carColor: values.carColor,
+          photoUrl: values.photoUrl
+        }
+      ];
+
+  return vehicleDrafts
+    .map((vehicle) => toCreateVehiclePayload(customerId, { ...values, ...vehicle, vehicles: undefined }))
+    .filter((vehicle): vehicle is CreateVehiclePayload => Boolean(vehicle));
+}
+
 function trimOptional(value: string | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
@@ -53,4 +103,10 @@ function compactPayload(payload: CreateCustomerPayload): CreateCustomerPayload {
   return Object.fromEntries(
     Object.entries(payload).filter(([, value]) => value !== undefined)
   ) as CreateCustomerPayload;
+}
+
+function compactVehiclePayload(payload: CreateVehiclePayload): CreateVehiclePayload {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined)
+  ) as CreateVehiclePayload;
 }

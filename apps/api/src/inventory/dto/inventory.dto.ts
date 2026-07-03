@@ -71,6 +71,11 @@ export class CreateSupplierDto {
   contactPhone?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  settlementCycle?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -97,6 +102,11 @@ export class UpdateSupplierDto {
   @IsString()
   @MaxLength(40)
   contactPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  settlementCycle?: string;
 
   @IsOptional()
   @Type(() => Number)

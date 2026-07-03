@@ -180,6 +180,29 @@ test("construction assignments page treats construction progress as navigable wo
   assert.match(pageSource, /router\.push\(`\/construction\/orders\/\$\{record\.orderId\}`\)/);
 });
 
+test("construction assignments page exposes schedule and outside-store handoff entries", () => {
+  const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
+
+  assert.match(pageSource, /onOpenSchedule/);
+  assert.match(pageSource, /施工排班/);
+  assert.match(pageSource, /router\.push\("\/construction\/schedules"\)/);
+  assert.match(pageSource, /外派施工门店协同/);
+  assert.match(pageSource, /本店下单，外店或外出地址施工时/);
+});
+
+test("construction assignments page exposes capacity settings as a top management entry", () => {
+  const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(pageSource, /dispatch-management-toolbar/);
+  assert.match(pageSource, /施工产能设置/);
+  assert.match(pageSource, /router\.push\("\/construction\/capacities"\)/);
+  assert.match(pageSource, /router\.push\("\/construction\/schedules"\)/);
+  assert.match(pageSource, /router\.push\("\/construction\/tasks"\)/);
+  assert.match(cssSource, /\.dispatch-management-toolbar/);
+  assert.match(cssSource, /\.dispatch-management-toolbar-actions/);
+});
+
 test("construction assignments page has lifecycle tab and readonly action styles", () => {
   const cssSource = readFileSync("app/globals.css", "utf8");
 

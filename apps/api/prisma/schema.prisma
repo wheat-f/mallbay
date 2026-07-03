@@ -1018,6 +1018,7 @@ model Supplier {
   name         String
   contactName  String?
   contactPhone String?
+  settlementCycle String?
   rating       Int?
   note         String?
   isActive     Boolean  @default(true)

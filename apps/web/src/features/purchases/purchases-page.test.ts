@@ -44,6 +44,8 @@ test("purchases order list and detail use purchaseApi instead of inventoryApi", 
   const detailSource = readFileSync("app/purchases/orders/[id]/page.tsx", "utf8");
 
   assert.match(ordersSource, /purchaseApi\.orders/);
+  assert.match(ordersSource, /<Alert[\s\S]*title="只读模式"/);
+  assert.doesNotMatch(ordersSource, /<Alert[\s\S]*message=/);
   assert.match(ordersSource, /router\.push\(`\/purchases\/orders\/\$\{row\.id\}`\)/);
   assert.doesNotMatch(ordersSource, /inventoryApi\./);
   assert.match(detailSource, /purchaseApi\.order\(purchaseOrderId\)/);
@@ -63,7 +65,7 @@ test("purchases order receiving form uses selectable supplier options", () => {
   assert.doesNotMatch(detailSource, /<Form\.Item name="supplierName" label="默认供应商">\s*<Input placeholder="未填批次供应商时使用该供应商" \/>/);
 });
 
-test("purchases requirements page supports manual demand creation and supplier-aware order conversion", () => {
+test("purchases requirements page focuses on manual demand creation", () => {
   const requirementsSource = readFileSync("app/purchases/requirements/page.tsx", "utf8");
 
   assert.match(requirementsSource, /purchaseApi\.createRequirement/);
@@ -71,31 +73,32 @@ test("purchases requirements page supports manual demand creation and supplier-a
   assert.match(requirementsSource, /选择采购产品/);
   assert.match(requirementsSource, /requiredQuantity/);
   assert.match(requirementsSource, /requiredUnit/);
-  assert.match(requirementsSource, /转采购单设置/);
-  assert.match(requirementsSource, /supplierName/);
-  assert.match(requirementsSource, /expectedAt/);
-  assert.match(requirementsSource, /purchaseApi\.suppliers/);
-  assert.doesNotMatch(requirementsSource, /createPurchaseOrderFromRequirement\(id, \{\}\)/);
+  assert.match(requirementsSource, /purchases-requirement-create-actions/);
+  assert.doesNotMatch(requirementsSource, /purchaseApi\.requirements/);
+  assert.doesNotMatch(requirementsSource, /purchaseApi\.suppliers/);
+  assert.doesNotMatch(requirementsSource, /采购需求列表/);
+  assert.doesNotMatch(requirementsSource, /PurchaseRequirementOrderAction/);
+  assert.doesNotMatch(requirementsSource, /createPurchaseOrderFromRequirement/);
 });
 
-test("purchases requirements page links generated purchase orders from requirement cards", () => {
+test("purchases requirements page avoids deprecated Alert message prop", () => {
   const requirementsSource = readFileSync("app/purchases/requirements/page.tsx", "utf8");
 
-  assert.match(requirementsSource, /purchaseOrders/);
-  assert.match(requirementsSource, /relatedPurchaseOrders/);
-  assert.match(requirementsSource, /查看采购单/);
-  assert.match(requirementsSource, /router\.push\(`\/purchases\/orders\/\$\{order\.id\}`\)/);
-  assert.match(requirementsSource, /需求已转采购单/);
+  assert.match(requirementsSource, /<Alert[\s\S]*title="只读模式"/);
+  assert.doesNotMatch(requirementsSource, /<Alert[\s\S]*message=/);
 });
 
-test("purchases requirements page uses scannable cards instead of a squeezed table", () => {
+test("purchases requirements page uses a focused form layout", () => {
   const requirementsSource = readFileSync("app/purchases/requirements/page.tsx", "utf8");
 
-  assert.match(requirementsSource, /purchase-requirement-list/);
-  assert.match(requirementsSource, /purchase-requirement-card/);
-  assert.match(requirementsSource, /purchase-requirement-action-panel/);
+  assert.match(requirementsSource, /purchases-requirement-create-card/);
+  assert.match(cssSource, /\.purchases-requirement-create-card\.ant-card/);
+  assert.match(cssSource, /\.purchases-requirement-create-form/);
+  assert.match(cssSource, /\.purchases-requirement-create-actions/);
+  assert.doesNotMatch(requirementsSource, /purchase-requirement-list/);
+  assert.doesNotMatch(requirementsSource, /purchase-requirement-card/);
+  assert.doesNotMatch(requirementsSource, /purchase-requirement-action-panel/);
   assert.doesNotMatch(requirementsSource, /<Table<PurchaseRequirementRow>/);
-  assert.match(cssSource, /\.purchase-requirement-card/);
 });
 
 test("purchases supplier page is read-only aware and uses purchaseApi", () => {

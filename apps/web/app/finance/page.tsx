@@ -6,7 +6,7 @@ import type { PaymentAccountOption } from "../../src/features/orders/api";
 import { App, Button, Card, Form, Input, InputNumber, Select, Table, Tag } from "antd";
 import { AuditOutlined, DollarOutlined, DownloadOutlined, EyeOutlined, FileAddOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { financeApi, orderApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
@@ -65,6 +65,7 @@ export default function FinancePage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const [expenseForm] = Form.useForm<MoneyApplicationFormValues>();
@@ -73,7 +74,12 @@ export default function FinancePage() {
   const [selectedReimbursementId, setSelectedReimbursementId] = useState<string>();
   const [selectedAccount, setSelectedAccount] = useState<PaymentAccountOption | null>(null);
   const [ledgerFilter, setLedgerFilter] = useState<"ALL" | "INCOME" | "EXPENSE">("ALL");
-  const [activeFinanceSection, setActiveFinanceSection] = useState<FinanceSectionKey>("expense");
+  const financeSectionParam = searchParams.get("section");
+  const financeActionParam = searchParams.get("action");
+  const paymentOrderId = searchParams.get("orderId");
+  const [activeFinanceSection, setActiveFinanceSection] = useState<FinanceSectionKey>(
+    getInitialFinanceSection(financeSectionParam, financeActionParam)
+  );
 
   const expensesQuery = useQuery({
     queryKey: ["finance-expenses", storeId],
@@ -142,6 +148,10 @@ export default function FinancePage() {
       reviewForm.setFieldsValue({ id: selectedReimbursement.id });
     }
   }, [reviewForm, selectedReimbursement]);
+
+  useEffect(() => {
+    setActiveFinanceSection(getInitialFinanceSection(financeSectionParam, financeActionParam));
+  }, [financeActionParam, financeSectionParam]);
 
   const invalidateFinance = () =>
     Promise.all([
@@ -361,6 +371,15 @@ export default function FinancePage() {
       {activeFinanceSection === "ledger" ? (
       <section className="finance-workspace finance-section-panel finance-workspace-single is-active">
         <div className="finance-main-column">
+            {financeActionParam === "record-payment" ? (
+              <Card className="finance-order-payment-entry" title="订单收款入口">
+                <p>
+                  {paymentOrderId
+                    ? `当前从销售订单 ${paymentOrderId} 进入，请在财务流水中核对订单收款记录。`
+                    : "当前从销售订单进入，请在财务流水中核对订单收款记录。"}
+                </p>
+              </Card>
+            ) : null}
             <Card className="finance-ledger-list" title="财务流水">
             <div className="finance-ledger-toolbar">
               {[
@@ -794,4 +813,12 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function getInitialFinanceSection(section?: string | null, action?: string | null): FinanceSectionKey {
+  if (action === "record-payment") return "ledger";
+  if (section === "ledger" || section === "account" || section === "reimbursement" || section === "expense") {
+    return section;
+  }
+  return "expense";
 }

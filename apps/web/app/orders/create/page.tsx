@@ -826,7 +826,7 @@ function CustomerHistoryPanel({
       {customerHistory ? (
         <>
           {customerHistory.warning ? (
-            <Alert className="mb-3" type="warning" showIcon message={customerHistory.warning} />
+            <Alert className="mb-3" type="warning" showIcon title={customerHistory.warning} />
           ) : null}
           <div className="create-order-history-metrics">
             <div>

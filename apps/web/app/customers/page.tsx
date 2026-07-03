@@ -1,15 +1,17 @@
 "use client";
 
 import { App, Button, Card, Drawer, Empty, Form, Input, Select, Space, Table, Tag, Tooltip } from "antd";
-import { EyeOutlined, FileTextOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { CarOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { customerApi } from "../../src/lib/api";
 import {
   toCreateCustomerPayload,
+  toCreateVehiclePayloads,
   type CreateCustomerFormValues
 } from "../../src/features/customers/create-customer-form";
+import type { UpdateVehiclePayload } from "../../src/features/customers/api";
 import { getCustomerAutoArchiveMetrics, type CustomerArchiveLike } from "../../src/features/customers/display";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -20,14 +22,41 @@ type CustomerRow = CustomerArchiveLike & {
   name?: string | null;
   companyName?: string | null;
   contactPerson?: string | null;
+  gender?: string | null;
+  birthday?: string | null;
   wechat?: string | null;
   sourceType?: string | null;
+  sourceDetail?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
   phone?: string | null;
-  vehicles?: { id: string; carPlate?: string | null; carModel?: string | null; carColor?: string | null }[];
+  vehicles?: CustomerVehicle[];
   tags?: { id: string; label: string }[];
 };
+
+type CustomerVehicle = {
+  id: string;
+  carPlate?: string | null;
+  vin?: string | null;
+  carModel?: string | null;
+  carColor?: string | null;
+  photoUrl?: string | null;
+};
+
+type EditCustomerFormValues = {
+  customerType: "PERSONAL" | "COMPANY";
+  name?: string;
+  gender?: CreateCustomerFormValues["gender"];
+  birthday?: string;
+  companyName?: string;
+  contactPerson?: string;
+  phone?: string;
+  wechat?: string;
+  sourceType?: CreateCustomerFormValues["sourceType"];
+  sourceDetail?: string;
+};
+
+type VehicleFormValues = UpdateVehiclePayload;
 
 const quickSearchModes = [
   { label: "手机号", placeholder: "输入手机号进行搜索" },
@@ -54,8 +83,14 @@ export default function CustomersPage() {
   const [referrerKeyword, setReferrerKeyword] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null);
+  const [editCustomer, setEditCustomer] = useState<CustomerRow | null>(null);
+  const [vehicleCustomer, setVehicleCustomer] = useState<CustomerRow | null>(null);
+  const [editingVehicle, setEditingVehicle] = useState<CustomerVehicle | null>(null);
   const [createCustomerType, setCreateCustomerType] = useState("PERSONAL");
+  const [editCustomerType, setEditCustomerType] = useState("PERSONAL");
   const [createForm] = Form.useForm<CreateCustomerFormValues>();
+  const [editForm] = Form.useForm<EditCustomerFormValues>();
+  const [vehicleForm] = Form.useForm<VehicleFormValues>();
 
   const customersQuery = useQuery({
     queryKey: ["customers", storeId, search],
@@ -106,15 +141,65 @@ export default function CustomersPage() {
   }));
 
   const createMutation = useMutation({
-    mutationFn: (values: CreateCustomerFormValues) => {
+    mutationFn: async (values: CreateCustomerFormValues) => {
       if (!storeId) throw new Error("当前账号尚未加入门店");
-      return customerApi.create(toCreateCustomerPayload(storeId, values));
+      const customer = await customerApi.create(toCreateCustomerPayload(storeId, values));
+      const vehiclePayloads = toCreateVehiclePayloads(customer.id, values);
+      if (vehiclePayloads.length) {
+        await Promise.all(vehiclePayloads.map((payload) => customerApi.createVehicle(payload)));
+      }
+      return { customer, vehicleCount: vehiclePayloads.length };
     },
-    onSuccess: () => {
-      message.success("客户已创建");
+    onSuccess: ({ vehicleCount }) => {
+      message.success(vehicleCount > 0 ? `客户和 ${vehicleCount} 辆车已创建` : "客户已创建");
       setCreateOpen(false);
       setCreateCustomerType("PERSONAL");
       createForm.resetFields();
+      queryClient.invalidateQueries({ queryKey: ["customers", storeId] });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (values: EditCustomerFormValues) => {
+      if (!editCustomer) throw new Error("请选择要编辑的客户");
+      return customerApi.update(editCustomer.id, compactPayload(values));
+    },
+    onSuccess: (_, values) => {
+      message.success("客户已更新");
+      if (editCustomer) {
+        const updatedCustomer = { ...editCustomer, ...compactPayload(values), updatedAt: new Date().toISOString() };
+        setSelectedCustomer((current) => (current?.id === editCustomer.id ? updatedCustomer : current));
+      }
+      setEditCustomer(null);
+      setEditCustomerType("PERSONAL");
+      editForm.resetFields();
+      queryClient.invalidateQueries({ queryKey: ["customers", storeId] });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
+  const vehicleMutation = useMutation({
+    mutationFn: (values: VehicleFormValues) => {
+      if (!vehicleCustomer) throw new Error("请选择要维护车辆的客户");
+      const payload = normalizeVehiclePayload(values);
+      if (editingVehicle) {
+        return customerApi.updateVehicle(editingVehicle.id, payload);
+      }
+      return customerApi.createVehicle({
+        customerId: vehicleCustomer.id,
+        carModel: payload.carModel ?? "",
+        carPlate: payload.carPlate,
+        vin: payload.vin,
+        carColor: payload.carColor,
+        photoUrl: payload.photoUrl
+      });
+    },
+    onSuccess: () => {
+      message.success(editingVehicle ? "车辆已更新" : "车辆已新增");
+      setVehicleCustomer(null);
+      setEditingVehicle(null);
+      vehicleForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ["customers", storeId] });
     },
     onError: (error: Error) => message.error(error.message)
@@ -125,6 +210,50 @@ export default function CustomersPage() {
     setCreateOpen(false);
     setCreateCustomerType("PERSONAL");
     createForm.resetFields();
+  };
+
+  const openEditCustomer = (customer: CustomerRow) => {
+    const customerType = customer.customerType === "COMPANY" ? "COMPANY" : "PERSONAL";
+    setEditCustomer(customer);
+    setEditCustomerType(customerType);
+    editForm.setFieldsValue({
+      customerType,
+      name: customer.name ?? undefined,
+      gender: customer.gender as EditCustomerFormValues["gender"],
+      birthday: toDateInputValue(customer.birthday),
+      companyName: customer.companyName ?? undefined,
+      contactPerson: customer.contactPerson ?? undefined,
+      wechat: customer.wechat ?? undefined,
+      sourceType: customer.sourceType as EditCustomerFormValues["sourceType"],
+      sourceDetail: customer.sourceDetail ?? undefined
+    });
+  };
+
+  const closeEditDrawer = () => {
+    if (updateMutation.isPending) return;
+    setEditCustomer(null);
+    setEditCustomerType("PERSONAL");
+    editForm.resetFields();
+  };
+
+  const openVehicleDrawer = (customer: CustomerRow, vehicle?: CustomerVehicle) => {
+    setVehicleCustomer(customer);
+    setEditingVehicle(vehicle ?? null);
+    vehicleForm.resetFields();
+    vehicleForm.setFieldsValue({
+      carModel: vehicle?.carModel ?? undefined,
+      carPlate: vehicle?.carPlate ?? undefined,
+      vin: vehicle?.vin ?? undefined,
+      carColor: vehicle?.carColor ?? undefined,
+      photoUrl: vehicle?.photoUrl ?? undefined
+    });
+  };
+
+  const closeVehicleDrawer = () => {
+    if (vehicleMutation.isPending) return;
+    setVehicleCustomer(null);
+    setEditingVehicle(null);
+    vehicleForm.resetFields();
   };
 
   return (
@@ -313,6 +442,26 @@ export default function CustomersPage() {
                       <div className="customers-mobile-actions">
                         <Button
                           size="small"
+                          icon={<EditOutlined />}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditCustomer(row);
+                          }}
+                        >
+                          编辑客户
+                        </Button>
+                        <Button
+                          size="small"
+                          icon={<CarOutlined />}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openVehicleDrawer(row);
+                          }}
+                        >
+                          {getVehicleActionLabel(row)}
+                        </Button>
+                        <Button
+                          size="small"
                           icon={<EyeOutlined />}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -429,7 +578,7 @@ export default function CustomersPage() {
                 },
                 {
                   title: "操作",
-                  width: 80,
+                  width: 132,
                   align: "center",
                   render: (_, row) => (
                     <Space size={4}>
@@ -441,6 +590,28 @@ export default function CustomersPage() {
                           onClick={(event) => {
                             event.stopPropagation();
                             setSelectedCustomer(row);
+                          }}
+                        />
+                      </Tooltip>
+                      <Tooltip title="编辑客户">
+                        <Button
+                          aria-label="编辑客户"
+                          type="text"
+                          icon={<EditOutlined />}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditCustomer(row);
+                          }}
+                        />
+                      </Tooltip>
+                      <Tooltip title={getVehicleActionLabel(row)}>
+                        <Button
+                          aria-label={getVehicleActionLabel(row)}
+                          type="text"
+                          icon={<CarOutlined />}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openVehicleDrawer(row);
                           }}
                         />
                       </Tooltip>
@@ -473,6 +644,12 @@ export default function CustomersPage() {
           footer={
             selectedCustomer ? (
               <div className="customers-drawer-footer">
+                <Button icon={<EditOutlined />} onClick={() => openEditCustomer(selectedCustomer)}>
+                  编辑客户
+                </Button>
+                <Button icon={<CarOutlined />} onClick={() => openVehicleDrawer(selectedCustomer)}>
+                  {getVehicleActionLabel(selectedCustomer)}
+                </Button>
                 <Button onClick={() => router.push(`/customers/${selectedCustomer.id}`)}>
                   查看完整历史
                 </Button>
@@ -484,6 +661,198 @@ export default function CustomersPage() {
           }
         >
           {selectedCustomer ? <CustomerDetailDrawer customer={selectedCustomer} /> : null}
+        </Drawer>
+
+        <Drawer
+          className="customers-edit-drawer"
+          open={Boolean(editCustomer)}
+          title="编辑客户"
+          onClose={closeEditDrawer}
+          destroyOnHidden
+          footer={
+            <div className="customers-create-drawer-footer">
+              <Button onClick={closeEditDrawer}>取消</Button>
+              <Button type="primary" loading={updateMutation.isPending} onClick={() => editForm.submit()}>
+                保存修改
+              </Button>
+            </div>
+          }
+        >
+          <Form<EditCustomerFormValues>
+            form={editForm}
+            layout="vertical"
+            className="customers-create-form"
+            onValuesChange={(changedValues) => {
+              if ("customerType" in changedValues) {
+                setEditCustomerType(changedValues.customerType ?? "PERSONAL");
+              }
+            }}
+            onFinish={(values) => updateMutation.mutate(values)}
+          >
+            <Form.Item name="customerType" label="客户类型" rules={[{ required: true, message: "请选择客户类型" }]}>
+              <Select
+                options={[
+                  { label: "个人客户", value: "PERSONAL" },
+                  { label: "企业客户", value: "COMPANY" }
+                ]}
+              />
+            </Form.Item>
+
+            {editCustomerType === "COMPANY" ? (
+              <>
+                <Form.Item
+                  name="companyName"
+                  label="企业名称"
+                  rules={[{ required: true, whitespace: true, message: "请输入企业名称" }]}
+                >
+                  <Input maxLength={100} />
+                </Form.Item>
+                <Form.Item
+                  name="contactPerson"
+                  label="联系人"
+                  rules={[{ required: true, whitespace: true, message: "请输入联系人" }]}
+                >
+                  <Input maxLength={50} />
+                </Form.Item>
+              </>
+            ) : (
+              <>
+                <Form.Item
+                  name="name"
+                  label="客户姓名"
+                  rules={[{ required: true, whitespace: true, message: "请输入客户姓名" }]}
+                >
+                  <Input maxLength={50} />
+                </Form.Item>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Form.Item name="gender" label="性别">
+                    <Select
+                      allowClear
+                      options={[
+                        { label: "男", value: "MALE" },
+                        { label: "女", value: "FEMALE" },
+                        { label: "未知", value: "UNKNOWN" }
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item name="birthday" label="生日">
+                    <BirthdaySelector />
+                  </Form.Item>
+                </div>
+              </>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Form.Item
+                name="phone"
+                label="变更手机号"
+                rules={[{ pattern: /^1\d{10}$/, message: "请输入 11 位手机号" }]}
+              >
+                <Input maxLength={11} placeholder="不填写则保持原手机号" />
+              </Form.Item>
+              <Form.Item name="wechat" label="微信号">
+                <Input maxLength={50} />
+              </Form.Item>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Form.Item name="sourceType" label="客户来源">
+                <Select
+                  allowClear
+                  options={[
+                    { label: "到店", value: "OFFLINE_STORE" },
+                    { label: "抖音", value: "ONLINE_DOUYIN" },
+                    { label: "小红书", value: "ONLINE_XIAOHONGSHU" },
+                    { label: "快手", value: "ONLINE_KUAISHOU" },
+                    { label: "转介绍", value: "REFERRAL" },
+                    { label: "合作方", value: "PARTNER" },
+                    { label: "其他", value: "OTHER" }
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item name="sourceDetail" label="来源说明">
+                <Input maxLength={100} />
+              </Form.Item>
+            </div>
+          </Form>
+        </Drawer>
+
+        <Drawer
+          className="customers-vehicle-drawer"
+          open={Boolean(vehicleCustomer)}
+          title="车辆管理"
+          onClose={closeVehicleDrawer}
+          destroyOnHidden
+          footer={
+            <div className="customers-create-drawer-footer">
+              <Button onClick={closeVehicleDrawer}>取消</Button>
+              <Button type="primary" loading={vehicleMutation.isPending} onClick={() => vehicleForm.submit()}>
+                保存车辆
+              </Button>
+            </div>
+          }
+        >
+          <Form<VehicleFormValues>
+            form={vehicleForm}
+            layout="vertical"
+            className="customers-create-form"
+            onFinish={(values) => vehicleMutation.mutate(values)}
+          >
+            {vehicleCustomer ? (
+              <section className="customers-form-section customers-vehicle-list">
+                <div className="customers-form-section-title">
+                  <h4>已有车辆</h4>
+                  <Button size="small" icon={<PlusOutlined />} onClick={() => openVehicleDrawer(vehicleCustomer)}>
+                    新增车辆
+                  </Button>
+                </div>
+                {vehicleCustomer.vehicles?.length ? (
+                  vehicleCustomer.vehicles?.map((vehicle) => (
+                    <article key={vehicle.id} className="customers-vehicle-list-item">
+                      <div>
+                        <strong>{vehicle.carPlate ?? "未录车牌"}</strong>
+                        <span>{[vehicle.carModel, vehicle.carColor].filter(Boolean).join(" / ") || "车辆信息待完善"}</span>
+                      </div>
+                      <Button size="small" onClick={() => openVehicleDrawer(vehicleCustomer, vehicle)}>
+                        编辑车辆
+                      </Button>
+                    </article>
+                  ))
+                ) : (
+                  <div className="customers-vehicle-empty">暂无车辆档案，可在下方新增。</div>
+                )}
+              </section>
+            ) : null}
+            <section className="customers-form-section">
+              <div className="customers-form-section-title">
+                <h4>{editingVehicle ? "编辑车辆" : "新增车辆"}</h4>
+                <span>{vehicleCustomer ? getCustomerName(vehicleCustomer) : "选择客户后维护车辆"}</span>
+              </div>
+              <Form.Item
+                name="carModel"
+                label="车型"
+                rules={[{ required: true, whitespace: true, message: "请输入车型" }]}
+              >
+                <Input maxLength={100} placeholder="例如 宝马 5 系" />
+              </Form.Item>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Form.Item name="carPlate" label="车牌号">
+                  <Input maxLength={20} />
+                </Form.Item>
+                <Form.Item name="vin" label="车架号 VIN">
+                  <Input maxLength={50} />
+                </Form.Item>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Form.Item name="carColor" label="车身颜色">
+                  <Input maxLength={50} />
+                </Form.Item>
+                <Form.Item name="photoUrl" label="车辆照片链接">
+                  <Input />
+                </Form.Item>
+              </div>
+            </section>
+          </Form>
         </Drawer>
 
         <Drawer
@@ -610,6 +979,58 @@ export default function CustomersPage() {
                 placeholder="可搜索老客户作为介绍人"
               />
             </Form.Item>
+
+            <Form.List name="vehicles">
+              {(fields, { add, remove }) => (
+                <section className="customers-form-section">
+                  <div className="customers-form-section-title">
+                    <h4>车辆档案</h4>
+                    <Button size="small" icon={<PlusOutlined />} onClick={() => add({})}>
+                      增加车辆
+                    </Button>
+                  </div>
+                  {fields.length > 0 ? (
+                    <div className="customers-vehicle-draft-list">
+                      {fields.map((field, index) => (
+                        <article key={field.key} className="customers-vehicle-draft">
+                          <div className="customers-form-section-title">
+                            <h4>车辆 {index + 1}</h4>
+                            <Button size="small" onClick={() => remove(field.name)}>
+                              删除车辆
+                            </Button>
+                          </div>
+                          <Form.Item
+                            name={[field.name, "carModel"]}
+                            label="车型"
+                            rules={[{ required: true, whitespace: true, message: "请输入车型" }]}
+                          >
+                            <Input maxLength={100} placeholder="例如 宝马 5 系" />
+                          </Form.Item>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <Form.Item name={[field.name, "carPlate"]} label="车牌号">
+                              <Input maxLength={20} />
+                            </Form.Item>
+                            <Form.Item name={[field.name, "vin"]} label="车架号 VIN">
+                              <Input maxLength={50} />
+                            </Form.Item>
+                          </div>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <Form.Item name={[field.name, "carColor"]} label="车身颜色">
+                              <Input maxLength={50} />
+                            </Form.Item>
+                            <Form.Item name={[field.name, "photoUrl"]} label="车辆照片链接">
+                              <Input />
+                            </Form.Item>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="customers-vehicle-empty">可在创建客户时同步添加一辆或多辆车，也可以之后在客户列表中维护。</div>
+                  )}
+                </section>
+              )}
+            </Form.List>
           </Form>
         </Drawer>
     </>
@@ -748,6 +1169,10 @@ function getVehicleSummary(row: CustomerRow) {
   return [vehicle.carPlate, vehicle.carModel, vehicle.carColor].filter(Boolean).join(" / ") || "车辆信息待完善";
 }
 
+function getVehicleActionLabel(row: CustomerRow) {
+  return (row.vehicles?.length ?? 0) > 0 ? "编辑车辆" : "新增车辆";
+}
+
 function getCustomerTags(row: CustomerRow, systemTagLabels: string[]) {
   const labels = new Set<string>();
   for (const tag of row.tags ?? []) {
@@ -794,6 +1219,32 @@ function formatCustomerDate(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "暂无记录";
   return date.toISOString().slice(0, 10);
+}
+
+function toDateInputValue(value?: string | null) {
+  if (!value) return undefined;
+  return value.slice(0, 10);
+}
+
+function compactPayload<T extends Record<string, unknown>>(payload: T) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined && value !== "")
+  ) as T;
+}
+
+function normalizeVehiclePayload(values: VehicleFormValues) {
+  return compactPayload({
+    carModel: trimOptional(values.carModel),
+    carPlate: trimOptional(values.carPlate),
+    vin: trimOptional(values.vin),
+    carColor: trimOptional(values.carColor),
+    photoUrl: trimOptional(values.photoUrl)
+  });
+}
+
+function trimOptional(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function isWithinRecentDays(value: string | null | undefined, days: number) {
@@ -861,8 +1312,10 @@ function BirthdaySelector({ value, onChange }: BirthdaySelectorProps) {
       <Select
         allowClear
         className="!w-[42%]"
+        classNames={{ popup: { root: "customers-birthday-year-popup" } }}
         options={yearOptions}
         placeholder="年份"
+        popupMatchSelectWidth={false}
         value={parts.year}
         onChange={(nextValue) => updatePart("year", nextValue)}
       />

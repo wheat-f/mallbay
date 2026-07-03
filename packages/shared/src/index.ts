@@ -183,6 +183,7 @@ export type InventorySupplierSummary = {
   name: string;
   contactName?: string | null;
   contactPhone?: string | null;
+  settlementCycle?: string | null;
   rating?: number | null;
   note?: string | null;
   isActive?: boolean;

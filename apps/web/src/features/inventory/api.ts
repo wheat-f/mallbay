@@ -28,6 +28,7 @@ export type CreateSupplierPayload = {
   name: string;
   contactName?: string;
   contactPhone?: string;
+  settlementCycle?: string;
   rating?: number;
   note?: string;
 };
@@ -36,6 +37,7 @@ export type UpdateSupplierPayload = {
   name?: string;
   contactName?: string;
   contactPhone?: string;
+  settlementCycle?: string;
   rating?: number;
   note?: string;
   isActive?: boolean;

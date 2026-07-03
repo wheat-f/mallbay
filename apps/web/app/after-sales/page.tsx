@@ -2,7 +2,7 @@
 
 import type { AfterSaleResponsibility, AfterSaleSummary } from "@mallbay/shared";
 import type { CreateAfterSalePayload } from "../../src/lib/api";
-import { App, Button, Card, Form, Input, InputNumber, Select, Table, Tag } from "antd";
+import { App, AutoComplete, Button, Card, Empty, Form, Input, InputNumber, Select, Table, Tag } from "antd";
 import { EyeOutlined, PlusOutlined, SearchOutlined, SendOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -23,6 +23,7 @@ import { getConstructionWorkerLabel } from "../../src/features/construction/disp
 type AfterSalesActionValues = {
   workerUserIds?: string[];
   responsibility?: AfterSaleResponsibility;
+  constructionIssueCategory?: string;
   penaltyWorkerUserId?: string;
   penaltyAmountYuan?: number;
   penaltyReason?: string;
@@ -52,6 +53,7 @@ export default function AfterSalesPage() {
   const [createForm] = Form.useForm<CreateAfterSalePayload>();
   const [afterSalesActionForm] = Form.useForm<AfterSalesActionValues>();
   const [selectedAfterSaleId, setSelectedAfterSaleId] = useState<string>();
+  const selectedResponsibility = Form.useWatch("responsibility", afterSalesActionForm);
 
   const listQuery = useQuery({
     queryKey: ["after-sales", storeId],
@@ -78,10 +80,6 @@ export default function AfterSalesPage() {
     ].filter(Boolean).join(" / ")
   }));
   const afterSaleRows = useMemo(() => listQuery.data ?? [], [listQuery.data]);
-  const afterSaleOptions = afterSaleRows.map((item) => ({
-    value: item.id,
-    label: getAfterSaleBusinessLabel(item)
-  }));
   const activeSelectedAfterSaleId = selectedAfterSaleId ?? afterSaleRows[0]?.id;
   const selectedAfterSale = useMemo(
     () => afterSaleRows.find((item) => item.id === activeSelectedAfterSaleId) ?? afterSaleRows[0],
@@ -130,7 +128,7 @@ export default function AfterSalesPage() {
           penaltyWorkerUserId: values.penaltyWorkerUserId,
           penaltyAmountCents: yuanToCents(values.penaltyAmountYuan),
           penaltyReason: values.penaltyReason,
-          resolutionNote: values.resolutionNote
+          resolutionNote: buildAfterSalesResolutionNote(values.resolutionNote, values.constructionIssueCategory)
         });
       }
       return selectedAfterSale.id;
@@ -164,10 +162,14 @@ export default function AfterSalesPage() {
 
       <Card className="after-sales-filter-card management-filter-card">
         <div className="after-sales-filter-grid">
-          <div className="after-sales-search-box">
-            <span>快速查询</span>
-            <Input prefix={<SearchOutlined />} placeholder="质保单号 / 车牌号 / VIN / 客户电话" />
+          <div className="after-sales-query-panel after-sales-search-box">
+            <span className="after-sales-filter-section-title">售后快速查询</span>
+            <Input prefix={<SearchOutlined />} placeholder="质保单号 / 姓名 / 车牌号 / VIN / 客户电话" />
             <div className="after-sales-prototype-filters">
+              <label>
+                <span>客户姓名</span>
+                <Input placeholder="输入客户姓名" />
+              </label>
               <label>
                 <span>车架号 (VIN)</span>
                 <Input placeholder="输入VIN" />
@@ -188,28 +190,33 @@ export default function AfterSalesPage() {
               </div>
             </div>
           </div>
-          <Form
-            form={createForm}
-            layout="vertical"
-            className="after-sales-create-form"
-            onFinish={(values) => createMutation.mutate(values)}
-          >
-            <Form.Item name="orderId" label="订单" rules={[{ required: true, message: "请选择订单" }]}>
-              <Select
-                showSearch
-                optionFilterProp="label"
-                loading={ordersQuery.isLoading}
-                placeholder="选择订单"
-                options={orderOptions}
-              />
-            </Form.Item>
-            <Form.Item name="description" label="售后问题" rules={[{ required: true, message: "请输入售后问题" }]}>
-              <Input placeholder="描述客户反馈、缺陷位置或补膜需求" />
-            </Form.Item>
-            <Button htmlType="submit" type="primary" icon={<PlusOutlined />} loading={createMutation.isPending}>
-              新建售后单
-            </Button>
-          </Form>
+          <div className="after-sales-create-panel">
+            <span className="after-sales-filter-section-title">登记售后问题</span>
+            <Form
+              form={createForm}
+              layout="vertical"
+              className="after-sales-create-form"
+              onFinish={(values) => createMutation.mutate(values)}
+            >
+              <Form.Item name="orderId" label="订单" rules={[{ required: true, message: "请选择订单" }]}>
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  loading={ordersQuery.isLoading}
+                  placeholder="选择订单"
+                  options={orderOptions}
+                />
+              </Form.Item>
+              <Form.Item name="description" label="售后问题" rules={[{ required: true, message: "请输入售后问题" }]}>
+                <Input placeholder="描述客户反馈、缺陷位置或补膜需求" />
+              </Form.Item>
+              <div className="after-sales-create-actions">
+                <Button htmlType="submit" type="primary" icon={<PlusOutlined />} loading={createMutation.isPending}>
+                  登记售后问题
+                </Button>
+              </div>
+            </Form>
+          </div>
         </div>
       </Card>
 
@@ -273,7 +280,7 @@ export default function AfterSalesPage() {
             columns={[
               { title: "售后单号", render: (_, row) => getAfterSaleBusinessLabel(row) },
               { title: "订单", render: (_, row) => getAfterSaleOrderLabel(row) },
-              { title: "售后类型", dataIndex: "description" },
+              { title: "售后问题", dataIndex: "description", ellipsis: true },
               { title: "责任判定", render: (_, row) => <Tag>{getAfterSaleResponsibilityLabel(row.responsibility)}</Tag> },
               { title: "进度", render: (_, row) => <AfterSaleProgress status={row.status} /> },
               { title: "状态", render: (_, row) => <Tag>{getAfterSaleStatusLabel(row.status)}</Tag> },
@@ -299,11 +306,11 @@ export default function AfterSalesPage() {
         <Card className="after-sales-process-panel">
           <div className="after-sales-process-head">
             <div>
-              <h2>售后工单处理</h2>
+              <h2>处理选中工单</h2>
               <p>
                 {selectedAfterSale
                   ? `${getAfterSaleBusinessLabel(selectedAfterSale)}`
-                  : "选择左侧工单后进行派单、责任判定和处罚记录"}
+                  : "请先从左侧列表选择工单"}
               </p>
             </div>
             <Tag color={selectedAfterSale?.status === "RESOLVED" ? "success" : "processing"}>
@@ -320,80 +327,84 @@ export default function AfterSalesPage() {
               <span>关联订单</span>
               <strong>{selectedAfterSale ? getAfterSaleOrderLabel(selectedAfterSale) : "-"}</strong>
             </div>
+            <div>
+              <span>照片流程</span>
+              <strong>问题照片 / 施工后照片对比</strong>
+            </div>
           </div>
 
-          <Form
-            form={afterSalesActionForm}
-            layout="vertical"
-            className="after-sales-action-form"
-            onFinish={(values) => processMutation.mutate(values)}
-          >
-            <Form.Item label="售后单">
-              <Select
-                showSearch
-                optionFilterProp="label"
-                loading={listQuery.isLoading}
-                placeholder="选择售后单"
-                value={selectedAfterSale?.id}
-                options={afterSaleOptions}
-                onChange={(value) => setSelectedAfterSaleId(value)}
-              />
-            </Form.Item>
-
-            <Form.Item name="workerUserIds" label="派单处理师傅">
-              <Select
-                mode="multiple"
-                optionFilterProp="label"
-                loading={workersQuery.isLoading}
-                placeholder="选择施工人员"
-                options={workerOptions}
-              />
-            </Form.Item>
-
-            <div className="after-sales-responsibility-card">
-              <h3>责任判定</h3>
-              <Form.Item name="responsibility" rules={[{ required: true, message: "请选择责任" }]}>
-                <Select placeholder="责任" options={AFTER_SALE_RESPONSIBILITY_OPTIONS} />
-              </Form.Item>
-            </div>
-
-            <div className="after-sales-penalty-card">
-              <h3>施工处罚设定</h3>
-              <Form.Item name="penaltyWorkerUserId" label="处罚人员">
+          {selectedAfterSale ? (
+            <Form
+              form={afterSalesActionForm}
+              layout="vertical"
+              className="after-sales-action-form"
+              onFinish={(values) => processMutation.mutate(values)}
+            >
+              <Form.Item name="workerUserIds" label="派单处理师傅">
                 <Select
-                  allowClear
-                  showSearch
+                  mode="multiple"
                   optionFilterProp="label"
                   loading={workersQuery.isLoading}
-                  placeholder="选择处罚人员"
+                  placeholder="选择施工人员"
                   options={workerOptions}
                 />
               </Form.Item>
-              <Form.Item name="penaltyAmountYuan" label="处罚金额（元）">
-                <InputNumber className="w-full" min={0} precision={2} placeholder="处罚金额（元）" />
-              </Form.Item>
-              <Form.Item name="penaltyReason" label="处罚原因">
-                <Input.TextArea rows={2} placeholder="填写处罚原因或工艺改进要求" />
-              </Form.Item>
-            </div>
 
-            <Form.Item name="resolutionNote" label="处理方案说明">
-              <Input.TextArea rows={3} placeholder="填写具体的售后处理方案、复查要求或客户沟通记录" />
-            </Form.Item>
+              <div className="after-sales-responsibility-card">
+                <h3>责任判定</h3>
+                <Form.Item name="responsibility" rules={[{ required: true, message: "请选择责任" }]}>
+                  <Select placeholder="责任" options={AFTER_SALE_RESPONSIBILITY_OPTIONS} />
+                </Form.Item>
+              </div>
 
-            <div className="after-sales-process-actions">
-              <Button onClick={() => afterSalesActionForm.resetFields()}>取消</Button>
-              <Button
-                htmlType="submit"
-                type="primary"
-                icon={<SendOutlined />}
-                loading={processMutation.isPending}
-                disabled={!selectedAfterSale}
-              >
-                保存并派单
-              </Button>
-            </div>
-          </Form>
+              <div className="after-sales-penalty-card">
+                <h3>施工处罚设定</h3>
+                {selectedResponsibility === "CONSTRUCTION" ? (
+                  <Form.Item name="constructionIssueCategory" label="施工问题分类">
+                    <AutoComplete
+                      placeholder="选择或输入施工问题分类"
+                      options={[
+                        { value: "刀工问题", label: "刀工问题" },
+                        { value: "个人疏忽问题", label: "个人疏忽问题" },
+                        { value: "裁膜问题", label: "裁膜问题" },
+                        { value: "包边凹槽处理问题", label: "包边凹槽处理问题" },
+                        { value: "其他施工问题", label: "其他施工问题" }
+                      ]}
+                    />
+                  </Form.Item>
+                ) : null}
+                <Form.Item name="penaltyWorkerUserId" label="处罚人员">
+                  <Select
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    loading={workersQuery.isLoading}
+                    placeholder="选择处罚人员"
+                    options={workerOptions}
+                  />
+                </Form.Item>
+                <Form.Item name="penaltyAmountYuan" label="处罚金额（元）">
+                  <InputNumber className="w-full" min={0} precision={2} placeholder="处罚金额（元）" />
+                </Form.Item>
+                <Form.Item name="penaltyReason" label="处罚原因">
+                  <Input.TextArea rows={2} placeholder="填写处罚原因或工艺改进要求" />
+                </Form.Item>
+              </div>
+
+              <Form.Item name="resolutionNote" label="处理方案说明">
+                <Input.TextArea rows={3} placeholder="填写具体的售后处理方案、复查要求或客户沟通记录" />
+              </Form.Item>
+
+              <div className="after-sales-process-actions">
+                <Button onClick={() => afterSalesActionForm.resetFields()}>取消</Button>
+                <Button htmlType="submit" type="primary" icon={<SendOutlined />} loading={processMutation.isPending}>
+                  保存处理结果
+                </Button>
+              </div>
+            </Form>
+          ) : (
+            <Empty className="after-sales-process-empty" description="暂无可处理工单" />
+          )}
         </Card>
       </section>
     </div>
@@ -417,4 +428,10 @@ function AfterSaleProgress({ status }: { status: string }) {
       <span>{percent}%</span>
     </div>
   );
+}
+
+function buildAfterSalesResolutionNote(resolutionNote?: string, constructionIssueCategory?: string) {
+  const note = resolutionNote?.trim();
+  if (!constructionIssueCategory) return note;
+  return [`施工问题分类：${constructionIssueCategory}`, note].filter(Boolean).join("\n");
 }

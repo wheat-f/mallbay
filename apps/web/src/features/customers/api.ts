@@ -33,6 +33,8 @@ export type CreatedVehicle = CreateVehiclePayload & {
   id: string;
 };
 
+export type UpdateVehiclePayload = Partial<Omit<CreateVehiclePayload, "customerId">>;
+
 export type CreateCustomerNotePayload = {
   customerId: string;
   noteType?: CustomerNoteType;
@@ -74,6 +76,12 @@ export const customerApi = {
   createVehicle: (payload: CreateVehiclePayload) =>
     request<CreatedVehicle>("/customers/vehicles", {
       method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  updateVehicle: (id: string, payload: UpdateVehiclePayload) =>
+    request<CreatedVehicle>(`/customers/vehicles/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(payload)
     }),
 

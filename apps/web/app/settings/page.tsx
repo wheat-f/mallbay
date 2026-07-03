@@ -2,7 +2,7 @@
 
 import type { ReactNode, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Card, Drawer, Space, Tag, Typography } from "antd";
+import { App, Button, Card, Drawer, Space, Tag, Typography } from "antd";
 import {
   AuditOutlined,
   CloudSyncOutlined,
@@ -275,10 +275,14 @@ function PermissionBadge({ value }: { value: PermissionLevel }) {
 
 function SettingsConfigurationBoard({
   dictionarySettingsSectionRef,
-  serviceSettingsSectionRef
+  serviceSettingsSectionRef,
+  onDictionaryAction,
+  onServiceTest
 }: {
   dictionarySettingsSectionRef: RefObject<HTMLDivElement | null>;
   serviceSettingsSectionRef: RefObject<HTMLDivElement | null>;
+  onDictionaryAction: (action: "export" | "create" | "edit", name?: string) => void;
+  onServiceTest: () => void;
 }) {
   return (
     <section ref={dictionarySettingsSectionRef} className="settings-configuration-board">
@@ -293,8 +297,8 @@ function SettingsConfigurationBoard({
             </Typography.Text>
           </div>
           <Space size={8}>
-            <Button>导出</Button>
-            <Button type="primary">新增项</Button>
+            <Button onClick={() => onDictionaryAction("export")}>导出</Button>
+            <Button type="primary" onClick={() => onDictionaryAction("create")}>新增项</Button>
           </Space>
         </div>
         <div className="settings-dictionary-table">
@@ -320,7 +324,7 @@ function SettingsConfigurationBoard({
                     <Tag className={row.status === "启用中" ? "settings-status-success" : "settings-status-warning"}>{row.status}</Tag>
                   </td>
                   <td>
-                    <Button type="link">编辑</Button>
+                    <Button type="link" onClick={() => onDictionaryAction("edit", row.name)}>编辑</Button>
                   </td>
                 </tr>
               ))}
@@ -399,7 +403,7 @@ function SettingsConfigurationBoard({
               <input value="https://cdn.mallbay.com" disabled readOnly />
             </label>
           </div>
-          <Button className="settings-service-test-button">测试连接</Button>
+          <Button className="settings-service-test-button" onClick={onServiceTest}>测试连接</Button>
         </Card>
       </div>
     </section>
@@ -474,6 +478,7 @@ function RolePermissionMatrixCard() {
 }
 
 export default function SettingsPage() {
+  const { message } = App.useApp();
   const router = useRouter();
   const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const user = useAuthStore((state) => state.user);
@@ -505,6 +510,36 @@ export default function SettingsPage() {
     },
     [settingsSectionRefs]
   );
+  const handleRoleScopeAction = (scope: string) => {
+    router.push(getSettingsScopeHref(scope));
+  };
+  const handlePolicyCardAction = (title: string) => {
+    if (title === "基础字典") {
+      scrollSettingsSectionIntoView("dictionary");
+      return;
+    }
+    if (title === "门店配置") {
+      scrollSettingsSectionIntoView("store");
+      message.info("门店配置将按当前门店资料继续补齐");
+      return;
+    }
+    if (title === "账号设置") {
+      router.push("/profile");
+      return;
+    }
+    if (title === "通知/OSS设置") {
+      scrollSettingsSectionIntoView("service");
+      return;
+    }
+    setRolePolicyOpen(true);
+  };
+  const handleDictionaryAction = (action: "export" | "create" | "edit", name?: string) => {
+    const actionText = action === "export" ? "字典导出" : action === "create" ? "新增字典项" : `编辑${name ?? "字典项"}`;
+    message.info(`${actionText}入口已确认，配置保存接口接入后可直接提交。`);
+  };
+  const handleServiceTest = () => {
+    message.info("测试连接入口已触发，当前环境配置由服务端环境变量托管。");
+  };
 
   useEffect(() => {
     if (hasHydrated && !canAccessSettings) {
@@ -564,6 +599,8 @@ export default function SettingsPage() {
           <SettingsConfigurationBoard
             dictionarySettingsSectionRef={dictionarySettingsSectionRef}
             serviceSettingsSectionRef={serviceSettingsSectionRef}
+            onDictionaryAction={handleDictionaryAction}
+            onServiceTest={handleServiceTest}
           />
 
           <Card className="management-filter-card settings-role-panel">
@@ -594,7 +631,7 @@ export default function SettingsPage() {
                   <p className="settings-role-description">{role.description}</p>
                   <Space wrap size={[6, 6]}>
                     {role.scopes.map((scope) => (
-                      <Tag key={scope} className="settings-scope-tag">
+                      <Tag key={scope} className="settings-scope-tag" onClick={() => handleRoleScopeAction(scope)}>
                         {scope}
                       </Tag>
                     ))}
@@ -615,7 +652,9 @@ export default function SettingsPage() {
                     {card.title}
                   </Typography.Title>
                   <p className="settings-policy-description">{card.description}</p>
-                  <Tag className="settings-policy-status">{card.status}</Tag>
+                  <Button size="small" className="settings-policy-status" onClick={() => handlePolicyCardAction(card.title)}>
+                    {card.status}
+                  </Button>
                 </div>
               </Card>
             ))}
@@ -693,4 +732,34 @@ export default function SettingsPage() {
       </Drawer>
     </div>
   );
+}
+
+function getSettingsScopeHref(scope: string) {
+  const hrefByScope: Record<string, string> = {
+    门店审核: "/settings",
+    系统设置: "/settings",
+    审计策略: "/settings",
+    成员管理: "/members",
+    报表分析: "/reports",
+    财务审批: "/finance",
+    客户管理: "/customers",
+    销售订单: "/orders",
+    我的业绩: "/reports",
+    客户档案: "/customers",
+    质保查询: "/warranties",
+    售后受理: "/after-sales",
+    施工容量: "/construction/capacities",
+    派单: "/construction/assignments",
+    质检: "/construction/assignments",
+    施工任务: "/construction/tasks",
+    照片上传: "/construction/tasks",
+    请假排班: "/construction/schedules",
+    产品管理: "/products",
+    库存管理: "/inventory",
+    采购入库: "/purchases/orders",
+    财务流水: "/finance?section=ledger",
+    发票返利: "/invoices",
+    提成结算: "/commissions"
+  };
+  return hrefByScope[scope] ?? "/settings";
 }

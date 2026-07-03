@@ -26,8 +26,10 @@ test("order detail exposes pending dispatch confirmation and fulfillment links",
 
   assert.match(pageSource, /shouldShowFulfillmentConfirmation/);
   assert.match(pageSource, /确认派工流转/);
-  assert.match(pageSource, /router\.push\("\/finance"\)/);
-  assert.match(pageSource, /router\.push\("\/invoices"\)/);
+  assert.match(pageSource, /openOrderPaymentEntry/);
+  assert.match(pageSource, /openOrderInvoiceEntry/);
+  assert.match(pageSource, /\/finance\?section=ledger&action=record-payment&orderId=\$\{order\.id\}/);
+  assert.match(pageSource, /\/invoices\?action=create-invoice&orderId=\$\{order\.id\}/);
   assert.match(pageSource, /确认提交派工与库房匹配/);
   assert.match(pageSource, /openFulfillmentDrawer/);
   assert.match(pageSource, /打开确认流转/);
@@ -88,7 +90,7 @@ test("order detail exposes prototype related document shortcuts", () => {
   assert.match(pageSource, /发票记录/);
   assert.match(pageSource, /电子质保单/);
   assert.match(pageSource, /售后记录/);
-  assert.match(pageSource, /router\.push\("\/invoices"\)/);
+  assert.match(pageSource, /openOrderInvoiceEntry/);
   assert.match(pageSource, /router\.push\("\/warranties"\)/);
   assert.match(pageSource, /router\.push\("\/after-sales"\)/);
 });
@@ -107,6 +109,9 @@ test("order detail commercial editor uses a prototype right-side drawer", () => 
 
   assert.match(pageSource, /\bDrawer\b/);
   assert.match(pageSource, /openCommercialsDrawer/);
+  assert.match(pageSource, /outstandingCents/);
+  assert.match(pageSource, /收款未完全确认前可修改产品清单/);
+  assert.doesNotMatch(pageSource, /const canEditCommercials = order\?\.status === "PENDING_DISPATCH"/);
   assert.match(pageSource, /rootClassName="order-commercials-drawer"/);
   assert.match(pageSource, /order-commercials-drawer-footer/);
   assert.match(pageSource, /order-commercials-item-grid/);

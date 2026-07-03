@@ -27,12 +27,6 @@ type AuthRequest = Request & {
 export const REFRESH_TOKEN_COOKIE_NAME = "mallbay_refresh_token";
 
 const REFRESH_TOKEN_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-const REFRESH_TOKEN_COOKIE_OPTIONS: CookieOptions = {
-  httpOnly: true,
-  sameSite: "lax",
-  secure: process.env.NODE_ENV === "production",
-  path: "/auth"
-};
 
 @Controller("auth")
 export class AuthController {
@@ -90,16 +84,32 @@ export class AuthController {
   @Post("logout")
   async logout(@Req() req: AuthRequest, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.logout(req.user.id);
-    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_COOKIE_OPTIONS);
+    res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getRefreshTokenCookieOptions());
     return result;
   }
 
   private setRefreshTokenCookie(res: Response, refreshToken: string) {
     res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
-      ...REFRESH_TOKEN_COOKIE_OPTIONS,
+      ...getRefreshTokenCookieOptions(),
       maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE
     });
   }
+}
+
+function getRefreshTokenCookieOptions(): CookieOptions {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: getRefreshTokenCookieSecure(),
+    path: "/auth"
+  };
+}
+
+export function getRefreshTokenCookieSecure() {
+  const configured = process.env.AUTH_COOKIE_SECURE?.trim().toLowerCase();
+  if (configured === "true") return true;
+  if (configured === "false") return false;
+  return process.env.NODE_ENV === "production";
 }
 
 function readCookie(req: Request, name: string) {

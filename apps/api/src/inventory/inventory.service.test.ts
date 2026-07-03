@@ -678,6 +678,7 @@ test("InventoryService lists supplier master data merged with purchase and batch
           name: "3M",
           contactName: "王采购",
           contactPhone: "13800000000",
+          settlementCycle: "月结（Net 30）",
           rating: 4,
           note: "常用供应商",
           isActive: true,
@@ -724,6 +725,7 @@ test("InventoryService lists supplier master data merged with purchase and batch
   assert.equal(result.length, 2);
   assert.equal(result[0].name, "3M");
   assert.equal(result[0].contactName, "王采购");
+  assert.equal(result[0].settlementCycle, "月结（Net 30）");
   assert.equal(result[0].contacts?.[0].role, "采购");
   assert.equal(result[0].ratingHistory?.[0].note, "到货稳定");
   assert.equal(result[0].purchaseOrderCount, 0);
@@ -760,6 +762,7 @@ test("InventoryService creates and updates supplier master data within the same 
       name: "3M",
       contactName: "王采购",
       contactPhone: "13800000000",
+      settlementCycle: "月结（Net 30）",
       rating: 4,
       note: "常用供应商"
     }
@@ -771,12 +774,14 @@ test("InventoryService creates and updates supplier master data within the same 
       storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
     },
     "supplier-1",
-    { contactName: "王采购", isActive: true }
+    { contactName: "王采购", settlementCycle: "现结", isActive: true }
   );
 
   assert.equal((updated as { contactName: string }).contactName, "王采购");
   const serialized = JSON.stringify(writes);
   assert.equal(serialized.includes("\"createdById\":\"purchasing-1\""), true);
+  assert.equal(serialized.includes("\"settlementCycle\":\"月结（Net 30）\""), true);
+  assert.equal(serialized.includes("\"settlementCycle\":\"现结\""), true);
   assert.equal(serialized.includes("\"isActive\":true"), true);
 });
 

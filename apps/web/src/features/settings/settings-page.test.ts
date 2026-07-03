@@ -74,8 +74,8 @@ test("system settings page exposes the prototype role permission matrix", () => 
   assert.match(cssSource, /\.settings-permission-card\.ant-card\s+\.ant-card-body[\s\S]*min-width:\s*0/);
   assert.match(cssSource, /\.settings-permission-matrix[\s\S]*max-width:\s*100%/);
   assert.match(cssSource, /\.settings-role-permission-table table[\s\S]*width:\s*max-content/);
-  assert.match(cssSource, /@media \(max-width: 900px\) \{\n\s{2}\.settings-role-permission-table \{\n\s{4}display: none;/);
-  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.settings-permission-mobile-cards \{\n\s{4}display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{\r?\n\s{2}\.settings-role-permission-table \{\r?\n\s{4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.settings-permission-mobile-cards \{\r?\n\s{4}display: grid;/);
   assert.ok(matrixIndex > -1, "permission matrix card should exist");
   assert.ok(rolePanelIndex > -1, "role explanation panel should exist");
   assert.ok(matrixIndex < rolePanelIndex, "permission matrix should appear before role cards like the prototype");
@@ -159,17 +159,39 @@ test("system settings page avoids implementation-phase setup copy", () => {
   assert.doesNotMatch(source, /接岗位创建接口/);
 });
 
-test("system settings page stays separate from profile account security", () => {
+test("system settings account action jumps to profile account security", () => {
   const settingsSource = readFileSync(pagePath, "utf8");
   const profileSource = readFileSync("app/profile/page.tsx", "utf8");
 
   assert.match(profileSource, /账号安全/);
   assert.match(profileSource, /profile-security-workspace/);
-  assert.doesNotMatch(settingsSource, /router\.push\("\/profile"\)/);
+  assert.match(settingsSource, /router\.push\("\/profile"\)/);
   assert.doesNotMatch(settingsSource, /修改密码/);
   assert.doesNotMatch(settingsSource, /profile-security-workspace/);
   assert.doesNotMatch(settingsSource, /返回工作台/);
   assert.doesNotMatch(settingsSource, />\s*账号安全\s*</);
+});
+
+test("system settings visible action chips and buttons have concrete handlers", () => {
+  const settingsSource = readFileSync(pagePath, "utf8");
+
+  assert.match(settingsSource, /handleRoleScopeAction/);
+  assert.match(settingsSource, /handlePolicyCardAction/);
+  assert.match(settingsSource, /handleDictionaryAction/);
+  assert.match(settingsSource, /handleServiceTest/);
+  assert.match(settingsSource, /onClick=\{\(\) => handleRoleScopeAction\(scope\)\}/);
+  assert.match(settingsSource, /onClick=\{\(\) => handlePolicyCardAction\(card\.title\)\}/);
+  assert.match(settingsSource, /onDictionaryAction=\{handleDictionaryAction\}/);
+  assert.match(settingsSource, /onServiceTest=\{handleServiceTest\}/);
+  assert.match(settingsSource, /onClick=\{\(\) => onDictionaryAction\("export"\)\}/);
+  assert.match(settingsSource, /onClick=\{\(\) => onDictionaryAction\("create"\)\}/);
+  assert.match(settingsSource, /onClick=\{\(\) => onDictionaryAction\("edit", row\.name\)\}/);
+  assert.match(settingsSource, /onClick=\{onServiceTest\}/);
+  assert.match(settingsSource, /router\.push\(getSettingsScopeHref\(scope\)\)/);
+  assert.doesNotMatch(settingsSource, /<Button>导出<\/Button>/);
+  assert.doesNotMatch(settingsSource, /<Button type="primary">新增项<\/Button>/);
+  assert.doesNotMatch(settingsSource, /<Button type="link">编辑<\/Button>/);
+  assert.doesNotMatch(settingsSource, /<Button className="settings-service-test-button">测试连接<\/Button>/);
 });
 
 test("system settings custom role action opens a prototype policy drawer", () => {

@@ -55,6 +55,7 @@ type SupplierSummary = {
   name: string;
   contactName?: string | null;
   contactPhone?: string | null;
+  settlementCycle?: string | null;
   rating?: number | null;
   note?: string | null;
   isActive?: boolean;
@@ -183,6 +184,7 @@ export class InventoryService {
         name: supplier.name,
         contactName: supplier.contactName,
         contactPhone: supplier.contactPhone,
+        settlementCycle: supplier.settlementCycle,
         rating: supplier.rating,
         note: supplier.note,
         isActive: supplier.isActive,
@@ -224,6 +226,7 @@ export class InventoryService {
         name: normalizeRequiredText(dto.name, "供应商名称"),
         contactName: normalizeOptionalText(dto.contactName),
         contactPhone: normalizeOptionalText(dto.contactPhone),
+        settlementCycle: normalizeOptionalText(dto.settlementCycle),
         rating: dto.rating,
         note: normalizeOptionalText(dto.note),
         createdById: actor.id
@@ -248,6 +251,7 @@ export class InventoryService {
         ...(dto.name !== undefined ? { name: normalizeRequiredText(dto.name, "供应商名称") } : {}),
         ...(dto.contactName !== undefined ? { contactName: normalizeOptionalText(dto.contactName) } : {}),
         ...(dto.contactPhone !== undefined ? { contactPhone: normalizeOptionalText(dto.contactPhone) } : {}),
+        ...(dto.settlementCycle !== undefined ? { settlementCycle: normalizeOptionalText(dto.settlementCycle) } : {}),
         ...(dto.rating !== undefined ? { rating: dto.rating } : {}),
         ...(dto.note !== undefined ? { note: normalizeOptionalText(dto.note) } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {})

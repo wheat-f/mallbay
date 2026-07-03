@@ -119,6 +119,17 @@ test("finance ledger rows link to the prototype payment record detail page", () 
   assert.match(pageSource, /查看详情/);
 });
 
+test("finance page opens the ledger workspace from order payment links", () => {
+  const pageSource = readFileSync("app/finance/page.tsx", "utf8");
+
+  assert.match(pageSource, /const financeSectionParam = searchParams\.get\("section"\)/);
+  assert.match(pageSource, /const financeActionParam = searchParams\.get\("action"\)/);
+  assert.match(pageSource, /financeActionParam === "record-payment"/);
+  assert.match(pageSource, /finance-order-payment-entry/);
+  assert.match(pageSource, /订单收款入口/);
+  assert.match(pageSource, /if \(action === "record-payment"\) return "ledger"/);
+});
+
 test("finance page uses mobile ledger cards instead of squeezing the desktop table", () => {
   const pageSource = readFileSync("app/finance/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");

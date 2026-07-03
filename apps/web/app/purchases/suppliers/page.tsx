@@ -2,9 +2,7 @@
 
 import type { InventorySupplierSummary } from "@mallbay/shared";
 import type {
-  CreateSupplierContactPayload,
   CreateSupplierPayload,
-  CreateSupplierRatingHistoryPayload,
   UpdateSupplierPayload
 } from "../../../src/lib/api";
 import {
@@ -41,6 +39,15 @@ import { useAuthStore } from "../../../src/stores/auth-store";
 
 type SupplierFormValues = Omit<CreateSupplierPayload, "storeId">;
 type SupplierStatusFilter = "ALL" | "ACTIVE" | "INACTIVE" | "PENDING";
+type PurchaseOrderMetricRow = {
+  expectedAt?: string | Date | null;
+  createdAt?: string | Date | null;
+  items?: Array<{
+    receivedBatches?: Array<{
+      receivedAt?: string | Date | null;
+    }>;
+  }>;
+};
 
 export default function InventorySuppliersPage() {
   const { message } = App.useApp();
@@ -52,12 +59,11 @@ export default function InventorySuppliersPage() {
     user?.storeMember?.position === "PURCHASING";
   const [supplierForm] = Form.useForm<SupplierFormValues>();
   const [editForm] = Form.useForm<UpdateSupplierPayload>();
-  const [contactForm] = Form.useForm<CreateSupplierContactPayload>();
-  const [ratingForm] = Form.useForm<CreateSupplierRatingHistoryPayload>();
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<SupplierStatusFilter>("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>();
+  const [activeDetailTab, setActiveDetailTab] = useState("basic");
   const [createOpen, setCreateOpen] = useState(false);
 
   const suppliersQuery = useQuery({
@@ -65,8 +71,14 @@ export default function InventorySuppliersPage() {
     queryFn: () => purchaseApi.suppliers(storeId!),
     enabled: Boolean(storeId)
   });
+  const ordersQuery = useQuery({
+    queryKey: ["purchase-orders", storeId],
+    queryFn: () => purchaseApi.orders(storeId!),
+    enabled: Boolean(storeId)
+  });
 
   const suppliers = useMemo(() => suppliersQuery.data ?? [], [suppliersQuery.data]);
+  const purchaseOrders = useMemo(() => (ordersQuery.data ?? []) as PurchaseOrderMetricRow[], [ordersQuery.data]);
   const filteredSuppliers = useMemo(
     () =>
       suppliers.filter((supplier) => {
@@ -86,13 +98,12 @@ export default function InventorySuppliersPage() {
       }),
     [categoryFilter, keyword, statusFilter, suppliers]
   );
-  const activeSupplierId = selectedSupplierId ?? filteredSuppliers[0]?.id;
+  const activeSupplierId = getVisibleSupplierId(selectedSupplierId, filteredSuppliers);
   const selectedSupplier = filteredSuppliers.find((supplier) => supplier.id === activeSupplierId);
-  const supplierMetrics = {
-    active: suppliers.filter((supplier) => supplier.isActive !== false).length,
-    onTimeDeliveryRate: "98.5%",
-    averagePurchaseCycle: "4.2 天"
-  };
+  const supplierMetrics = useMemo(
+    () => calculateSupplierMetrics(suppliers, purchaseOrders),
+    [purchaseOrders, suppliers]
+  );
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["purchase-suppliers", storeId] });
   const createSupplier = useMutation({
@@ -111,32 +122,18 @@ export default function InventorySuppliersPage() {
       if (!selectedSupplier?.id) throw new Error("请先选择供应商");
       return purchaseApi.updateSupplier(selectedSupplier.id, values);
     },
-    onSuccess: async () => {
+    onSuccess: async (updated) => {
       message.success("供应商资料已更新");
-      await invalidate();
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-  const createSupplierContact = useMutation({
-    mutationFn: (values: CreateSupplierContactPayload) => {
-      if (!selectedSupplier?.id) throw new Error("请先选择供应商");
-      return purchaseApi.createSupplierContact(selectedSupplier.id, values);
-    },
-    onSuccess: async () => {
-      message.success("联系人已新增");
-      contactForm.resetFields();
-      await invalidate();
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-  const createSupplierRatingHistory = useMutation({
-    mutationFn: (values: CreateSupplierRatingHistoryPayload) => {
-      if (!selectedSupplier?.id) throw new Error("请先选择供应商");
-      return purchaseApi.createSupplierRatingHistory(selectedSupplier.id, values);
-    },
-    onSuccess: async () => {
-      message.success("评级记录已追加");
-      ratingForm.resetFields();
+      setSelectedSupplierId(updated.id);
+      editForm.setFieldsValue({
+        name: updated.name,
+        contactName: updated.contactName ?? undefined,
+        contactPhone: updated.contactPhone ?? undefined,
+        settlementCycle: updated.settlementCycle ?? undefined,
+        rating: updated.rating ?? undefined,
+        note: updated.note ?? undefined,
+        isActive: updated.isActive !== false
+      });
       await invalidate();
     },
     onError: (error: Error) => message.error(error.message)
@@ -148,10 +145,16 @@ export default function InventorySuppliersPage() {
       name: supplier.name,
       contactName: supplier.contactName ?? undefined,
       contactPhone: supplier.contactPhone ?? undefined,
+      settlementCycle: supplier.settlementCycle ?? undefined,
       rating: supplier.rating ?? undefined,
       note: supplier.note ?? undefined,
       isActive: supplier.isActive !== false
     });
+  };
+
+  const handleSupplierAction = (supplier: InventorySupplierSummary) => {
+    handleSelectSupplier(supplier);
+    setActiveDetailTab("basic");
   };
 
   return (
@@ -290,7 +293,21 @@ export default function InventorySuppliersPage() {
                   width: 100,
                   render: (_, row) => <Tag color={row.isActive === false ? "error" : "success"}>{row.isActive === false ? "已暂停" : "合作中"}</Tag>
                 },
-                { title: "操作", width: 80, render: () => <Button type="text" icon={<MoreOutlined />} /> }
+                {
+                  title: "操作",
+                  width: 80,
+                  render: (_, row) => (
+                    <Button
+                      type="text"
+                      aria-label="编辑供应商"
+                      icon={<MoreOutlined />}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSupplierAction(row);
+                      }}
+                    />
+                  )
+                }
               ]}
             />
               </Card>
@@ -326,7 +343,8 @@ export default function InventorySuppliersPage() {
               </div>
 
               <Tabs
-                defaultActiveKey="basic"
+                activeKey={activeDetailTab}
+                onChange={setActiveDetailTab}
                 items={[
                   {
                     key: "basic",
@@ -340,6 +358,7 @@ export default function InventorySuppliersPage() {
                             name: selectedSupplier.name,
                             contactName: selectedSupplier.contactName,
                             contactPhone: selectedSupplier.contactPhone,
+                            settlementCycle: selectedSupplier.settlementCycle,
                             rating: selectedSupplier.rating,
                             note: selectedSupplier.note,
                             isActive: selectedSupplier.isActive !== false
@@ -354,6 +373,9 @@ export default function InventorySuppliersPage() {
                           </Form.Item>
                           <Form.Item name="contactPhone" label="商务电话">
                             <Input />
+                          </Form.Item>
+                          <Form.Item name="settlementCycle" label="结算周期">
+                            <Input placeholder="例如：月结、现结、周结" />
                           </Form.Item>
                           <Form.Item name="rating" label="当前评分">
                             <InputNumber min={1} max={5} />
@@ -376,7 +398,7 @@ export default function InventorySuppliersPage() {
                             <dt>商务电话</dt>
                             <dd>{selectedSupplier.contactPhone ?? "-"}</dd>
                             <dt>结算周期</dt>
-                            <dd>月结（Net 30）</dd>
+                            <dd>{selectedSupplier.settlementCycle ?? "-"}</dd>
                           </dl>
                         </Card>
                       </div>
@@ -405,26 +427,6 @@ export default function InventorySuppliersPage() {
                             <span>{formatDate(selectedSupplier.lastBatchUpdatedAt)}</span>
                           </div>
                         </Card>
-
-                        <Form
-                          form={contactForm}
-                          layout="inline"
-                          className="supplier-inline-form"
-                          onFinish={(values) => createSupplierContact.mutate(values)}
-                        >
-                          <Form.Item name="name" rules={[{ required: true, message: "请输入联系人" }]}>
-                            <Input placeholder="联系人" />
-                          </Form.Item>
-                          <Form.Item name="phone">
-                            <Input placeholder="电话" />
-                          </Form.Item>
-                          <Form.Item name="role">
-                            <Input placeholder="角色" />
-                          </Form.Item>
-                          <Button htmlType="submit" loading={createSupplierContact.isPending} disabled={!canManagePurchase}>
-                            新增联系人
-                          </Button>
-                        </Form>
                       </div>
                     )
                   },
@@ -446,22 +448,6 @@ export default function InventorySuppliersPage() {
                           ))}
                           {(selectedSupplier.ratingHistory?.length ?? 0) === 0 ? <Empty description="暂无审计日志" /> : null}
                         </div>
-                        <Form
-                          form={ratingForm}
-                          layout="inline"
-                          className="supplier-inline-form"
-                          onFinish={(values) => createSupplierRatingHistory.mutate(values)}
-                        >
-                          <Form.Item name="rating" rules={[{ required: true, message: "请输入评级" }]}>
-                            <InputNumber min={1} max={5} placeholder="评分" />
-                          </Form.Item>
-                          <Form.Item name="note">
-                            <Input placeholder="评级说明" />
-                          </Form.Item>
-                          <Button htmlType="submit" loading={createSupplierRatingHistory.isPending} disabled={!canManagePurchase}>
-                            追加评级
-                          </Button>
-                        </Form>
                       </div>
                     )
                   }
@@ -505,6 +491,9 @@ export default function InventorySuppliersPage() {
           <Form.Item name="contactPhone" label="联系电话">
             <Input placeholder="商务电话" />
           </Form.Item>
+          <Form.Item name="settlementCycle" label="结算周期">
+            <Input placeholder="例如：月结、现结、周结" />
+          </Form.Item>
           <Form.Item name="rating" label="初始评分">
             <InputNumber className="w-full" min={1} max={5} />
           </Form.Item>
@@ -540,4 +529,83 @@ function formatDate(value?: string | Date | null) {
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return "-";
   return date.toISOString().slice(0, 10);
+}
+
+function calculateSupplierMetrics(suppliers: InventorySupplierSummary[], purchaseOrders: PurchaseOrderMetricRow[]) {
+  const receivedOrders = purchaseOrders
+    .map((order) => {
+      const firstReceivedAt = getFirstReceivedAt(order);
+      return {
+        createdAt: toValidDate(order.createdAt),
+        expectedAt: toValidDate(order.expectedAt),
+        receivedAt: firstReceivedAt
+      };
+    })
+    .filter((order) => order.receivedAt && isCurrentMonth(order.receivedAt));
+  const ordersWithExpectedAt = receivedOrders.filter((order) => order.expectedAt);
+  const onTimeOrders = ordersWithExpectedAt.filter((order) =>
+    isReceivedOnTime(order.receivedAt, order.expectedAt)
+  );
+  const purchaseCycleDays = receivedOrders
+    .map((order) => getCycleDays(order.createdAt, order.receivedAt))
+    .filter((days): days is number => days !== null);
+
+  return {
+    active: suppliers.filter((supplier) => supplier.isActive !== false).length,
+    onTimeDeliveryRate: formatPercent(onTimeOrders.length, ordersWithExpectedAt.length),
+    averagePurchaseCycle: formatDays(average(purchaseCycleDays))
+  };
+}
+
+function getFirstReceivedAt(order: PurchaseOrderMetricRow) {
+  return (order.items ?? [])
+    .flatMap((item) => item.receivedBatches ?? [])
+    .map((batch) => toValidDate(batch.receivedAt))
+    .filter((date): date is Date => Boolean(date))
+    .sort((left, right) => left.getTime() - right.getTime())[0] ?? null;
+}
+
+function toValidDate(value?: string | Date | null) {
+  if (!value) return null;
+  const date = typeof value === "string" ? new Date(value) : value;
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isCurrentMonth(date: Date) {
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+}
+
+function isReceivedOnTime(receivedAt: Date | null, expectedAt: Date | null) {
+  if (!receivedAt || !expectedAt) return false;
+  const expectedEndOfDay = new Date(expectedAt);
+  expectedEndOfDay.setHours(23, 59, 59, 999);
+  return receivedAt.getTime() <= expectedEndOfDay.getTime();
+}
+
+function getCycleDays(createdAt: Date | null, receivedAt: Date | null) {
+  if (!createdAt || !receivedAt || receivedAt < createdAt) return null;
+  return (receivedAt.getTime() - createdAt.getTime()) / 86_400_000;
+}
+
+function average(values: number[]) {
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function formatPercent(value: number, total: number) {
+  if (total === 0) return "0%";
+  return `${((value / total) * 100).toFixed(1)}%`;
+}
+
+function formatDays(value: number | null) {
+  if (value === null) return "0 天";
+  return `${value.toFixed(1)} 天`;
+}
+
+function getVisibleSupplierId(selectedSupplierId: string | undefined, filteredSuppliers: InventorySupplierSummary[]) {
+  if (selectedSupplierId && filteredSuppliers.some((supplier) => supplier.id === selectedSupplierId)) {
+    return selectedSupplierId;
+  }
+  return filteredSuppliers[0]?.id;
 }

@@ -12,7 +12,7 @@ import {
   PlusOutlined,
   SendOutlined
 } from "@ant-design/icons";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { invoicesApi, orderApi } from "../../src/lib/api";
@@ -56,6 +56,7 @@ type InvoiceOrderOption = {
 export default function InvoicesPage() {
   const { message } = App.useApp();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
@@ -67,6 +68,8 @@ export default function InvoicesPage() {
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>("ALL");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("ALL");
   const [applicationDrawerOpen, setApplicationDrawerOpen] = useState(false);
+  const invoiceActionParam = searchParams.get("action");
+  const requestedInvoiceOrderId = searchParams.get("orderId");
 
   const invoicesQuery = useQuery({
     queryKey: ["invoices", storeId],
@@ -87,6 +90,12 @@ export default function InvoicesPage() {
       order.vehicle?.plateNo
     ].filter(Boolean).join(" / ")
   }));
+  if (requestedInvoiceOrderId && !invoiceOrderOptions.some((option) => option.value === requestedInvoiceOrderId)) {
+    invoiceOrderOptions.push({
+      value: requestedInvoiceOrderId,
+      label: `当前订单 ${requestedInvoiceOrderId}`
+    });
+  }
   const invoiceRows = useMemo(() => invoicesQuery.data ?? [], [invoicesQuery.data]);
   const invoiceOptions = invoiceRows.map((invoice) => ({
     value: invoice.id,
@@ -127,6 +136,14 @@ export default function InvoicesPage() {
       });
     }
   }, [selectedInvoice, sendForm]);
+
+  useEffect(() => {
+    if (invoiceActionParam !== "create-invoice") return;
+    setApplicationDrawerOpen(true);
+    if (requestedInvoiceOrderId) {
+      applyForm.setFieldsValue({ orderId: requestedInvoiceOrderId });
+    }
+  }, [applyForm, invoiceActionParam, requestedInvoiceOrderId]);
 
   const applyInvoice = useMutation({
     mutationFn: (values: ApplyInvoiceFormValues) =>

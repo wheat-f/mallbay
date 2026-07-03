@@ -119,7 +119,7 @@ export default function OrderDetailPage() {
     label: getOrderProductLabel(product),
     value: product.id
   }));
-  const canEditCommercials = order?.status === "PENDING_DISPATCH";
+  const canEditCommercials = Boolean(order && order.status !== "CANCELLED" && (order.amount?.outstandingCents ?? 0) > 0);
   const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH";
   const orderSteps = getOrderSteps(order?.status);
 
@@ -140,6 +140,22 @@ export default function OrderDetailPage() {
 
   const openFulfillmentDrawer = () => {
     setFulfillmentDrawerOpen(true);
+  };
+
+  const openOrderPaymentEntry = () => {
+    if (!order) {
+      router.push("/finance?section=ledger&action=record-payment");
+      return;
+    }
+    router.push(`/finance?section=ledger&action=record-payment&orderId=${order.id}`);
+  };
+
+  const openOrderInvoiceEntry = () => {
+    if (!order) {
+      router.push("/invoices?action=create-invoice");
+      return;
+    }
+    router.push(`/invoices?action=create-invoice&orderId=${order.id}`);
   };
 
   return (
@@ -180,10 +196,10 @@ export default function OrderDetailPage() {
                     确认派工流转
                   </Button>
                 ) : null}
-                <Button icon={<CreditCardOutlined />} onClick={() => router.push("/finance")}>
+                <Button icon={<CreditCardOutlined />} onClick={openOrderPaymentEntry}>
                   记录收款
                 </Button>
-                <Button icon={<FileTextOutlined />} onClick={() => router.push("/invoices")}>
+                <Button icon={<FileTextOutlined />} onClick={openOrderInvoiceEntry}>
                   申请发票
                 </Button>
               </div>
@@ -255,6 +271,9 @@ export default function OrderDetailPage() {
                     <div><span>工时费</span><strong>{yuanCurrency(order?.amount?.laborCostCents)}</strong></div>
                     <div><span>订单总计</span><strong>{yuanCurrency(order?.amount?.totalAmountCents)}</strong></div>
                   </div>
+                  {canEditCommercials ? (
+                    <Typography.Text type="secondary">收款未完全确认前可修改产品清单</Typography.Text>
+                  ) : null}
                 </Card>
               </div>
 
@@ -327,7 +346,7 @@ export default function OrderDetailPage() {
 
                 <Card className="order-detail-card order-related-card" title={<><LinkOutlined />相关单据</>}>
                   <div className="order-related-list">
-                    <Button className="order-related-link" type="text" onClick={() => router.push("/invoices")}>
+                    <Button className="order-related-link" type="text" onClick={openOrderInvoiceEntry}>
                       <span><FileTextOutlined /></span>
                       <strong>发票记录</strong>
                       <Tag>未开票</Tag>

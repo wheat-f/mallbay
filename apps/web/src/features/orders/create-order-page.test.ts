@@ -139,6 +139,13 @@ test("create order customer history card shows latest order status", () => {
   assert.match(pageSource, /最近订单：/);
 });
 
+test("create order customer history warning avoids deprecated Alert message prop", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /<Alert className="mb-3" type="warning" showIcon title=\{customerHistory\.warning\}/);
+  assert.doesNotMatch(pageSource, /<Alert className="mb-3" type="warning" showIcon message=/);
+});
+
 test("create order page records labor cost adjustment reason when final labor differs from suggestion", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 

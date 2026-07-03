@@ -32,17 +32,19 @@ test("after-sales page creates after-sale requests by selecting an order", () =>
   assert.doesNotMatch(pageSource, /<Input placeholder="订单 ID"/);
 });
 
-test("after-sales page assigns and judges by selecting after-sales and workers", () => {
+test("after-sales page assigns and judges the selected after-sales work order", () => {
   const pageSource = readFileSync("app/after-sales/page.tsx", "utf8");
 
   assert.match(pageSource, /constructionApi\.workers\(storeId!\)/);
   assert.match(pageSource, /getConstructionWorkerLabel/);
-  assert.match(pageSource, /const afterSaleOptions =/);
   assert.match(pageSource, /const workerOptions =/);
+  assert.match(pageSource, /selectedAfterSaleId/);
+  assert.match(pageSource, /处理选中工单/);
   assert.match(pageSource, /mode="multiple"[\s\S]*options=\{workerOptions\}/);
   assert.match(pageSource, /name="penaltyWorkerUserId"[\s\S]*options=\{workerOptions\}/);
   assert.doesNotMatch(pageSource, /label: `\$\{worker\.userId\}/);
   assert.doesNotMatch(pageSource, /<Input placeholder="售后 ID"/);
+  assert.doesNotMatch(pageSource, /placeholder="选择售后单"/);
   assert.doesNotMatch(pageSource, /<Input placeholder="施工人员 ID/);
   assert.doesNotMatch(pageSource, /<Input placeholder="处罚人员 ID"/);
 });
@@ -60,21 +62,29 @@ test("after-sales page table uses business labels instead of technical id column
 
 test("after-sales page follows the prototype work-order workspace layout", () => {
   const pageSource = readFileSync("app/after-sales/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
 
   assert.match(pageSource, /after-sales-filter-card/);
-  assert.match(pageSource, /质保单号 \/ 车牌号 \/ VIN \/ 客户电话/);
+  assert.match(pageSource, /after-sales-filter-section-title/);
+  assert.match(pageSource, /质保单号 \/ 姓名 \/ 车牌号 \/ VIN \/ 客户电话/);
   assert.doesNotMatch(pageSource, /车牌号 \/ 客户电话 \/ 订单号 \/ 售后问题/);
   assert.match(pageSource, /after-sales-workspace/);
   assert.match(pageSource, /after-sales-ticket-list/);
   assert.match(pageSource, /after-sales-process-panel/);
   assert.match(pageSource, /售后工单列表/);
-  assert.match(pageSource, /售后工单处理/);
-  assert.match(pageSource, /新建售后单/);
-  assert.match(pageSource, /保存并派单/);
+  assert.match(pageSource, /处理选中工单/);
+  assert.match(pageSource, /after-sales-query-panel/);
+  assert.match(pageSource, /after-sales-create-panel/);
+  assert.match(pageSource, /售后快速查询/);
+  assert.match(pageSource, /登记售后问题/);
+  assert.match(pageSource, /after-sales-create-actions/);
+  assert.match(pageSource, /保存处理结果/);
   assert.match(pageSource, /\["处理中", afterSaleSummary\.assigned, "师傅处理中"\]/);
   assert.match(pageSource, /\["已完成", afterSaleSummary\.resolved, "已归档售后记录"\]/);
   assert.doesNotMatch(pageSource, /\["已派单", afterSaleSummary\.assigned/);
   assert.doesNotMatch(pageSource, /\["已解决", afterSaleSummary\.resolved/);
+  assert.match(cssSource, /\.after-sales-filter-grid\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.doesNotMatch(cssSource, /\.after-sales-filter-grid\s*\{\s*grid-template-columns: minmax\(260px, 0\.8fr\) minmax\(0, 1\.6fr\);/);
 });
 
 test("after-sales page exposes the prototype split filter fields", () => {
@@ -82,6 +92,8 @@ test("after-sales page exposes the prototype split filter fields", () => {
   const cssSource = readFileSync("app/globals.css", "utf8");
 
   assert.match(pageSource, /after-sales-prototype-filters/);
+  assert.match(pageSource, /客户姓名/);
+  assert.match(pageSource, /placeholder="输入客户姓名"/);
   assert.match(pageSource, /车架号 \(VIN\)/);
   assert.match(pageSource, /placeholder="输入VIN"/);
   assert.match(pageSource, /客户电话/);
@@ -90,6 +102,10 @@ test("after-sales page exposes the prototype split filter fields", () => {
   assert.match(pageSource, /placeholder="输入质保单号"/);
   assert.match(pageSource, />重置</);
   assert.match(cssSource, /\.after-sales-prototype-filters/);
+  assert.match(cssSource, /\.after-sales-prototype-filters\s*\{[\s\S]*grid-template-columns: repeat\(4, minmax\(180px, 1fr\)\);/);
+  assert.match(cssSource, /\.after-sales-prototype-filter-actions\s*\{[\s\S]*grid-column: 1 \/ -1;/);
+  assert.match(cssSource, /\.after-sales-create-form\s*\{[\s\S]*grid-template-columns: minmax\(240px, 1fr\) minmax\(320px, 1\.4fr\);/);
+  assert.match(cssSource, /\.after-sales-create-actions\s*\{[\s\S]*grid-column: 1 \/ -1;/);
 });
 
 test("after-sales page uses mobile ticket cards instead of squeezing the desktop table", () => {
@@ -100,8 +116,8 @@ test("after-sales page uses mobile ticket cards instead of squeezing the desktop
   assert.match(pageSource, /after-sales-ticket-mobile-card/);
   assert.match(pageSource, /after-sales-ticket-desktop-table/);
   assert.match(cssSource, /\.after-sales-ticket-mobile-cards/);
-  assert.match(cssSource, /@media \(max-width: 900px\) \{\n\s{2}\.after-sales-ticket-desktop-table \{\n\s{4}display: none;/);
-  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.after-sales-ticket-mobile-cards \{\n\s{4}display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{\r?\n\s{2}\.after-sales-ticket-desktop-table \{\r?\n\s{4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.after-sales-ticket-mobile-cards \{\r?\n\s{4}display: grid;/);
 });
 
 test("after-sales page exposes inline responsibility and penalty handling", () => {
@@ -109,6 +125,14 @@ test("after-sales page exposes inline responsibility and penalty handling", () =
 
   assert.match(pageSource, /责任判定/);
   assert.match(pageSource, /施工处罚设定/);
+  assert.match(pageSource, /问题照片/);
+  assert.match(pageSource, /施工后照片对比/);
+  assert.match(pageSource, /施工问题分类/);
+  assert.match(pageSource, /刀工问题/);
+  assert.match(pageSource, /个人疏忽问题/);
+  assert.match(pageSource, /裁膜问题/);
+  assert.match(pageSource, /包边凹槽处理问题/);
+  assert.match(pageSource, /name="constructionIssueCategory"/);
   assert.match(pageSource, /处理方案说明/);
   assert.match(pageSource, /selectedAfterSaleId/);
   assert.match(pageSource, /afterSalesActionForm/);

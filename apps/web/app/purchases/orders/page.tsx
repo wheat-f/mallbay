@@ -43,7 +43,13 @@ export default function PurchasesOrdersPage() {
       </StorePageHeader>
 
       {!canManagePurchase ? (
-        <Alert className="management-readonly-alert" type="info" showIcon message="只读模式" description="客服可查看采购订单和到货状态，不能审批、取消或入库。" />
+        <Alert
+          className="management-readonly-alert"
+          type="info"
+          showIcon
+          title="只读模式"
+          description="客服可查看采购订单和到货状态，不能审批、取消或入库。"
+        />
       ) : null}
 
       <div className="purchase-module-layout">

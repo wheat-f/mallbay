@@ -14,17 +14,27 @@ test("parseInboundScanLines parses batch quantity and supplier from scanned line
   assert.deepEqual(result.errors, []);
 });
 
-test("parseInboundScanLines reports invalid scanned lines without dropping valid lines", () => {
-  const result = parseInboundScanLines("B001 1\nBROKEN\nB002 -1\nB003 2");
+test("parseInboundScanLines reports invalid scanned quantities without dropping valid lines", () => {
+  const result = parseInboundScanLines("B001 1\nB002 -1\nB003 2");
 
   assert.deepEqual(result.batches, [
     { batchNo: "B001", quantity: 1 },
     { batchNo: "B003", quantity: 2 }
   ]);
   assert.deepEqual(result.errors, [
-    { line: 2, message: "请按“批次号 数量 供应商”格式录入" },
-    { line: 3, message: "入库数量必须大于 0" }
+    { line: 2, message: "入库数量必须大于 0" }
   ]);
+});
+
+test("parseInboundScanLines treats one scanned batch number per line as one roll", () => {
+  const result = parseInboundScanLines("B001\nB002\nB003");
+
+  assert.deepEqual(result.batches, [
+    { batchNo: "B001", quantity: 1 },
+    { batchNo: "B002", quantity: 1 },
+    { batchNo: "B003", quantity: 1 }
+  ]);
+  assert.deepEqual(result.errors, []);
 });
 
 test("inventory page exposes batch scan inbound on purchase order items", () => {
@@ -35,5 +45,6 @@ test("inventory page exposes batch scan inbound on purchase order items", () => 
   assert.match(pageSource, /扫码\/粘贴导入/);
   assert.match(pageSource, /每行：批次号 数量 供应商/);
   assert.match(pageSource, /setScanImportOpen\(true\)/);
+  assert.match(pageSource, /已导入 \$\{importedBatches\.length\} 行批次明细/);
   assert.doesNotMatch(pageSource, /purchase-scan-panel-inline/);
 });

@@ -17,6 +17,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CustomersService, type AuthenticatedCustomerUser } from "./customers.service";
 import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
 import { CreateCustomerTagDto } from "./dto/create-customer-tag.dto";
+import { CreateCustomerUserForCustomerDto } from "./dto/create-customer-user.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
 import { ListCustomersDto } from "./dto/list-customers.dto";
@@ -60,6 +61,11 @@ export class CustomersController {
   @Post("vehicles")
   createVehicle(@Req() req: AuthRequest, @Body() dto: CreateVehicleDto) {
     return this.customers.createVehicle(req.user, dto);
+  }
+
+  @Post("users")
+  createCustomerUser(@Req() req: AuthRequest, @Body() dto: CreateCustomerUserForCustomerDto) {
+    return this.customers.createCustomerUser(req.user, dto);
   }
 
   @Patch("vehicles/:id")

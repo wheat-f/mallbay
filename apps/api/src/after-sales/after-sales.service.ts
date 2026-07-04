@@ -30,6 +30,7 @@ export class AfterSalesService {
         warrantyId: order.warranty?.id,
         customerId: order.customerId,
         description: dto.description,
+        issuePhotoUrls: sanitizePhotoUrls(dto.issuePhotoUrls),
         createdById: actor.id
       }
     });
@@ -44,9 +45,25 @@ export class AfterSalesService {
     return this.prisma.afterSale.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      include: {
+      select: {
+        id: true,
+        storeId: true,
+        orderId: true,
+        warrantyId: true,
+        customerId: true,
+        description: true,
+        status: true,
+        responsibility: true,
+        issuePhotoUrls: true,
+        constructionPhotoUrls: true,
+        constructionIssueCategory: true,
+        resolutionNote: true,
+        closedAt: true,
+        createdAt: true,
+        updatedAt: true,
         assignments: true,
         penalties: true,
+        warranty: { select: { warrantyNo: true, status: true, scope: true } },
         order: {
           select: {
             orderNo: true,
@@ -101,6 +118,8 @@ export class AfterSalesService {
       where: { id },
       data: {
         responsibility: dto.responsibility,
+        constructionIssueCategory: dto.constructionIssueCategory?.trim() || undefined,
+        constructionPhotoUrls: sanitizePhotoUrls(dto.constructionPhotoUrls),
         resolutionNote: dto.resolutionNote,
         status: AfterSaleStatus.RESOLVED
       }
@@ -119,6 +138,25 @@ export class AfterSalesService {
     return updated;
   }
 
+  async close(user: AuthenticatedAfterSalesUser, id: string) {
+    const actor = await this.withStoreMember(user);
+    const afterSale = await this.prisma.afterSale.findUnique({ where: { id } });
+    if (!afterSale) throw new NotFoundException("售后单不存在");
+    if (!PermissionPolicy.canManageAfterSales(actor, afterSale.storeId)) {
+      throw new ForbiddenException("无权限");
+    }
+    if (afterSale.status !== AfterSaleStatus.RESOLVED && afterSale.status !== AfterSaleStatus.CLOSED) {
+      throw new BadRequestException("售后单需先完成判责处理后才能归档");
+    }
+    return this.prisma.afterSale.update({
+      where: { id },
+      data: {
+        status: AfterSaleStatus.CLOSED,
+        closedAt: new Date()
+      }
+    });
+  }
+
   private async withStoreMember(user: AuthenticatedAfterSalesUser): Promise<UserWithStoreMember> {
     if (user.storeMember !== undefined) return user;
     const member = await this.prisma.storeMember.findUnique({
@@ -127,6 +165,10 @@ export class AfterSalesService {
     });
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
   }
+}
+
+function sanitizePhotoUrls(urls?: string[]) {
+  return [...new Set((urls ?? []).map((url) => url.trim()).filter(Boolean))].slice(0, 12);
 }
 
 function buildAfterSalesListScope(actor: UserWithStoreMember, storeId: string) {

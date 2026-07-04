@@ -1,14 +1,18 @@
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
   IsDate,
   IsEnum,
+  IsArray,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
-  ValidateIf
+  ValidateIf,
+  ValidateNested
 } from "class-validator";
 import { CustomerSourceType, CustomerType, Gender } from "@prisma/client";
+import { CreateCustomerUserDto } from "./create-customer-user.dto";
 
 export class CreateCustomerDto {
   @IsString()
@@ -62,4 +66,11 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   referrerId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => CreateCustomerUserDto)
+  companyUsers?: CreateCustomerUserDto[];
 }

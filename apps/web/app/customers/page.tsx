@@ -31,7 +31,15 @@ type CustomerRow = CustomerArchiveLike & {
   updatedAt?: string | null;
   phone?: string | null;
   vehicles?: CustomerVehicle[];
+  users?: CustomerUser[];
   tags?: { id: string; label: string }[];
+};
+
+type CustomerUser = {
+  id: string;
+  name?: string | null;
+  phone?: string | null;
+  note?: string | null;
 };
 
 type CustomerVehicle = {
@@ -907,6 +915,53 @@ export default function CustomersPage() {
                 >
                   <Input maxLength={50} />
                 </Form.Item>
+                <Form.List name="companyUsers">
+                  {(fields, { add, remove }) => (
+                    <section className="customers-form-section">
+                      <div className="customers-form-section-title">
+                        <h4>企业用户</h4>
+                        <Button size="small" icon={<PlusOutlined />} onClick={() => add({})}>
+                          增加用户
+                        </Button>
+                      </div>
+                      {fields.length > 0 ? (
+                        <div className="customers-vehicle-draft-list">
+                          {fields.map((field, index) => (
+                            <article key={field.key} className="customers-vehicle-draft">
+                              <div className="customers-form-section-title">
+                                <h4>用户 {index + 1}</h4>
+                                <Button size="small" onClick={() => remove(field.name)}>
+                                  删除用户
+                                </Button>
+                              </div>
+                              <Form.Item
+                                name={[field.name, "name"]}
+                                label="用户姓名"
+                                rules={[{ required: true, whitespace: true, message: "请输入用户姓名" }]}
+                              >
+                                <Input maxLength={50} />
+                              </Form.Item>
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <Form.Item
+                                  name={[field.name, "phone"]}
+                                  label="手机号"
+                                  rules={[{ pattern: /^1\d{10}$/, message: "请输入 11 位手机号" }]}
+                                >
+                                  <Input maxLength={11} />
+                                </Form.Item>
+                                <Form.Item name={[field.name, "note"]} label="备注">
+                                  <Input maxLength={100} />
+                                </Form.Item>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="customers-vehicle-empty">企业客户下可维护多个用户，暂不区分角色。</div>
+                      )}
+                    </section>
+                  )}
+                </Form.List>
               </>
             ) : (
               <>
@@ -1041,6 +1096,7 @@ function CustomerDetailDrawer({ customer }: { customer: CustomerRow }) {
   const metrics = getCustomerAutoArchiveMetrics(customer);
   const tags = getCustomerTags(customer, metrics.systemTagLabels);
   const vehicles = customer.vehicles ?? [];
+  const companyUsers = customer.users ?? [];
 
   return (
     <div className="customers-drawer-body">
@@ -1094,6 +1150,30 @@ function CustomerDetailDrawer({ customer }: { customer: CustomerRow }) {
           </div>
         </div>
       </section>
+
+      {customer.customerType === "COMPANY" ? (
+        <section className="customers-drawer-section">
+          <div className="customers-drawer-section-title">
+            <h4>企业用户 ({companyUsers.length})</h4>
+            <span>企业客户下就是用户，暂不区分角色</span>
+          </div>
+          {companyUsers.length > 0 ? (
+            <div className="customers-drawer-vehicle-list">
+              {companyUsers.map((companyUser) => (
+                <article key={companyUser.id} className="customers-drawer-vehicle">
+                  <div className="customers-drawer-vehicle-thumb">用</div>
+                  <div>
+                    <strong>{companyUser.name ?? "未命名用户"}</strong>
+                    <span>{companyUser.note ?? "暂无备注"}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无企业用户" />
+          )}
+        </section>
+      ) : null}
 
       <section className="customers-drawer-section">
         <div className="customers-drawer-section-title">

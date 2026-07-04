@@ -13,6 +13,9 @@ test("purchase order detail page keeps arrival review and inbound actions togeth
   const detailSource = readFileSync("app/purchases/orders/[id]/page.tsx", "utf8");
 
   assert.match(detailSource, /采购订单详情/);
+  assert.match(detailSource, /exportRowsToExcel/);
+  assert.match(detailSource, /purchase-order-\$\{purchaseOrder\.orderNo\}\.xlsx/);
+  assert.match(detailSource, /导出 Excel/);
   assert.match(detailSource, /返回采购列表/);
   assert.match(detailSource, /router\.push\("\/purchases\/orders"\)/);
   assert.doesNotMatch(detailSource, /返回库存采购/);
@@ -75,7 +78,7 @@ test("purchase order detail page follows the prototype receiving workspace layou
 
 test("purchase order detail page uses mobile cards for purchase items", () => {
   const detailSource = readFileSync("app/purchases/orders/[id]/page.tsx", "utf8");
-  const cssSource = readFileSync("app/globals.css", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n");
   const baseHiddenIndex = cssSource.indexOf(".purchase-items-mobile-cards {\n  display: none");
   const desktopTableIndex = cssSource.indexOf(".purchase-items-desktop-table");
   const mobileDisplayIndex = cssSource.indexOf(".purchase-items-mobile-cards", desktopTableIndex);

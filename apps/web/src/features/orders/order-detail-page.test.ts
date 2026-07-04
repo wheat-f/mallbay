@@ -61,6 +61,25 @@ test("order detail confirmation flow uses the prototype right-side drawer", () =
   assert.match(cssSource, /\.order-fulfillment-checklist/);
 });
 
+test("order detail fulfillment draft persists checks and notes per order", () => {
+  const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /getFulfillmentDraftKey/);
+  assert.match(pageSource, /params\.id/);
+  assert.match(pageSource, /loadFulfillmentDraft\(params\.id\)/);
+  assert.match(pageSource, /saveFulfillmentDraft\(params\.id/);
+  assert.match(pageSource, /fulfillmentChecklist/);
+  assert.match(pageSource, /setFulfillmentChecklist/);
+  assert.match(pageSource, /fulfillmentNote/);
+  assert.match(pageSource, /setFulfillmentNote/);
+  assert.match(pageSource, /checked=\{fulfillmentChecklist\.customerConfirmed\}/);
+  assert.match(pageSource, /checked=\{fulfillmentChecklist\.scheduleNotified\}/);
+  assert.match(pageSource, /checked=\{fulfillmentChecklist\.commercialConfirmed\}/);
+  assert.match(pageSource, /value=\{fulfillmentNote\}/);
+  assert.match(pageSource, /localStorage\.setItem/);
+  assert.match(pageSource, /localStorage\.getItem/);
+});
+
 test("order detail follows the prototype stepper and bento workspace layout", () => {
   const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
 
@@ -120,6 +139,16 @@ test("order detail commercial editor uses a prototype right-side drawer", () => 
   assert.match(cssSource, /\.order-commercials-drawer-footer/);
   assert.doesNotMatch(pageSource, /<Modal\b/);
   assert.doesNotMatch(pageSource, /openCommercialsModal/);
+});
+
+test("order detail exposes return-to-edit flow before editing locked orders", () => {
+  const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /returnToPendingMutation/);
+  assert.match(pageSource, /反审核退回修改/);
+  assert.match(pageSource, /returnReason/);
+  assert.match(pageSource, /orderApi\.returnToPendingDispatch\(params\.id/);
+  assert.match(pageSource, /ORDER_RETURNED_TO_PENDING_DISPATCH/);
 });
 
 test("order detail drawers avoid force rendering closed portal content", () => {

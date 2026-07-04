@@ -44,6 +44,9 @@ test("orders page follows the prototype operations-list structure", () => {
   assert.match(pageSource, /施工进度/);
   assert.match(pageSource, /销售员/);
   assert.match(pageSource, /scroll=\{\{ x: 1200 \}\}/);
+  assert.match(pageSource, /exportRowsToExcel/);
+  assert.match(pageSource, /sales-orders\.xlsx/);
+  assert.match(pageSource, /导出 Excel/);
 });
 
 test("orders page exposes compact icon actions like the prototype", () => {
@@ -55,6 +58,17 @@ test("orders page exposes compact icon actions like the prototype", () => {
   assert.match(pageSource, /title="查看详情"/);
   assert.match(pageSource, /title="记录收款"/);
   assert.match(pageSource, /title="申请发票"/);
+});
+
+test("orders page routes list payment and invoice actions to finance and invoice modules", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+
+  assert.match(pageSource, /openOrderPaymentEntry/);
+  assert.match(pageSource, /openOrderInvoiceEntry/);
+  assert.match(pageSource, /\/finance\?section=ledger&action=record-payment&orderId=\$\{orderId\}/);
+  assert.match(pageSource, /\/invoices\?action=create-invoice&orderId=\$\{orderId\}/);
+  assert.match(pageSource, /onClick=\{\(\) => openOrderPaymentEntry\(row\.id\)\}/);
+  assert.match(pageSource, /onClick=\{\(\) => openOrderInvoiceEntry\(row\.id\)\}/);
 });
 
 test("orders page keeps the wide table inside the management canvas", () => {
@@ -79,8 +93,8 @@ test("orders page uses mobile order cards instead of squeezing the desktop table
   assert.match(pageSource, /orders-mobile-card/);
   assert.match(pageSource, /orders-desktop-table/);
   assert.match(cssSource, /\.orders-mobile-cards/);
-  assert.match(cssSource, /@media \(max-width: 900px\) \{\n\s{2}\.orders-desktop-table \{\n\s{4}display: none;/);
-  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.orders-mobile-cards \{\n\s{4}display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{\r?\n\s{2}\.orders-desktop-table \{\r?\n\s{4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.orders-mobile-cards \{\r?\n\s{4}display: grid;/);
 });
 
 test("orders page formats appointment dates for table scanning", () => {

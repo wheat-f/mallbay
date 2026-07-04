@@ -36,8 +36,11 @@ test("products page follows the prototype product catalog layout", () => {
 });
 
 test("products page avoids implementation-phase import copy", () => {
-  assert.match(pageSource, /请按产品模板整理品牌、型号、价格和单位换算后再导入/);
+  assert.match(pageSource, /parseProductWorkbook/);
+  assert.match(pageSource, /type="file"/);
+  assert.match(pageSource, /accept="\.xlsx,\.xls"/);
   assert.doesNotMatch(pageSource, /批量导入将在产品模板校验完成后接入/);
+  assert.doesNotMatch(pageSource, /请按产品模板整理品牌、型号、价格和单位换算后再导入/);
 });
 
 test("products page uses mobile catalog cards instead of squeezing the desktop table", () => {
@@ -45,8 +48,8 @@ test("products page uses mobile catalog cards instead of squeezing the desktop t
   assert.match(pageSource, /products-mobile-card/);
   assert.match(pageSource, /products-desktop-table/);
   assert.match(cssSource, /\.products-mobile-cards/);
-  assert.match(cssSource, /@media \(max-width: 900px\) \{\n\s{2}\.products-desktop-table \{\n\s{4}display: none;/);
-  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.products-mobile-cards \{\n\s{4}display: grid;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{\r?\n\s{2}\.products-desktop-table \{\r?\n\s{4}display: none;/);
+  assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.products-mobile-cards \{\r?\n\s{4}display: grid;/);
 });
 
 test("products mobile catalog cards can shrink within the management content column", () => {

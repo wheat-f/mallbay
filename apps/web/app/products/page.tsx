@@ -5,7 +5,8 @@ import type { ProductCategory, ProductStatus, ProductUnit } from "@mallbay/share
 import { App, Button, Card, Drawer, Form, Input, InputNumber, Select, Space, Table, Tag, Tooltip } from "antd";
 import { EditOutlined, PlusOutlined, SearchOutlined, StopOutlined, UploadOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import type { ChangeEvent } from "react";
+import { useMemo, useRef, useState } from "react";
 import { productApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -22,6 +23,7 @@ import {
   toProductPayload,
   type ProductFormValues
 } from "../../src/features/products/product-form";
+import { parseProductWorkbook } from "../../src/features/products/product-import";
 
 type ProductRow = CreateProductPayload & {
   id: string;
@@ -40,6 +42,7 @@ export default function ProductsPage() {
   const [statusFilter, setStatusFilter] = useState<ProductStatus>("ACTIVE");
   const [inventoryUnitFilter, setInventoryUnitFilter] = useState<ProductUnit>();
   const [form] = Form.useForm<ProductFormValues>();
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const productsQuery = useQuery({
     queryKey: ["products", storeId, search, categoryFilter, statusFilter],
@@ -80,6 +83,33 @@ export default function ProductsPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
+  const importMutation = useMutation({
+    mutationFn: async (file: File) => {
+      if (!storeId) throw new Error("当前账号未加入门店");
+      const result = await parseProductWorkbook(file, storeId);
+      if (result.errors.length > 0) {
+        const firstError = result.errors[0];
+        throw new Error(`第 ${firstError.rowNumber} 行：${firstError.message}`);
+      }
+      if (result.products.length === 0) {
+        throw new Error("Excel 中没有可导入的产品数据");
+      }
+      await Promise.all(result.products.map((product) => productApi.create(product)));
+      return result.products.length;
+    },
+    onSuccess: async (count) => {
+      message.success(`已导入 ${count} 条产品档案`);
+      await queryClient.invalidateQueries({ queryKey: ["products", storeId] });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
+  const handleImportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) importMutation.mutate(file);
+  };
+
   const rows = useMemo(
     () => (productsQuery.data?.items ?? []) as ProductRow[],
     [productsQuery.data]
@@ -105,11 +135,19 @@ export default function ProductsPage() {
         <StorePageHeader title="产品档案管理" description="管理并维护车膜产品的核心参数、规格及换算规则。">
           <Button
             icon={<UploadOutlined />}
-            disabled={!storeId}
-            onClick={() => message.info("请按产品模板整理品牌、型号、价格和单位换算后再导入")}
+            disabled={!storeId || importMutation.isPending}
+            loading={importMutation.isPending}
+            onClick={() => importInputRef.current?.click()}
           >
             批量导入
           </Button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="sr-only"
+            onChange={handleImportFileChange}
+          />
           <Button
             type="primary"
             icon={<PlusOutlined />}

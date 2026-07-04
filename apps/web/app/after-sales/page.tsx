@@ -18,16 +18,22 @@ import {
   getAfterSaleStatusLabel,
   yuanToCents
 } from "../../src/features/after-sales/display";
+import { filterAfterSalesRows, type AfterSaleQuickFilters } from "../../src/features/after-sales/filter";
 import { getConstructionWorkerLabel } from "../../src/features/construction/display";
 
 type AfterSalesActionValues = {
   workerUserIds?: string[];
   responsibility?: AfterSaleResponsibility;
   constructionIssueCategory?: string;
+  constructionPhotoUrlsText?: string;
   penaltyWorkerUserId?: string;
   penaltyAmountYuan?: number;
   penaltyReason?: string;
   resolutionNote?: string;
+};
+
+type CreateAfterSaleFormValues = CreateAfterSalePayload & {
+  issuePhotoUrlsText?: string;
 };
 
 type AfterSaleOrderOption = {
@@ -50,9 +56,11 @@ export default function AfterSalesPage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const [createForm] = Form.useForm<CreateAfterSalePayload>();
+  const [createForm] = Form.useForm<CreateAfterSaleFormValues>();
   const [afterSalesActionForm] = Form.useForm<AfterSalesActionValues>();
   const [selectedAfterSaleId, setSelectedAfterSaleId] = useState<string>();
+  const [draftFilters, setDraftFilters] = useState<AfterSaleQuickFilters>({});
+  const [appliedFilters, setAppliedFilters] = useState<AfterSaleQuickFilters>({});
   const selectedResponsibility = Form.useWatch("responsibility", afterSalesActionForm);
 
   const listQuery = useQuery({
@@ -79,17 +87,21 @@ export default function AfterSalesPage() {
       order.vehicle?.plateNo
     ].filter(Boolean).join(" / ")
   }));
-  const afterSaleRows = useMemo(() => listQuery.data ?? [], [listQuery.data]);
+  const allAfterSaleRows = useMemo(() => listQuery.data ?? [], [listQuery.data]);
+  const afterSaleRows = useMemo(
+    () => filterAfterSalesRows(allAfterSaleRows, appliedFilters),
+    [allAfterSaleRows, appliedFilters]
+  );
   const activeSelectedAfterSaleId = selectedAfterSaleId ?? afterSaleRows[0]?.id;
   const selectedAfterSale = useMemo(
     () => afterSaleRows.find((item) => item.id === activeSelectedAfterSaleId) ?? afterSaleRows[0],
     [activeSelectedAfterSaleId, afterSaleRows]
   );
   const afterSaleSummary = {
-    total: afterSaleRows.length,
-    pending: afterSaleRows.filter((item) => item.status === "OPEN").length,
-    assigned: afterSaleRows.filter((item) => item.status === "ASSIGNED").length,
-    resolved: afterSaleRows.filter((item) => item.status === "RESOLVED").length
+    total: allAfterSaleRows.length,
+    pending: allAfterSaleRows.filter((item) => item.status === "OPEN").length,
+    assigned: allAfterSaleRows.filter((item) => item.status === "ASSIGNED").length,
+    resolved: allAfterSaleRows.filter((item) => item.status === "RESOLVED").length
   };
   const workerOptions = ((workersQuery.data ?? []) as AfterSaleWorkerOption[])
     .filter((worker) => worker.isActive !== false)
@@ -106,6 +118,18 @@ export default function AfterSalesPage() {
   }, [afterSalesActionForm, selectedAfterSale]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["after-sales", storeId] });
+  const updateDraftFilter = (key: keyof AfterSaleQuickFilters, value: string) => {
+    setDraftFilters((current) => ({ ...current, [key]: value }));
+  };
+  const applyQuickFilters = () => {
+    setAppliedFilters(normalizeAfterSaleFilters(draftFilters));
+    setSelectedAfterSaleId(undefined);
+  };
+  const resetQuickFilters = () => {
+    setDraftFilters({});
+    setAppliedFilters({});
+    setSelectedAfterSaleId(undefined);
+  };
   const createMutation = useMutation({
     mutationFn: (values: CreateAfterSalePayload) => afterSalesApi.create(values),
     onSuccess: async (created) => {
@@ -125,10 +149,12 @@ export default function AfterSalesPage() {
       if (values.responsibility) {
         await afterSalesApi.judge(selectedAfterSale.id, {
           responsibility: values.responsibility,
+          constructionIssueCategory: values.constructionIssueCategory,
+          constructionPhotoUrls: parsePhotoUrls(values.constructionPhotoUrlsText),
           penaltyWorkerUserId: values.penaltyWorkerUserId,
           penaltyAmountCents: yuanToCents(values.penaltyAmountYuan),
           penaltyReason: values.penaltyReason,
-          resolutionNote: buildAfterSalesResolutionNote(values.resolutionNote, values.constructionIssueCategory)
+          resolutionNote: values.resolutionNote
         });
       }
       return selectedAfterSale.id;
@@ -164,29 +190,55 @@ export default function AfterSalesPage() {
         <div className="after-sales-filter-grid">
           <div className="after-sales-query-panel after-sales-search-box">
             <span className="after-sales-filter-section-title">售后快速查询</span>
-            <Input prefix={<SearchOutlined />} placeholder="质保单号 / 姓名 / 车牌号 / VIN / 客户电话" />
+            <Input
+              prefix={<SearchOutlined />}
+              placeholder="质保单号 / 姓名 / 车牌号 / VIN / 客户电话"
+              value={draftFilters.keyword}
+              onChange={(event) => updateDraftFilter("keyword", event.target.value)}
+              onPressEnter={applyQuickFilters}
+            />
             <div className="after-sales-prototype-filters">
               <label>
                 <span>客户姓名</span>
-                <Input placeholder="输入客户姓名" />
+                <Input
+                  placeholder="输入客户姓名"
+                  value={draftFilters.customerName}
+                  onChange={(event) => updateDraftFilter("customerName", event.target.value)}
+                  onPressEnter={applyQuickFilters}
+                />
               </label>
               <label>
                 <span>车架号 (VIN)</span>
-                <Input placeholder="输入VIN" />
+                <Input
+                  placeholder="输入VIN"
+                  value={draftFilters.vin}
+                  onChange={(event) => updateDraftFilter("vin", event.target.value)}
+                  onPressEnter={applyQuickFilters}
+                />
               </label>
               <label>
                 <span>客户电话</span>
-                <Input placeholder="输入手机号" />
+                <Input
+                  placeholder="输入手机号"
+                  value={draftFilters.phone}
+                  onChange={(event) => updateDraftFilter("phone", event.target.value)}
+                  onPressEnter={applyQuickFilters}
+                />
               </label>
               <label>
                 <span>质保单号</span>
-                <Input placeholder="输入质保单号" />
+                <Input
+                  placeholder="输入质保单号"
+                  value={draftFilters.warrantyNo}
+                  onChange={(event) => updateDraftFilter("warrantyNo", event.target.value)}
+                  onPressEnter={applyQuickFilters}
+                />
               </label>
               <div className="after-sales-prototype-filter-actions">
-                <Button type="primary" icon={<SearchOutlined />}>
+                <Button type="primary" icon={<SearchOutlined />} onClick={applyQuickFilters}>
                   查询
                 </Button>
-                <Button>重置</Button>
+                <Button onClick={resetQuickFilters}>重置</Button>
               </div>
             </div>
           </div>
@@ -196,7 +248,11 @@ export default function AfterSalesPage() {
               form={createForm}
               layout="vertical"
               className="after-sales-create-form"
-              onFinish={(values) => createMutation.mutate(values)}
+              onFinish={(values) => createMutation.mutate({
+                orderId: values.orderId,
+                description: values.description,
+                issuePhotoUrls: parsePhotoUrls(values.issuePhotoUrlsText)
+              })}
             >
               <Form.Item name="orderId" label="订单" rules={[{ required: true, message: "请选择订单" }]}>
                 <Select
@@ -209,6 +265,9 @@ export default function AfterSalesPage() {
               </Form.Item>
               <Form.Item name="description" label="售后问题" rules={[{ required: true, message: "请输入售后问题" }]}>
                 <Input placeholder="描述客户反馈、缺陷位置或补膜需求" />
+              </Form.Item>
+              <Form.Item name="issuePhotoUrlsText" label="问题照片">
+                <Input.TextArea rows={2} placeholder="每行一个问题照片链接，支持施工前缺陷、车辆全景或细节图" />
               </Form.Item>
               <div className="after-sales-create-actions">
                 <Button htmlType="submit" type="primary" icon={<PlusOutlined />} loading={createMutation.isPending}>
@@ -395,6 +454,10 @@ export default function AfterSalesPage() {
                 <Input.TextArea rows={3} placeholder="填写具体的售后处理方案、复查要求或客户沟通记录" />
               </Form.Item>
 
+              <Form.Item name="constructionPhotoUrlsText" label="施工后照片对比">
+                <Input.TextArea rows={2} placeholder="每行一个施工后照片链接，用于和问题照片对比归档" />
+              </Form.Item>
+
               <div className="after-sales-process-actions">
                 <Button onClick={() => afterSalesActionForm.resetFields()}>取消</Button>
                 <Button htmlType="submit" type="primary" icon={<SendOutlined />} loading={processMutation.isPending}>
@@ -430,8 +493,14 @@ function AfterSaleProgress({ status }: { status: string }) {
   );
 }
 
-function buildAfterSalesResolutionNote(resolutionNote?: string, constructionIssueCategory?: string) {
-  const note = resolutionNote?.trim();
-  if (!constructionIssueCategory) return note;
-  return [`施工问题分类：${constructionIssueCategory}`, note].filter(Boolean).join("\n");
+function normalizeAfterSaleFilters(filters: AfterSaleQuickFilters): AfterSaleQuickFilters {
+  return Object.fromEntries(
+    Object.entries(filters)
+      .map(([key, value]) => [key, value?.trim()])
+      .filter(([, value]) => value)
+  ) as AfterSaleQuickFilters;
+}
+
+function parsePhotoUrls(text?: string) {
+  return [...new Set((text ?? "").split(/\r?\n/).map((item) => item.trim()).filter(Boolean))];
 }

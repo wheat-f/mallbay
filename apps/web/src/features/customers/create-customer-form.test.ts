@@ -32,14 +32,19 @@ test("toCreateCustomerPayload builds a company customer payload", () => {
       customerType: "COMPANY",
       companyName: "  MallBay  ",
       contactPerson: "  小明  ",
-      phone: "13900139000"
+      phone: "13900139000",
+      companyUsers: [
+        { name: " 王五 ", phone: " 13800138001 ", note: " 用车人 " },
+        { name: "   ", phone: "13800138002" }
+      ]
     }),
     {
       storeId: "store-1",
       customerType: "COMPANY",
       companyName: "MallBay",
       contactPerson: "小明",
-      phone: "13900139000"
+      phone: "13900139000",
+      companyUsers: [{ name: "王五", phone: "13800138001", note: "用车人" }]
     }
   );
 });

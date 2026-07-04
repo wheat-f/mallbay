@@ -4,6 +4,7 @@ import type { ConstructionType, OrderStatus } from "@mallbay/shared";
 import { Button, Card, DatePicker, Input, Progress, Select, Space, Table, Tag, Typography } from "antd";
 import {
   CreditCardOutlined,
+  DownloadOutlined,
   EyeOutlined,
   FileTextOutlined,
   PlusOutlined,
@@ -25,6 +26,7 @@ import {
 } from "../../src/features/orders/order-display";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
+import { exportRowsToExcel } from "../../src/lib/export-excel";
 
 type OrderRow = {
   id: string;
@@ -153,6 +155,31 @@ function OrdersContent() {
   });
 
   const rows = useMemo(() => (ordersQuery.data?.items ?? []) as OrderRow[], [ordersQuery.data]);
+  const openOrderPaymentEntry = (orderId: string) => {
+    router.push(`/finance?section=ledger&action=record-payment&orderId=${orderId}`);
+  };
+  const openOrderInvoiceEntry = (orderId: string) => {
+    router.push(`/invoices?action=create-invoice&orderId=${orderId}`);
+  };
+  const exportOrders = () => {
+    exportRowsToExcel(
+      "sales-orders.xlsx",
+      "销售订单",
+      rows.map((row) => ({
+        订单号: row.orderNo,
+        客户: getOrderCustomerName(row),
+        车辆: getOrderVehicleSummary(row),
+        状态: getOrderStatusLabel(row.status),
+        施工类型: getConstructionTypeLabel(row.constructionType),
+        订单金额: (row.amount?.totalAmountCents ?? 0) / 100,
+        已收金额: (row.amount?.paidAmountCents ?? 0) / 100,
+        待收金额: (row.amount?.outstandingCents ?? 0) / 100,
+        预约日期: formatOrderListDate(row.appointmentDate),
+        预约时段: row.appointmentTimeSlot ?? "",
+        创建时间: formatOrderListDate(row.createdAt)
+      }))
+    );
+  };
   const orderSummary = useMemo(() => {
     const totalAmount = rows.reduce((sum, row) => sum + (row.amount?.totalAmountCents ?? 0), 0);
     const outstanding = rows.reduce((sum, row) => sum + (row.amount?.outstandingCents ?? 0), 0);
@@ -171,6 +198,9 @@ function OrdersContent() {
   return (
     <div className="management-page">
           <StorePageHeader title="销售订单列表" description="查看销售订单、施工类型和收款进度">
+            <Button icon={<DownloadOutlined />} disabled={rows.length === 0} onClick={exportOrders}>
+              导出 Excel
+            </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/orders/create")}>
               新建订单
             </Button>
@@ -357,10 +387,10 @@ function OrdersContent() {
                         <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/orders/${row.id}`)}>
                           详情
                         </Button>
-                        <Button size="small" icon={<CreditCardOutlined />}>
+                        <Button size="small" icon={<CreditCardOutlined />} onClick={() => openOrderPaymentEntry(row.id)}>
                           收款
                         </Button>
-                        <Button size="small" icon={<FileTextOutlined />}>
+                        <Button size="small" icon={<FileTextOutlined />} onClick={() => openOrderInvoiceEntry(row.id)}>
                           发票
                         </Button>
                       </div>
@@ -486,8 +516,20 @@ function OrdersContent() {
                     icon={<EyeOutlined />}
                     onClick={() => router.push(`/orders/${row.id}`)}
                   />
-                  <Button size="small" type="text" title="记录收款" icon={<CreditCardOutlined />} />
-                  <Button size="small" type="text" title="申请发票" icon={<FileTextOutlined />} />
+                  <Button
+                    size="small"
+                    type="text"
+                    title="记录收款"
+                    icon={<CreditCardOutlined />}
+                    onClick={() => openOrderPaymentEntry(row.id)}
+                  />
+                  <Button
+                    size="small"
+                    type="text"
+                    title="申请发票"
+                    icon={<FileTextOutlined />}
+                    onClick={() => openOrderInvoiceEntry(row.id)}
+                  />
                 </Space>
               )
             }

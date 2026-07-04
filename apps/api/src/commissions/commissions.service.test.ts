@@ -52,14 +52,14 @@ test("CommissionsService creates sales commission rule and generates order snaps
   assert.equal(JSON.stringify(writes).includes("销售 5%"), true);
 });
 
-test("CommissionsService generates worker commission with manual adjustment", async () => {
+test("CommissionsService generates worker commission under the ordering store", async () => {
   const writes: unknown[] = [];
   const prisma = {
     storeMember: { findUnique: async () => null },
     constructionRecord: {
       findUnique: async () => ({
         id: "record-1",
-        storeId: "store-1",
+        storeId: "ordering-store",
         orderId: "order-1",
         assignments: [{ workerUserId: "worker-1" }]
       })
@@ -77,7 +77,7 @@ test("CommissionsService generates worker commission with manual adjustment", as
     {
       id: "manager-1",
       isAuditor: false,
-      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+      storeMember: { storeId: "ordering-store", position: StorePosition.MANAGER }
     },
     "record-1",
     { baseAmountCents: 1000, adjustments: [{ workerUserId: "worker-1", adjustmentCents: 500 }] }
@@ -85,4 +85,5 @@ test("CommissionsService generates worker commission with manual adjustment", as
 
   assert.equal(result.length, 1);
   assert.equal(JSON.stringify(writes).includes("\"finalAmountCents\":1500"), true);
+  assert.equal(JSON.stringify(writes).includes("\"storeId\":\"ordering-store\""), true);
 });

@@ -470,6 +470,7 @@ model Customer {
   referrer   Customer?         @relation("CustomerReferrals", fields: [referrerId], references: [id])
   referrals  Customer[]        @relation("CustomerReferrals")
   vehicles   CustomerVehicle[]
+  users      CustomerUser[]
   notes      CustomerNote[]
   tags       CustomerTag[]
   orders     Order[]
@@ -480,6 +481,22 @@ model Customer {
   @@index([storeId, ownerUserId])
   @@index([storeId, name])
   @@index([storeId, companyName])
+}
+
+model CustomerUser {
+  id             String   @id @default(cuid())
+  customerId     String
+  name           String
+  phoneEncrypted String?
+  phoneHash      String?
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, phoneHash])
+  @@index([customerId])
 }
 
 model CustomerVehicle {
@@ -1123,7 +1140,11 @@ model AfterSale {
   description    String
   status         AfterSaleStatus         @default(OPEN)
   responsibility AfterSaleResponsibility @default(PENDING)
+  issuePhotoUrls String[]                @default([])
+  constructionPhotoUrls String[]         @default([])
+  constructionIssueCategory String?
   resolutionNote String?
+  closedAt       DateTime?
   createdById    String
   createdAt      DateTime                @default(now())
   updatedAt      DateTime                @updatedAt

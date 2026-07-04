@@ -14,6 +14,7 @@ export type CreateCustomerPayload = {
   sourceType?: CustomerSourceType;
   sourceDetail?: string;
   referrerId?: string;
+  companyUsers?: CreateCustomerUserPayload[];
 };
 
 export type CreatedCustomer = CreateCustomerPayload & {
@@ -34,6 +35,13 @@ export type CreatedVehicle = CreateVehiclePayload & {
 };
 
 export type UpdateVehiclePayload = Partial<Omit<CreateVehiclePayload, "customerId">>;
+
+export type CreateCustomerUserPayload = {
+  customerId?: string;
+  name: string;
+  phone?: string;
+  note?: string;
+};
 
 export type CreateCustomerNotePayload = {
   customerId: string;
@@ -82,6 +90,12 @@ export const customerApi = {
   updateVehicle: (id: string, payload: UpdateVehiclePayload) =>
     request<CreatedVehicle>(`/customers/vehicles/${id}`, {
       method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+
+  createCustomerUser: (payload: CreateCustomerUserPayload & { customerId: string }) =>
+    request<unknown>("/customers/users", {
+      method: "POST",
       body: JSON.stringify(payload)
     }),
 

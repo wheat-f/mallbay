@@ -14,6 +14,7 @@ import { CreateOrderDto } from "./dto/create-order.dto";
 import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
 import { CreatePaymentAccountDto } from "./dto/create-payment-account.dto";
 import { ListOrdersDto } from "./dto/list-orders.dto";
+import { ReturnOrderDto } from "./dto/return-order.dto";
 import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
 import { CreateOrderUseCase } from "./use-cases/create-order.use-case";
@@ -258,6 +259,59 @@ export class OrdersService {
       this.auditLog.record(auditEvent);
 
       return { id: orderId };
+    });
+  }
+
+  async returnToPendingDispatch(user: AuthenticatedOrderUser, orderId: string, dto: ReturnOrderDto) {
+    const actor = await this.withStoreMember(user);
+    const reason = dto.reason?.trim();
+    if (!reason) {
+      throw new BadRequestException("反审核退回必须填写原因");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          storeId: true,
+          salesPersonId: true,
+          status: true
+        }
+      });
+      if (!order) {
+        throw new NotFoundException("订单不存在");
+      }
+      if (!canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
+        throw new ForbiddenException("无权限");
+      }
+      if (order.status === OrderStatus.CANCELLED) {
+        throw new BadRequestException("已取消订单不能退回修改");
+      }
+      if (order.status === OrderStatus.PENDING_DISPATCH) {
+        return { id: orderId, status: OrderStatus.PENDING_DISPATCH };
+      }
+
+      const updated = await tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.PENDING_DISPATCH },
+        select: { id: true, status: true }
+      });
+      const auditEvent = {
+        action: "ORDER_RETURNED_TO_PENDING_DISPATCH",
+        actorId: actor.id,
+        targetType: "order",
+        targetId: orderId,
+        metadata: {
+          storeId: order.storeId,
+          reason,
+          beforeStatus: order.status,
+          afterStatus: OrderStatus.PENDING_DISPATCH
+        }
+      };
+      await persistAuditEvent(tx, auditEvent);
+      this.auditLog.record(auditEvent);
+      return updated;
     });
   }
 

@@ -14,12 +14,7 @@ export function parseInboundScanLines(text: string): InboundScanParseResult {
     if (!line) return;
 
     const parts = line.split(/[,\t ]+/).filter(Boolean);
-    if (parts.length < 2) {
-      errors.push({ line: index + 1, message: "请按“批次号 数量 供应商”格式录入" });
-      return;
-    }
-
-    const quantity = Number(parts[1]);
+    const quantity = parts.length === 1 ? 1 : Number(parts[1]);
     if (!Number.isFinite(quantity) || quantity <= 0) {
       errors.push({ line: index + 1, message: "入库数量必须大于 0" });
       return;

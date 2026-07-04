@@ -374,7 +374,7 @@ export default function InventoryAdjustmentsPage() {
               />
             </Form.Item>
             <Form.Item name="quantity" rules={[{ required: true, message: "请输入数量" }]}>
-              <InputNumber min={0.001} placeholder="数量" />
+              <InputNumber min={0.001} step={0.001} precision={3} placeholder="支持零散米数" />
             </Form.Item>
             <Form.Item name="note">
               <Input placeholder="原因说明" />
@@ -418,7 +418,7 @@ export default function InventoryAdjustmentsPage() {
               />
             </Form.Item>
             <Form.Item name="quantity" label="调拨数量" rules={[{ required: true, message: "请输入调拨数量" }]}>
-              <InputNumber min={0.001} placeholder="数量" className="w-full" />
+              <InputNumber min={0.001} step={0.001} precision={3} placeholder="支持零散米数" className="w-full" />
             </Form.Item>
             <Button type="primary" htmlType="submit" icon={<TruckOutlined />} loading={createTransferOperation.isPending} disabled={!canManageInventory}>
               提交调拨

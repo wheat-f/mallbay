@@ -1,4 +1,4 @@
-import type { CreateCustomerPayload, CreateVehiclePayload } from "./api";
+import type { CreateCustomerPayload, CreateCustomerUserPayload, CreateVehiclePayload } from "./api";
 
 type DatePickerValue = {
   format: (pattern: string) => string;
@@ -21,6 +21,11 @@ export type CreateCustomerFormValues = {
   carModel?: string;
   carColor?: string;
   photoUrl?: string;
+  companyUsers?: Array<{
+    name?: string;
+    phone?: string;
+    note?: string;
+  }>;
   vehicles?: Array<{
     carPlate?: string;
     vin?: string;
@@ -46,7 +51,8 @@ export function toCreateCustomerPayload(
     wechat: trimOptional(values.wechat),
     sourceType: values.sourceType,
     sourceDetail: trimOptional(values.sourceDetail),
-    referrerId: trimOptional(values.referrerId)
+    referrerId: trimOptional(values.referrerId),
+    companyUsers: values.customerType === "COMPANY" ? toCompanyUsers(values.companyUsers) : undefined
   });
 }
 
@@ -97,6 +103,25 @@ function formatOptionalDate(value: string | DatePickerValue | undefined) {
   if (!value) return undefined;
   if (typeof value === "string") return trimOptional(value);
   return value.format("YYYY-MM-DD");
+}
+
+function toCompanyUsers(users: CreateCustomerFormValues["companyUsers"]) {
+  const normalized = (users ?? [])
+    .map((user) =>
+      compactCustomerUserPayload({
+        name: trimOptional(user.name) ?? "",
+        phone: trimOptional(user.phone),
+        note: trimOptional(user.note)
+      })
+    )
+    .filter((user): user is { name: string; phone?: string; note?: string } => Boolean(user.name));
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function compactCustomerUserPayload(payload: CreateCustomerUserPayload): CreateCustomerUserPayload {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined)
+  ) as CreateCustomerUserPayload;
 }
 
 function compactPayload(payload: CreateCustomerPayload): CreateCustomerPayload {

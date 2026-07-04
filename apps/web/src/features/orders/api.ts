@@ -38,6 +38,10 @@ export type UpdateOrderCommercialsPayload = {
   changeReason: string;
 };
 
+export type ReturnOrderPayload = {
+  reason: string;
+};
+
 export type OrderListQuery = {
   storeId: string;
   page?: number;
@@ -104,6 +108,12 @@ export const orderApi = {
   updateCommercials: (id: string, payload: UpdateOrderCommercialsPayload) =>
     request<{ id: string }>(`/orders/${id}/commercials`, {
       method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+
+  returnToPendingDispatch: (id: string, payload: ReturnOrderPayload) =>
+    request<{ id: string; status: OrderStatus }>(`/orders/${id}/return-to-pending`, {
+      method: "POST",
       body: JSON.stringify(payload)
     }),
 

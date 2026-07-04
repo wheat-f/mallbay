@@ -1,4 +1,4 @@
-import { ArrayMinSize, IsArray, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
 import { AfterSaleResponsibility } from "@prisma/client";
 
 export class CreateAfterSaleDto {
@@ -8,6 +8,12 @@ export class CreateAfterSaleDto {
   @IsString()
   @MaxLength(1000)
   description!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  issuePhotoUrls?: string[];
 }
 
 export class ListAfterSalesDto {
@@ -29,6 +35,17 @@ export class JudgeAfterSaleDto {
   @IsOptional()
   @IsString()
   penaltyWorkerUserId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  constructionIssueCategory?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  constructionPhotoUrls?: string[];
 
   @IsOptional()
   @IsInt()

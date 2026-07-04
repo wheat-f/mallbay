@@ -5,7 +5,8 @@
   "dependencies": {
     "@ant-design/icons": "^6.2.3",
     "@mallbay/shared": "workspace:*",
-    "dayjs": "^1.11.21"
+    "dayjs": "^1.11.21",
+    "xlsx": "^0.18.5"
   },
   "scripts": {
     "dev": "next dev -p 3000",

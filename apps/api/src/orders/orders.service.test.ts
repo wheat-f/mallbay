@@ -715,6 +715,54 @@ test("OrdersService updates order commercial fields and records audit trail", as
   ]);
 });
 
+test("OrdersService returns an active order to pending dispatch before commercial edits", async () => {
+  const operations: unknown[] = [];
+  const auditEvents: unknown[] = [];
+  const tx = {
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        storeId: "store-1",
+        salesPersonId: "sales-1",
+        status: OrderStatus.IN_CONSTRUCTION
+      }),
+      update: async (args: unknown) => {
+        operations.push({ orderUpdate: args });
+        return { id: "order-1", status: OrderStatus.PENDING_DISPATCH };
+      }
+    },
+    auditEvent: {
+      create: async (args: unknown) => operations.push({ auditCreate: args })
+    }
+  };
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const service = new OrdersService(
+    prisma as never,
+    {} as never,
+    { record: (event: unknown) => auditEvents.push(event) } as never
+  );
+
+  const result = await service.returnToPendingDispatch(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    "order-1",
+    { reason: "客户改产品，退回修改" }
+  );
+
+  assert.deepEqual(result, { id: "order-1", status: OrderStatus.PENDING_DISPATCH });
+  const serialized = JSON.stringify(operations);
+  assert.match(serialized, /"status":"PENDING_DISPATCH"/);
+  assert.match(serialized, /ORDER_RETURNED_TO_PENDING_DISPATCH/);
+  assert.match(serialized, /客户改产品，退回修改/);
+  assert.deepEqual(auditEvents.map((event) => (event as { action: string }).action), ["ORDER_RETURNED_TO_PENDING_DISPATCH"]);
+});
+
 test("OrdersService lists order audit events with the same order visibility boundary", async () => {
   const capturedQueries: unknown[] = [];
   const prisma = {

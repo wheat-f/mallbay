@@ -36,6 +36,7 @@ import { purchaseApi } from "../../../src/lib/api";
 import { PurchaseModuleNav } from "../../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { exportRowsToExcel } from "../../../src/lib/export-excel";
 
 type SupplierFormValues = Omit<CreateSupplierPayload, "storeId">;
 type SupplierStatusFilter = "ALL" | "ACTIVE" | "INACTIVE" | "PENDING";
@@ -98,6 +99,21 @@ export default function InventorySuppliersPage() {
       }),
     [categoryFilter, keyword, statusFilter, suppliers]
   );
+  const exportSuppliers = () => {
+    exportRowsToExcel(
+      "purchase-suppliers.xlsx",
+      "供应商",
+      filteredSuppliers.map((supplier) => ({
+        供应商名称: supplier.name,
+        主要品类: getSupplierCategory(supplier),
+        联系人: supplier.contactName ?? "",
+        联系电话: supplier.contactPhone ?? "",
+        评级: supplier.rating ?? "",
+        状态: supplier.isActive === false ? "已暂停" : "合作中",
+        备注: supplier.note ?? ""
+      }))
+    );
+  };
   const activeSupplierId = getVisibleSupplierId(selectedSupplierId, filteredSuppliers);
   const selectedSupplier = filteredSuppliers.find((supplier) => supplier.id === activeSupplierId);
   const supplierMetrics = useMemo(
@@ -182,7 +198,9 @@ export default function InventorySuppliersPage() {
             >
               新增供应商
             </Button>
-            <Button icon={<DownloadOutlined />}>导出列表</Button>
+            <Button icon={<DownloadOutlined />} disabled={filteredSuppliers.length === 0} onClick={exportSuppliers}>
+              导出 Excel
+            </Button>
           </div>
 
           <div className="supplier-filter-row">

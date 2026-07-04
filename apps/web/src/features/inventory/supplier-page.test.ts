@@ -11,6 +11,9 @@ test("purchases supplier page keeps supplier maintenance actions in their proper
   assert.doesNotMatch(pageSource, /className="supplier-create-form"/);
   assert.match(pageSource, /批次历史/);
   assert.match(pageSource, /审计日志/);
+  assert.match(pageSource, /exportRowsToExcel/);
+  assert.match(pageSource, /purchase-suppliers\.xlsx/);
+  assert.match(pageSource, /导出 Excel/);
   assert.doesNotMatch(pageSource, /createSupplierContact/);
   assert.doesNotMatch(pageSource, /createSupplierRatingHistory/);
   assert.doesNotMatch(pageSource, /新增联系人/);

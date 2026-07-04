@@ -47,6 +47,7 @@ test("customers page opens a prototype right-side customer detail drawer from ta
   assert.match(pageSource, /customers-detail-drawer/);
   assert.match(pageSource, /客户详情/);
   assert.match(pageSource, /名下车辆/);
+  assert.match(pageSource, /企业用户/);
   assert.match(pageSource, /消费概览/);
   assert.match(pageSource, /查看完整历史/);
   assert.match(pageSource, /orders\/create\?customerId=/);
@@ -66,6 +67,9 @@ test("customers page creates customer records in a prototype right-side drawer",
   assert.match(pageSource, /创建客户/);
   assert.match(pageSource, /客户类型/);
   assert.match(pageSource, /车辆档案/);
+  assert.match(pageSource, /Form\.List name="companyUsers"/);
+  assert.match(pageSource, /企业客户下可维护多个用户，暂不区分角色/);
+  assert.doesNotMatch(pageSource, /用户角色/);
   assert.match(pageSource, /Form\.List name="vehicles"/);
   assert.match(pageSource, /customerApi\.createVehicle/);
   assert.match(pageSource, /toCreateVehiclePayloads/);

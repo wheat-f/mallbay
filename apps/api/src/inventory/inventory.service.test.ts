@@ -1112,10 +1112,11 @@ test("InventoryService applies manual stock operations with explicit movement ty
       isAuditor: false,
       storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
     },
-    { batchId: "batch-1", movementType: InventoryMovementType.DAMAGE_OUT, quantity: 3, note: "破损" }
+    { batchId: "batch-1", movementType: InventoryMovementType.DAMAGE_OUT, quantity: 1.5, note: "零散报损" }
   );
 
   const serialized = JSON.stringify(writes);
-  assert.equal(serialized.includes("\"availableQuantity\":{\"decrement\":3}"), true);
+  assert.equal(serialized.includes("\"availableQuantity\":{\"decrement\":1.5}"), true);
+  assert.equal(serialized.includes("\"quantity\":1.5"), true);
   assert.equal(serialized.includes(InventoryMovementType.DAMAGE_OUT), true);
 });

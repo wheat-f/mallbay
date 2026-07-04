@@ -16,6 +16,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CustomerPolicy } from "./domain/customer.policy";
 import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
 import { CreateCustomerTagDto } from "./dto/create-customer-tag.dto";
+import { CreateCustomerUserForCustomerDto } from "./dto/create-customer-user.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
 import { ListCustomersDto } from "./dto/list-customers.dto";
@@ -61,6 +62,7 @@ export class CustomersService {
       throw new ConflictException("客户手机号已存在");
     }
 
+    const companyUsers = dto.customerType === "COMPANY" ? this.normalizeCompanyUsers(dto.companyUsers) : [];
     const customer = await this.prisma.customer.create({
       data: {
         storeId,
@@ -76,8 +78,12 @@ export class CustomersService {
         wechat: dto.wechat,
         sourceType: dto.sourceType,
         sourceDetail: dto.sourceDetail,
-        referrerId: dto.referrerId
-      }
+        referrerId: dto.referrerId,
+        users: companyUsers.length > 0 ? {
+          create: companyUsers.map((companyUser) => this.toCustomerUserCreateData(companyUser))
+        } : undefined
+      },
+      include: { users: true }
     });
     return this.sanitizeCustomer(customer);
   }
@@ -104,6 +110,7 @@ export class CustomersService {
         orderBy: { updatedAt: "desc" },
         include: {
           vehicles: { take: 3, orderBy: { updatedAt: "desc" } },
+          users: { take: 5, orderBy: { updatedAt: "desc" } },
           owner: { select: { id: true, username: true, nickname: true } }
         }
       })
@@ -133,7 +140,10 @@ export class CustomersService {
       where,
       take: 20,
       orderBy: { updatedAt: "desc" },
-      include: { vehicles: { take: 2, orderBy: { updatedAt: "desc" } } }
+      include: {
+        vehicles: { take: 2, orderBy: { updatedAt: "desc" } },
+        users: { take: 5, orderBy: { updatedAt: "desc" } }
+      }
     });
 
     return customers.map((customer) => this.sanitizeCustomer(customer));
@@ -145,6 +155,7 @@ export class CustomersService {
       where: { id },
       include: {
         vehicles: { orderBy: { updatedAt: "desc" } },
+        users: { orderBy: { updatedAt: "desc" } },
         notes: { orderBy: { createdAt: "desc" } },
         tags: { orderBy: { createdAt: "desc" } },
         referrer: { select: { id: true, name: true, companyName: true, contactPerson: true } },
@@ -321,6 +332,24 @@ export class CustomersService {
     return this.sanitizeVehicle(updated);
   }
 
+  async createCustomerUser(user: AuthenticatedCustomerUser, dto: CreateCustomerUserForCustomerDto) {
+    const customer = await this.assertCanEditCustomer(user, dto.customerId);
+    if (customer.customerType !== "COMPANY") {
+      throw new BadRequestException("只有企业客户可以维护用户");
+    }
+    const [companyUser] = this.normalizeCompanyUsers([dto]);
+    if (!companyUser) {
+      throw new BadRequestException("请输入用户姓名");
+    }
+    const created = await this.prisma.customerUser.create({
+      data: {
+        customerId: customer.id,
+        ...this.toCustomerUserCreateData(companyUser)
+      }
+    });
+    return this.sanitizeCustomerUser(created);
+  }
+
   async createNote(user: AuthenticatedCustomerUser, dto: CreateCustomerNoteDto) {
     const customer = await this.assertCanEditCustomer(user, dto.customerId);
     return this.prisma.customerNote.create({
@@ -411,6 +440,25 @@ export class CustomersService {
         throw new BadRequestException("请输入联系人");
       }
     }
+  }
+
+  private normalizeCompanyUsers(users: Array<{ name?: string; phone?: string; note?: string }> | undefined) {
+    return (users ?? [])
+      .map((user) => ({
+        name: user.name?.trim(),
+        phone: user.phone?.trim(),
+        note: user.note?.trim()
+      }))
+      .filter((user) => Boolean(user.name));
+  }
+
+  private toCustomerUserCreateData(user: { name?: string; phone?: string; note?: string }) {
+    return {
+      name: user.name!,
+      phoneEncrypted: user.phone ? this.codec.encrypt(user.phone) : undefined,
+      phoneHash: user.phone ? this.codec.hash(user.phone) : undefined,
+      note: user.note || undefined
+    };
   }
 
   private normalizeOptionalDate(value: Date | string | undefined) {
@@ -680,21 +728,29 @@ export class CustomersService {
       phoneEncrypted?: unknown;
       phoneHash?: unknown;
       vehicles?: Array<{ vinEncrypted?: unknown; vinHash?: unknown }>;
+      users?: Array<{ phoneEncrypted?: unknown; phoneHash?: unknown }>;
     }
   >(customer: T) {
     const { phoneEncrypted: _phoneEncrypted, phoneHash: _phoneHash, ...safeCustomer } = customer;
-    if (Array.isArray(safeCustomer.vehicles)) {
-      return {
-        ...safeCustomer,
-        vehicles: safeCustomer.vehicles.map((vehicle) => this.sanitizeVehicle(vehicle))
-      };
-    }
-    return safeCustomer;
+    return {
+      ...safeCustomer,
+      ...(Array.isArray(safeCustomer.vehicles)
+        ? { vehicles: safeCustomer.vehicles.map((vehicle) => this.sanitizeVehicle(vehicle)) }
+        : {}),
+      ...(Array.isArray(safeCustomer.users)
+        ? { users: safeCustomer.users.map((companyUser) => this.sanitizeCustomerUser(companyUser)) }
+        : {})
+    };
   }
 
   private sanitizeVehicle<T extends { vinEncrypted?: unknown; vinHash?: unknown }>(vehicle: T) {
     const { vinEncrypted: _vinEncrypted, vinHash: _vinHash, ...safeVehicle } = vehicle;
     return safeVehicle;
+  }
+
+  private sanitizeCustomerUser<T extends { phoneEncrypted?: unknown; phoneHash?: unknown }>(companyUser: T) {
+    const { phoneEncrypted: _phoneEncrypted, phoneHash: _phoneHash, ...safeUser } = companyUser;
+    return safeUser;
   }
 }
 

@@ -33,4 +33,9 @@ export class AfterSalesController {
   judge(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: JudgeAfterSaleDto) {
     return this.afterSales.judgeResponsibility(req.user, id, dto);
   }
+
+  @Post(":id/close")
+  close(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.afterSales.close(req.user, id);
+  }
 }

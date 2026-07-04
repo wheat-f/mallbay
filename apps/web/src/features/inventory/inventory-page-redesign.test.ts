@@ -218,6 +218,9 @@ test("inventory adjustment page follows the prototype stock adjustment layout", 
   assert.match(adjustmentSource, /adjustment-count-table/);
   assert.match(adjustmentSource, /adjustment-transfer-panel/);
   assert.match(adjustmentSource, /adjustment-unit-input/);
+  assert.match(adjustmentSource, /step=\{0\.001\}/);
+  assert.match(adjustmentSource, /precision=\{3\}/);
+  assert.match(adjustmentSource, /支持零散米数/);
   assert.doesNotMatch(adjustmentSource, /addonAfter=/);
 
   assert.match(cssSource, /\.adjustment-workspace-page/);
@@ -229,7 +232,7 @@ test("inventory adjustment page follows the prototype stock adjustment layout", 
 
 test("inventory adjustment page uses mobile cards for stock count rows", () => {
   const adjustmentSource = readFileSync("app/inventory/adjustments/page.tsx", "utf8");
-  const cssSource = readFileSync("app/globals.css", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n");
   const baseHiddenIndex = cssSource.indexOf(".adjustment-count-mobile-cards {\n  display: none");
   const desktopTableIndex = cssSource.indexOf(".adjustment-count-desktop-table");
   const mobileDisplayIndex = cssSource.indexOf(".adjustment-count-mobile-cards", desktopTableIndex);
@@ -310,7 +313,7 @@ test("inventory movement ledger page follows the prototype movement workspace", 
 
 test("inventory movement ledger page uses mobile cards for movement rows", () => {
   const movementsSource = readFileSync("app/inventory/movements/page.tsx", "utf8");
-  const cssSource = readFileSync("app/globals.css", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n");
 
   assert.match(movementsSource, /movement-ledger-mobile-cards/);
   assert.match(movementsSource, /movement-ledger-mobile-card/);

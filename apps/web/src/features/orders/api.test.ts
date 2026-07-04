@@ -123,6 +123,27 @@ test("orderApi.updateCommercials patches order items amount and change reason", 
   });
 });
 
+test("orderApi.returnToPendingDispatch posts return reason", async () => {
+  let capturedInput: RequestInfo | URL | undefined;
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    capturedInput = input;
+    capturedInit = init;
+    return {
+      ok: true,
+      json: async () => ({ id: "order-1", status: "PENDING_DISPATCH" })
+    } as Response;
+  }) as typeof fetch;
+
+  await orderApi.returnToPendingDispatch("order-1", { reason: "客户变更产品，退回修改" });
+
+  assert.equal(capturedInput, "http://localhost:3001/orders/order-1/return-to-pending");
+  assert.equal(capturedInit?.method, "POST");
+  assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
+    reason: "客户变更产品，退回修改"
+  });
+});
+
 test("orderApi.auditEvents queries /orders/:id/audit-events", async () => {
   let capturedInput: RequestInfo | URL | undefined;
   globalThis.fetch = (async (input: RequestInfo | URL) => {

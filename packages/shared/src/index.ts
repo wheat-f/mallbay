@@ -229,10 +229,20 @@ export type AfterSaleSummary = {
   orderId: string;
   order?: BusinessOrderSummary | null;
   warrantyId: string | null;
+  warranty?: {
+    warrantyNo?: string | null;
+    status?: string | null;
+    scope?: string | null;
+  } | null;
   customerId: string;
   description: string;
   status: AfterSaleStatus;
   responsibility: AfterSaleResponsibility;
+  issuePhotoUrls?: string[];
+  constructionPhotoUrls?: string[];
+  constructionIssueCategory?: string | null;
+  resolutionNote?: string | null;
+  closedAt?: string | Date | null;
 };
 
 export type SalesCommissionRuleSummary = {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
+import { filterAfterSalesRows } from "./filter";
 
 function cssBlock(cssSource: string, selector: string) {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -108,6 +109,42 @@ test("after-sales page exposes the prototype split filter fields", () => {
   assert.match(cssSource, /\.after-sales-create-actions\s*\{[\s\S]*grid-column: 1 \/ -1;/);
 });
 
+test("after-sales quick search filters rows by customer vehicle phone vin and warranty", () => {
+  const rows = [
+    {
+      id: "after-sale-1",
+      description: "左后翼子板起边",
+      status: "OPEN",
+      responsibility: "PENDING",
+      order: {
+        orderNo: "SO-001",
+        customer: { name: "申周翰", phone: "13800000000" },
+        vehicle: { plateNo: "京A12345", vin: "VIN001" },
+        warranty: { warrantyNo: "WB-001" }
+      }
+    },
+    {
+      id: "after-sale-2",
+      description: "包边复查",
+      status: "ASSIGNED",
+      responsibility: "CONSTRUCTION",
+      order: {
+        orderNo: "SO-002",
+        customer: { companyName: "北京测试企业", phone: "13900000000" },
+        vehicle: { plateNo: "京B67890", vin: "VIN002" },
+        warranty: { warrantyNo: "WB-002" }
+      }
+    }
+  ];
+
+  assert.deepEqual(filterAfterSalesRows(rows, { keyword: "申周翰" }).map((row) => row.id), ["after-sale-1"]);
+  assert.deepEqual(filterAfterSalesRows(rows, { customerName: "测试企业" }).map((row) => row.id), ["after-sale-2"]);
+  assert.deepEqual(filterAfterSalesRows(rows, { vin: "VIN001" }).map((row) => row.id), ["after-sale-1"]);
+  assert.deepEqual(filterAfterSalesRows(rows, { phone: "13900000000" }).map((row) => row.id), ["after-sale-2"]);
+  assert.deepEqual(filterAfterSalesRows(rows, { warrantyNo: "WB-001" }).map((row) => row.id), ["after-sale-1"]);
+  assert.deepEqual(filterAfterSalesRows(rows, { keyword: "不存在" }).map((row) => row.id), []);
+});
+
 test("after-sales page uses mobile ticket cards instead of squeezing the desktop table", () => {
   const pageSource = readFileSync("app/after-sales/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
@@ -127,6 +164,11 @@ test("after-sales page exposes inline responsibility and penalty handling", () =
   assert.match(pageSource, /施工处罚设定/);
   assert.match(pageSource, /问题照片/);
   assert.match(pageSource, /施工后照片对比/);
+  assert.match(pageSource, /name="issuePhotoUrlsText"/);
+  assert.match(pageSource, /name="constructionPhotoUrlsText"/);
+  assert.match(pageSource, /issuePhotoUrls: parsePhotoUrls\(values\.issuePhotoUrlsText\)/);
+  assert.match(pageSource, /constructionPhotoUrls: parsePhotoUrls\(values\.constructionPhotoUrlsText\)/);
+  assert.match(pageSource, /constructionIssueCategory: values\.constructionIssueCategory/);
   assert.match(pageSource, /施工问题分类/);
   assert.match(pageSource, /刀工问题/);
   assert.match(pageSource, /个人疏忽问题/);
@@ -180,6 +222,8 @@ test("after-sales detail page follows the prototype detail penalty layout", () =
   assert.doesNotMatch(pageSource, /摘要接口未返回/);
   assert.match(pageSource, /处理日志/);
   assert.match(pageSource, /确认判罚并归档/);
+  assert.match(pageSource, /afterSalesApi\.close\(afterSale\.id\)/);
+  assert.match(pageSource, /loading=\{closeMutation\.isPending\}/);
   assert.match(pageSource, /getAfterSaleDetailTimeline/);
   assert.match(pageSource, /after-sale-detail-page/);
   assert.match(pageSource, /after-sale-detail-grid/);

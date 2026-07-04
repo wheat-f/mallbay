@@ -25,8 +25,10 @@ test("CustomersService creates a personal customer owned by the current sales us
             wechat: "wx-zhangsan",
             sourceType: "REFERRAL",
             sourceDetail: "老客户介绍",
-            referrerId: undefined
-          }
+            referrerId: undefined,
+            users: undefined
+          },
+          include: { users: true }
         });
         return { id: "customer-1", name: "张三" };
       }
@@ -56,6 +58,54 @@ test("CustomersService creates a personal customer owned by the current sales us
 
   assert.deepEqual(result, { id: "customer-1", name: "张三" });
   assert.deepEqual(calls, ["customer.create"]);
+});
+
+test("CustomersService creates company customer users without role fields", async () => {
+  const writes: unknown[] = [];
+  const prisma = {
+    customer: {
+      findUnique: async () => null,
+      create: async (args: unknown) => {
+        writes.push(args);
+        return {
+          id: "customer-company-1",
+          customerType: CustomerType.COMPANY,
+          companyName: "企业客户",
+          users: [{ id: "user-1", name: "王五", phoneEncrypted: "enc:13900139000", phoneHash: "hash:13900139000" }]
+        };
+      }
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+
+  const result = await service.create(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    "store-1",
+    {
+      customerType: CustomerType.COMPANY,
+      companyName: "企业客户",
+      contactPerson: "王五",
+      phone: "13800138000",
+      companyUsers: [{ name: "王五", phone: "13900139000", note: "采购对接" }]
+    }
+  );
+
+  const serialized = JSON.stringify(writes[0]);
+  assert.equal(serialized.includes("\"users\":{\"create\":[{\"name\":\"王五\""), true);
+  assert.equal(serialized.includes("role"), false);
+  assert.deepEqual(result, {
+    id: "customer-company-1",
+    customerType: CustomerType.COMPANY,
+    companyName: "企业客户",
+    users: [{ id: "user-1", name: "王五" }]
+  });
 });
 
 test("CustomersService rejects duplicate phone in the same store", async () => {
@@ -499,6 +549,54 @@ test("CustomersService creates custom tags and rejects blank labels", async () =
   const result = await service.createTag(user, { customerId: "customer-1", label: " 重点客户 " });
 
   assert.deepEqual(result, { id: "tag-1", label: "重点客户" });
+});
+
+test("CustomersService adds a user under an existing company customer", async () => {
+  const writes: unknown[] = [];
+  const prisma = {
+    customer: {
+      findUnique: async () => ({
+        id: "customer-company-1",
+        storeId: "store-1",
+        ownerUserId: "sales-1",
+        customerType: CustomerType.COMPANY
+      })
+    },
+    customerUser: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return {
+          id: "company-user-1",
+          customerId: "customer-company-1",
+          name: "李四",
+          phoneEncrypted: "enc:13700137000",
+          phoneHash: "hash:13700137000",
+          note: "用车人"
+        };
+      }
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+
+  const result = await service.createCustomerUser(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    { customerId: "customer-company-1", name: "李四", phone: "13700137000", note: "用车人" }
+  );
+
+  assert.equal(JSON.stringify(writes[0]).includes("\"customerId\":\"customer-company-1\""), true);
+  assert.deepEqual(result, {
+    id: "company-user-1",
+    customerId: "customer-company-1",
+    name: "李四",
+    note: "用车人"
+  });
 });
 
 test("CustomersService rejects sales editing another sales user's customer", async () => {

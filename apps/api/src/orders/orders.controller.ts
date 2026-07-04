@@ -6,6 +6,7 @@ import { CreateOrderDto } from "./dto/create-order.dto";
 import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
 import { CreatePaymentAccountDto } from "./dto/create-payment-account.dto";
 import { ListOrdersDto } from "./dto/list-orders.dto";
+import { ReturnOrderDto } from "./dto/return-order.dto";
 import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
 import { OrdersService, type AuthenticatedOrderUser } from "./orders.service";
@@ -46,6 +47,15 @@ export class OrdersController {
     @Body() dto: UpdateOrderCommercialsDto
   ) {
     return this.orders.updateCommercials(req.user, id, dto);
+  }
+
+  @Post(":id/return-to-pending")
+  returnToPendingDispatch(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Body() dto: ReturnOrderDto
+  ) {
+    return this.orders.returnToPendingDispatch(req.user, id, dto);
   }
 
   @Post(":id/payments")

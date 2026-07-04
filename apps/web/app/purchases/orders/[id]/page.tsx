@@ -28,6 +28,7 @@ import {
 } from "../../../../src/features/inventory/display";
 import { PurchaseModuleNav } from "../../../../src/features/purchases/purchase-module-nav";
 import { parseInboundScanLines } from "../../../../src/features/inventory/inbound-scan";
+import { exportRowsToExcel } from "../../../../src/lib/export-excel";
 
 type PurchaseOrderItemRow = PurchaseInboundItemLike & {
   id: string;
@@ -212,6 +213,28 @@ export default function PurchaseOrderDetailPage() {
     receiveForm.setFieldsValue({ batches: nextBatches });
     setScanImportOpen(false);
     setScanImportText("");
+    message.success(`已导入 ${importedBatches.length} 行批次明细`);
+  };
+  const exportPurchaseOrder = () => {
+    if (!purchaseOrder) return;
+    exportRowsToExcel(
+      `purchase-order-${purchaseOrder.orderNo}.xlsx`,
+      "采购订单",
+      items.map((item) => {
+        const details = getPurchaseInboundItemDetails(item);
+        return {
+          采购单号: purchaseOrder.orderNo,
+          供应商: purchaseOrder.supplierName ?? "",
+          状态: getPurchaseOrderStatusLabel(purchaseOrder.status),
+          预计到货: formatDate(purchaseOrder.expectedAt),
+          产品: details.product,
+          采购数量: toNumber(item.quantity),
+          已入库数量: toNumber(item.receivedQuantity),
+          待入库数量: Math.max(0, toNumber(item.quantity) - toNumber(item.receivedQuantity)),
+          批次: details.batches
+        };
+      })
+    );
   };
 
   return (
@@ -249,7 +272,9 @@ export default function PurchaseOrderDetailPage() {
                   审批通过
                 </Button>
               ) : null}
-              <Button icon={<FileTextOutlined />}>导出订单</Button>
+              <Button icon={<FileTextOutlined />} disabled={items.length === 0} onClick={exportPurchaseOrder}>
+                导出 Excel
+              </Button>
               <Button icon={<PrinterOutlined />}>打印入库单</Button>
             </div>
           </section>

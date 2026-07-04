@@ -1,7 +1,7 @@
 "use client";
 
 import type { AfterSaleResponsibility, AfterSaleStatus, AfterSaleSummary } from "@mallbay/shared";
-import { Button, Card, Empty, Input, Skeleton, Tag } from "antd";
+import { App, Button, Card, Empty, Input, Skeleton, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   CameraOutlined,
@@ -15,7 +15,7 @@ import {
   UserOutlined,
   WarningOutlined
 } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
@@ -62,6 +62,8 @@ const RESPONSIBILITY_OPTIONS: Array<{
 ];
 
 export default function AfterSaleDetailPage() {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const afterSaleId = params.id;
@@ -79,6 +81,17 @@ export default function AfterSaleDetailPage() {
     [afterSaleId, afterSalesQuery.data]
   );
   const timeline = getAfterSaleDetailTimeline(afterSale);
+  const closeMutation = useMutation({
+    mutationFn: () => {
+      if (!afterSale) throw new Error("售后工单未加载");
+      return afterSalesApi.close(afterSale.id);
+    },
+    onSuccess: async () => {
+      message.success("售后工单已归档");
+      await queryClient.invalidateQueries({ queryKey: ["after-sales", storeId] });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
 
   return (
     <div className="management-page after-sale-detail-page">
@@ -99,7 +112,12 @@ export default function AfterSaleDetailPage() {
           <Button icon={<ExportOutlined />} disabled={!afterSale}>
             导出报告
           </Button>
-          <Button type="primary" disabled={!afterSale}>
+          <Button
+            type="primary"
+            disabled={!afterSale || afterSale.status !== "RESOLVED"}
+            loading={closeMutation.isPending}
+            onClick={() => closeMutation.mutate()}
+          >
             确认判罚并归档
           </Button>
         </div>
@@ -140,7 +158,7 @@ export default function AfterSaleDetailPage() {
               </div>
               <div className="after-sale-evidence-grid">
                 {[
-                  ["问题近景", "翘边 / 气泡 / 尘点", "defect"],
+                  ["问题近景", getPhotoCountLabel(afterSale.issuePhotoUrls, "待上传问题照片"), "defect"],
                   ["车辆全景", getOrderVehicleLabel(afterSale), "vehicle"],
                   ["细节复核", "待上传高清证据", "detail"]
                 ].map(([title, description, tone]) => (
@@ -163,8 +181,8 @@ export default function AfterSaleDetailPage() {
                 <h2>售后处理对比</h2>
               </div>
               <div className="after-sale-compare-grid">
-                <ComparePanel tone="before" title="处理前（问题点）" badge="待复核" />
-                <ComparePanel tone="after" title="处理后（重施工完成）" badge="待上传" />
+                <ComparePanel tone="before" title="处理前（问题点）" badge={getPhotoCountLabel(afterSale.issuePhotoUrls, "待复核")} />
+                <ComparePanel tone="after" title="处理后（重施工完成）" badge={getPhotoCountLabel(afterSale.constructionPhotoUrls, "待上传")} />
               </div>
             </Card>
           </div>
@@ -190,7 +208,7 @@ export default function AfterSaleDetailPage() {
               <div className="after-sale-worker-card">
                 <span>责任技师</span>
                 <strong>{afterSale.responsibility === "CONSTRUCTION" ? "待从派单记录确认" : "非施工或待判责"}</strong>
-                <p>{getAfterSaleResponsibilityLabel(afterSale.responsibility)}</p>
+                <p>{[getAfterSaleResponsibilityLabel(afterSale.responsibility), afterSale.constructionIssueCategory].filter(Boolean).join(" / ")}</p>
               </div>
             </Card>
 
@@ -261,6 +279,11 @@ function PenaltyRow({ icon, label, value }: { icon: ReactNode; label: string; va
       <strong>{value}</strong>
     </div>
   );
+}
+
+function getPhotoCountLabel(urls?: string[] | null, fallback = "待上传") {
+  const count = urls?.filter(Boolean).length ?? 0;
+  return count > 0 ? `${count} 张照片已归档` : fallback;
 }
 
 export function getAfterSaleDetailTimeline(afterSale?: AfterSaleSummary): AfterSaleTimelineItem[] {

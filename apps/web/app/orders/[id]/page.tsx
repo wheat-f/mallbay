@@ -72,13 +72,34 @@ type CommercialsFormValues = {
   changeReason: string;
 };
 
+type FulfillmentChecklist = {
+  customerConfirmed: boolean;
+  scheduleNotified: boolean;
+  commercialConfirmed: boolean;
+};
+
+type FulfillmentDraft = {
+  checklist: FulfillmentChecklist;
+  note: string;
+};
+
+const emptyFulfillmentChecklist: FulfillmentChecklist = {
+  customerConfirmed: false,
+  scheduleNotified: false,
+  commercialConfirmed: false
+};
+
 export default function OrderDetailPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [commercialsOpen, setCommercialsOpen] = useState(false);
+  const [returnDrawerOpen, setReturnDrawerOpen] = useState(false);
+  const [returnReason, setReturnReason] = useState("");
   const [fulfillmentDrawerOpen, setFulfillmentDrawerOpen] = useState(false);
+  const [fulfillmentChecklist, setFulfillmentChecklist] = useState<FulfillmentChecklist>(emptyFulfillmentChecklist);
+  const [fulfillmentNote, setFulfillmentNote] = useState("");
   const [commercialsForm] = Form.useForm<CommercialsFormValues>();
   const orderQuery = useQuery({
     queryKey: ["order-detail", params.id],
@@ -115,11 +136,29 @@ export default function OrderDetailPage() {
     },
     onError: (error: Error) => message.error(error.message)
   });
+  const returnToPendingMutation = useMutation({
+    mutationFn: () =>
+      orderApi.returnToPendingDispatch(params.id, {
+        reason: returnReason.trim()
+      }),
+    onSuccess: async () => {
+      message.success("订单已反审核退回修改");
+      setReturnDrawerOpen(false);
+      setReturnReason("");
+      await queryClient.invalidateQueries({ queryKey: ["order-detail", params.id] });
+      await queryClient.invalidateQueries({ queryKey: ["order-audit-events", params.id] });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
   const productOptions = ((productsQuery.data?.items ?? []) as ProductOption[]).map((product) => ({
     label: getOrderProductLabel(product),
     value: product.id
   }));
-  const canEditCommercials = Boolean(order && order.status !== "CANCELLED" && (order.amount?.outstandingCents ?? 0) > 0);
+  const hasEditableOutstandingAmount = (order?.amount?.outstandingCents ?? 0) > 0;
+  const canEditCommercials = Boolean(order && order.status === "PENDING_DISPATCH" && hasEditableOutstandingAmount);
+  const canReturnToPendingForEdit = Boolean(
+    order && order.status !== "PENDING_DISPATCH" && order.status !== "CANCELLED" && hasEditableOutstandingAmount
+  );
   const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH";
   const orderSteps = getOrderSteps(order?.status);
 
@@ -139,7 +178,24 @@ export default function OrderDetailPage() {
   };
 
   const openFulfillmentDrawer = () => {
+    const draft = loadFulfillmentDraft(params.id);
+    setFulfillmentChecklist(draft?.checklist ?? emptyFulfillmentChecklist);
+    setFulfillmentNote(draft?.note ?? "");
     setFulfillmentDrawerOpen(true);
+  };
+
+  const saveCurrentFulfillmentDraft = () => {
+    saveFulfillmentDraft(params.id, {
+      checklist: fulfillmentChecklist,
+      note: fulfillmentNote
+    });
+    message.info("已暂存本次核对草稿");
+    setFulfillmentDrawerOpen(false);
+  };
+
+  const continueToConstructionAssignments = () => {
+    clearFulfillmentDraft(params.id);
+    router.push("/construction/assignments");
   };
 
   const openOrderPaymentEntry = () => {
@@ -189,6 +245,11 @@ export default function OrderDetailPage() {
                 {canEditCommercials ? (
                   <Button icon={<EditOutlined />} onClick={openCommercialsDrawer}>
                     修改订单
+                  </Button>
+                ) : null}
+                {canReturnToPendingForEdit ? (
+                  <Button icon={<EditOutlined />} onClick={() => setReturnDrawerOpen(true)}>
+                    反审核退回修改
                   </Button>
                 ) : null}
                 {shouldShowFulfillmentConfirmation ? (
@@ -482,6 +543,42 @@ export default function OrderDetailPage() {
         </Drawer>
 
         <Drawer
+          title="反审核退回修改"
+          open={returnDrawerOpen}
+          onClose={() => setReturnDrawerOpen(false)}
+          rootClassName="order-commercials-drawer"
+          destroyOnHidden
+          footer={(
+            <div className="order-commercials-drawer-footer">
+              <Button onClick={() => setReturnDrawerOpen(false)}>取消</Button>
+              <Button
+                type="primary"
+                loading={returnToPendingMutation.isPending}
+                disabled={!returnReason.trim()}
+                onClick={() => returnToPendingMutation.mutate()}
+              >
+                确认退回
+              </Button>
+            </div>
+          )}
+        >
+          <div className="order-return-drawer-body">
+            <Typography.Paragraph>
+              订单将退回待派工状态，退回后可重新修改产品、数量、价格和施工人工费。
+            </Typography.Paragraph>
+            <Input.TextArea
+              rows={4}
+              value={returnReason}
+              onChange={(event) => setReturnReason(event.target.value)}
+              placeholder="请填写反审核退回原因"
+            />
+            <Typography.Text type="secondary">
+              审计动作：ORDER_RETURNED_TO_PENDING_DISPATCH
+            </Typography.Text>
+          </div>
+        </Drawer>
+
+        <Drawer
           title={<span className="order-fulfillment-drawer-title"><CheckCircleOutlined />确认提交派工与库房匹配</span>}
           open={fulfillmentDrawerOpen}
           onClose={() => setFulfillmentDrawerOpen(false)}
@@ -489,15 +586,12 @@ export default function OrderDetailPage() {
           destroyOnHidden
           footer={(
             <div className="order-fulfillment-drawer-footer">
-              <Button onClick={() => {
-                message.info("已暂存本次核对草稿");
-                setFulfillmentDrawerOpen(false);
-              }}>
+              <Button onClick={saveCurrentFulfillmentDraft}>
                 暂存草稿
               </Button>
               <Button onClick={() => router.push("/inventory")}>进入库房匹配</Button>
               <Button onClick={() => router.push("/construction/assignments")}>进入施工派工</Button>
-              <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => router.push("/construction/assignments")}>
+              <Button type="primary" icon={<CheckCircleOutlined />} onClick={continueToConstructionAssignments}>
                 确认提交，进入派工流转
               </Button>
             </div>
@@ -555,15 +649,30 @@ export default function OrderDetailPage() {
             </section>
 
             <section className="order-fulfillment-drawer-section order-fulfillment-checklist">
-              <Checkbox>
+              <Checkbox
+                checked={fulfillmentChecklist.customerConfirmed}
+                onChange={(event) =>
+                  setFulfillmentChecklist((current) => ({ ...current, customerConfirmed: event.target.checked }))
+                }
+              >
                 <strong>已核对客户信息及施工要求</strong>
                 <span>确认施工部位、产品型号、特殊工艺和客户偏好已完成沟通。</span>
               </Checkbox>
-              <Checkbox>
+              <Checkbox
+                checked={fulfillmentChecklist.scheduleNotified}
+                onChange={(event) =>
+                  setFulfillmentChecklist((current) => ({ ...current, scheduleNotified: event.target.checked }))
+                }
+              >
                 <strong>已告知客户施工时间及注意事项</strong>
                 <span>包含工期预估、车辆交接流程以及施工期间的必要提醒。</span>
               </Checkbox>
-              <Checkbox>
+              <Checkbox
+                checked={fulfillmentChecklist.commercialConfirmed}
+                onChange={(event) =>
+                  setFulfillmentChecklist((current) => ({ ...current, commercialConfirmed: event.target.checked }))
+                }
+              >
                 <strong>产品、数量、单价和人工费已确认</strong>
                 <span>提交后将进入库房备货与施工派工，请确保价格和数量准确。</span>
               </Checkbox>
@@ -576,6 +685,8 @@ export default function OrderDetailPage() {
               </div>
               <Input.TextArea
                 rows={5}
+                value={fulfillmentNote}
+                onChange={(event) => setFulfillmentNote(event.target.value)}
                 placeholder="例如：客户要求特别注意前保险杠合缝处、需库房优先调配 A 库物料等..."
               />
             </section>
@@ -583,6 +694,40 @@ export default function OrderDetailPage() {
         </Drawer>
     </>
   );
+}
+
+function getFulfillmentDraftKey(orderId: string) {
+  return `mallbay-order-fulfillment-draft:${orderId}`;
+}
+
+function loadFulfillmentDraft(orderId: string): FulfillmentDraft | undefined {
+  if (typeof window === "undefined") return undefined;
+  const raw = localStorage.getItem(getFulfillmentDraftKey(orderId));
+  if (!raw) return undefined;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<FulfillmentDraft>;
+    return {
+      checklist: {
+        customerConfirmed: parsed.checklist?.customerConfirmed === true,
+        scheduleNotified: parsed.checklist?.scheduleNotified === true,
+        commercialConfirmed: parsed.checklist?.commercialConfirmed === true
+      },
+      note: typeof parsed.note === "string" ? parsed.note : ""
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function saveFulfillmentDraft(orderId: string, draft: FulfillmentDraft) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(getFulfillmentDraftKey(orderId), JSON.stringify(draft));
+}
+
+function clearFulfillmentDraft(orderId: string) {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(getFulfillmentDraftKey(orderId));
 }
 
 function getOrderAuditActionLabel(action: string) {

@@ -4,11 +4,14 @@ import { request } from "../../lib/request";
 export type CreateAfterSalePayload = {
   orderId: string;
   description: string;
+  issuePhotoUrls?: string[];
 };
 
 export type JudgeAfterSalePayload = {
   responsibility: AfterSaleResponsibility;
   penaltyWorkerUserId?: string;
+  constructionIssueCategory?: string;
+  constructionPhotoUrls?: string[];
   penaltyAmountCents?: number;
   penaltyReason?: string;
   resolutionNote?: string;
@@ -34,6 +37,11 @@ export const afterSalesApi = {
     request<AfterSaleSummary>(`/after-sales/${id}/responsibility`, {
       method: "POST",
       body: JSON.stringify(payload)
+    }),
+
+  close: (id: string) =>
+    request<AfterSaleSummary>(`/after-sales/${id}/close`, {
+      method: "POST"
     })
 };
 

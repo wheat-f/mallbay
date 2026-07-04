@@ -1,0 +1,214 @@
+@startuml
+title MallBay 核心领域实体关系图
+
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Microsoft YaHei
+hide methods
+hide stereotypes
+
+entity "User" as User {
+  * id
+  --
+  username
+  isAuditor
+}
+
+entity "Store" as Store {
+  * id
+  --
+  name
+  status
+}
+
+entity "StoreMember" as StoreMember {
+  * id
+  --
+  storeId
+  userId
+  position
+}
+
+entity "Customer" as Customer {
+  * id
+  --
+  storeId
+  name / companyName
+  ownerUserId
+}
+
+entity "CustomerVehicle" as Vehicle {
+  * id
+  --
+  customerId
+  carPlate
+  vin
+}
+
+entity "Product" as Product {
+  * id
+  --
+  storeId
+  brand
+  name
+  inventoryUnit
+}
+
+entity "Order" as Order {
+  * id
+  --
+  storeId
+  customerId
+  vehicleId
+  status
+}
+
+entity "OrderItem" as OrderItem {
+  * id
+  --
+  orderId
+  productId
+  quantity
+}
+
+entity "ConstructionRecord" as Construction {
+  * id
+  --
+  orderId
+  status
+  assignedWorkerId
+}
+
+entity "Warehouse" as Warehouse {
+  * id
+  --
+  storeId
+  name
+  isActive
+}
+
+entity "InventoryBatch" as Batch {
+  * id
+  --
+  storeId
+  productId
+  warehouseId
+  batchNo
+  availableQuantity
+}
+
+entity "InventoryMovement" as Movement {
+  * id
+  --
+  batchId
+  productId
+  warehouseId
+  movementType
+  quantity
+}
+
+entity "PurchaseRequirement" as Requirement {
+  * id
+  --
+  storeId
+  status
+}
+
+entity "PurchaseRequirementItem" as RequirementItem {
+  * id
+  --
+  purchaseRequirementId
+  productId
+  requiredQuantity
+  fulfilledQuantity
+}
+
+entity "PurchaseOrder" as PurchaseOrder {
+  * id
+  --
+  storeId
+  purchaseRequirementId
+  supplierName
+  status
+  expectedAt
+}
+
+entity "PurchaseOrderItem" as PurchaseOrderItem {
+  * id
+  --
+  purchaseOrderId
+  purchaseRequirementItemId
+  productId
+  quantity
+  receivedQuantity
+}
+
+entity "Warranty" as Warranty {
+  * id
+  --
+  orderId
+  warrantyNo
+  status
+}
+
+entity "AfterSale" as AfterSale {
+  * id
+  --
+  orderId
+  warrantyId
+  status
+  responsibility
+}
+
+entity "Invoice" as Invoice {
+  * id
+  --
+  orderId
+  status
+}
+
+entity "CustomerRebate" as Rebate {
+  * id
+  --
+  orderId
+  customerId
+  status
+}
+
+Store ||--o{ StoreMember
+User ||--o{ StoreMember
+Store ||--o{ Customer
+Customer ||--o{ Vehicle
+Store ||--o{ Product
+Customer ||--o{ Order
+Vehicle ||--o{ Order
+Order ||--o{ OrderItem
+Product ||--o{ OrderItem
+Order ||--o{ Construction
+
+Store ||--o{ Warehouse
+Store ||--o{ Batch
+Warehouse ||--o{ Batch
+Product ||--o{ Batch
+Batch ||--o{ Movement
+Warehouse ||--o{ Movement
+Product ||--o{ Movement
+
+Store ||--o{ Requirement
+Requirement ||--o{ RequirementItem
+Product ||--o{ RequirementItem
+Requirement ||--o{ PurchaseOrder
+PurchaseOrder ||--o{ PurchaseOrderItem
+RequirementItem ||--o{ PurchaseOrderItem
+Product ||--o{ PurchaseOrderItem
+PurchaseOrderItem ..> Batch : receive creates/updates
+PurchaseOrderItem ..> Movement : purchase-in
+
+Order ||--o{ Warranty
+Order ||--o{ AfterSale
+Warranty ||--o{ AfterSale
+Order ||--o{ Invoice
+Order ||--o{ Rebate
+Customer ||--o{ Rebate
+
+@enduml

@@ -1,0 +1,51 @@
+@startuml
+title MallBay 系统上下文图
+
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+skinparam handwritten false
+skinparam defaultFontName Microsoft YaHei
+skinparam rectangle {
+  BorderColor #0F3A5F
+  BackgroundColor #F7FAFC
+}
+skinparam actor {
+  BorderColor #0F3A5F
+  BackgroundColor #EAF3FB
+}
+
+actor "店长 / 管理员" as Manager
+actor "销售" as Sales
+actor "采购" as Purchasing
+actor "施工主管 / 施工人员" as Construction
+actor "客服 / 售后" as Service
+actor "财务" as Finance
+actor "审核员" as Auditor
+
+rectangle "MallBay Web\nNext.js + React + Ant Design" as Web
+rectangle "MallBay API\nNestJS Modular Monolith" as Api
+database "PostgreSQL\nPrisma schema" as Db
+queue "Redis\n缓存 / 预留队列能力" as Redis
+cloud "对象存储\n施工/质保/售后照片" as Oss
+rectangle "导出文件\nExcel / 报表" as Export
+
+Manager --> Web : 门店运营、成员、设置
+Sales --> Web : 客户、订单、收款
+Purchasing --> Web : 采购需求、采购订单、到货验收
+Construction --> Web : 排班、派工、施工记录
+Service --> Web : 质保、售后、客户跟进
+Finance --> Web : 财务、发票、返利
+Auditor --> Web : 门店审核、后台管理
+
+Web --> Api : REST JSON\nBearer Token
+Api --> Db : Prisma Client
+Api --> Redis : 连接预置
+Api --> Oss : 上传/读取图片
+Web --> Export : 前端导出 Excel
+
+note right of Api
+当前是模块化单体，
+不是微服务架构。
+end note
+
+@enduml

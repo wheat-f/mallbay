@@ -1,0 +1,103 @@
+@startuml
+title MallBay 运行与模块架构
+
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Microsoft YaHei
+skinparam packageStyle rectangle
+skinparam componentStyle rectangle
+
+node "开发 / 部署环境" {
+  package "Nx Monorepo" {
+    package "apps/web" {
+      [Next.js App Router] as Next
+      [React Pages] as Pages
+      [TanStack Query] as Query
+      [Zustand Auth Store] as Zustand
+      [Ant Design UI] as Antd
+    }
+
+    package "apps/api" {
+      [NestJS AppModule] as AppModule
+      package "Feature Modules" {
+        [Auth]
+        [Stores]
+        [Members]
+        [Customers]
+        [Products]
+        [Orders]
+        [Construction]
+        [Inventory]
+        [Purchases]
+        [Warranties]
+        [After Sales]
+        [Finance]
+        [Invoices]
+        [Rebates]
+        [Reports]
+      }
+      [PrismaModule] as PrismaModule
+      [PermissionPolicy] as Policy
+    }
+
+    package "packages/shared" {
+      [Shared TypeScript Contracts] as Shared
+    }
+  }
+
+  database "PostgreSQL" as Pg
+  database "Redis" as Redis
+}
+
+Pages --> Query
+Pages --> Zustand
+Pages --> Antd
+Pages --> Shared
+Query --> AppModule : REST API
+
+AppModule --> Auth
+AppModule --> Stores
+AppModule --> Members
+AppModule --> Customers
+AppModule --> Products
+AppModule --> Orders
+AppModule --> Construction
+AppModule --> Inventory
+AppModule --> Purchases
+AppModule --> Warranties
+AppModule --> [After Sales]
+AppModule --> Finance
+AppModule --> Invoices
+AppModule --> Rebates
+AppModule --> Reports
+
+Auth --> PrismaModule
+Stores --> PrismaModule
+Members --> PrismaModule
+Customers --> PrismaModule
+Products --> PrismaModule
+Orders --> PrismaModule
+Construction --> PrismaModule
+Inventory --> PrismaModule
+Purchases --> Inventory : delegates purchase workflows
+Warranties --> PrismaModule
+[After Sales] --> PrismaModule
+Finance --> PrismaModule
+Invoices --> PrismaModule
+Rebates --> PrismaModule
+Reports --> PrismaModule
+
+Inventory --> Policy
+Orders --> Policy
+Construction --> Policy
+Finance --> Policy
+
+PrismaModule --> Pg
+AppModule ..> Redis : dependency prepared
+AppModule --> Shared : response contracts where needed
+
+note bottom of Shared
+共享类型不依赖 React、Nest、Prisma。
+end note
+
+@enduml

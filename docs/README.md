@@ -14,6 +14,10 @@
 - [governance/API_GUIDELINES.md](./governance/API_GUIDELINES.md)：REST API、错误、分页、鉴权和版本策略。
 - [governance/REFACTOR_PLAN.md](./governance/REFACTOR_PLAN.md)：当前问题清单和渐进式改造路线。
 
+### 架构图
+
+- [diagrams/README.md](./diagrams/README.md)：PlantUML 图索引，包含系统上下文、运行架构、核心领域 ER、系统完整业务流程和采购到货验收时序图。
+
 ### 功能方案与实施计划
 
 - [features/paint-protection-film-system-plan.md](./features/paint-protection-film-system-plan.md)：漆面保护膜施工管理系统 V1.7 需求建设方案。

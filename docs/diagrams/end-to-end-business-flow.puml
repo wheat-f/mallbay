@@ -1,0 +1,153 @@
+@startuml
+title MallBay 门店运营端到端业务流程
+
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Microsoft YaHei
+skinparam activity {
+  BorderColor #0F3A5F
+  BackgroundColor #F7FAFC
+  DiamondBorderColor #0F3A5F
+  DiamondBackgroundColor #EAF3FB
+  StartColor #0F3A5F
+  EndColor #0F3A5F
+}
+skinparam note {
+  BorderColor #8AA4B8
+  BackgroundColor #FFF8E6
+}
+
+start
+
+partition "审核员 / 平台" {
+  :创建门店草稿;
+  :邀请或指定店长;
+}
+
+partition "店长 / 门店管理" {
+  :完善门店资料;
+  :提交门店审核;
+}
+
+partition "审核员 / 平台" {
+  if (门店资料审核通过?) then (是)
+    :发布门店;
+  else (否)
+    :驳回并记录原因;
+    stop
+  endif
+}
+
+partition "店长 / 门店管理" {
+  :配置成员与岗位权限;
+  :维护产品、施工产能、仓库、供应商等主数据;
+}
+
+partition "销售 / 客户订单" {
+  :新建或维护客户档案;
+  :录入客户车辆;
+  :创建销售订单;
+  :选择产品和施工方案;
+  :记录订金、全款或尾款;
+}
+
+partition "库存 / 采购" {
+  :订单库存匹配;
+  if (库存是否充足?) then (充足)
+    :锁定库存批次;
+  else (缺货)
+    :生成采购需求;
+    :采购需求列表处理;
+    :从采购需求创建采购订单;
+    :按供应商拆分数量和预计到货日;
+    :采购订单审批;
+    if (供应商到货是否可验收?) then (验收)
+      :选择验收物料、批次和存放仓库;
+      :验收入库;
+      :写入 InventoryBatch;
+      :写入 InventoryMovement(PURCHASE_IN);
+    else (拒收)
+      :填写拒收原因;
+      :取消采购订单并写审计日志;
+      stop
+    endif
+    :重新进行库存匹配;
+    :锁定库存批次;
+  endif
+}
+
+partition "施工 / 车间" {
+  :进入施工派工;
+  :读取施工产能与人员排班;
+  if (可派工?) then (是)
+    :分配施工人员;
+    :施工人员接单;
+    :上传施工前照片;
+    :记录施工过程;
+    :上传施工后照片;
+    :质检或责任判定;
+  else (否)
+    :调整预约或等待产能释放;
+    stop
+  endif
+}
+
+partition "库存 / 采购" {
+  :施工使用库存出库;
+  :更新库存批次可用量;
+  :写入 InventoryMovement(ORDER_OUT);
+}
+
+partition "销售 / 客户订单" {
+  :确认订单完工;
+  if (尾款是否已结清?) then (是)
+    :订单进入完成状态;
+  else (否)
+    :提醒收款;
+    :记录尾款;
+    :订单进入完成状态;
+  endif
+}
+
+partition "客服 / 质保售后" {
+  :生成或录入质保单;
+  :客户后续反馈;
+  if (是否产生售后?) then (是)
+    :创建售后单;
+    :派单处理;
+    :上传问题照片和施工后对比;
+    :责任判定;
+    :记录处理结果;
+    :售后关闭;
+  else (否)
+    :保留质保档案;
+  endif
+}
+
+partition "财务 / 经营分析" {
+  :处理发票申请;
+  :处理返利申请;
+  :记录费用和报销;
+  :结算施工/销售提成;
+  :生成报表分析;
+}
+
+partition "店长 / 门店管理" {
+  :查看工作台、报表和异常提醒;
+  :复盘客户、订单、库存、采购、施工、售后和财务数据;
+}
+
+stop
+
+legend right
+  |= 关键数据落点 |
+  | 客户 | Customer / CustomerVehicle |
+  | 订单 | Order / OrderItem / OrderPayment |
+  | 库存 | Warehouse / InventoryBatch / InventoryMovement |
+  | 采购 | PurchaseRequirement / PurchaseOrder |
+  | 施工 | ConstructionRecord / ConstructionAssignment |
+  | 质保售后 | Warranty / AfterSale |
+  | 财务 | Invoice / CustomerRebate / PaymentRecord |
+endlegend
+
+@enduml

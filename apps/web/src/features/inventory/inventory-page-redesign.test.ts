@@ -112,10 +112,30 @@ test("inventory matching page does not embed purchase supplier or adjustment man
 test("inventory overview links only to inventory workspaces and purchases boundary", () => {
   assert.match(pageSource, /href="\/inventory\/matching"/);
   assert.match(pageSource, /href="\/inventory\/adjustments"/);
+  assert.match(pageSource, /href="\/inventory\/warehouses"/);
   assert.match(pageSource, /href="\/inventory\/movements"/);
   assert.match(pageSource, /href="\/purchases"/);
   assert.doesNotMatch(pageSource, /href="\/inventory\/suppliers"/);
   assert.doesNotMatch(pageSource, /href="\/inventory\/purchase-orders"/);
+});
+
+test("inventory exposes a dedicated warehouse management workspace", () => {
+  const warehousePath = "app/inventory/warehouses/page.tsx";
+
+  assert.equal(existsSync(warehousePath), true);
+
+  const warehouseSource = readFileSync(warehousePath, "utf8");
+
+  assert.match(warehouseSource, /仓库管理/);
+  assert.match(warehouseSource, /inventoryApi\.warehouses/);
+  assert.match(warehouseSource, /inventoryApi\.createWarehouse/);
+  assert.match(warehouseSource, /inventoryApi\.updateWarehouse/);
+  assert.match(warehouseSource, /warehouse-workspace-page/);
+  assert.match(warehouseSource, /name="name"/);
+  assert.match(warehouseSource, /name="code"/);
+  assert.match(warehouseSource, /name="area"/);
+  assert.match(warehouseSource, /isActive/);
+  assert.match(cssSource, /\.warehouse-workspace-page/);
 });
 
 test("inventory overview pending order queue has mobile cards instead of squeezing the desktop table", () => {

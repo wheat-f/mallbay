@@ -43,6 +43,44 @@ test("InventoryService creates a batch and purchase-in movement", async () => {
   assert.equal(JSON.stringify(writes).includes("\"quantity\":10"), true);
 });
 
+test("InventoryService manages store warehouses as inventory master data", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    warehouse: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [{ id: "warehouse-1", storeId: "store-1", name: "主仓库", isActive: true }];
+      },
+      create: async (args: unknown) => {
+        calls.push(args);
+        return { id: "warehouse-2", storeId: "store-1", name: "贴膜仓", isActive: true };
+      },
+      findUnique: async () => ({ id: "warehouse-1", storeId: "store-1", name: "主仓库", isActive: true }),
+      update: async (args: unknown) => {
+        calls.push(args);
+        return { id: "warehouse-1", storeId: "store-1", name: "主仓库 A 区", isActive: true };
+      }
+    }
+  };
+  const service = new InventoryService(prisma as never);
+  const user = {
+    id: "purchasing-1",
+    isAuditor: false,
+    storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+  };
+
+  await service.listWarehouses(user, "store-1");
+  await service.createWarehouse(user, { storeId: "store-1", name: "贴膜仓", code: "PPF-A", area: "A 区" });
+  await service.updateWarehouse(user, "warehouse-1", { name: "主仓库 A 区", isActive: true });
+
+  const serialized = JSON.stringify(calls);
+  assert.equal(serialized.includes("\"storeId\":\"store-1\""), true);
+  assert.equal(serialized.includes("\"name\":\"贴膜仓\""), true);
+  assert.equal(serialized.includes("\"createdById\":\"purchasing-1\""), true);
+  assert.equal(serialized.includes("\"name\":\"主仓库 A 区\""), true);
+});
+
 test("InventoryService filters inventory movements by product batch order type and operator", async () => {
   const calls: unknown[] = [];
   const service = new InventoryService({
@@ -318,6 +356,112 @@ test("InventoryService creates purchase orders only for un-ordered requirement q
   const serialized = JSON.stringify(writes);
   assert.match(serialized, /"quantity":3/);
   assert.doesNotMatch(serialized, /"quantity":8/);
+});
+
+test("InventoryService splits a purchase requirement across multiple suppliers", async () => {
+  const writes: unknown[] = [];
+  const tx = {
+    purchaseRequirement: {
+      findUnique: async () => ({
+        id: "pr-1",
+        storeId: "store-1",
+        items: [
+          {
+            id: "pri-1",
+            productId: "product-1",
+            requiredQuantity: 10,
+            purchaseOrderItems: [
+              { quantity: 2, purchaseOrder: { status: "ORDERED" } }
+            ]
+          }
+        ]
+      }),
+      update: async (args: unknown) => writes.push(args)
+    },
+    purchaseOrder: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: `po-${writes.length}`, items: [] };
+      }
+    }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  const result = await service.createPurchaseOrderFromRequirement(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    "pr-1",
+    {
+      expectedAt: "2026-06-10",
+      supplierAllocations: [
+        { supplierName: "供应商A", expectedAt: "2026-06-10", items: [{ purchaseRequirementItemId: "pri-1", quantity: 3 }] },
+        { supplierName: "供应商B", expectedAt: "2026-06-15", items: [{ purchaseRequirementItemId: "pri-1", quantity: 5 }] }
+      ]
+    }
+  );
+
+  assert.equal((result as { purchaseOrders: unknown[] }).purchaseOrders.length, 2);
+  const serialized = JSON.stringify(writes);
+  assert.match(serialized, /"supplierName":"供应商A"/);
+  assert.match(serialized, /"supplierName":"供应商B"/);
+  assert.match(serialized, /"quantity":3/);
+  assert.match(serialized, /"quantity":5/);
+  assert.match(serialized, /2026-06-10/);
+  assert.match(serialized, /2026-06-15/);
+  assert.match(serialized, /"status":"ORDERED"/);
+});
+
+test("InventoryService rejects supplier allocations above remaining requirement quantity", async () => {
+  const tx = {
+    purchaseRequirement: {
+      findUnique: async () => ({
+        id: "pr-1",
+        storeId: "store-1",
+        items: [
+          {
+            id: "pri-1",
+            productId: "product-1",
+            requiredQuantity: 4,
+            purchaseOrderItems: []
+          }
+        ]
+      })
+    },
+    purchaseOrder: {
+      create: async () => {
+        throw new Error("should not create purchase order");
+      }
+    }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  await assert.rejects(
+    () =>
+      service.createPurchaseOrderFromRequirement(
+        {
+          id: "purchasing-1",
+          isAuditor: false,
+          storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+        },
+        "pr-1",
+        {
+          supplierAllocations: [
+            { supplierName: "供应商A", items: [{ purchaseRequirementItemId: "pri-1", quantity: 3 }] },
+            { supplierName: "供应商B", items: [{ purchaseRequirementItemId: "pri-1", quantity: 2 }] }
+          ]
+        }
+      ),
+    /采购数量不能超过需求剩余数量/
+  );
 });
 
 test("InventoryService rejects sales viewing purchase orders", async () => {
@@ -999,6 +1143,56 @@ test("InventoryService receives purchase item batches with per-line failures", a
   assert.equal(result.failed[0].index, 1);
   assert.match(result.failed[0].message, /入库数量不能超过采购数量/);
   assert.equal(purchaseItem.receivedQuantity, 2);
+});
+
+test("InventoryService stores receiving warehouse on purchase-in batch and movement", async () => {
+  const writes: unknown[] = [];
+  const purchaseItem = {
+    id: "poi-1",
+    purchaseOrderId: "po-1",
+    purchaseRequirementItemId: null,
+    productId: "product-1",
+    quantity: 2,
+    receivedQuantity: 0,
+    unitCostCents: 1000,
+    purchaseOrder: { id: "po-1", storeId: "store-1", orderNo: "PO1", supplierName: "3M" }
+  };
+  const tx = {
+    warehouse: {
+      findUnique: async () => ({ id: "warehouse-1", storeId: "store-1", name: "主仓库 A 区", isActive: true })
+    },
+    purchaseOrderItem: {
+      findUnique: async () => purchaseItem,
+      update: async (args: unknown) => writes.push(args),
+      findMany: async () => [purchaseItem]
+    },
+    inventoryBatch: {
+      upsert: async (args: unknown) => {
+        writes.push(args);
+        return { id: "batch-1" };
+      }
+    },
+    inventoryMovement: { create: async (args: unknown) => writes.push(args) },
+    purchaseOrder: { update: async (args: unknown) => writes.push(args) }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  await service.receivePurchaseItem(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    "poi-1",
+    { quantity: 1, batchNo: "B001", supplierName: "3M", warehouseId: "warehouse-1" } as never
+  );
+
+  const serialized = JSON.stringify(writes);
+  assert.equal(serialized.includes("\"warehouseId\":\"warehouse-1\""), true);
+  assert.equal(serialized.includes("\"warehouseName\":\"主仓库 A 区\""), true);
 });
 
 test("InventoryService records roll to meter conversion as inventory movement metadata", async () => {

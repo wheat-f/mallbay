@@ -155,6 +155,8 @@ export type InventoryBatchSummary = {
   productId: string;
   batchNo: string;
   supplierName: string | null;
+  warehouseId?: string | null;
+  warehouseName?: string | null;
   unit: ProductUnit;
   totalQuantity: number;
   availableQuantity: number;
@@ -175,6 +177,18 @@ export type InventoryBatchSummary = {
     quantityPrecision?: number | null;
     warrantyYears?: number | null;
   } | null;
+};
+
+export type InventoryWarehouseSummary = {
+  id: string;
+  storeId: string;
+  name: string;
+  code?: string | null;
+  area?: string | null;
+  address?: string | null;
+  isActive: boolean;
+  createdAt?: string | Date | null;
+  updatedAt?: string | Date | null;
 };
 
 export type InventorySupplierSummary = {

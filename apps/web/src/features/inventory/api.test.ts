@@ -237,6 +237,33 @@ test("inventoryApi manages supplier master data", async () => {
   }
 });
 
+test("inventoryApi manages warehouse master data", async () => {
+  const calls: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    calls.push({ input, init });
+    return new Response(JSON.stringify({ id: "warehouse-1" }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  try {
+    await inventoryApi.warehouses("store-1");
+    await inventoryApi.createWarehouse({ storeId: "store-1", name: "主仓库", code: "MAIN", area: "A 区" });
+    await inventoryApi.updateWarehouse("warehouse-1", { name: "主仓库 A 区", isActive: true });
+    await purchaseApi.warehouses("store-1");
+
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/warehouses?storeId=store-1");
+    assert.equal((calls[1] as { input: string }).input, "http://localhost:3001/inventory/warehouses");
+    assert.equal((calls[1] as { init: RequestInit }).init.method, "POST");
+    assert.equal((calls[2] as { input: string }).input, "http://localhost:3001/inventory/warehouses/warehouse-1");
+    assert.equal((calls[2] as { init: RequestInit }).init.method, "PATCH");
+    assert.equal((calls[3] as { input: string }).input, "http://localhost:3001/purchases/warehouses?storeId=store-1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("inventoryApi.receivePurchaseItemBatches posts scanned batches once", async () => {
   const calls: unknown[] = [];
   const originalFetch = globalThis.fetch;
@@ -249,8 +276,8 @@ test("inventoryApi.receivePurchaseItemBatches posts scanned batches once", async
   };
   try {
     await inventoryApi.receivePurchaseItemBatches("poi-1", [
-      { batchNo: "B001", quantity: 1, supplierName: "3M" },
-      { batchNo: "B002", quantity: 2 }
+      { batchNo: "B001", quantity: 1, supplierName: "3M", warehouseId: "warehouse-1", warehouseName: "主仓库" },
+      { batchNo: "B002", quantity: 2, warehouseId: "warehouse-1", warehouseName: "主仓库" }
     ]);
 
     assert.equal(calls.length, 1);
@@ -263,8 +290,8 @@ test("inventoryApi.receivePurchaseItemBatches posts scanned batches once", async
       (calls[0] as { init: RequestInit }).init.body,
       JSON.stringify({
         batches: [
-          { batchNo: "B001", quantity: 1, supplierName: "3M" },
-          { batchNo: "B002", quantity: 2 }
+          { batchNo: "B001", quantity: 1, supplierName: "3M", warehouseId: "warehouse-1", warehouseName: "主仓库" },
+          { batchNo: "B002", quantity: 2, warehouseId: "warehouse-1", warehouseName: "主仓库" }
         ]
       })
     );

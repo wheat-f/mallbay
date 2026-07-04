@@ -5,6 +5,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import {
   ConvertBatchUnitDto,
   CreateInventoryBatchDto,
+  CreateWarehouseDto,
   CreateOrderInventoryAllocationsDto,
   CreatePurchaseOrderFromRequirementDto,
   CreatePurchaseOrderDto,
@@ -16,9 +17,11 @@ import {
   CreateStockOperationDto,
   ListInventoryDto,
   ListSuppliersDto,
+  ListWarehousesDto,
   ReceivePurchaseItemBatchesDto,
   ReceivePurchaseItemDto,
   SplitBatchDto,
+  UpdateWarehouseDto,
   UpdateSupplierDto
 } from "./dto/inventory.dto";
 import { InventoryService, type AuthenticatedInventoryUser } from "./inventory.service";
@@ -40,6 +43,21 @@ export class InventoryController {
   @Post("batches")
   createBatch(@Req() req: AuthRequest, @Body() dto: CreateInventoryBatchDto) {
     return this.inventory.createBatch(req.user, dto);
+  }
+
+  @Get("warehouses")
+  listWarehouses(@Req() req: AuthRequest, @Query() query: ListWarehousesDto) {
+    return this.inventory.listWarehouses(req.user, query.storeId);
+  }
+
+  @Post("warehouses")
+  createWarehouse(@Req() req: AuthRequest, @Body() dto: CreateWarehouseDto) {
+    return this.inventory.createWarehouse(req.user, dto);
+  }
+
+  @Patch("warehouses/:id")
+  updateWarehouse(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateWarehouseDto) {
+    return this.inventory.updateWarehouse(req.user, id, dto);
   }
 
   @Get("suppliers")

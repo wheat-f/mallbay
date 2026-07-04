@@ -1,4 +1,10 @@
-import type { InventoryBatchSummary, InventoryMovementType, InventorySupplierSummary, ProductUnit } from "@mallbay/shared";
+import type {
+  InventoryBatchSummary,
+  InventoryMovementType,
+  InventorySupplierSummary,
+  InventoryWarehouseSummary,
+  ProductUnit
+} from "@mallbay/shared";
 import { request } from "../../lib/request";
 
 export type InventoryListQuery = {
@@ -21,6 +27,25 @@ export type CreateInventoryBatchPayload = {
   unitCostCents?: number;
   productionDate?: string;
   receivedAt?: string;
+  warehouseId?: string;
+  warehouseName?: string;
+};
+
+export type CreateWarehousePayload = {
+  storeId: string;
+  name: string;
+  code?: string;
+  area?: string;
+  address?: string;
+  isActive?: boolean;
+};
+
+export type UpdateWarehousePayload = {
+  name?: string;
+  code?: string;
+  area?: string;
+  address?: string;
+  isActive?: boolean;
 };
 
 export type CreateSupplierPayload = {
@@ -91,6 +116,14 @@ export type CreatePurchaseRequirementPayload = {
 export type CreatePurchaseOrderFromRequirementPayload = {
   supplierName?: string;
   expectedAt?: string;
+  supplierAllocations?: Array<{
+    supplierName: string;
+    expectedAt?: string;
+    items: Array<{
+      purchaseRequirementItemId: string;
+      quantity: number;
+    }>;
+  }>;
 };
 
 export type SplitBatchPayload = {
@@ -116,6 +149,8 @@ export type ReceivePurchaseItemPayload = {
   quantity: number;
   batchNo: string;
   supplierName?: string;
+  warehouseId?: string;
+  warehouseName?: string;
 };
 
 export type ReceivePurchaseItemBatchesResult = {
@@ -130,6 +165,21 @@ export const inventoryApi = {
   createBatch: (payload: CreateInventoryBatchPayload) =>
     request<InventoryBatchSummary>("/inventory/batches", {
       method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  warehouses: (storeId: string) =>
+    request<InventoryWarehouseSummary[]>(`/inventory/warehouses${toQueryString({ storeId })}`),
+
+  createWarehouse: (payload: CreateWarehousePayload) =>
+    request<InventoryWarehouseSummary>("/inventory/warehouses", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  updateWarehouse: (id: string, payload: UpdateWarehousePayload) =>
+    request<InventoryWarehouseSummary>(`/inventory/warehouses/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(payload)
     }),
 
@@ -299,6 +349,9 @@ export const purchaseApi = {
       method: "POST",
       body: JSON.stringify({ batches: payloads })
     }),
+
+  warehouses: (storeId: string) =>
+    request<InventoryWarehouseSummary[]>(`/purchases/warehouses${toQueryString({ storeId })}`),
 
   suppliers: (storeId: string) =>
     request<InventorySupplierSummary[]>(`/purchases/suppliers${toQueryString({ storeId })}`),

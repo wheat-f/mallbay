@@ -24,6 +24,7 @@ test("purchases overview exposes purchase demand order receiving and supplier wo
 test("purchases child routes exist under the purchases boundary", () => {
   assert.equal(existsSync("app/purchases/requirements/page.tsx"), true);
   assert.equal(existsSync("app/purchases/orders/page.tsx"), true);
+  assert.equal(existsSync("app/purchases/orders/create/page.tsx"), true);
   assert.equal(existsSync("app/purchases/orders/[id]/page.tsx"), true);
   assert.equal(existsSync("app/purchases/inbound/page.tsx"), true);
   assert.equal(existsSync("app/purchases/suppliers/page.tsx"), true);
@@ -46,7 +47,9 @@ test("purchases order list and detail use purchaseApi instead of inventoryApi", 
   assert.match(ordersSource, /purchaseApi\.orders/);
   assert.match(ordersSource, /<Alert[\s\S]*title="只读模式"/);
   assert.doesNotMatch(ordersSource, /<Alert[\s\S]*message=/);
+  assert.match(ordersSource, /router\.push\("\/purchases\/orders\/create"\)/);
   assert.match(ordersSource, /router\.push\(`\/purchases\/orders\/\$\{row\.id\}`\)/);
+  assert.match(ordersSource, /查看\/处理/);
   assert.doesNotMatch(ordersSource, /inventoryApi\./);
   assert.match(detailSource, /purchaseApi\.order\(purchaseOrderId\)/);
   assert.match(detailSource, /purchaseApi\.receiveOrderItemBatches/);
@@ -65,20 +68,20 @@ test("purchases order receiving form uses selectable supplier options", () => {
   assert.doesNotMatch(detailSource, /<Form\.Item name="supplierName" label="默认供应商">\s*<Input placeholder="未填批次供应商时使用该供应商" \/>/);
 });
 
-test("purchases requirements page focuses on manual demand creation", () => {
+test("purchases requirements page is a demand list with manual creation and order actions", () => {
   const requirementsSource = readFileSync("app/purchases/requirements/page.tsx", "utf8");
 
+  assert.match(requirementsSource, /purchaseApi\.requirements/);
   assert.match(requirementsSource, /purchaseApi\.createRequirement/);
+  assert.match(requirementsSource, /采购需求列表/);
   assert.match(requirementsSource, /新建采购需求/);
   assert.match(requirementsSource, /选择采购产品/);
   assert.match(requirementsSource, /requiredQuantity/);
   assert.match(requirementsSource, /requiredUnit/);
+  assert.match(requirementsSource, /Table<PurchaseRequirementRow>/);
+  assert.match(requirementsSource, /PurchaseRequirementOrderAction/);
+  assert.match(requirementsSource, /router\.push\(`\/purchases\/orders\/create\?requirementId=\$\{row\.id\}`\)/);
   assert.match(requirementsSource, /purchases-requirement-create-actions/);
-  assert.doesNotMatch(requirementsSource, /purchaseApi\.requirements/);
-  assert.doesNotMatch(requirementsSource, /purchaseApi\.suppliers/);
-  assert.doesNotMatch(requirementsSource, /采购需求列表/);
-  assert.doesNotMatch(requirementsSource, /PurchaseRequirementOrderAction/);
-  assert.doesNotMatch(requirementsSource, /createPurchaseOrderFromRequirement/);
 });
 
 test("purchases requirements page avoids deprecated Alert message prop", () => {
@@ -88,17 +91,38 @@ test("purchases requirements page avoids deprecated Alert message prop", () => {
   assert.doesNotMatch(requirementsSource, /<Alert[\s\S]*message=/);
 });
 
-test("purchases requirements page uses a focused form layout", () => {
+test("purchases requirements page keeps list as the primary workspace", () => {
   const requirementsSource = readFileSync("app/purchases/requirements/page.tsx", "utf8");
 
-  assert.match(requirementsSource, /purchases-requirement-create-card/);
-  assert.match(cssSource, /\.purchases-requirement-create-card\.ant-card/);
-  assert.match(cssSource, /\.purchases-requirement-create-form/);
+  assert.match(requirementsSource, /purchase-requirement-list/);
+  assert.match(requirementsSource, /\/purchases\/orders\/create\?requirementId=/);
+  assert.match(cssSource, /\.purchase-requirement-list/);
   assert.match(cssSource, /\.purchases-requirement-create-actions/);
-  assert.doesNotMatch(requirementsSource, /purchase-requirement-list/);
-  assert.doesNotMatch(requirementsSource, /purchase-requirement-card/);
-  assert.doesNotMatch(requirementsSource, /purchase-requirement-action-panel/);
-  assert.doesNotMatch(requirementsSource, /<Table<PurchaseRequirementRow>/);
+});
+
+test("purchase order create page selects unordered requirements", () => {
+  const createSource = readFileSync("app/purchases/orders/create/page.tsx", "utf8");
+
+  assert.match(createSource, /purchaseApi\.requirements/);
+  assert.match(createSource, /purchaseApi\.createPurchaseOrderFromRequirement/);
+  assert.match(createSource, /unorderedRequirements/);
+  assert.match(createSource, /row\.status === "OPEN" \|\| row\.status === "PARTIAL_ORDERED"/);
+  assert.match(createSource, /selectedRequirementId/);
+  assert.match(createSource, /displayRequirements/);
+  assert.match(createSource, /getCheckboxProps/);
+  assert.match(createSource, /canSelectRequirement/);
+  assert.match(createSource, /已完成，不可选择/);
+  assert.match(createSource, /Form\.List name="supplierAllocations"/);
+  assert.match(createSource, /name=\{\[field\.name, "expectedAt"\]\}/);
+  assert.doesNotMatch(createSource, /<Form\.Item name="expectedAt" label="预计到货日">/);
+  assert.match(createSource, /allocationTotal/);
+  assert.match(createSource, /remainingQuantity/);
+  assert.match(createSource, /supplierAllocations/);
+  assert.match(createSource, /采购数量不能超过需求剩余数量/);
+  assert.match(createSource, /添加供应商/);
+  assert.match(createSource, /请选择未生成订购的采购需求/);
+  assert.match(createSource, /router\.push\("\/purchases\/orders"\)/);
+  assert.doesNotMatch(createSource, /purchaseApi\.createRequirement/);
 });
 
 test("purchases supplier page is read-only aware and uses purchaseApi", () => {

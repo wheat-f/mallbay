@@ -51,6 +51,7 @@ model User {
   commissionSnapshots        WorkerCommissionSnapshot[] @relation("WorkerCommissionWorker")
   createdCommissionSnapshots WorkerCommissionSnapshot[] @relation("WorkerCommissionCreatedBy")
   inventoryMovements         InventoryMovement[]        @relation("InventoryMovementCreatedBy")
+  warehousesCreated          Warehouse[]                @relation("WarehouseCreatedBy")
   inventoryAllocationsLocked OrderInventoryAllocation[] @relation("InventoryAllocationLockedBy")
   inventoryAllocationsOut    OrderInventoryAllocation[] @relation("InventoryAllocationOutboundBy")
   purchaseRequirements       PurchaseRequirement[]      @relation("PurchaseRequirementCreatedBy")
@@ -119,6 +120,7 @@ model Store {
   schedules                  Schedule[]
   inventoryBatches           InventoryBatch[]
   inventoryMovements         InventoryMovement[]
+  warehouses                 Warehouse[]
   inventoryAllocations       OrderInventoryAllocation[]
   purchaseRequirements       PurchaseRequirement[]
   purchaseOrders             PurchaseOrder[]
@@ -851,6 +853,28 @@ model WorkerCommissionSnapshot {
 
 // ─── Phase 3 Inventory, Purchase, Warranty ──────────────────────────────────
 
+model Warehouse {
+  id          String   @id @default(cuid())
+  storeId     String
+  name        String
+  code        String?
+  area        String?
+  address     String?
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store              Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdBy          User                @relation("WarehouseCreatedBy", fields: [createdById], references: [id])
+  inventoryBatches   InventoryBatch[]
+  inventoryMovements InventoryMovement[]
+
+  @@unique([storeId, name])
+  @@index([storeId, isActive])
+  @@index([createdById])
+}
+
 model InventoryBatch {
   id                String      @id @default(cuid())
   storeId           String
@@ -865,6 +889,8 @@ model InventoryBatch {
   unitCostCents     Int?
   productionDate    DateTime?
   receivedAt        DateTime?
+  warehouseId       String?
+  warehouseName     String?
   parentBatchId     String?
   sourceType        String?
   sourceId          String?
@@ -873,6 +899,7 @@ model InventoryBatch {
 
   store        Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   product      Product                    @relation(fields: [productId], references: [id])
+  warehouse    Warehouse?                 @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   parentBatch  InventoryBatch?            @relation("InventoryBatchSplit", fields: [parentBatchId], references: [id])
   childBatches InventoryBatch[]           @relation("InventoryBatchSplit")
   movements    InventoryMovement[]
@@ -881,6 +908,7 @@ model InventoryBatch {
   @@unique([storeId, productId, batchNo])
   @@index([storeId, productId])
   @@index([storeId, batchNo])
+  @@index([warehouseId])
   @@index([parentBatchId])
 }
 
@@ -899,6 +927,8 @@ model InventoryMovement {
   sourceType     String?
   sourceId       String?
   note           String?
+  warehouseId    String?
+  warehouseName  String?
   createdById    String
   createdAt      DateTime              @default(now())
 
@@ -906,12 +936,14 @@ model InventoryMovement {
   batch     InventoryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
   product   Product        @relation(fields: [productId], references: [id])
   order     Order?         @relation(fields: [orderId], references: [id])
+  warehouse Warehouse?     @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   createdBy User           @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id])
 
   @@index([storeId, createdAt])
   @@index([orderId])
   @@index([batchId])
   @@index([productId])
+  @@index([warehouseId])
   @@index([sourceType, sourceId])
 }
 

@@ -13,6 +13,7 @@ import type {
   CreateOrderInventoryAllocationsDto,
   CreatePurchaseRequirementDto,
   CreateInventoryBatchDto,
+  CreateWarehouseDto,
   CancelPurchaseOrderDto,
   CreatePurchaseOrderDto,
   CreateSupplierContactDto,
@@ -21,6 +22,7 @@ import type {
   ListInventoryDto,
   ReceivePurchaseItemBatchesDto,
   ReceivePurchaseItemDto,
+  UpdateWarehouseDto,
   UpdateSupplierDto
 } from "./dto/inventory.dto";
 
@@ -31,6 +33,14 @@ export type AuthenticatedInventoryUser = UserWithStoreMember & {
 type CreatePurchaseOrderFromRequirementInput = {
   supplierName?: string;
   expectedAt?: string;
+  supplierAllocations?: Array<{
+    supplierName: string;
+    expectedAt?: string;
+    items: Array<{
+      purchaseRequirementItemId: string;
+      quantity: number;
+    }>;
+  }>;
 };
 
 type SplitBatchInput = {
@@ -81,6 +91,19 @@ type SupplierSummary = {
   lastMasterDataUpdatedAt?: Date | null;
 };
 
+type WarehouseRecord = {
+  id: string;
+  storeId: string;
+  name: string;
+  isActive: boolean;
+};
+
+type WarehouseLookupClient = {
+  warehouse: {
+    findUnique: (args: { where: { id: string } }) => Promise<WarehouseRecord | null>;
+  };
+};
+
 @Injectable()
 export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
@@ -102,6 +125,7 @@ export class InventoryService {
     if (!PermissionPolicy.canManageInventory(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
+    const warehouse = await this.resolveReceivingWarehouse(this.prisma, dto.storeId, dto.warehouseId, dto.warehouseName);
     const batch = await this.prisma.inventoryBatch.create({
       data: {
         storeId: dto.storeId,
@@ -113,7 +137,9 @@ export class InventoryService {
         lockedQuantity: 0,
         unitCostCents: dto.unitCostCents,
         productionDate: dto.productionDate ? new Date(dto.productionDate) : undefined,
-        receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : new Date()
+        receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : new Date(),
+        warehouseId: warehouse?.id,
+        warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName)
       }
     });
     await this.prisma.inventoryMovement.create({
@@ -123,11 +149,61 @@ export class InventoryService {
         productId: dto.productId,
         movementType: InventoryMovementType.PURCHASE_IN,
         quantity: dto.totalQuantity,
+        warehouseId: warehouse?.id,
+        warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName),
         createdById: actor.id,
         note: "批次入库"
       }
     });
     return batch;
+  }
+
+  async listWarehouses(user: AuthenticatedInventoryUser, storeId: string) {
+    const actor = await this.withStoreMember(user);
+    if (!PermissionPolicy.canViewInventory(actor, storeId)) {
+      throw new ForbiddenException("无权限");
+    }
+    return this.prisma.warehouse.findMany({
+      where: { storeId },
+      orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }]
+    });
+  }
+
+  async createWarehouse(user: AuthenticatedInventoryUser, dto: CreateWarehouseDto) {
+    const actor = await this.withStoreMember(user);
+    if (!PermissionPolicy.canManageInventory(actor, dto.storeId)) {
+      throw new ForbiddenException("无权限");
+    }
+    return this.prisma.warehouse.create({
+      data: {
+        storeId: dto.storeId,
+        name: normalizeRequiredText(dto.name, "仓库名称"),
+        code: normalizeOptionalText(dto.code),
+        area: normalizeOptionalText(dto.area),
+        address: normalizeOptionalText(dto.address),
+        isActive: dto.isActive ?? true,
+        createdById: actor.id
+      }
+    });
+  }
+
+  async updateWarehouse(user: AuthenticatedInventoryUser, warehouseId: string, dto: UpdateWarehouseDto) {
+    const actor = await this.withStoreMember(user);
+    const warehouse = await this.prisma.warehouse.findUnique({ where: { id: warehouseId } });
+    if (!warehouse) throw new NotFoundException("仓库不存在");
+    if (!PermissionPolicy.canManageInventory(actor, warehouse.storeId)) {
+      throw new ForbiddenException("无权限");
+    }
+    return this.prisma.warehouse.update({
+      where: { id: warehouseId },
+      data: {
+        ...(dto.name !== undefined ? { name: normalizeRequiredText(dto.name, "仓库名称") } : {}),
+        ...(dto.code !== undefined ? { code: normalizeOptionalText(dto.code) } : {}),
+        ...(dto.area !== undefined ? { area: normalizeOptionalText(dto.area) } : {}),
+        ...(dto.address !== undefined ? { address: normalizeOptionalText(dto.address) } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {})
+      }
+    });
   }
 
   async listMovements(user: AuthenticatedInventoryUser, query: ListInventoryDto) {
@@ -537,6 +613,7 @@ export class InventoryService {
             createdAt: true,
             items: {
               select: {
+                purchaseRequirementItemId: true,
                 productId: true,
                 quantity: true,
                 receivedQuantity: true
@@ -756,6 +833,75 @@ export class InventoryService {
         throw new BadRequestException("采购需求已全部转采购单");
       }
 
+      if (dto.supplierAllocations?.length) {
+        const itemRemaining = new Map(openItems.map((item) => [item.id, item.remainingToOrder]));
+        const allocatedByItem = new Map<string, number>();
+        const normalizedAllocations = dto.supplierAllocations.map((allocation) => {
+          const items = allocation.items
+            .filter((item) => item.quantity > 0)
+            .map((item) => {
+              const remaining = itemRemaining.get(item.purchaseRequirementItemId);
+              if (remaining === undefined) {
+                throw new BadRequestException("采购需求明细不存在或已全部转采购单");
+              }
+              const nextAllocated = (allocatedByItem.get(item.purchaseRequirementItemId) ?? 0) + item.quantity;
+              if (nextAllocated > remaining) {
+                throw new BadRequestException("采购数量不能超过需求剩余数量");
+              }
+              allocatedByItem.set(item.purchaseRequirementItemId, nextAllocated);
+              const requirementItem = openItems.find((openItem) => openItem.id === item.purchaseRequirementItemId);
+              if (!requirementItem) {
+                throw new BadRequestException("采购需求明细不存在或已全部转采购单");
+              }
+              return {
+                purchaseRequirementItemId: requirementItem.id,
+                productId: requirementItem.productId,
+                quantity: item.quantity
+              };
+            });
+
+          if (items.length === 0) {
+            throw new BadRequestException("每个供应商至少需要填写一个采购数量");
+          }
+          return {
+            supplierName: allocation.supplierName,
+            expectedAt: allocation.expectedAt,
+            items
+          };
+        });
+
+        const purchaseOrders = [];
+        for (const allocation of normalizedAllocations) {
+          const expectedAt = allocation.expectedAt ?? dto.expectedAt;
+          const purchaseOrder = await tx.purchaseOrder.create({
+            data: {
+              storeId: requirement.storeId,
+              purchaseRequirementId,
+              orderNo: buildPurchaseOrderNo(),
+              supplierName: allocation.supplierName,
+              status: PurchaseOrderStatus.ORDERED,
+              expectedAt: expectedAt ? new Date(expectedAt) : undefined,
+              createdById: actor.id,
+              items: {
+                create: allocation.items
+              }
+            },
+            include: { items: true }
+          });
+          purchaseOrders.push(purchaseOrder);
+        }
+
+        const isFullyOrdered = openItems.every((item) => {
+          const allocated = allocatedByItem.get(item.id) ?? 0;
+          return item.remainingToOrder - allocated <= 0;
+        });
+        await tx.purchaseRequirement.update({
+          where: { id: purchaseRequirementId },
+          data: { status: isFullyOrdered ? PurchaseRequirementStatus.ORDERED : PurchaseRequirementStatus.PARTIAL_ORDERED }
+        });
+        return { purchaseOrders };
+      }
+
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
           storeId: requirement.storeId,
@@ -809,6 +955,12 @@ export class InventoryService {
       if (receivedQuantity > decimalToNumber(item.quantity)) {
         throw new BadRequestException("入库数量不能超过采购数量");
       }
+      const warehouse = await this.resolveReceivingWarehouse(
+        tx,
+        item.purchaseOrder.storeId,
+        dto.warehouseId,
+        dto.warehouseName
+      );
       const batch = await tx.inventoryBatch.upsert({
         where: {
           storeId_productId_batchNo: {
@@ -826,13 +978,17 @@ export class InventoryService {
           availableQuantity: dto.quantity,
           unitCostCents: item.unitCostCents,
           receivedAt: new Date(),
+          warehouseId: warehouse?.id,
+          warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName),
           sourceType: "PURCHASE_ORDER_ITEM",
           sourceId: purchaseOrderItemId
         },
         update: {
           totalQuantity: { increment: dto.quantity },
           availableQuantity: { increment: dto.quantity },
-          receivedAt: new Date()
+          receivedAt: new Date(),
+          warehouseId: warehouse?.id,
+          warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName)
         }
       });
       await tx.inventoryMovement.create({
@@ -844,6 +1000,8 @@ export class InventoryService {
           quantity: dto.quantity,
           sourceType: "PURCHASE_ORDER_ITEM",
           sourceId: purchaseOrderItemId,
+          warehouseId: warehouse?.id,
+          warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName),
           createdById: actor.id,
           note: `采购单 ${item.purchaseOrder.orderNo} 入库`
         }
@@ -912,6 +1070,25 @@ export class InventoryService {
       }
     }
     return result;
+  }
+
+  private async resolveReceivingWarehouse(
+    client: WarehouseLookupClient,
+    storeId: string,
+    warehouseId?: string,
+    warehouseName?: string
+  ) {
+    const normalizedName = normalizeOptionalText(warehouseName);
+    if (!warehouseId) return normalizedName ? { id: undefined, name: normalizedName } : undefined;
+    const warehouse = await client.warehouse.findUnique({ where: { id: warehouseId } });
+    if (!warehouse) throw new NotFoundException("仓库不存在");
+    if (warehouse.storeId !== storeId) {
+      throw new BadRequestException("仓库不属于当前门店");
+    }
+    if (!warehouse.isActive) {
+      throw new BadRequestException("仓库已停用，不能继续入库");
+    }
+    return { id: warehouse.id, name: warehouse.name };
   }
 
   async lockOrderInventory(user: AuthenticatedInventoryUser, orderId: string) {

@@ -52,6 +52,65 @@ export class ListSuppliersDto {
   storeId!: string;
 }
 
+export class ListWarehousesDto {
+  @IsString()
+  storeId!: string;
+}
+
+export class CreateWarehouseDto {
+  @IsString()
+  storeId!: string;
+
+  @IsString()
+  @MaxLength(120)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  area?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  address?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateWarehouseDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  area?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  address?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 export class CreateSupplierDto {
   @IsString()
   storeId!: string;
@@ -190,6 +249,15 @@ export class CreateInventoryBatchDto {
   @IsOptional()
   @IsDateString()
   receivedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  warehouseId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  warehouseName?: string;
 }
 
 export class CreatePurchaseOrderItemDto {
@@ -262,6 +330,30 @@ export class CreatePurchaseRequirementDto {
   items!: CreatePurchaseRequirementItemDto[];
 }
 
+export class CreatePurchaseOrderSupplierAllocationItemDto {
+  @IsString()
+  purchaseRequirementItemId!: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  quantity!: number;
+}
+
+export class CreatePurchaseOrderSupplierAllocationDto {
+  @IsString()
+  @MaxLength(120)
+  supplierName!: string;
+
+  @IsOptional()
+  @IsDateString()
+  expectedAt?: string;
+
+  @ValidateNested({ each: true })
+  @Type(() => CreatePurchaseOrderSupplierAllocationItemDto)
+  items!: CreatePurchaseOrderSupplierAllocationItemDto[];
+}
+
 export class CreatePurchaseOrderFromRequirementDto {
   @IsOptional()
   @IsString()
@@ -271,6 +363,11 @@ export class CreatePurchaseOrderFromRequirementDto {
   @IsOptional()
   @IsDateString()
   expectedAt?: string;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePurchaseOrderSupplierAllocationDto)
+  supplierAllocations?: CreatePurchaseOrderSupplierAllocationDto[];
 }
 
 export class ReceivePurchaseItemDto {
@@ -285,6 +382,15 @@ export class ReceivePurchaseItemDto {
   @IsOptional()
   @IsString()
   supplierName?: string;
+
+  @IsOptional()
+  @IsString()
+  warehouseId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  warehouseName?: string;
 }
 
 export class ReceivePurchaseItemBatchesDto {

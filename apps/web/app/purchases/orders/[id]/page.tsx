@@ -1,7 +1,7 @@
 "use client";
 
-import type { InventorySupplierSummary } from "@mallbay/shared";
-import { useMemo, useState } from "react";
+import type { InventorySupplierSummary, InventoryWarehouseSummary } from "@mallbay/shared";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, App, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Radio, Select, Table, Tag } from "antd";
 import {
   ArrowLeftOutlined,
@@ -52,6 +52,7 @@ type ReceiveBatchFormRow = {
 };
 
 type ScanImportMode = "append" | "replace";
+type ReceiveActionMode = "receive" | "reject";
 
 export default function PurchaseOrderDetailPage() {
   const { message } = App.useApp();
@@ -69,6 +70,7 @@ export default function PurchaseOrderDetailPage() {
   const [scanImportOpen, setScanImportOpen] = useState(false);
   const [scanImportText, setScanImportText] = useState("");
   const [scanImportMode, setScanImportMode] = useState<ScanImportMode>("append");
+  const [receiveActionMode, setReceiveActionMode] = useState<ReceiveActionMode>("receive");
 
   const purchaseOrderQuery = useQuery({
     queryKey: ["purchase-order", purchaseOrderId],
@@ -81,9 +83,17 @@ export default function PurchaseOrderDetailPage() {
     queryFn: () => purchaseApi.suppliers(storeId!),
     enabled: Boolean(storeId)
   });
+  const warehousesQuery = useQuery({
+    queryKey: ["purchase-order-detail-warehouses", storeId],
+    queryFn: () => purchaseApi.warehouses(storeId!),
+    enabled: Boolean(storeId)
+  });
 
   const receivePurchaseItemBatches = useMutation({
-    mutationFn: (values: { itemId: string; batches: Array<{ quantity: number; batchNo: string; supplierName?: string }> }) =>
+    mutationFn: (values: {
+      itemId: string;
+      batches: Array<{ quantity: number; batchNo: string; supplierName?: string; warehouseId?: string; warehouseName?: string }>;
+    }) =>
       purchaseApi.receiveOrderItemBatches(values.itemId, values.batches),
     onSuccess: async (result) => {
       if (result.failed.length > 0) {
@@ -147,12 +157,23 @@ export default function PurchaseOrderDetailPage() {
     () => buildSupplierOptions((suppliersQuery.data ?? []) as InventorySupplierSummary[], purchaseOrder?.supplierName),
     [purchaseOrder?.supplierName, suppliersQuery.data]
   );
+  const warehouseOptions = useMemo(
+    () => ((warehousesQuery.data ?? []) as InventoryWarehouseSummary[])
+      .filter((warehouse) => warehouse.isActive)
+      .map((warehouse) => ({ value: warehouse.id, label: buildWarehouseLabel(warehouse) })),
+    [warehousesQuery.data]
+  );
   const selectedReceiveItemId = Form.useWatch("itemId", receiveForm);
   const selectedReceiveItem = items.find((item) => item.id === selectedReceiveItemId);
   const remainingReceiveQuantity = getRemainingPurchaseQuantity(selectedReceiveItem);
   const purchaseSteps = getPurchaseSteps(purchaseOrder?.status);
   const getDefaultSupplierName = () =>
     (receiveForm.getFieldValue("supplierName") as string | undefined) || purchaseOrder?.supplierName || undefined;
+  useEffect(() => {
+    if (!receiveForm.getFieldValue("warehouseId") && warehouseOptions.length > 0) {
+      receiveForm.setFieldsValue({ warehouseId: warehouseOptions[0].value });
+    }
+  }, [receiveForm, warehouseOptions]);
   const createEmptyBatchRow = (): ReceiveBatchFormRow => ({
     batchNo: "",
     quantity: selectedReceiveItem ? Math.min(1, remainingReceiveQuantity || 1) : 1,
@@ -378,25 +399,43 @@ export default function PurchaseOrderDetailPage() {
 
             <aside className="purchase-detail-side">
               <Card className="purchase-receiving-panel" title="到货验收录入">
+                <Radio.Group
+                  className="purchase-receive-action-switch"
+                  value={receiveActionMode}
+                  onChange={(event) => setReceiveActionMode(event.target.value as ReceiveActionMode)}
+                  optionType="button"
+                  buttonStyle="solid"
+                >
+                  <Radio.Button value="receive">验收入库</Radio.Button>
+                  <Radio.Button value="reject">拒收订单</Radio.Button>
+                </Radio.Group>
+                {receiveActionMode === "receive" ? (
                 <Form
                   form={receiveForm}
                   layout="vertical"
-                  initialValues={{ supplierName: purchaseOrder.supplierName ?? undefined, warehouseName: "华东 1 号中心仓 - A区", batches: [] }}
+                  initialValues={{ supplierName: purchaseOrder.supplierName ?? undefined, batches: [] }}
                   onFinish={(values: {
                     itemId: string;
                     supplierName?: string;
                     batches?: ReceiveBatchFormRow[];
                     productionDate?: unknown;
-                    warehouseName?: string;
+                    warehouseId?: string;
                     acceptanceNote?: string;
                   }) => {
                     const selectedItem = items.find((item) => item.id === values.itemId);
                     const remaining = getRemainingPurchaseQuantity(selectedItem);
+                    const selectedWarehouse = warehouseOptions.find((warehouse) => warehouse.value === values.warehouseId);
+                    if (!selectedWarehouse) {
+                      message.error("请选择存放仓库");
+                      return;
+                    }
                     const batches = (values.batches ?? [])
                       .map((batch) => ({
                         batchNo: batch.batchNo?.trim() ?? "",
                         quantity: Number(batch.quantity ?? 0),
-                        supplierName: batch.supplierName?.trim() || values.supplierName?.trim() || purchaseOrder.supplierName || undefined
+                        supplierName: batch.supplierName?.trim() || values.supplierName?.trim() || purchaseOrder.supplierName || undefined,
+                        warehouseId: values.warehouseId,
+                        warehouseName: selectedWarehouse?.label
                       }))
                       .filter((batch) => batch.batchNo && batch.quantity > 0);
                     if (batches.length === 0) {
@@ -435,13 +474,11 @@ export default function PurchaseOrderDetailPage() {
                     <Form.Item name="productionDate" label="生产日期">
                       <DatePicker className="w-full" />
                     </Form.Item>
-                    <Form.Item name="warehouseName" label="存放仓库" rules={[{ required: true, message: "请选择存放仓库" }]}>
+                    <Form.Item name="warehouseId" label="存放仓库" rules={[{ required: true, message: "请选择存放仓库" }]}>
                       <Select
-                        options={[
-                          { value: "华东 1 号中心仓 - A区", label: "华东 1 号中心仓 - A区" },
-                          { value: "华东 1 号中心仓 - B区", label: "华东 1 号中心仓 - B区" },
-                          { value: "华南分仓 - A区", label: "华南分仓 - A区" }
-                        ]}
+                        loading={warehousesQuery.isLoading}
+                        placeholder="选择仓库"
+                        options={warehouseOptions}
                       />
                     </Form.Item>
                   </div>
@@ -526,7 +563,9 @@ export default function PurchaseOrderDetailPage() {
                     确认验收并入库
                   </Button>
                 </Form>
+                ) : null}
 
+                {receiveActionMode === "reject" ? (
                 <div className="purchase-reject-panel">
                   <div className="purchase-reject-title">
                     <StopOutlined />
@@ -548,6 +587,7 @@ export default function PurchaseOrderDetailPage() {
                     拒收订单
                   </Button>
                 </div>
+                ) : null}
               </Card>
 
               <div className="purchase-help-card">
@@ -643,6 +683,10 @@ function buildSupplierOptions(suppliers: InventorySupplierSummary[], purchaseOrd
   if (purchaseOrderSupplierName?.trim()) names.add(purchaseOrderSupplierName.trim());
 
   return Array.from(names).map((name) => ({ value: name, label: name }));
+}
+
+function buildWarehouseLabel(warehouse: InventoryWarehouseSummary) {
+  return [warehouse.name, warehouse.area].filter(Boolean).join(" - ");
 }
 
 function formatDate(value?: string | null) {

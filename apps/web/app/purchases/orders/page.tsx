@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Table, Tag } from "antd";
+import { Alert, Button, Card, Space, Table, Tag } from "antd";
 import { ArrowLeftOutlined, PlusOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -37,7 +37,7 @@ export default function PurchasesOrdersPage() {
     <div className="management-page purchases-orders-page">
       <StorePageHeader title="采购订单" description="查看采购订单、审批状态、预计到货和到货验收进度。">
         <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/purchases")}>返回采购总览</Button>
-        <Button type="primary" icon={<PlusOutlined />} disabled={!canManagePurchase} onClick={() => router.push("/purchases/requirements")}>
+        <Button type="primary" icon={<PlusOutlined />} disabled={!canManagePurchase} onClick={() => router.push("/purchases/orders/create")}>
           从采购需求创建
         </Button>
       </StorePageHeader>
@@ -67,7 +67,24 @@ export default function PurchasesOrdersPage() {
                 { title: "供应商", render: (_, row) => row.supplierName ?? "供应商待确认" },
                 { title: "状态", render: (_, row) => <Tag>{getPurchaseOrderStatusLabel(row.status)}</Tag> },
                 { title: "采购明细", render: (_, row) => (row.items ?? []).map((item) => getPurchaseInboundItemDetails(item as never).product).join(" / ") || "明细待确认" },
-                { title: "到货验收", render: (_, row) => getPurchaseOrderArrivalReminder(row as never) }
+                { title: "到货验收", render: (_, row) => getPurchaseOrderArrivalReminder(row as never) },
+                {
+                  title: "操作",
+                  width: 140,
+                  render: (_, row) => (
+                    <Space>
+                      <Button
+                        size="small"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          router.push(`/purchases/orders/${row.id}`);
+                        }}
+                      >
+                        查看/处理
+                      </Button>
+                    </Space>
+                  )
+                }
               ]}
             />
           </Card>

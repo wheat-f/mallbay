@@ -10,6 +10,7 @@ import {
   CreateSupplierContactDto,
   CreateSupplierDto,
   CreateSupplierRatingHistoryDto,
+  ListWarehousesDto,
   ReceivePurchaseItemBatchesDto,
   ReceivePurchaseItemDto,
   UpdateSupplierDto
@@ -86,6 +87,11 @@ export class PurchasesController {
     @Body() dto: ReceivePurchaseItemBatchesDto
   ) {
     return this.inventory.receivePurchaseItemBatches(req.user, id, dto);
+  }
+
+  @Get("warehouses")
+  listWarehouses(@Req() req: AuthRequest, @Query() query: ListWarehousesDto) {
+    return this.inventory.listWarehouses(req.user, query.storeId);
   }
 
   @Get("suppliers")

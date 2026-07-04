@@ -39,9 +39,17 @@ test("purchase order detail page keeps arrival review and inbound actions togeth
   assert.match(detailSource, /生产日期/);
   assert.match(detailSource, /存放仓库/);
   assert.match(detailSource, /验收备注/);
+  assert.match(detailSource, /purchaseApi\.warehouses/);
+  assert.match(detailSource, /warehouseOptions/);
+  assert.match(detailSource, /name="warehouseId"/);
+  assert.match(detailSource, /warehouseName: selectedWarehouse\?\.label/);
+  assert.doesNotMatch(detailSource, /华东 1 号中心仓/);
+  assert.doesNotMatch(detailSource, /华南分仓/);
   assert.match(detailSource, /title="流转日志"/);
   assert.match(detailSource, /供应商已发货/);
   assert.match(detailSource, /采购订单创建/);
+  assert.match(detailSource, /receiveActionMode/);
+  assert.match(detailSource, /验收入库/);
   assert.match(detailSource, /purchase-reject-panel/);
   assert.match(detailSource, /拒绝收货/);
   assert.match(detailSource, /拒收订单/);

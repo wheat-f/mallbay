@@ -172,6 +172,9 @@ export default function InventoryOverviewPage() {
               {canManageInventory ? (
                 <Link href="/inventory/adjustments"><strong>库存调整工作台</strong><span>单位转换、盘点、报损、调拨和退货</span><ArrowRightOutlined /></Link>
               ) : null}
+              {canManageInventory ? (
+                <Link href="/inventory/warehouses"><strong>仓库管理</strong><span>配置门店仓库、库区和启用状态</span><ArrowRightOutlined /></Link>
+              ) : null}
               <Link href="/inventory/movements"><strong>库存流水</strong><span>按产品、批次、订单和操作人追踪</span><ArrowRightOutlined /></Link>
               <Link href="/purchases"><strong>采购管理</strong><span>采购需求、采购订单、到货验收</span><ArrowRightOutlined /></Link>
             </div>

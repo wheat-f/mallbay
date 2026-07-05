@@ -221,6 +221,17 @@ test("inventory overview pending order queue uses row-level matching actions", (
   assert.match(matchingPageSource, /queryOrderId/);
 });
 
+test("inventory matching page wraps search params usage in Suspense for production prerender", () => {
+  assert.match(matchingPageSource, /import \{ Suspense, useMemo \} from "react"/);
+  assert.match(matchingPageSource, /<Suspense fallback=/);
+  assert.match(matchingPageSource, /function InventoryMatchingContent\(\)/);
+  assert.match(matchingPageSource, /useSearchParams\(\)/);
+  assert.ok(
+    matchingPageSource.indexOf("<Suspense fallback=") < matchingPageSource.indexOf("useSearchParams()"),
+    "useSearchParams must stay below the Suspense boundary"
+  );
+});
+
 test("inventory page formats order dates with business-safe fallbacks", () => {
   assert.match(pageSource, /function formatInventoryOrderDate/);
   assert.match(pageSource, /预约日期待确认/);

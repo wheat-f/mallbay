@@ -6,7 +6,7 @@ import { App, Alert, Button, Card, Form, InputNumber, Select, Space, Table, Tag,
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import { inventoryApi, productApi } from "../../../src/lib/api";
 import {
   getInventoryAllocationStatusLabel,
@@ -66,6 +66,14 @@ type AllocationFormValues = {
 };
 
 export default function InventoryMatchingPage() {
+  return (
+    <Suspense fallback={<div className="management-page inventory-fulfillment-shell" />}>
+      <InventoryMatchingContent />
+    </Suspense>
+  );
+}
+
+function InventoryMatchingContent() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();

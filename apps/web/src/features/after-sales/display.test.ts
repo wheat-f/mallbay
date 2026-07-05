@@ -5,7 +5,12 @@ import {
   centsToYuan,
   getAfterSaleBusinessLabel,
   getAfterSaleOrderLabel,
+  getAfterSalePenaltyRiskNote,
+  getAfterSalePenaltyRows,
+  getAfterSaleResponsibilityCards,
+  getAfterSaleResponsibilityDescription,
   getAfterSaleResponsibilityLabel,
+  getAfterSaleResponsiblePersonLabel,
   getAfterSaleStatusLabel,
   yuanToCents
 } from "./display";
@@ -15,20 +20,41 @@ test("after-sale display helpers format statuses and responsibilities", () => {
   assert.equal(getAfterSaleStatusLabel("ASSIGNED"), "处理中");
   assert.equal(getAfterSaleStatusLabel("RESOLVED"), "已完成");
   assert.equal(getAfterSaleStatusLabel("UNKNOWN"), "状态待确认");
-  assert.equal(getAfterSaleResponsibilityLabel("CONSTRUCTION"), "施工");
-  assert.equal(getAfterSaleResponsibilityLabel("MATERIAL"), "厂家");
-  assert.equal(getAfterSaleResponsibilityLabel("CUSTOMER"), "客户");
+  assert.equal(getAfterSaleResponsibilityLabel("CONSTRUCTION"), "施工方责任");
+  assert.equal(getAfterSaleResponsibilityLabel("MATERIAL"), "原厂产品质量");
+  assert.equal(getAfterSaleResponsibilityLabel("CUSTOMER"), "客户人为损坏");
   assert.equal(getAfterSaleResponsibilityLabel("PENDING"), "待判责");
   assert.equal(getAfterSaleResponsibilityLabel("UNKNOWN"), "责任待确认");
 });
 
 test("after-sale responsibility options exclude pending for manual judgement", () => {
   assert.deepEqual(AFTER_SALE_RESPONSIBILITY_OPTIONS, [
-    { value: "CUSTOMER", label: "客户" },
-    { value: "CONSTRUCTION", label: "施工" },
-    { value: "MATERIAL", label: "厂家" },
-    { value: "STORE", label: "门店" }
+    { value: "CUSTOMER", label: "客户人为损坏" },
+    { value: "CONSTRUCTION", label: "施工方责任" },
+    { value: "MATERIAL", label: "原厂产品质量" },
+    { value: "STORE", label: "门店服务责任" }
   ]);
+});
+
+test("after-sale responsibility detail helpers keep page copy data-driven", () => {
+  assert.equal(getAfterSaleResponsibilityDescription("CONSTRUCTION"), "施工边角收口、环境落尘或工艺执行不到位导致。");
+  assert.deepEqual(
+    getAfterSaleResponsibilityCards("MATERIAL").map((item) => [item.value, item.title, item.active]),
+    [
+      ["CONSTRUCTION", "施工方责任", false],
+      ["MATERIAL", "原厂产品质量", true],
+      ["CUSTOMER", "客户人为损坏", false],
+      ["STORE", "门店服务责任", false]
+    ]
+  );
+  assert.equal(getAfterSaleResponsiblePersonLabel({ responsibility: "PENDING" }), "待责任判定");
+  assert.equal(getAfterSaleResponsiblePersonLabel({ responsibility: "CUSTOMER" }), "不涉及施工技师处罚");
+  assert.deepEqual(getAfterSalePenaltyRows({ responsibility: "CONSTRUCTION", constructionIssueCategory: "刀工问题", resolutionNote: "返工复检" }), [
+    { key: "responsibility", label: "责任类型", value: "施工方责任" },
+    { key: "category", label: "施工问题分类", value: "刀工问题" },
+    { key: "resolution", label: "处理方案", value: "返工复检" }
+  ]);
+  assert.equal(getAfterSalePenaltyRiskNote({ responsibility: "PENDING" }), "完成责任判定后，再决定是否需要处罚、供应商追踪或客户沟通。");
 });
 
 test("after-sale money helpers convert penalty yuan values to cents", () => {

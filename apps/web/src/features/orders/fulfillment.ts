@@ -7,6 +7,8 @@ export type FulfillmentInventoryItem = {
   }>;
 };
 
+export type FulfillmentInventorySummaryStatus = "empty" | "unmatched" | "partial" | "matched" | "outbound";
+
 export function getFulfillmentInventoryStatus(item: FulfillmentInventoryItem) {
   const requiredQuantity = toNumber(item.quantity);
   const fulfilledQuantity = (item.inventoryAllocations ?? [])
@@ -34,6 +36,28 @@ export function getFulfillmentInventoryStatus(item: FulfillmentInventoryItem) {
   }
 
   return { label: "待库房匹配", color: "processing" as const };
+}
+
+export function getFulfillmentInventorySummary(items: FulfillmentInventoryItem[]) {
+  if (items.length === 0) {
+    return { status: "empty" as const, label: "待补齐货品", canEnterConstruction: false };
+  }
+
+  const statuses = items.map((item) => getFulfillmentInventoryStatus(item).label);
+
+  if (statuses.every((status) => status === "已出库")) {
+    return { status: "outbound" as const, label: "已出库", canEnterConstruction: true };
+  }
+
+  if (statuses.every((status) => status === "已匹配" || status === "已出库")) {
+    return { status: "matched" as const, label: "已匹配", canEnterConstruction: true };
+  }
+
+  if (statuses.some((status) => status === "部分匹配" || status === "已匹配" || status === "已出库")) {
+    return { status: "partial" as const, label: "部分匹配", canEnterConstruction: false };
+  }
+
+  return { status: "unmatched" as const, label: "待库房匹配", canEnterConstruction: false };
 }
 
 function toNumber(value?: number | string | null) {

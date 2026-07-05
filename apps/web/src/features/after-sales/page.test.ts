@@ -48,6 +48,8 @@ test("after-sales page assigns and judges the selected after-sales work order", 
   assert.doesNotMatch(pageSource, /placeholder="选择售后单"/);
   assert.doesNotMatch(pageSource, /<Input placeholder="施工人员 ID/);
   assert.doesNotMatch(pageSource, /<Input placeholder="处罚人员 ID"/);
+  assert.match(pageSource, /selectedAfterSale.responsibility !== "PENDING"/);
+  assert.match(pageSource, /placeholder="责任待判定"/);
 });
 
 test("after-sales page table uses business labels instead of technical id columns", () => {
@@ -215,9 +217,18 @@ test("after-sales detail page follows the prototype detail penalty layout", () =
   assert.match(pageSource, /车辆信息待确认/);
   assert.doesNotMatch(pageSource, /客户未加载/);
   assert.doesNotMatch(pageSource, /车辆未加载/);
-  assert.match(pageSource, /本月累计售后/);
-  assert.match(pageSource, /工艺二次培训或降级处理/);
-  assert.match(pageSource, /处罚金额在处理面板录入后自动沉淀到售后记录/);
+  assert.match(pageSource, /getAfterSaleResponsibilityCards/);
+  assert.match(pageSource, /getAfterSalePenaltyRows/);
+  assert.match(pageSource, /getAfterSalePenaltyRiskNote/);
+  assert.match(pageSource, /getAfterSaleResponsiblePersonLabel/);
+  assert.doesNotMatch(pageSource, /const RESPONSIBILITY_OPTIONS/);
+  assert.doesNotMatch(pageSource, /工资扣减（施工提成）/);
+  assert.doesNotMatch(pageSource, /质量罚款/);
+  assert.doesNotMatch(pageSource, /绩效积分扣除/);
+  assert.doesNotMatch(pageSource, /非施工或待判责/);
+  assert.doesNotMatch(pageSource, /本月累计售后/);
+  assert.doesNotMatch(pageSource, /工艺二次培训或降级处理/);
+  assert.doesNotMatch(pageSource, /处罚金额在处理面板录入后自动沉淀到售后记录/);
   assert.doesNotMatch(pageSource, /处罚金额将在处理面板录入后自动沉淀到售后记录/);
   assert.doesNotMatch(pageSource, /摘要接口未返回/);
   assert.match(pageSource, /处理日志/);

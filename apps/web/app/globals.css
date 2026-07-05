@@ -2786,8 +2786,13 @@ body {
   line-height: 20px;
 }
 
-.order-check-row .anticon {
+.order-check-row.is-checked .anticon {
   color: var(--mb-success);
+  margin-top: 3px;
+}
+
+.order-check-row.is-pending .anticon {
+  color: var(--mb-text-muted);
   margin-top: 3px;
 }
 

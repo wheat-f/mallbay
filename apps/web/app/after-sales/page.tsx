@@ -112,7 +112,7 @@ export default function AfterSalesPage() {
 
   useEffect(() => {
     afterSalesActionForm.resetFields();
-    if (selectedAfterSale) {
+    if (selectedAfterSale?.responsibility && selectedAfterSale.responsibility !== "PENDING") {
       afterSalesActionForm.setFieldValue("responsibility", selectedAfterSale.responsibility);
     }
   }, [afterSalesActionForm, selectedAfterSale]);
@@ -412,7 +412,7 @@ export default function AfterSalesPage() {
               <div className="after-sales-responsibility-card">
                 <h3>责任判定</h3>
                 <Form.Item name="responsibility" rules={[{ required: true, message: "请选择责任" }]}>
-                  <Select placeholder="责任" options={AFTER_SALE_RESPONSIBILITY_OPTIONS} />
+                  <Select placeholder="责任待判定" options={AFTER_SALE_RESPONSIBILITY_OPTIONS} />
                 </Form.Item>
               </div>
 

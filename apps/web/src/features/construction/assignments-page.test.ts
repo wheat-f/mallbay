@@ -23,7 +23,9 @@ test("construction assignments page does not fall back to technical order ids", 
 test("construction assignments page keeps missing vehicle labels readable", () => {
   const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
 
-  assert.match(pageSource, /const vehicleLabel = \[order\.vehicle\.plateNo/);
+  assert.match(pageSource, /order\.vehicle\.carPlate \?\? order\.vehicle\.plateNo/);
+  assert.match(pageSource, /order\.vehicle\.carModel \?\? \[order\.vehicle\.brand, order\.vehicle\.model\]/);
+  assert.match(pageSource, /order\.vehicle\.carColor \?\? order\.vehicle\.color/);
   assert.match(pageSource, /return vehicleLabel \|\| "车辆未登记"/);
 });
 
@@ -117,6 +119,31 @@ test("construction assignments page confirms dispatch and warehouse matching in 
   assert.match(pageSource, /暂存草稿/);
 });
 
+test("construction assignments page persists dispatch drafts by order", () => {
+  const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
+
+  assert.match(pageSource, /type DispatchDraft/);
+  assert.match(pageSource, /loadDispatchDraft\(selectedPendingOrderId\)/);
+  assert.match(pageSource, /saveCurrentDispatchDraft/);
+  assert.match(pageSource, /saveDispatchDraft\(selectedPendingOrderId/);
+  assert.match(pageSource, /workerUserIds: selectedWorkerUserIds/);
+  assert.match(pageSource, /clearDispatchDraft\(selectedPendingOrderId\)/);
+  assert.match(pageSource, /mallbay-construction-dispatch-draft/);
+  assert.match(pageSource, /localStorage\.setItem\(getDispatchDraftKey\(orderId\), JSON\.stringify\(draft\)\)/);
+});
+
+test("construction assignments drawer restores checkbox and note state from dispatch draft", () => {
+  const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
+
+  assert.match(pageSource, /const \[dispatchChecklist, setDispatchChecklist\]/);
+  assert.match(pageSource, /checked=\{dispatchChecklist\.customerConfirmed\}/);
+  assert.match(pageSource, /checked=\{dispatchChecklist\.scheduleNotified\}/);
+  assert.match(pageSource, /setDispatchChecklist\(\(current\) => \(\{ \.\.\.current, customerConfirmed: event\.target\.checked \}\)\)/);
+  assert.match(pageSource, /setDispatchChecklist\(\(current\) => \(\{ \.\.\.current, scheduleNotified: event\.target\.checked \}\)\)/);
+  assert.match(pageSource, /setDispatchNote\(draft\?\.note \?\? ""\)/);
+  assert.match(pageSource, /setSelectedWorkerUserIds\(draft\?\.workerUserIds \?\? \[\]\)/);
+});
+
 test("construction assignments page uses a business-safe dispatch guard", () => {
   const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
 
@@ -130,6 +157,18 @@ test("construction assignments page memoizes pending order rows before selecting
   assert.match(pageSource, /const pendingRows = useMemo\(\(\) => \(\(pendingOrdersQuery\.data\?\.items \?\? \[\]\) as OrderRow\[\]\),/);
   assert.match(pageSource, /\[pendingOrdersQuery\.data\?\.items\]/);
   assert.doesNotMatch(pageSource, /const selectedOrder = useMemo/);
+});
+
+test("construction assignments page loads selected pending order detail for product precheck", () => {
+  const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
+
+  assert.match(pageSource, /const selectedPendingOrderId = selectedPendingOrder\?\.id/);
+  assert.match(pageSource, /queryKey: \["order-detail", selectedPendingOrderId\]/);
+  assert.match(pageSource, /queryFn: \(\) => orderApi\.detail\(selectedPendingOrderId!\)/);
+  assert.match(pageSource, /const selectedPendingOrderDetail = selectedPendingOrderDetailQuery\.data as OrderRow \| undefined/);
+  assert.match(pageSource, /const selectedOrder = selectedPendingOrderDetail \?\? selectedPendingOrder/);
+  assert.match(pageSource, /selectedOrderDetailLoading/);
+  assert.match(pageSource, /货品明细加载中/);
 });
 
 test("construction assignments page combines pending orders and assigned construction records", () => {
@@ -154,11 +193,12 @@ test("construction assignments page keeps dispatch controls scoped to pending or
   assert.match(pageSource, /查看施工工单/);
 });
 
-test("construction assignments page does not show work order actions in the empty state", () => {
+test("construction assignments page does not show duplicate readonly work order actions", () => {
   const pageSource = readFileSync("app/construction/assignments/page.tsx", "utf8");
 
-  assert.match(pageSource, /\) : selectedConstructionRecord \? \(/);
   assert.match(pageSource, /\) : null\}/);
+  assert.doesNotMatch(pageSource, /dispatch-action-bar-readonly/);
+  assert.doesNotMatch(pageSource, /已派工工单进入施工跟踪/);
 });
 
 test("construction assignments page exposes assigned work order detail entry", () => {
@@ -203,10 +243,9 @@ test("construction assignments page exposes capacity settings as a top managemen
   assert.match(cssSource, /\.dispatch-management-toolbar-actions/);
 });
 
-test("construction assignments page has lifecycle tab and readonly action styles", () => {
+test("construction assignments page has lifecycle tab styles", () => {
   const cssSource = readFileSync("app/globals.css", "utf8");
 
   assert.match(cssSource, /\.dispatch-work-order-tabs/);
   assert.match(cssSource, /\.dispatch-work-order-tabs button\.is-active/);
-  assert.match(cssSource, /\.dispatch-action-bar-readonly/);
 });

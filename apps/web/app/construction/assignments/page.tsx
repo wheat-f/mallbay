@@ -13,7 +13,7 @@ import {
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { constructionApi, orderApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import {
@@ -48,7 +48,15 @@ type OrderRow = {
   totalAmountCents?: number | null;
   customer?: { name?: string | null; companyName?: string | null };
   items?: { id?: string; product?: { brand?: string | null; name?: string | null; model?: string | null } | null; quantity?: number }[];
-  vehicle?: { plateNo?: string | null; brand?: string | null; model?: string | null; color?: string | null } | null;
+  vehicle?: {
+    carPlate?: string | null;
+    carModel?: string | null;
+    carColor?: string | null;
+    plateNo?: string | null;
+    brand?: string | null;
+    model?: string | null;
+    color?: string | null;
+  } | null;
 };
 
 type WorkerRow = {
@@ -69,6 +77,22 @@ type ConstructionRecordRow = {
   photos?: { id: string; stage: string; url: string; uploadedById: string }[];
 };
 
+type DispatchChecklist = {
+  customerConfirmed: boolean;
+  scheduleNotified: boolean;
+};
+
+type DispatchDraft = {
+  checklist: DispatchChecklist;
+  note: string;
+  workerUserIds: string[];
+};
+
+const emptyDispatchChecklist: DispatchChecklist = {
+  customerConfirmed: false,
+  scheduleNotified: false
+};
+
 export default function ConstructionAssignmentsPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -79,6 +103,7 @@ export default function ConstructionAssignmentsPage() {
   const [selectedWorkItemKey, setSelectedWorkItemKey] = useState<string>();
   const [selectedWorkerUserIds, setSelectedWorkerUserIds] = useState<string[]>([]);
   const [confirmDrawerOpen, setConfirmDrawerOpen] = useState(false);
+  const [dispatchChecklist, setDispatchChecklist] = useState<DispatchChecklist>(emptyDispatchChecklist);
   const [dispatchNote, setDispatchNote] = useState("");
   const [workerSearchKeyword, setWorkerSearchKeyword] = useState("");
 
@@ -121,7 +146,27 @@ export default function ConstructionAssignmentsPage() {
     visibleWorkItems.find((item) => getWorkItemKey(item) === selectedWorkItemKey) ?? visibleWorkItems[0] ?? workItems[0];
   const selectedPendingOrder = selectedWorkItem?.kind === "pending" ? (selectedWorkItem.order as OrderRow) : undefined;
   const selectedConstructionRecord = selectedWorkItem?.kind === "record" ? (selectedWorkItem.record as ConstructionRecordRow) : undefined;
-  const selectedOrder = selectedPendingOrder ?? selectedConstructionRecord?.order;
+  const selectedPendingOrderId = selectedPendingOrder?.id;
+  const selectedPendingOrderDetailQuery = useQuery({
+    queryKey: ["order-detail", selectedPendingOrderId],
+    queryFn: () => orderApi.detail(selectedPendingOrderId!),
+    enabled: Boolean(selectedPendingOrderId)
+  });
+  const selectedPendingOrderDetail = selectedPendingOrderDetailQuery.data as OrderRow | undefined;
+  const selectedOrder = selectedPendingOrderDetail ?? selectedPendingOrder ?? selectedConstructionRecord?.order;
+  const selectedOrderDetailLoading = Boolean(selectedPendingOrderId) && selectedPendingOrderDetailQuery.isLoading;
+
+  useEffect(() => {
+    if (!selectedPendingOrderId) {
+      setDispatchChecklist(emptyDispatchChecklist);
+      setDispatchNote("");
+      return;
+    }
+    const draft = loadDispatchDraft(selectedPendingOrderId);
+    setDispatchChecklist(draft?.checklist ?? emptyDispatchChecklist);
+    setDispatchNote(draft?.note ?? "");
+    setSelectedWorkerUserIds(draft?.workerUserIds ?? []);
+  }, [selectedPendingOrderId]);
 
   const assignMutation = useMutation({
     mutationFn: () => {
@@ -131,16 +176,35 @@ export default function ConstructionAssignmentsPage() {
       return constructionApi.assignOrder(selectedPendingOrder.id, { workerUserIds: selectedWorkerUserIds });
     },
     onSuccess: async () => {
+      if (selectedPendingOrderId) {
+        clearDispatchDraft(selectedPendingOrderId);
+      }
       message.success("派工已保存");
       setSelectedWorkItemKey(undefined);
       setSelectedWorkerUserIds([]);
+      setDispatchChecklist(emptyDispatchChecklist);
       setDispatchNote("");
       setConfirmDrawerOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["orders", storeId, "PENDING_DISPATCH"] });
       await queryClient.invalidateQueries({ queryKey: ["construction-assignments", storeId] });
+      await queryClient.invalidateQueries({ queryKey: ["order-detail", selectedPendingOrderId] });
     },
     onError: (error: Error) => message.error(error.message)
   });
+
+  const saveCurrentDispatchDraft = () => {
+    if (!selectedPendingOrderId) {
+      message.warning("请先选择待派单订单");
+      return;
+    }
+    saveDispatchDraft(selectedPendingOrderId, {
+      checklist: dispatchChecklist,
+      note: dispatchNote,
+      workerUserIds: selectedWorkerUserIds
+    });
+    message.info("已暂存本次派工草稿");
+    setConfirmDrawerOpen(false);
+  };
 
   return (
     <div className="management-page dispatch-page">
@@ -264,7 +328,7 @@ export default function ConstructionAssignmentsPage() {
             />
           ) : (
             <PendingDispatchPanel
-              selectedOrder={selectedPendingOrder}
+              selectedOrder={selectedPendingOrder ? selectedOrder : undefined}
               onOpenOrder={() => router.push(selectedPendingOrder ? `/orders/${selectedPendingOrder.id}` : "/orders")}
               onOpenSchedule={() => router.push("/construction/schedules")}
             />
@@ -305,17 +369,6 @@ export default function ConstructionAssignmentsPage() {
                   确认派单
                 </Button>
               </div>
-            </Card>
-          ) : selectedConstructionRecord ? (
-            <Card className="dispatch-action-bar dispatch-action-bar-readonly">
-              <div>
-                <span>施工工单</span>
-                <strong>{selectedConstructionRecord ? getConstructionStatusLabel(selectedConstructionRecord.status) : "-"}</strong>
-                <p>已派工工单进入施工跟踪、照片和质检流程，不再重复显示派工提交按钮。</p>
-              </div>
-              <Button onClick={() => selectedConstructionRecord && router.push(`/construction/orders/${selectedConstructionRecord.orderId}`)}>
-                查看施工工单
-              </Button>
             </Card>
           ) : null}
 
@@ -431,10 +484,7 @@ export default function ConstructionAssignmentsPage() {
             </Button>
             <Button
               block
-              onClick={() => {
-                message.info("派工草稿已保留在当前页面");
-                setConfirmDrawerOpen(false);
-              }}
+              onClick={saveCurrentDispatchDraft}
             >
               暂存草稿
             </Button>
@@ -476,10 +526,12 @@ export default function ConstructionAssignmentsPage() {
             <div className="dispatch-confirm-section-title">
               <i />
               <h3>货品匹配预检</h3>
-              <span>共 {selectedOrder?.items?.length ?? 0} 项货品</span>
+              <span>{selectedOrderDetailLoading ? "货品明细加载中" : `共 ${selectedOrder?.items?.length ?? 0} 项货品`}</span>
             </div>
             <div className="dispatch-confirm-product-list">
-              {selectedOrder?.items?.length ? (
+              {selectedOrderDetailLoading ? (
+                <div className="operation-empty">货品明细加载中...</div>
+              ) : selectedOrder?.items?.length ? (
                 selectedOrder.items.map((item, index) => (
                   <div key={item.id ?? index} className="dispatch-confirm-product">
                     <div>
@@ -502,14 +554,26 @@ export default function ConstructionAssignmentsPage() {
 
           <section className="dispatch-confirm-section dispatch-confirm-checks">
             <label>
-              <input type="checkbox" />
+              <input
+                type="checkbox"
+                checked={dispatchChecklist.customerConfirmed}
+                onChange={(event) =>
+                  setDispatchChecklist((current) => ({ ...current, customerConfirmed: event.target.checked }))
+                }
+              />
               <span>
                 <strong>已核对客户信息及施工要求</strong>
                 <small>确认施工部位、产品型号、特殊工艺已通过客户确认。</small>
               </span>
             </label>
             <label>
-              <input type="checkbox" />
+              <input
+                type="checkbox"
+                checked={dispatchChecklist.scheduleNotified}
+                onChange={(event) =>
+                  setDispatchChecklist((current) => ({ ...current, scheduleNotified: event.target.checked }))
+                }
+              />
               <span>
                 <strong>已告知客户施工时间及注意事项</strong>
                 <small>包含工期预估、车辆交接流程以及施工期间的必要提醒。</small>
@@ -703,7 +767,11 @@ function AssignedConstructionRecordPanel({
 
 function getOrderVehicleLabel(order?: OrderRow) {
   if (!order?.vehicle) return "车辆未登记";
-  const vehicleLabel = [order.vehicle.plateNo, [order.vehicle.brand, order.vehicle.model].filter(Boolean).join(" "), order.vehicle.color]
+  const vehicleLabel = [
+    order.vehicle.carPlate ?? order.vehicle.plateNo,
+    order.vehicle.carModel ?? [order.vehicle.brand, order.vehicle.model].filter(Boolean).join(" "),
+    order.vehicle.carColor ?? order.vehicle.color
+  ]
     .filter(Boolean)
     .join(" / ");
   return vehicleLabel || "车辆未登记";
@@ -767,4 +835,40 @@ function normalizeWorkerSearchKeyword(value: string) {
 
 function getWorkerAvatarText(worker: WorkerRow, index: number) {
   return worker.user?.nickname?.slice(0, 1) ?? worker.user?.username?.slice(0, 1)?.toUpperCase() ?? String(index + 1);
+}
+
+function getDispatchDraftKey(orderId: string) {
+  return `mallbay-construction-dispatch-draft:${orderId}`;
+}
+
+function loadDispatchDraft(orderId: string): DispatchDraft | undefined {
+  if (typeof window === "undefined") return undefined;
+  const raw = localStorage.getItem(getDispatchDraftKey(orderId));
+  if (!raw) return undefined;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<DispatchDraft>;
+    return {
+      checklist: {
+        customerConfirmed: parsed.checklist?.customerConfirmed === true,
+        scheduleNotified: parsed.checklist?.scheduleNotified === true
+      },
+      note: typeof parsed.note === "string" ? parsed.note : "",
+      workerUserIds: Array.isArray(parsed.workerUserIds)
+        ? parsed.workerUserIds.filter((id): id is string => typeof id === "string")
+        : []
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function saveDispatchDraft(orderId: string, draft: DispatchDraft) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(getDispatchDraftKey(orderId), JSON.stringify(draft));
+}
+
+function clearDispatchDraft(orderId: string) {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(getDispatchDraftKey(orderId));
 }

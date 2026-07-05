@@ -140,6 +140,13 @@ export class ConstructionService {
       if (order.status !== OrderStatus.PENDING_DISPATCH) {
         throw new BadRequestException("只有待派单订单可以派单");
       }
+      const existingRecord = await tx.constructionRecord.findUnique({
+        where: { orderId },
+        select: { id: true }
+      });
+      if (existingRecord) {
+        throw new BadRequestException("该订单已生成施工工单，请刷新施工列表");
+      }
 
       const members = await tx.storeMember.findMany({
         where: {

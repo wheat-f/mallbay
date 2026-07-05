@@ -32,6 +32,7 @@ test("ConstructionService assigns one to three available workers and dispatches 
     },
     leaveRequest: { findFirst: async () => null },
     constructionRecord: {
+      findUnique: async () => null,
       create: async () => ({ id: "record-1", orderId: "order-1" })
     },
     constructionAssignment: {
@@ -80,6 +81,7 @@ test("ConstructionService attributes outside construction records to the orderin
     },
     leaveRequest: { findFirst: async () => null },
     constructionRecord: {
+      findUnique: async () => null,
       create: async (args: unknown) => {
         writes.push(args);
         return { id: "record-outside-1", orderId: "order-outside-1" };
@@ -106,6 +108,39 @@ test("ConstructionService attributes outside construction records to the orderin
   );
 
   assert.equal(JSON.stringify(writes).includes("\"storeId\":\"ordering-store\""), true);
+});
+
+test("ConstructionService rejects dispatch when a construction record already exists", async () => {
+  const tx = {
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        storeId: "store-1",
+        status: OrderStatus.PENDING_DISPATCH
+      })
+    },
+    constructionRecord: {
+      findUnique: async () => ({ id: "record-1" })
+    }
+  };
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  await assert.rejects(
+    () => service.assignOrder(
+      {
+        id: "scheduler-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
+      },
+      "order-1",
+      { workerUserIds: ["worker-1"] }
+    ),
+    /该订单已生成施工工单，请刷新施工列表/
+  );
 });
 
 test("ConstructionService rejects assigning more than three workers", async () => {

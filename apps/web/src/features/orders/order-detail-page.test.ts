@@ -33,11 +33,12 @@ test("order detail exposes pending dispatch confirmation and fulfillment links",
   assert.match(pageSource, /确认提交派工与库房匹配/);
   assert.match(pageSource, /openFulfillmentDrawer/);
   assert.match(pageSource, /打开确认流转/);
-  assert.match(pageSource, /continueToInventoryMatching/);
+  assert.match(pageSource, /continueFulfillmentFlow/);
+  assert.match(pageSource, /fulfillmentCanEnterConstruction/);
   assert.match(pageSource, /确认提交，进入库房匹配/);
-  assert.match(pageSource, /router\.push\(`\/inventory\/matching\?orderId=\$\{params\.id\}`\)/);
+  assert.match(pageSource, /确认提交，进入施工派工/);
+  assert.match(pageSource, /router\.push\(fulfillmentCanEnterConstruction \? "\/construction\/assignments" : `\/inventory\/matching\?orderId=\$\{params\.id\}`\)/);
   assert.doesNotMatch(pageSource, /router\.push\("\/inventory"\)/);
-  assert.doesNotMatch(pageSource, /router\.push\("\/construction\/assignments"\)/);
   assert.doesNotMatch(pageSource, /<Button[^>]*>进入施工派工<\/Button>/);
 });
 
@@ -52,9 +53,10 @@ test("order detail confirmation flow uses the prototype right-side drawer", () =
   assert.match(pageSource, /已核对客户信息及施工要求/);
   assert.match(pageSource, /已告知客户施工时间及注意事项/);
   assert.match(pageSource, /给库房\/施工主管的补充建议/);
-  assert.match(pageSource, /确认提交，进入库房匹配/);
+  assert.match(pageSource, /fulfillmentPrimaryActionLabel/);
   assert.match(pageSource, /order-fulfillment-flow-steps/);
   assert.match(pageSource, /库房匹配完成后再进入施工派工/);
+  assert.match(pageSource, /货品已完成匹配，可进入施工派工。/);
   assert.match(pageSource, /暂存草稿/);
   assert.match(pageSource, /order-fulfillment-drawer-body/);
   assert.match(pageSource, /order-fulfillment-product-row/);
@@ -94,6 +96,23 @@ test("order detail fulfillment draft persists checks and notes per order", () =>
   assert.match(pageSource, /value=\{fulfillmentNote\}/);
   assert.match(pageSource, /localStorage\.setItem/);
   assert.match(pageSource, /localStorage\.getItem/);
+});
+
+test("order detail synchronizes fulfillment summary checks with the drawer draft", () => {
+  const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(pageSource, /useEffect\(\(\) => \{/);
+  assert.match(pageSource, /setFulfillmentChecklist\(draft\?\.checklist \?\? emptyFulfillmentChecklist\)/);
+  assert.match(pageSource, /const fulfillmentChecklistItems = getFulfillmentChecklistItems\(fulfillmentChecklist\)/);
+  assert.match(pageSource, /fulfillmentChecklistItems\.map/);
+  assert.match(pageSource, /item\.checked \? "is-checked" : "is-pending"/);
+  assert.match(pageSource, /checked=\{fulfillmentChecklist\.customerConfirmed\}/);
+  assert.match(pageSource, /checked=\{fulfillmentChecklist\.scheduleNotified\}/);
+  assert.match(pageSource, /checked=\{fulfillmentChecklist\.commercialConfirmed\}/);
+  assert.match(pageSource, /getFulfillmentChecklistItems/);
+  assert.match(cssSource, /\.order-check-row\.is-checked \.anticon/);
+  assert.match(cssSource, /\.order-check-row\.is-pending \.anticon/);
 });
 
 test("order detail follows the prototype stepper and bento workspace layout", () => {

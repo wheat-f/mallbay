@@ -23,7 +23,12 @@ import { afterSalesApi } from "../../../src/lib/api";
 import {
   getAfterSaleBusinessLabel,
   getAfterSaleOrderLabel,
+  getAfterSalePenaltyRiskNote,
+  getAfterSalePenaltyRows,
+  getAfterSaleResponsibilityCards,
+  getAfterSaleResponsibilityDescription,
   getAfterSaleResponsibilityLabel,
+  getAfterSaleResponsiblePersonLabel,
   getAfterSaleStatusLabel
 } from "../../../src/features/after-sales/display";
 import { useAuthStore } from "../../../src/stores/auth-store";
@@ -35,31 +40,6 @@ type AfterSaleTimelineItem = {
   tone: "primary" | "success" | "warning" | "muted";
 };
 
-const RESPONSIBILITY_OPTIONS: Array<{
-  value: AfterSaleResponsibility;
-  title: string;
-  description: string;
-  icon: ReactNode;
-}> = [
-  {
-    value: "CONSTRUCTION",
-    title: "施工方责任",
-    description: "施工边角收口、环境落尘或工艺执行不到位导致。",
-    icon: <ToolOutlined />
-  },
-  {
-    value: "MATERIAL",
-    title: "原厂产品质量",
-    description: "膜材、胶层或批次质量异常导致。",
-    icon: <SafetyCertificateOutlined />
-  },
-  {
-    value: "CUSTOMER",
-    title: "客户人为损坏",
-    description: "外力剐蹭、清洗不当或使用场景导致。",
-    icon: <UserOutlined />
-  }
-];
 
 export default function AfterSaleDetailPage() {
   const { message } = App.useApp();
@@ -191,39 +171,40 @@ export default function AfterSaleDetailPage() {
             <Card className="after-sale-detail-card after-sale-responsibility-panel">
               <h2>责任判定</h2>
               <div className="after-sale-responsibility-list">
-                {RESPONSIBILITY_OPTIONS.map((option) => (
-                  <div
-                    key={option.value}
-                    className={option.value === afterSale.responsibility ? "is-active" : undefined}
-                  >
-                    {option.icon}
+                {getAfterSaleResponsibilityCards(afterSale.responsibility).map((option) => (
+                  <div key={option.value} className={option.active ? "is-active" : undefined}>
+                    {getResponsibilityIcon(option.value)}
                     <div>
                       <strong>{option.title}</strong>
                       <span>{option.description}</span>
                     </div>
-                    {option.value === afterSale.responsibility ? <CheckCircleOutlined /> : null}
+                    {option.active ? <CheckCircleOutlined /> : null}
                   </div>
                 ))}
               </div>
               <div className="after-sale-worker-card">
-                <span>责任技师</span>
-                <strong>{afterSale.responsibility === "CONSTRUCTION" ? "待从派单记录确认" : "非施工或待判责"}</strong>
-                <p>{[getAfterSaleResponsibilityLabel(afterSale.responsibility), afterSale.constructionIssueCategory].filter(Boolean).join(" / ")}</p>
+                <span>责任对象</span>
+                <strong>{getAfterSaleResponsiblePersonLabel(afterSale)}</strong>
+                <p>{[
+                  getAfterSaleResponsibilityLabel(afterSale.responsibility),
+                  getAfterSaleResponsibilityDescription(afterSale.responsibility),
+                  afterSale.constructionIssueCategory
+                ].filter(Boolean).join(" / ")}</p>
               </div>
             </Card>
 
             <Card className="after-sale-detail-card after-sale-penalty-panel">
               <h2>惩罚处理</h2>
-              <PenaltyRow icon={<DollarOutlined />} label="工资扣减（施工提成）" value="待录入" />
-              <PenaltyRow icon={<ExclamationCircleOutlined />} label="质量罚款" value="待录入" />
-              <PenaltyRow icon={<SafetyCertificateOutlined />} label="绩效积分扣除" value="待评估" />
+              {getAfterSalePenaltyRows(afterSale).map((row) => (
+                <PenaltyRow key={row.key} icon={getPenaltyIcon(row.key)} label={row.label} value={row.value} />
+              ))}
               <label className="after-sale-penalty-note">
                 <span>处罚备注说明</span>
                 <Input.TextArea rows={3} placeholder="在此输入对技师的改进建议或详细处理理由..." />
               </label>
               <div className="after-sale-risk-note">
                 <ExclamationCircleOutlined />
-                <span>处罚金额在处理面板录入后自动沉淀到售后记录；本月累计售后较多时，建议进行工艺二次培训或降级处理。</span>
+                <span>{getAfterSalePenaltyRiskNote(afterSale)}</span>
               </div>
             </Card>
 
@@ -279,6 +260,19 @@ function PenaltyRow({ icon, label, value }: { icon: ReactNode; label: string; va
       <strong>{value}</strong>
     </div>
   );
+}
+
+function getResponsibilityIcon(responsibility: Exclude<AfterSaleResponsibility, "PENDING">) {
+  if (responsibility === "CONSTRUCTION") return <ToolOutlined />;
+  if (responsibility === "MATERIAL") return <SafetyCertificateOutlined />;
+  if (responsibility === "CUSTOMER") return <UserOutlined />;
+  return <FileSearchOutlined />;
+}
+
+function getPenaltyIcon(key: string) {
+  if (key === "responsibility") return <SafetyCertificateOutlined />;
+  if (key === "category") return <ExclamationCircleOutlined />;
+  return <DollarOutlined />;
 }
 
 function getPhotoCountLabel(urls?: string[] | null, fallback = "待上传") {

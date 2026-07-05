@@ -20,11 +20,11 @@ import {
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { orderApi, productApi } from "../../../src/lib/api";
 import type { OrderAuditEvent } from "../../../src/features/orders/api";
 import { centsToYuan, getOrderProductLabel, yuanToCents } from "../../../src/features/orders/create-order-form";
-import { getFulfillmentInventoryStatus } from "../../../src/features/orders/fulfillment";
+import { getFulfillmentInventoryStatus, getFulfillmentInventorySummary } from "../../../src/features/orders/fulfillment";
 import {
   getConstructionLocationLabel,
   getConstructionTypeLabel,
@@ -174,6 +174,19 @@ export default function OrderDetailPage() {
   );
   const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH";
   const orderSteps = getOrderSteps(order?.status);
+  const fulfillmentInventorySummary = getFulfillmentInventorySummary(order?.items ?? []);
+  const fulfillmentCanEnterConstruction = fulfillmentInventorySummary.canEnterConstruction;
+  const fulfillmentPrimaryActionLabel = fulfillmentCanEnterConstruction ? "确认提交，进入施工派工" : "确认提交，进入库房匹配";
+  const fulfillmentPrimaryActionHint = fulfillmentCanEnterConstruction
+    ? "货品已完成库房匹配，可直接进入施工派工。"
+    : "货品仍需库房匹配，提交后进入库存匹配。";
+  const fulfillmentChecklistItems = getFulfillmentChecklistItems(fulfillmentChecklist);
+
+  useEffect(() => {
+    const draft = loadFulfillmentDraft(params.id);
+    setFulfillmentChecklist(draft?.checklist ?? emptyFulfillmentChecklist);
+    setFulfillmentNote(draft?.note ?? "");
+  }, [params.id]);
 
   const openCommercialsDrawer = () => {
     if (!order) return;
@@ -206,9 +219,9 @@ export default function OrderDetailPage() {
     setFulfillmentDrawerOpen(false);
   };
 
-  const continueToInventoryMatching = () => {
+  const continueFulfillmentFlow = () => {
     clearFulfillmentDraft(params.id);
-    router.push(`/inventory/matching?orderId=${params.id}`);
+    router.push(fulfillmentCanEnterConstruction ? "/construction/assignments" : `/inventory/matching?orderId=${params.id}`);
   };
 
   const openOrderPaymentEntry = () => {
@@ -371,16 +384,16 @@ export default function OrderDetailPage() {
                       <Tag color="processing">待派工</Tag>
                       <h3>确认提交派工与库房匹配</h3>
                       <p>订单创建后需要核对客户、车辆、产品和施工要求，再进入库房匹配与施工派工。</p>
-                      {[
-                        "客户、车辆和施工要求已核对",
-                        "产品、数量、单价和人工费已确认",
-                        "施工时间、交车流程和注意事项已告知"
-                      ].map((item) => (
-                        <div key={item} className="order-check-row">
-                          <CheckCircleOutlined />
-                          <span>{item}</span>
+                      {fulfillmentChecklistItems.map((item) => (
+                        <div key={item.key} className={`order-check-row ${item.checked ? "is-checked" : "is-pending"}`}>
+                          {item.checked ? <CheckCircleOutlined /> : <MinusCircleOutlined />}
+                          <span>{item.summary}</span>
                         </div>
                       ))}
+                      <div className="order-check-row is-checked">
+                        <CheckCircleOutlined />
+                        <span>货品状态：{fulfillmentInventorySummary.label}</span>
+                      </div>
                       <div className="order-next-actions">
                         <Button block type="primary" icon={<CheckCircleOutlined />} onClick={openFulfillmentDrawer}>
                           打开确认流转
@@ -602,8 +615,8 @@ export default function OrderDetailPage() {
               <Button onClick={saveCurrentFulfillmentDraft}>
                 暂存草稿
               </Button>
-              <Button type="primary" icon={<CheckCircleOutlined />} onClick={continueToInventoryMatching}>
-                确认提交，进入库房匹配
+              <Button type="primary" icon={<CheckCircleOutlined />} onClick={continueFulfillmentFlow}>
+                {fulfillmentPrimaryActionLabel}
               </Button>
             </div>
           )}
@@ -651,21 +664,22 @@ export default function OrderDetailPage() {
                     <p>完成订单、客户、产品和施工要求核对。</p>
                   </div>
                 </div>
-                <div className="order-fulfillment-flow-step is-next">
+                <div className={`order-fulfillment-flow-step ${fulfillmentCanEnterConstruction ? "is-active" : "is-next"}`}>
                   <span>2</span>
                   <div>
                     <strong>库房匹配</strong>
-                    <p>提交后进入库存匹配，确认现货或触发采购补货。</p>
+                    <p>{fulfillmentCanEnterConstruction ? "货品已完成匹配，可进入施工派工。" : "提交后进入库存匹配，确认现货或触发采购补货。"}</p>
                   </div>
                 </div>
-                <div className="order-fulfillment-flow-step">
+                <div className={`order-fulfillment-flow-step ${fulfillmentCanEnterConstruction ? "is-next" : ""}`}>
                   <span>3</span>
                   <div>
                     <strong>施工派工</strong>
-                    <p>库房匹配完成后再进入施工派工。</p>
+                    <p>{fulfillmentCanEnterConstruction ? "下一步选择施工人员并确认派工。" : "库房匹配完成后再进入施工派工。"}</p>
                   </div>
                 </div>
               </div>
+              <Typography.Text type="secondary">{fulfillmentPrimaryActionHint}</Typography.Text>
             </section>
 
             <section className="order-fulfillment-drawer-section">
@@ -773,6 +787,26 @@ function saveFulfillmentDraft(orderId: string, draft: FulfillmentDraft) {
 function clearFulfillmentDraft(orderId: string) {
   if (typeof window === "undefined") return;
   localStorage.removeItem(getFulfillmentDraftKey(orderId));
+}
+
+function getFulfillmentChecklistItems(checklist: FulfillmentChecklist) {
+  return [
+    {
+      key: "customerConfirmed",
+      checked: checklist.customerConfirmed,
+      summary: checklist.customerConfirmed ? "客户、车辆和施工要求已核对" : "待核对客户、车辆和施工要求"
+    },
+    {
+      key: "commercialConfirmed",
+      checked: checklist.commercialConfirmed,
+      summary: checklist.commercialConfirmed ? "产品、数量、单价和人工费已确认" : "待确认产品、数量、单价和人工费"
+    },
+    {
+      key: "scheduleNotified",
+      checked: checklist.scheduleNotified,
+      summary: checklist.scheduleNotified ? "施工时间、交车流程和注意事项已告知" : "待告知施工时间、交车流程和注意事项"
+    }
+  ];
 }
 
 function getOrderAuditActionLabel(action: string) {

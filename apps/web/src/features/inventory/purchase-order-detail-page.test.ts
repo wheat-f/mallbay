@@ -65,6 +65,7 @@ test("purchase order detail page follows the prototype receiving workspace layou
   assert.match(detailSource, /purchase-detail-hero/);
   assert.match(detailSource, /purchase-detail-stepper/);
   assert.match(detailSource, /const labels = \["新建订单", "审批通过", "供应商发货", "待验收", "已入库"\]/);
+  assert.match(cssSource, /\.purchase-detail-stepper\s*\{[\s\S]*grid-template-columns: repeat\(5, minmax\(132px, 1fr\)\);/);
   assert.match(detailSource, /purchase-detail-workspace/);
   assert.match(detailSource, /purchase-basic-card/);
   assert.match(detailSource, /purchase-items-card/);
@@ -82,6 +83,17 @@ test("purchase order detail page follows the prototype receiving workspace layou
   assert.doesNotMatch(detailSource, /management-kpi-grid/);
   assert.doesNotMatch(detailSource, /StorePageHeader/);
   assert.doesNotMatch(detailSource, /detail-layout/);
+});
+
+test("purchase order detail page transitions receiving controls after successful inbound", () => {
+  const detailSource = readFileSync("app/purchases/orders/[id]/page.tsx", "utf8");
+
+  assert.match(detailSource, /const effectivePurchaseOrderStatus = getEffectivePurchaseOrderStatus\(purchaseOrder\?\.status, items\);/);
+  assert.match(detailSource, /const canSubmitReceive =/);
+  assert.match(detailSource, /receiveForm\.setFieldsValue\(\{ itemId: nextReceivableItemId, batches: \[\] \}\);/);
+  assert.match(detailSource, /queryClient\.refetchQueries\(\{ queryKey: \["purchase-order", purchaseOrderId\], type: "active" \}\)/);
+  assert.match(detailSource, /disabled=\{!canSubmitReceive\}/);
+  assert.match(detailSource, /已全部入库，无需继续验收/);
 });
 
 test("purchase order detail page uses mobile cards for purchase items", () => {

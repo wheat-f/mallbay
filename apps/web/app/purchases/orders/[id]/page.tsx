@@ -100,6 +100,7 @@ export default function PurchaseOrderDetailPage() {
         message.warning(`批量入库完成，成功 ${result.received.length} 行，失败 ${result.failed.length} 行`);
       } else {
         message.success("批量入库已完成");
+        receiveForm.setFieldsValue({ batches: [] });
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] }),
@@ -107,6 +108,7 @@ export default function PurchaseOrderDetailPage() {
         queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
       ]);
+      await queryClient.refetchQueries({ queryKey: ["purchase-order", purchaseOrderId], type: "active" });
     },
     onError: (error: Error) => message.error(error.message)
   });
@@ -148,10 +150,13 @@ export default function PurchaseOrderDetailPage() {
   const items = purchaseOrder?.items ?? [];
   const purchasedQuantity = items.reduce((sum, item) => sum + toNumber(item.quantity), 0);
   const receivedQuantity = items.reduce((sum, item) => sum + toNumber(item.receivedQuantity), 0);
-  const arrivalReminder = purchaseOrder ? getPurchaseOrderArrivalReminder(purchaseOrder) : "-";
+  const effectivePurchaseOrderStatus = getEffectivePurchaseOrderStatus(purchaseOrder?.status, items);
+  const effectivePurchaseOrder = purchaseOrder ? { ...purchaseOrder, status: effectivePurchaseOrderStatus } : undefined;
+  const arrivalReminder = effectivePurchaseOrder ? getPurchaseOrderArrivalReminder(effectivePurchaseOrder) : "-";
   const itemOptions = items.map((item) => ({
     value: item.id,
-    label: getPurchaseInboundItemDetails(item).product
+    label: getPurchaseInboundItemDetails(item).product,
+    disabled: getRemainingPurchaseQuantity(item) <= 0
   }));
   const supplierOptions = useMemo(
     () => buildSupplierOptions((suppliersQuery.data ?? []) as InventorySupplierSummary[], purchaseOrder?.supplierName),
@@ -166,7 +171,14 @@ export default function PurchaseOrderDetailPage() {
   const selectedReceiveItemId = Form.useWatch("itemId", receiveForm);
   const selectedReceiveItem = items.find((item) => item.id === selectedReceiveItemId);
   const remainingReceiveQuantity = getRemainingPurchaseQuantity(selectedReceiveItem);
-  const purchaseSteps = getPurchaseSteps(purchaseOrder?.status);
+  const isPurchaseOrderReceivable = effectivePurchaseOrderStatus === "ORDERED" || effectivePurchaseOrderStatus === "PARTIAL_RECEIVED";
+  const canSubmitReceive =
+    canManagePurchase &&
+    isPurchaseOrderReceivable &&
+    Boolean(selectedReceiveItem) &&
+    remainingReceiveQuantity > 0 &&
+    !receivePurchaseItemBatches.isPending;
+  const purchaseSteps = getPurchaseSteps(effectivePurchaseOrderStatus);
   const getDefaultSupplierName = () =>
     (receiveForm.getFieldValue("supplierName") as string | undefined) || purchaseOrder?.supplierName || undefined;
   useEffect(() => {
@@ -174,6 +186,15 @@ export default function PurchaseOrderDetailPage() {
       receiveForm.setFieldsValue({ warehouseId: warehouseOptions[0].value });
     }
   }, [receiveForm, warehouseOptions]);
+  useEffect(() => {
+    if (!selectedReceiveItemId) return;
+    const selectedItem = items.find((item) => item.id === selectedReceiveItemId);
+    if (!selectedItem || getRemainingPurchaseQuantity(selectedItem) > 0) return;
+    const nextReceivableItemId = items.find(
+      (item) => item.id !== selectedReceiveItemId && getRemainingPurchaseQuantity(item) > 0
+    )?.id;
+    receiveForm.setFieldsValue({ itemId: nextReceivableItemId, batches: [] });
+  }, [items, receiveForm, selectedReceiveItemId]);
   const createEmptyBatchRow = (): ReceiveBatchFormRow => ({
     batchNo: "",
     quantity: selectedReceiveItem ? Math.min(1, remainingReceiveQuantity || 1) : 1,
@@ -246,7 +267,7 @@ export default function PurchaseOrderDetailPage() {
         return {
           采购单号: purchaseOrder.orderNo,
           供应商: purchaseOrder.supplierName ?? "",
-          状态: getPurchaseOrderStatusLabel(purchaseOrder.status),
+          状态: getPurchaseOrderStatusLabel(effectivePurchaseOrderStatus),
           预计到货: formatDate(purchaseOrder.expectedAt),
           产品: details.product,
           采购数量: toNumber(item.quantity),
@@ -274,7 +295,7 @@ export default function PurchaseOrderDetailPage() {
               <span className="purchase-detail-eyebrow">采购订单详情</span>
               <h1>
                 {purchaseOrder.orderNo}
-                <Tag>{getPurchaseOrderStatusLabel(purchaseOrder.status)}</Tag>
+                <Tag>{getPurchaseOrderStatusLabel(effectivePurchaseOrderStatus)}</Tag>
               </h1>
               <p>{`创建时间：${formatDateTime(purchaseOrder.createdAt)} / 预计到货：${formatDate(purchaseOrder.expectedAt)}`}</p>
             </div>
@@ -318,7 +339,7 @@ export default function PurchaseOrderDetailPage() {
               <Card className="purchase-detail-card purchase-basic-card" title={<><InfoCircleOutlined />基本信息</>}>
                 <div className="purchase-info-grid">
                   <span>采购单号</span><strong>{purchaseOrder.orderNo}</strong>
-                  <span>状态</span><strong>{getPurchaseOrderStatusLabel(purchaseOrder.status)}</strong>
+                  <span>状态</span><strong>{getPurchaseOrderStatusLabel(effectivePurchaseOrderStatus)}</strong>
                   <span>供应商</span><strong>{purchaseOrder.supplierName ?? "-"}</strong>
                   <span>预计到货</span><strong>{formatDate(purchaseOrder.expectedAt)}</strong>
                 </div>
@@ -409,6 +430,15 @@ export default function PurchaseOrderDetailPage() {
                   <Radio.Button value="receive">验收入库</Radio.Button>
                   <Radio.Button value="reject">拒收订单</Radio.Button>
                 </Radio.Group>
+                {!isPurchaseOrderReceivable ? (
+                  <Alert
+                    className="management-readonly-alert"
+                    type="success"
+                    showIcon
+                    title="已全部入库，无需继续验收"
+                    description="采购订单和入库进度已经完成，后续可在采购清单、入库批次和库存流水中查看记录。"
+                  />
+                ) : null}
                 {receiveActionMode === "receive" ? (
                 <Form
                   form={receiveForm}
@@ -459,7 +489,7 @@ export default function PurchaseOrderDetailPage() {
                   }}
                 >
                   <Form.Item name="itemId" label="验收物料" rules={[{ required: true, message: "请选择验收物料" }]}>
-                    <Select placeholder="选择采购明细" options={itemOptions} />
+                    <Select placeholder="选择采购明细" options={itemOptions} disabled={!isPurchaseOrderReceivable} />
                   </Form.Item>
                   <div className="purchase-receive-default-grid">
                     <Form.Item name="supplierName" label="默认供应商">
@@ -494,6 +524,7 @@ export default function PurchaseOrderDetailPage() {
                       <Button
                         type="default"
                         icon={<PlusOutlined />}
+                        disabled={!canManagePurchase || !isPurchaseOrderReceivable}
                         onClick={() => {
                           if (!ensureReceiveItemSelected()) return;
                           const current = ((receiveForm.getFieldValue("batches") ?? []) as ReceiveBatchFormRow[]).filter(Boolean);
@@ -502,10 +533,20 @@ export default function PurchaseOrderDetailPage() {
                       >
                         手工新增批次
                       </Button>
-                      <Button type="default" icon={<PlusOutlined />} onClick={handleGenerateBatchRows}>
+                      <Button
+                        type="default"
+                        icon={<PlusOutlined />}
+                        disabled={!canManagePurchase || !isPurchaseOrderReceivable}
+                        onClick={handleGenerateBatchRows}
+                      >
                         按剩余数量生成批次行
                       </Button>
-                      <Button type="default" icon={<QrcodeOutlined />} onClick={handleOpenScanImport}>
+                      <Button
+                        type="default"
+                        icon={<QrcodeOutlined />}
+                        disabled={!canManagePurchase || !isPurchaseOrderReceivable}
+                        onClick={handleOpenScanImport}
+                      >
                         扫码/粘贴导入
                       </Button>
                     </div>
@@ -559,7 +600,7 @@ export default function PurchaseOrderDetailPage() {
                       </div>
                     )}
                   </Form.List>
-                  <Button block type="primary" htmlType="submit" icon={<InboxOutlined />} loading={receivePurchaseItemBatches.isPending} disabled={!canManagePurchase}>
+                  <Button block type="primary" htmlType="submit" icon={<InboxOutlined />} loading={receivePurchaseItemBatches.isPending} disabled={!canSubmitReceive}>
                     确认验收并入库
                   </Button>
                 </Form>
@@ -656,6 +697,17 @@ function hasDuplicateBatchNo(batches: Array<{ batchNo: string }>) {
     seen.add(normalized);
   }
   return false;
+}
+
+function getEffectivePurchaseOrderStatus(status: string | undefined, items: PurchaseOrderItemRow[]) {
+  if (status === "DRAFT" || status === "CANCELLED") return status;
+  if (items.length === 0) return status;
+  const purchasedQuantity = items.reduce((sum, item) => sum + toNumber(item.quantity), 0);
+  const receivedQuantity = items.reduce((sum, item) => sum + toNumber(item.receivedQuantity), 0);
+  if (purchasedQuantity <= 0) return status;
+  if (receivedQuantity >= purchasedQuantity) return "RECEIVED";
+  if (receivedQuantity > 0 && status === "ORDERED") return "PARTIAL_RECEIVED";
+  return status;
 }
 
 function getPurchaseSteps(status?: string) {

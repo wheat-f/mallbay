@@ -193,9 +193,9 @@ export default function OrderDetailPage() {
     setFulfillmentDrawerOpen(false);
   };
 
-  const continueToConstructionAssignments = () => {
+  const continueToInventoryMatching = () => {
     clearFulfillmentDraft(params.id);
-    router.push("/construction/assignments");
+    router.push("/inventory/matching");
   };
 
   const openOrderPaymentEntry = () => {
@@ -589,10 +589,8 @@ export default function OrderDetailPage() {
               <Button onClick={saveCurrentFulfillmentDraft}>
                 暂存草稿
               </Button>
-              <Button onClick={() => router.push("/inventory")}>进入库房匹配</Button>
-              <Button onClick={() => router.push("/construction/assignments")}>进入施工派工</Button>
-              <Button type="primary" icon={<CheckCircleOutlined />} onClick={continueToConstructionAssignments}>
-                确认提交，进入派工流转
+              <Button type="primary" icon={<CheckCircleOutlined />} onClick={continueToInventoryMatching}>
+                确认提交，进入库房匹配
               </Button>
             </div>
           )}
@@ -623,6 +621,36 @@ export default function OrderDetailPage() {
                 <div className="order-fulfillment-summary-wide">
                   <span>预约施工日期</span>
                   <strong>{[formatDateOnly(order?.appointmentDate), order?.appointmentTimeSlot].filter(Boolean).join(" ") || "-"}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="order-fulfillment-drawer-section">
+              <div className="order-fulfillment-section-head">
+                <i />
+                <h3>履约流转路径</h3>
+              </div>
+              <div className="order-fulfillment-flow-steps">
+                <div className="order-fulfillment-flow-step is-active">
+                  <span>1</span>
+                  <div>
+                    <strong>确认提交</strong>
+                    <p>完成订单、客户、产品和施工要求核对。</p>
+                  </div>
+                </div>
+                <div className="order-fulfillment-flow-step is-next">
+                  <span>2</span>
+                  <div>
+                    <strong>库房匹配</strong>
+                    <p>提交后进入库存匹配，确认现货或触发采购补货。</p>
+                  </div>
+                </div>
+                <div className="order-fulfillment-flow-step">
+                  <span>3</span>
+                  <div>
+                    <strong>施工派工</strong>
+                    <p>库房匹配完成后再进入施工派工。</p>
+                  </div>
                 </div>
               </div>
             </section>

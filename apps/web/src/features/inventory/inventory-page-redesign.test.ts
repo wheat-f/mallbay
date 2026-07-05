@@ -52,6 +52,12 @@ test("inventory matching page disables write actions for read-only inventory use
   assert.match(matchingPageSource, /disabled=\{!canManageInventory \|\| !activeSelectedOrderId \|\| shortageRows\.length === 0 \|\| isCreatingRequirement\}/);
 });
 
+test("inventory matching page uses current Ant Design component props", () => {
+  assert.doesNotMatch(matchingPageSource, /<Alert[\s\S]*message=/);
+  assert.match(matchingPageSource, /<Alert[\s\S]*title="只读模式"/);
+  assert.doesNotMatch(matchingPageSource, /<Space[\s\S]*direction=/);
+});
+
 test("inventory matching page no longer embeds the legacy inventory tabs workspace", () => {
   assert.doesNotMatch(matchingPageSource, /INVENTORY_TAB_NAV_ITEMS/);
   assert.doesNotMatch(matchingPageSource, /<Tabs/);
@@ -63,11 +69,10 @@ test("inventory matching page no longer embeds the legacy inventory tabs workspa
 
 test("inventory matching page focuses on the order matching workflow", () => {
   assert.match(matchingPageSource, /订单库存匹配/);
-  assert.match(matchingPageSource, /待匹配订单/);
   assert.match(matchingPageSource, /订单产品需求/);
   assert.match(matchingPageSource, /当前订单匹配工作台/);
-  assert.match(matchingPageSource, /库存建议与批次锁定/);
-  assert.match(matchingPageSource, /已锁批次/);
+  assert.match(matchingPageSource, /选择批次并锁定库存/);
+  assert.match(matchingPageSource, /已锁批次与出库/);
   assert.match(matchingPageSource, /相关工作区/);
   assert.match(matchingPageSource, /href="\/purchases\/requirements"/);
   assert.match(matchingPageSource, /href="\/inventory\/movements"/);
@@ -77,10 +82,43 @@ test("inventory matching page focuses on the order matching workflow", () => {
 test("inventory matching page integrates lock and allocation results into the primary workspace", () => {
   assert.match(matchingPageSource, /inventory-current-order-workbench/);
   assert.match(matchingPageSource, /inventory-lock-and-allocation-grid/);
-  assert.match(matchingPageSource, /库存建议与批次锁定/);
+  assert.match(matchingPageSource, /选择批次并锁定库存/);
   assert.match(matchingPageSource, /当前订单锁库结果、出库进度和释放状态/);
   assert.doesNotMatch(matchingPageSource, /<Typography\.Title level=\{5\}>待匹配订单明细<\/Typography\.Title>/);
   assert.doesNotMatch(matchingPageSource, /inventory-desktop-table/);
+});
+
+test("inventory matching page separates order demand, lock, and result stages", () => {
+  assert.match(matchingPageSource, /inventory-current-order-demand/);
+  assert.match(matchingPageSource, /inventory-matching-workflow/);
+  assert.match(matchingPageSource, /inventory-lock-panel/);
+  assert.match(matchingPageSource, /inventory-allocation-panel/);
+  assert.match(cssSource, /\.inventory-fulfillment-board\.inventory-workspace-grid/);
+  assert.doesNotMatch(matchingPageSource, /inventory-demand-card/);
+  assert.doesNotMatch(matchingPageSource, /inventory-board-rail/);
+  assert.doesNotMatch(matchingPageSource, /title="待匹配订单"/);
+  assert.doesNotMatch(
+    cssSource,
+    /\.inventory-lock-and-allocation-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.08fr\)\s+minmax\(360px,\s*0\.92fr\)/
+  );
+});
+
+test("inventory matching lock form presents each product as a guided allocation card", () => {
+  assert.match(matchingPageSource, /inventory-allocation-editor-card/);
+  assert.match(matchingPageSource, /待锁数量/);
+  assert.match(matchingPageSource, /可用批次/);
+  assert.match(matchingPageSource, /showSearch/);
+  assert.match(matchingPageSource, /optionFilterProp="label"/);
+  assert.match(matchingPageSource, /锁定数量/);
+  assert.match(matchingPageSource, /按建议数量锁定，锁定后可在下方查看出库进度。/);
+  assert.doesNotMatch(matchingPageSource, /批次检索/);
+  assert.doesNotMatch(matchingPageSource, /batchSearchByOrderItem/);
+  assert.match(cssSource, /\.inventory-allocation-editor-card/);
+  assert.match(cssSource, /\.inventory-allocation-editor-grid/);
+  assert.match(cssSource, /\.inventory-allocation-editor-grid \.ant-form-item/);
+  assert.match(cssSource, /\.inventory-allocation-editor-grid \.ant-input/);
+  assert.doesNotMatch(cssSource, /\.inventory-allocation-editor-grid\s*\{[^}]*align-items:\s*end/);
+  assert.doesNotMatch(matchingPageSource, /<Space className="w-full" align="baseline" wrap>/);
 });
 
 test("inventory matching page keeps only essential related workspace links", () => {
@@ -154,6 +192,17 @@ test("inventory overview pending order queue has mobile cards instead of squeezi
 }
 );
 
+test("inventory overview pending order queue uses row-level matching actions", () => {
+  assert.match(pageSource, /inventory-overview-row-action/);
+  assert.match(pageSource, /href=\{`\/inventory\/matching\?orderId=\$\{row\.id\}`\}/);
+  assert.match(pageSource, /title: "操作"/);
+  assert.match(cssSource, /\.inventory-overview-row-action/);
+  assert.doesNotMatch(pageSource, /extra=\{<Link href="\/inventory\/matching">进入匹配<\/Link>\}/);
+  assert.doesNotMatch(pageSource, /请先选择待匹配订单/);
+  assert.match(matchingPageSource, /useSearchParams/);
+  assert.match(matchingPageSource, /queryOrderId/);
+});
+
 test("inventory page formats order dates with business-safe fallbacks", () => {
   assert.match(pageSource, /function formatInventoryOrderDate/);
   assert.match(pageSource, /预约日期待确认/);
@@ -170,7 +219,7 @@ test("inventory nested panels use tokenized prototype surfaces", () => {
 });
 
 test("inventory selected order operations guard selection with business-safe copy", () => {
-  assert.match(pageSource, /请先选择待匹配订单/);
+  assert.match(matchingPageSource, /请先选择待匹配订单/);
   assert.doesNotMatch(pageSource, /orderMatch\(activeSelectedOrderId!\)/);
   assert.doesNotMatch(pageSource, /outboundOrder\(activeSelectedOrderId!\)/);
   assert.doesNotMatch(pageSource, /releaseOrder\(activeSelectedOrderId!\)/);

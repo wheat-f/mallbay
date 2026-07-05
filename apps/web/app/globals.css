@@ -2904,6 +2904,62 @@ body {
   gap: 10px;
 }
 
+.order-fulfillment-flow-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.order-fulfillment-flow-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface);
+  padding: 12px;
+}
+
+.order-fulfillment-flow-step span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--mb-surface-alt);
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.order-fulfillment-flow-step strong {
+  display: block;
+  color: var(--mb-text-primary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.order-fulfillment-flow-step p {
+  margin: 4px 0 0;
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.order-fulfillment-flow-step.is-active,
+.order-fulfillment-flow-step.is-next {
+  border-color: rgba(0, 58, 92, 0.28);
+  background: var(--mb-primary-container);
+}
+
+.order-fulfillment-flow-step.is-active span,
+.order-fulfillment-flow-step.is-next span {
+  background: var(--mb-primary);
+  color: var(--mb-surface);
+}
+
 .order-fulfillment-product-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
@@ -2960,6 +3016,12 @@ body {
 
 .order-fulfillment-drawer-footer .ant-btn {
   min-height: 42px;
+}
+
+@media (max-width: 720px) {
+  .order-fulfillment-flow-steps {
+    grid-template-columns: 1fr;
+  }
 }
 
 .order-audit-timeline {
@@ -5473,6 +5535,66 @@ body {
   background: var(--mb-surface-alt);
 }
 
+.inventory-current-order-demand {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-container-lowest);
+  padding: 12px;
+}
+
+.inventory-current-order-demand-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 14px;
+}
+
+.inventory-current-order-demand-head strong {
+  color: var(--mb-text-primary);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 20px;
+}
+
+.inventory-current-order-demand-head span {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.inventory-current-order-demand-list {
+  display: grid;
+  gap: 8px;
+}
+
+.inventory-current-order-demand-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 56px minmax(70px, max-content);
+  gap: 8px 12px;
+  align-items: center;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  padding: 10px 12px;
+}
+
+.inventory-current-order-demand-row span {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.inventory-current-order-demand-row strong {
+  min-width: 0;
+  color: var(--mb-text-primary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
 .inventory-demand-box {
   display: grid;
   gap: 10px;
@@ -5532,6 +5654,10 @@ body {
 
 .inventory-outbound-grid > * {
   min-width: 0;
+}
+
+.inventory-fulfillment-board.inventory-workspace-grid {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .inventory-outbound-form {
@@ -5610,6 +5736,7 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+  align-items: stretch;
 }
 
 .inventory-lock-and-allocation-grid {
@@ -5622,6 +5749,7 @@ body {
 .inventory-allocation-panel {
   display: grid;
   min-width: 0;
+  overflow: hidden;
   gap: 14px;
   border: 1px solid var(--mb-border);
   border-radius: var(--mb-radius-lg);
@@ -5631,23 +5759,178 @@ body {
 
 .inventory-section-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
 .inventory-section-head > div {
+  flex: 1 1 260px;
   min-width: 0;
 }
 
 .inventory-section-head .ant-btn {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  max-width: 100%;
 }
 
 .inventory-lock-form-list {
   display: grid;
   gap: 12px;
   margin: 14px 0;
+}
+
+.inventory-allocation-editor-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-lg);
+  background: var(--mb-surface);
+  padding: 14px;
+}
+
+.inventory-allocation-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inventory-allocation-editor-head > div {
+  min-width: 0;
+}
+
+.inventory-allocation-editor-head strong,
+.inventory-allocation-editor-head span {
+  display: block;
+}
+
+.inventory-allocation-editor-head strong {
+  color: var(--mb-text-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.inventory-allocation-editor-head span {
+  margin-top: 4px;
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.inventory-allocation-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(86px, 1fr));
+  gap: 8px;
+}
+
+.inventory-allocation-metrics div {
+  min-width: 0;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface-alt);
+  padding: 10px;
+}
+
+.inventory-allocation-metrics span,
+.inventory-allocation-metrics strong {
+  display: block;
+}
+
+.inventory-allocation-metrics span {
+  color: var(--mb-text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.inventory-allocation-metrics strong {
+  margin-top: 4px;
+  color: var(--mb-primary);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.inventory-allocation-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr) minmax(140px, 0.7fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.inventory-allocation-editor-grid label,
+.inventory-allocation-editor-grid .ant-form-item {
+  display: grid;
+  grid-template-rows: 22px minmax(46px, auto);
+  gap: 8px;
+  align-content: start;
+  margin-bottom: 0;
+}
+
+.inventory-allocation-editor-grid .ant-form-item-row {
+  display: grid;
+  grid-template-rows: 22px minmax(46px, auto);
+  gap: 8px;
+  align-content: start;
+}
+
+.inventory-allocation-editor-grid label > span,
+.inventory-allocation-editor-grid .ant-form-item-label > label {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  color: var(--mb-text-primary);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+}
+
+.inventory-allocation-editor-grid .ant-form-item-label {
+  min-height: 22px;
+  padding: 0;
+}
+
+.inventory-allocation-editor-grid .ant-form-item-control,
+.inventory-allocation-editor-grid .ant-form-item-control-input,
+.inventory-allocation-editor-grid .ant-form-item-control-input-content {
+  min-height: 46px;
+}
+
+.inventory-allocation-editor-grid .ant-form-item-control-input {
+  align-items: stretch;
+}
+
+.inventory-allocation-editor-grid .ant-input-affix-wrapper,
+.inventory-allocation-editor-grid .ant-select,
+.inventory-allocation-editor-grid .ant-select-selector,
+.inventory-allocation-editor-grid .ant-input-number {
+  height: 46px;
+  min-height: 46px;
+}
+
+.inventory-allocation-editor-grid .ant-input-affix-wrapper .ant-input {
+  height: auto;
+  min-height: 0;
+}
+
+.inventory-allocation-editor-grid .ant-select,
+.inventory-allocation-editor-grid .ant-input-number {
+  width: 100%;
+}
+
+.inventory-allocation-editor-grid .ant-select-selector {
+  align-items: center;
+  height: 46px !important;
+}
+
+.inventory-allocation-editor-grid .ant-input-number-input {
+  height: 44px;
+}
+
+.inventory-allocation-desktop-table .ant-table-wrapper,
+.inventory-allocation-panel .ant-table-wrapper,
+.inventory-lock-panel .ant-table-wrapper {
+  min-width: 0;
 }
 
 .inventory-inline-shortcuts {
@@ -6444,10 +6727,6 @@ body {
 }
 
 @media (min-width: 1680px) {
-  .inventory-lock-and-allocation-grid {
-    grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
-  }
-
   .movement-workspace-grid {
     grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   }
@@ -6458,6 +6737,8 @@ body {
 }
 
 @media (max-width: 1080px) {
+  .inventory-allocation-editor-grid,
+  .inventory-allocation-metrics,
   .movement-kpi-grid,
   .movement-filter-grid,
   .movement-side-stack {
@@ -7035,7 +7316,7 @@ body {
 
 .purchase-detail-stepper {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(132px, 1fr));
   overflow-x: auto;
   border: 1px solid var(--mb-border);
   border-radius: var(--mb-radius-lg);
@@ -7046,7 +7327,7 @@ body {
 
 .purchase-step-item {
   position: relative;
-  min-width: 120px;
+  min-width: 132px;
   text-align: center;
 }
 
@@ -22128,6 +22409,30 @@ button:hover .avatar-hover-mask {
 .inventory-overview-order-card small {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.inventory-overview-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  min-height: 34px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  color: var(--mb-primary);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 18px;
+  padding: 7px 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.inventory-overview-row-action:hover {
+  border-color: var(--mb-primary);
+  background: var(--mb-primary-container);
+  color: var(--mb-primary);
 }
 
 .inventory-overview-shortcuts,

@@ -33,10 +33,12 @@ test("order detail exposes pending dispatch confirmation and fulfillment links",
   assert.match(pageSource, /确认提交派工与库房匹配/);
   assert.match(pageSource, /openFulfillmentDrawer/);
   assert.match(pageSource, /打开确认流转/);
-  assert.match(pageSource, /进入库房匹配/);
-  assert.match(pageSource, /router\.push\("\/inventory"\)/);
-  assert.match(pageSource, /进入施工派工/);
-  assert.match(pageSource, /router\.push\("\/construction\/assignments"\)/);
+  assert.match(pageSource, /continueToInventoryMatching/);
+  assert.match(pageSource, /确认提交，进入库房匹配/);
+  assert.match(pageSource, /router\.push\("\/inventory\/matching"\)/);
+  assert.doesNotMatch(pageSource, /router\.push\("\/inventory"\)/);
+  assert.doesNotMatch(pageSource, /router\.push\("\/construction\/assignments"\)/);
+  assert.doesNotMatch(pageSource, /<Button[^>]*>进入施工派工<\/Button>/);
 });
 
 test("order detail confirmation flow uses the prototype right-side drawer", () => {
@@ -50,7 +52,9 @@ test("order detail confirmation flow uses the prototype right-side drawer", () =
   assert.match(pageSource, /已核对客户信息及施工要求/);
   assert.match(pageSource, /已告知客户施工时间及注意事项/);
   assert.match(pageSource, /给库房\/施工主管的补充建议/);
-  assert.match(pageSource, /确认提交，进入派工流转/);
+  assert.match(pageSource, /确认提交，进入库房匹配/);
+  assert.match(pageSource, /order-fulfillment-flow-steps/);
+  assert.match(pageSource, /库房匹配完成后再进入施工派工/);
   assert.match(pageSource, /暂存草稿/);
   assert.match(pageSource, /order-fulfillment-drawer-body/);
   assert.match(pageSource, /order-fulfillment-product-row/);

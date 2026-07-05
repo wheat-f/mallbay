@@ -1,16 +1,16 @@
 "use client";
 
 import type { ProductUnit } from "@mallbay/shared";
-import { ArrowLeftOutlined, LockOutlined, SearchOutlined, ShoppingCartOutlined } from "@ant-design/icons";
-import { App, Alert, Button, Card, Form, Input, InputNumber, Select, Space, Table, Tag, Typography } from "antd";
+import { ArrowLeftOutlined, LockOutlined, ShoppingCartOutlined } from "@ant-design/icons";
+import { App, Alert, Button, Card, Form, InputNumber, Select, Space, Table, Tag, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 import { inventoryApi, productApi } from "../../../src/lib/api";
 import {
   getInventoryAllocationStatusLabel,
   getInventoryOrderCustomerLabel,
-  getInventoryOrderItemsSummary,
   getInventoryOrderVehicleLabel,
   getInventoryProductLabel,
   INVENTORY_PRODUCT_MISSING_LABEL,
@@ -20,7 +20,6 @@ import {
   buildInventoryAllocationRows,
   buildInventoryMatchRows,
   buildPurchaseRequirementFromShortages,
-  filterInventoryBatches,
   type InventoryMatchInput
 } from "../../../src/features/inventory/matching";
 import { getProductDisplayName, getProductUnitLabel } from "../../../src/features/products/display";
@@ -65,15 +64,13 @@ type AllocationFormValues = {
 export default function InventoryMatchingPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const canManageInventory = user?.isAuditor === true ||
     user?.storeMember?.position === "MANAGER" ||
     user?.storeMember?.position === "PURCHASING";
   const [allocationForm] = Form.useForm<AllocationFormValues>();
-  const [selectedOrderId, setSelectedOrderId] = useState<string>();
-  const [inventorySearch, setInventorySearch] = useState("");
-  const [batchSearchByOrderItem, setBatchSearchByOrderItem] = useState<Record<string, string>>({});
 
   const productsQuery = useQuery({
     queryKey: ["inventory-products", storeId],
@@ -98,7 +95,8 @@ export default function InventoryMatchingPage() {
     [pendingOrdersQuery.data]
   );
   const firstPendingOrderId = pendingMatchRows[0]?.id;
-  const activeSelectedOrderId = selectedOrderId ?? firstPendingOrderId;
+  const queryOrderId = searchParams.get("orderId") ?? undefined;
+  const activeSelectedOrderId = queryOrderId ?? firstPendingOrderId;
 
   const orderMatchQuery = useQuery({
     queryKey: ["inventory-order-match", activeSelectedOrderId],
@@ -112,22 +110,6 @@ export default function InventoryMatchingPage() {
   const productItems = useMemo(() => (productsQuery.data?.items ?? []) as ProductOption[], [productsQuery.data]);
   const productMap = useMemo(() => new Map(productItems.map((product) => [product.id, product])), [productItems]);
   const batchRows = useMemo(() => (batchesQuery.data ?? []) as InventoryBatchRow[], [batchesQuery.data]);
-
-  const filteredPendingMatchRows = useMemo(() => {
-    const keyword = inventorySearch.trim().toLowerCase();
-    if (!keyword) return pendingMatchRows;
-    return pendingMatchRows.filter((order) =>
-      [
-        order.orderNo,
-        getInventoryOrderCustomerLabel(order),
-        getInventoryOrderVehicleLabel(order),
-        getInventoryOrderItemsSummary(order)
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(keyword)
-    );
-  }, [inventorySearch, pendingMatchRows]);
 
   const matchRows = buildInventoryMatchRows(orderMatchQuery.data as InventoryMatchInput | undefined);
   const allocationRows = buildInventoryAllocationRows(orderMatchQuery.data as InventoryMatchInput | undefined);
@@ -235,11 +217,6 @@ export default function InventoryMatchingPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
-  const handleSelectedOrderChange = (orderId: string) => {
-    setSelectedOrderId(orderId);
-    setBatchSearchByOrderItem({});
-  };
-
   const isAllocating = createOrderAllocations.isPending || orderMatchQuery.isLoading;
   const isCreatingRequirement = createShortagePurchaseRequirement.isPending;
 
@@ -266,82 +243,12 @@ export default function InventoryMatchingPage() {
           className="management-readonly-alert"
           type="info"
           showIcon
-          message="只读模式"
+          title="只读模式"
           description="客服可查看订单需求、库存建议和锁库结果，不能锁库、出库、释放或生成采购需求。"
         />
       ) : null}
 
       <section className="inventory-workspace-grid inventory-fulfillment-board">
-        <div className="inventory-board-rail inventory-rail-stack">
-          <Card
-            className="inventory-prototype-card inventory-workspace-card"
-            title="待匹配订单"
-            extra={<Tag color="warning">{filteredPendingMatchRows.length} 笔等待</Tag>}
-          >
-            <Space direction="vertical" className="w-full" size="middle">
-              <Input
-                prefix={<SearchOutlined />}
-                allowClear
-                placeholder="搜索订单、车辆或客户..."
-                value={inventorySearch}
-                onChange={(event) => setInventorySearch(event.target.value)}
-              />
-              {filteredPendingMatchRows.length > 0 ? (
-                <Space direction="vertical" className="w-full" size="small">
-                  {filteredPendingMatchRows.slice(0, 6).map((order) => (
-                    <button
-                      key={order.id}
-                      type="button"
-                      className={order.id === activeSelectedOrderId ? "inventory-order-card is-active" : "inventory-order-card"}
-                      onClick={() => handleSelectedOrderChange(order.id)}
-                    >
-                      <span className="inventory-order-title">{order.orderNo}</span>
-                      <span>{getInventoryOrderCustomerLabel(order)}</span>
-                      <span>{getInventoryOrderVehicleLabel(order)}</span>
-                      <small>{getInventoryOrderItemsSummary(order)}</small>
-                    </button>
-                  ))}
-                </Space>
-              ) : (
-                <Typography.Text type="secondary">暂无待匹配订单</Typography.Text>
-              )}
-            </Space>
-          </Card>
-
-          <Card className="inventory-prototype-card inventory-workspace-card inventory-demand-card" title="订单产品需求">
-            <Space direction="vertical" className="w-full" size="middle">
-              <Typography.Text type="secondary">
-                当前订单：{selectedOrder?.orderNo ?? "请选择待匹配订单"}
-              </Typography.Text>
-              {selectedOrder ? (
-                <div className="inventory-demand-box">
-                  {(selectedOrder.items ?? []).map((item, index) => (
-                    <div key={`${item.productId ?? index}-${item.quantity ?? 0}`} className="inventory-demand-row">
-                      <span>产品</span>
-                      <strong>
-                        {item.product
-                          ? getProductDisplayName({
-                              brand: item.product.brand ?? undefined,
-                              name: item.product.name ?? undefined,
-                              model: item.product.model ?? undefined
-                            })
-                          : INVENTORY_PRODUCT_MISSING_LABEL}
-                      </strong>
-                      <span>需求量</span>
-                      <strong>{item.quantity ?? 0}</strong>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="inventory-demand-empty">选择订单后显示产品、规格、需求量和库存建议。</div>
-              )}
-              <div className={shortageRows.length > 0 ? "inventory-demand-hint is-warning" : "inventory-demand-hint"}>
-                {shortageRows.length > 0 ? `存在 ${shortageRows.length} 项缺货，可生成采购需求单。` : "库存匹配结果会优先提示可出库批次。"}
-              </div>
-            </Space>
-          </Card>
-        </div>
-
         <div className="inventory-board-center inventory-main-stack">
           <Card
             className="inventory-prototype-card inventory-workspace-card inventory-current-order-workbench"
@@ -355,7 +262,7 @@ export default function InventoryMatchingPage() {
                 <small>
                   {selectedOrder
                     ? `${getInventoryOrderCustomerLabel(selectedOrder)} · ${getInventoryOrderVehicleLabel(selectedOrder)}`
-                    : "先从左侧订单队列选择需要匹配库存的订单"}
+                    : "请从库存总览的待匹配订单进入库存匹配"}
                 </small>
               </div>
               <div className="inventory-outbound-summary">
@@ -366,14 +273,44 @@ export default function InventoryMatchingPage() {
                 <span>待选产品</span>
                 <strong>{matchRows.length} 项</strong>
               </div>
+              <div className="inventory-current-order-demand">
+                <div className="inventory-current-order-demand-head">
+                  <strong>订单产品需求</strong>
+                  <span>
+                    {shortageRows.length > 0 ? `存在 ${shortageRows.length} 项缺货，可生成采购需求单。` : "库存匹配结果会优先提示可出库批次。"}
+                  </span>
+                </div>
+                {selectedOrder ? (
+                  <div className="inventory-current-order-demand-list">
+                    {(selectedOrder.items ?? []).map((item, index) => (
+                      <div key={`${item.productId ?? index}-${item.quantity ?? 0}`} className="inventory-current-order-demand-row">
+                        <span>产品</span>
+                        <strong>
+                          {item.product
+                            ? getProductDisplayName({
+                                brand: item.product.brand ?? undefined,
+                                name: item.product.name ?? undefined,
+                                model: item.product.model ?? undefined
+                              })
+                            : INVENTORY_PRODUCT_MISSING_LABEL}
+                        </strong>
+                        <span>需求量</span>
+                        <strong>{item.quantity ?? 0}</strong>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="inventory-demand-empty">选择订单后显示产品、规格、需求量和库存建议。</div>
+                )}
+              </div>
             </div>
 
-            <div className="inventory-lock-and-allocation-grid">
+            <div className="inventory-lock-and-allocation-grid inventory-matching-workflow">
               <section className="inventory-lock-panel">
                 <div className="inventory-section-head">
                   <div>
-                    <Typography.Title level={5} className="!mb-1">库存建议与批次锁定</Typography.Title>
-                    <Typography.Text type="secondary">查看当前订单可用批次，直接完成批次选择和锁库。</Typography.Text>
+                    <Typography.Title level={5} className="!mb-1">选择批次并锁定库存</Typography.Title>
+                    <Typography.Text type="secondary">先查看可用批次，再为每个产品选择批次和本次锁定数量。</Typography.Text>
                   </div>
                   <Button
                     icon={<ShoppingCartOutlined />}
@@ -410,47 +347,80 @@ export default function InventoryMatchingPage() {
                   <Form form={allocationForm} layout="vertical" onFinish={(values) => createOrderAllocations.mutate(values)}>
                     <div className="inventory-lock-form-list">
                       {matchRows.length > 0 ? (
-                        matchRows.map((row, index) => (
-                          <div key={row.orderItemId} className="inventory-nested-panel">
-                            <div className="mb-3 flex flex-wrap items-center gap-2">
-                              <Typography.Text strong>{row.productLabel}</Typography.Text>
-                              <Tag>需求 {row.requiredQuantity} {getProductUnitLabel(row.unit)}</Tag>
-                              <Tag color={row.lockedQuantity > 0 ? "processing" : "default"}>已锁 {row.lockedQuantity}</Tag>
-                              <Tag color={row.availableQuantity > 0 ? "success" : "default"}>可用 {row.availableQuantity}</Tag>
-                              <Tag color={row.shortageQuantity > 0 ? "error" : "success"}>缺口 {row.shortageQuantity}</Tag>
+                        matchRows.map((row, index) => {
+                          const pendingLockQuantity = Math.max(0, row.requiredQuantity - row.lockedQuantity);
+                          const maxLockQuantity = Math.min(row.availableQuantity, pendingLockQuantity || row.availableQuantity);
+
+                          return (
+                            <div key={row.orderItemId} className="inventory-allocation-editor-card">
+                              <div className="inventory-allocation-editor-head">
+                                <div>
+                                  <Typography.Text strong>{row.productLabel}</Typography.Text>
+                                  <span>按建议数量锁定，锁定后可在下方查看出库进度。</span>
+                                </div>
+                                <Tag color={row.shortageQuantity > 0 ? "error" : "success"}>
+                                  {row.shortageQuantity > 0 ? "需补货" : "库存可用"}
+                                </Tag>
+                              </div>
+
+                              <div className="inventory-allocation-metrics">
+                                <div>
+                                  <span>需求量</span>
+                                  <strong>{row.requiredQuantity} {getProductUnitLabel(row.unit)}</strong>
+                                </div>
+                                <div>
+                                  <span>已锁数量</span>
+                                  <strong>{row.lockedQuantity} {getProductUnitLabel(row.unit)}</strong>
+                                </div>
+                                <div>
+                                  <span>待锁数量</span>
+                                  <strong>{pendingLockQuantity} {getProductUnitLabel(row.unit)}</strong>
+                                </div>
+                                <div>
+                                  <span>可用库存</span>
+                                  <strong>{row.availableQuantity} {getProductUnitLabel(row.unit)}</strong>
+                                </div>
+                                <div>
+                                  <span>缺口</span>
+                                  <strong>{row.shortageQuantity} {getProductUnitLabel(row.unit)}</strong>
+                                </div>
+                              </div>
+
+                              <div className="inventory-allocation-editor-grid">
+                                <Form.Item
+                                  label="可用批次"
+                                  name={["allocations", index, "batchId"]}
+                                  rules={[{ required: true, message: "请选择批次" }]}
+                                  className="!mb-0"
+                                >
+                                  <Select
+                                    showSearch
+                                    optionFilterProp="label"
+                                    placeholder={row.availableBatches.length > 0 ? "选择可出库批次" : "暂无可用批次"}
+                                    disabled={!canManageInventory || row.availableBatches.length === 0}
+                                    options={row.availableBatches.map((batch) => ({
+                                      value: batch.id,
+                                      label: `${batch.batchNo} · 可用 ${batch.availableQuantity} ${getProductUnitLabel(row.unit)}`
+                                    }))}
+                                  />
+                                </Form.Item>
+                                <Form.Item
+                                  label="锁定数量"
+                                  name={["allocations", index, "quantity"]}
+                                  rules={[{ required: true, message: "请输入数量" }]}
+                                  className="!mb-0"
+                                >
+                                  <InputNumber
+                                    min={0.001}
+                                    max={maxLockQuantity || undefined}
+                                    placeholder="输入本次锁定数量"
+                                    disabled={!canManageInventory || row.availableQuantity <= 0}
+                                  />
+                                </Form.Item>
+                              </div>
                             </div>
-                            <Space className="w-full" align="baseline" wrap>
-                              <Input
-                                className="min-w-56"
-                                allowClear
-                                placeholder="扫描或输入批次号"
-                                value={batchSearchByOrderItem[row.orderItemId] ?? ""}
-                                onChange={(event) =>
-                                  setBatchSearchByOrderItem((current) => ({
-                                    ...current,
-                                    [row.orderItemId]: event.target.value
-                                  }))
-                                }
-                              />
-                              <Form.Item name={["allocations", index, "batchId"]} rules={[{ required: true, message: "请选择批次" }]} className="!mb-0">
-                                <Select
-                                  className="min-w-60"
-                                  placeholder="批次"
-                                  options={filterInventoryBatches(
-                                    row.availableBatches,
-                                    batchSearchByOrderItem[row.orderItemId]
-                                  ).map((batch) => ({
-                                    value: batch.id,
-                                    label: `${batch.batchNo} · 可用 ${batch.availableQuantity}`
-                                  }))}
-                                />
-                              </Form.Item>
-                              <Form.Item name={["allocations", index, "quantity"]} rules={[{ required: true, message: "请输入数量" }]} className="!mb-0">
-                                <InputNumber min={0.001} max={row.availableQuantity || undefined} placeholder="锁定数量" disabled={!canManageInventory} />
-                              </Form.Item>
-                            </Space>
-                          </div>
-                        ))
+                          );
+                        })
                       ) : (
                         <div className="inventory-demand-empty">当前订单暂无可锁定产品需求。</div>
                       )}
@@ -482,7 +452,7 @@ export default function InventoryMatchingPage() {
               <section className="inventory-allocation-panel">
                 <div className="inventory-section-head">
                   <div>
-                    <Typography.Title level={5} className="!mb-1">已锁批次</Typography.Title>
+                    <Typography.Title level={5} className="!mb-1">已锁批次与出库</Typography.Title>
                     <Typography.Text type="secondary">当前订单锁库结果、出库进度和释放状态在这里查看。</Typography.Text>
                   </div>
                   <Space wrap>

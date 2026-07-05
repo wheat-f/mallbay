@@ -77,8 +77,6 @@ export default function InventoryOverviewPage() {
   const movementSummary = getInventoryMovementSummary(movementRows);
   const lowStockRows = batchRows.filter((batch) => Number(batch.availableQuantity ?? 0) <= 1).slice(0, 5);
   const lockedRows = batchRows.filter((batch) => Number(batch.lockedQuantity ?? 0) > 0).slice(0, 5);
-  const selectedOrderMessage = "请先选择待匹配订单";
-
   return (
     <div className="management-page inventory-overview-shell">
       <StorePageHeader title="库存运营总览" description="查看库存健康、订单匹配、锁库出库和库存流水，采购事项已拆到采购管理。">
@@ -119,13 +117,16 @@ export default function InventoryOverviewPage() {
 
       <section className="inventory-overview-grid">
         <div className="inventory-overview-main">
-          <Card className="inventory-prototype-card" title="待匹配订单" extra={<Link href="/inventory/matching">进入匹配</Link>}>
+          <Card className="inventory-prototype-card" title="待匹配订单">
             <div className="inventory-overview-order-cards">
               {pendingRows.slice(0, 5).map((row) => (
                 <article key={row.id} className="inventory-overview-order-card">
                   <strong>{row.orderNo ?? "未编号订单"}</strong>
                   <span>{getInventoryOrderCustomerLabel(row)}</span>
                   <small>{getInventoryOrderItemsSummary(row)}</small>
+                  <Link href={`/inventory/matching?orderId=${row.id}`} className="inventory-overview-row-action">
+                    进入匹配
+                  </Link>
                 </article>
               ))}
             </div>
@@ -139,10 +140,17 @@ export default function InventoryOverviewPage() {
                 { title: "订单号", render: (_, row) => row.orderNo ?? "未编号订单" },
                 { title: "客户", render: (_, row) => getInventoryOrderCustomerLabel(row) },
                 { title: "产品", render: (_, row) => getInventoryOrderItemsSummary(row) },
-                { title: "预约", render: (_, row) => formatInventoryOrderDate(row.appointmentDate) }
+                { title: "预约", render: (_, row) => formatInventoryOrderDate(row.appointmentDate) },
+                {
+                  title: "操作",
+                  render: (_, row) => (
+                    <Link href={`/inventory/matching?orderId=${row.id}`} className="inventory-overview-row-action">
+                      进入匹配
+                    </Link>
+                  )
+                }
               ]}
             />
-            <Typography.Text type="secondary">{selectedOrderMessage}</Typography.Text>
           </Card>
 
           <Card className="inventory-prototype-card" title="低库存与异常批次">

@@ -54,6 +54,10 @@ type AvailableInventoryPreviewRow = {
   availableQuantity?: number | string | null;
 };
 
+type InventoryOrderMatchResponse = InventoryMatchInput & {
+  order?: PendingMatchOrderRow;
+};
+
 type AllocationFormValues = {
   allocations?: Array<{
     batchId?: string;
@@ -110,11 +114,21 @@ export default function InventoryMatchingPage() {
   const productItems = useMemo(() => (productsQuery.data?.items ?? []) as ProductOption[], [productsQuery.data]);
   const productMap = useMemo(() => new Map(productItems.map((product) => [product.id, product])), [productItems]);
   const batchRows = useMemo(() => (batchesQuery.data ?? []) as InventoryBatchRow[], [batchesQuery.data]);
+  const orderMatch = orderMatchQuery.data as InventoryOrderMatchResponse | undefined;
 
-  const matchRows = buildInventoryMatchRows(orderMatchQuery.data as InventoryMatchInput | undefined);
-  const allocationRows = buildInventoryAllocationRows(orderMatchQuery.data as InventoryMatchInput | undefined);
+  const matchRows = buildInventoryMatchRows(orderMatch);
+  const allocationRows = buildInventoryAllocationRows(orderMatch);
+  const lockableRows = matchRows.filter((row) => row.pendingQuantity > 0);
+  const completedRows = matchRows.filter((row) => row.pendingQuantity === 0 && row.outboundQuantity >= row.requiredQuantity);
   const shortageRows = matchRows.filter((row) => row.shortageQuantity > 0);
-  const selectedOrder = pendingMatchRows.find((order) => order.id === activeSelectedOrderId);
+  const selectedOrder = pendingMatchRows.find((order) => order.id === activeSelectedOrderId) ?? orderMatch?.order;
+  const hasPendingProducts = lockableRows.length > 0;
+  const workbenchStatus = (() => {
+    if (allocationRows.length > 0) return { label: "待出库", color: "processing" as const };
+    if (matchRows.length > 0 && !hasPendingProducts) return { label: "已完成", color: "success" as const };
+    if (shortageRows.length > 0) return { label: "需采购", color: "warning" as const };
+    return { label: "可锁库", color: "success" as const };
+  })();
 
   const availableInventoryRows: AvailableInventoryPreviewRow[] = activeSelectedOrderId
     ? matchRows.flatMap((row) =>
@@ -167,7 +181,7 @@ export default function InventoryMatchingPage() {
       if (!activeSelectedOrderId) throw new Error("请先选择待匹配订单");
       return inventoryApi.createOrderAllocations(activeSelectedOrderId, {
         allocations: (values.allocations ?? []).map((allocation, index) => ({
-          orderItemId: matchRows[index].orderItemId,
+          orderItemId: lockableRows[index].orderItemId,
           batchId: allocation.batchId!,
           quantity: allocation.quantity!
         }))
@@ -253,7 +267,7 @@ export default function InventoryMatchingPage() {
           <Card
             className="inventory-prototype-card inventory-workspace-card inventory-current-order-workbench"
             title="当前订单匹配工作台"
-            extra={<Tag color={shortageRows.length > 0 ? "warning" : "success"}>{shortageRows.length > 0 ? "需采购" : "可锁库"}</Tag>}
+            extra={<Tag color={workbenchStatus.color}>{workbenchStatus.label}</Tag>}
           >
             <div className="inventory-current-order-overview">
               <div className="inventory-current-order-strip">
@@ -270,14 +284,20 @@ export default function InventoryMatchingPage() {
                 <strong>{allocationRows.length} 个</strong>
                 <span>缺货明细</span>
                 <strong>{shortageRows.length} 项</strong>
-                <span>待选产品</span>
-                <strong>{matchRows.length} 项</strong>
+                <span>待处理产品</span>
+                <strong>{lockableRows.length} 项</strong>
+                <span>已出库产品</span>
+                <strong>{completedRows.length} 项</strong>
               </div>
               <div className="inventory-current-order-demand">
                 <div className="inventory-current-order-demand-head">
                   <strong>订单产品需求</strong>
                   <span>
-                    {shortageRows.length > 0 ? `存在 ${shortageRows.length} 项缺货，可生成采购需求单。` : "库存匹配结果会优先提示可出库批次。"}
+                    {!hasPendingProducts && matchRows.length > 0
+                      ? "该订单库存流程已完成，无需继续锁库或出库。"
+                      : shortageRows.length > 0
+                        ? `存在 ${shortageRows.length} 项缺货，可生成采购需求单。`
+                        : "库存匹配结果会优先提示可出库批次。"}
                   </span>
                 </div>
                 {selectedOrder ? (
@@ -314,7 +334,7 @@ export default function InventoryMatchingPage() {
                   </div>
                   <Button
                     icon={<ShoppingCartOutlined />}
-                    disabled={!canManageInventory || !activeSelectedOrderId || shortageRows.length === 0 || isCreatingRequirement}
+                    disabled={!canManageInventory || !activeSelectedOrderId || !hasPendingProducts || shortageRows.length === 0 || isCreatingRequirement}
                     loading={isCreatingRequirement}
                     onClick={() => createShortagePurchaseRequirement.mutate()}
                   >
@@ -346,10 +366,15 @@ export default function InventoryMatchingPage() {
                 {activeSelectedOrderId ? (
                   <Form form={allocationForm} layout="vertical" onFinish={(values) => createOrderAllocations.mutate(values)}>
                     <div className="inventory-lock-form-list">
-                      {matchRows.length > 0 ? (
-                        matchRows.map((row, index) => {
-                          const pendingLockQuantity = Math.max(0, row.requiredQuantity - row.lockedQuantity);
+                      {lockableRows.length > 0 ? (
+                        lockableRows.map((row, index) => {
+                          const pendingLockQuantity = row.pendingQuantity;
                           const maxLockQuantity = Math.min(row.availableQuantity, pendingLockQuantity || row.availableQuantity);
+                          const rowStatus = row.shortageQuantity > 0
+                            ? { label: "需补货", color: "error" as const }
+                            : row.lockedQuantity > 0
+                              ? { label: "部分已锁", color: "processing" as const }
+                              : { label: "库存可用", color: "success" as const };
 
                           return (
                             <div key={row.orderItemId} className="inventory-allocation-editor-card">
@@ -358,9 +383,7 @@ export default function InventoryMatchingPage() {
                                   <Typography.Text strong>{row.productLabel}</Typography.Text>
                                   <span>按建议数量锁定，锁定后可在下方查看出库进度。</span>
                                 </div>
-                                <Tag color={row.shortageQuantity > 0 ? "error" : "success"}>
-                                  {row.shortageQuantity > 0 ? "需补货" : "库存可用"}
-                                </Tag>
+                                <Tag color={rowStatus.color}>{rowStatus.label}</Tag>
                               </div>
 
                               <div className="inventory-allocation-metrics">
@@ -371,6 +394,10 @@ export default function InventoryMatchingPage() {
                                 <div>
                                   <span>已锁数量</span>
                                   <strong>{row.lockedQuantity} {getProductUnitLabel(row.unit)}</strong>
+                                </div>
+                                <div>
+                                  <span>已出库</span>
+                                  <strong>{row.outboundQuantity} {getProductUnitLabel(row.unit)}</strong>
                                 </div>
                                 <div>
                                   <span>待锁数量</span>
@@ -397,7 +424,7 @@ export default function InventoryMatchingPage() {
                                     showSearch
                                     optionFilterProp="label"
                                     placeholder={row.availableBatches.length > 0 ? "选择可出库批次" : "暂无可用批次"}
-                                    disabled={!canManageInventory || row.availableBatches.length === 0}
+                                    disabled={!canManageInventory || row.availableBatches.length === 0 || pendingLockQuantity <= 0}
                                     options={row.availableBatches.map((batch) => ({
                                       value: batch.id,
                                       label: `${batch.batchNo} · 可用 ${batch.availableQuantity} ${getProductUnitLabel(row.unit)}`
@@ -414,13 +441,48 @@ export default function InventoryMatchingPage() {
                                     min={0.001}
                                     max={maxLockQuantity || undefined}
                                     placeholder="输入本次锁定数量"
-                                    disabled={!canManageInventory || row.availableQuantity <= 0}
+                                    disabled={!canManageInventory || row.availableQuantity <= 0 || pendingLockQuantity <= 0}
                                   />
                                 </Form.Item>
                               </div>
                             </div>
                           );
                         })
+                      ) : matchRows.length > 0 ? (
+                        matchRows.map((row) => (
+                          <div key={row.orderItemId} className="inventory-allocation-editor-card inventory-allocation-editor-card-complete">
+                            <div className="inventory-allocation-editor-head">
+                              <div>
+                                <Typography.Text strong>{row.productLabel}</Typography.Text>
+                                <span>该产品已完成出库，无需继续锁库。</span>
+                              </div>
+                              <Tag color="success">已出库</Tag>
+                            </div>
+                            <div className="inventory-allocation-metrics">
+                              <div>
+                                <span>需求量</span>
+                                <strong>{row.requiredQuantity} {getProductUnitLabel(row.unit)}</strong>
+                              </div>
+                              <div>
+                                <span>已锁数量</span>
+                                <strong>{row.lockedQuantity} {getProductUnitLabel(row.unit)}</strong>
+                              </div>
+                              <div>
+                                <span>已出库</span>
+                                <strong>{row.outboundQuantity} {getProductUnitLabel(row.unit)}</strong>
+                              </div>
+                              <div>
+                                <span>待锁数量</span>
+                                <strong>{row.pendingQuantity} {getProductUnitLabel(row.unit)}</strong>
+                              </div>
+                              <div>
+                                <span>缺口</span>
+                                <strong>{row.shortageQuantity} {getProductUnitLabel(row.unit)}</strong>
+                              </div>
+                            </div>
+                            <div className="inventory-demand-empty inventory-complete-note">库存匹配、锁库和出库已完成。</div>
+                          </div>
+                        ))
                       ) : (
                         <div className="inventory-demand-empty">当前订单暂无可锁定产品需求。</div>
                       )}
@@ -428,7 +490,7 @@ export default function InventoryMatchingPage() {
                     <Space wrap>
                       <Button
                         icon={<LockOutlined />}
-                        disabled={!canManageInventory || isAllocating}
+                        disabled={!canManageInventory || !hasPendingProducts || isAllocating}
                         type="primary"
                         htmlType="submit"
                         loading={isAllocating}
@@ -436,7 +498,7 @@ export default function InventoryMatchingPage() {
                         确认锁定
                       </Button>
                       <Button
-                        disabled={!canManageInventory || !activeSelectedOrderId}
+                        disabled={!canManageInventory || !activeSelectedOrderId || !hasPendingProducts}
                         loading={lockOrder.isPending}
                         onClick={() => activeSelectedOrderId && lockOrder.mutate(activeSelectedOrderId)}
                       >

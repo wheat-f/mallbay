@@ -672,7 +672,11 @@ export class InventoryService {
     const actor = await this.withStoreMember(user);
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } } }
+      include: {
+        customer: true,
+        vehicle: true,
+        items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } }
+      }
     });
     if (!order) throw new NotFoundException("订单不存在");
     if (!PermissionPolicy.canViewInventory(actor, order.storeId)) {
@@ -1096,7 +1100,7 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        include: { items: { include: { product: true } } }
+        include: { items: { include: { product: true, inventoryAllocations: true } } }
       });
       if (!order) throw new NotFoundException("订单不存在");
       if (!PermissionPolicy.canManageInventory(actor, order.storeId)) {
@@ -1106,13 +1110,18 @@ export class InventoryService {
       const locked: Array<{ batchId: string; productId: string; quantity: number }> = [];
       const missing: Array<{ productId: string; orderItemId: string; quantity: number; unit: ProductUnit }> = [];
       for (const item of order.items) {
-        let remaining = item.quantity;
+        const coveredQuantity = (item.inventoryAllocations ?? [])
+          .filter((allocation) => allocation.status !== "RELEASED")
+          .reduce((sum, allocation) => sum + decimalToNumber(allocation.lockedQuantity), 0);
+        let remaining = Math.max(0, item.quantity - coveredQuantity);
         const batches = await tx.inventoryBatch.findMany({
           where: { storeId: order.storeId, productId: item.productId, availableQuantity: { gt: 0 } },
           orderBy: { receivedAt: "asc" }
         });
         for (const batch of batches) {
           if (remaining <= 0) break;
+          const existingAllocation = (item.inventoryAllocations ?? []).find((allocation) => allocation.batchId === batch.id);
+          if (existingAllocation && existingAllocation.status !== "RELEASED") continue;
           const quantity = Math.min(decimalToNumber(batch.availableQuantity), remaining);
           await tx.inventoryBatch.update({
             where: { id: batch.id },
@@ -1121,17 +1130,30 @@ export class InventoryService {
               lockedQuantity: { increment: quantity }
             }
           });
-          await tx.orderInventoryAllocation.create({
-            data: {
-              storeId: order.storeId,
-              orderId,
-              orderItemId: item.id,
-              productId: item.productId,
-              batchId: batch.id,
-              lockedQuantity: quantity,
-              lockedById: actor.id
-            }
-          });
+          const allocation = existingAllocation
+            ? await tx.orderInventoryAllocation.update({
+              where: { id: existingAllocation.id },
+              data: {
+                lockedQuantity: quantity,
+                outboundQuantity: 0,
+                status: "LOCKED",
+                lockedById: actor.id,
+                lockedAt: new Date(),
+                outboundById: null,
+                outboundAt: null
+              }
+            })
+            : await tx.orderInventoryAllocation.create({
+              data: {
+                storeId: order.storeId,
+                orderId,
+                orderItemId: item.id,
+                productId: item.productId,
+                batchId: batch.id,
+                lockedQuantity: quantity,
+                lockedById: actor.id
+              }
+            });
           await tx.inventoryMovement.create({
             data: {
               storeId: order.storeId,
@@ -1142,7 +1164,7 @@ export class InventoryService {
               quantity,
               unit: item.product.unit,
               sourceType: "ORDER_INVENTORY_ALLOCATION",
-              sourceId: orderId,
+              sourceId: allocation.id,
               createdById: actor.id,
               note: "订单库存锁定"
             }

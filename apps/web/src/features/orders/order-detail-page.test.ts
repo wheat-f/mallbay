@@ -35,7 +35,7 @@ test("order detail exposes pending dispatch confirmation and fulfillment links",
   assert.match(pageSource, /打开确认流转/);
   assert.match(pageSource, /continueToInventoryMatching/);
   assert.match(pageSource, /确认提交，进入库房匹配/);
-  assert.match(pageSource, /router\.push\("\/inventory\/matching"\)/);
+  assert.match(pageSource, /router\.push\(`\/inventory\/matching\?orderId=\$\{params\.id\}`\)/);
   assert.doesNotMatch(pageSource, /router\.push\("\/inventory"\)/);
   assert.doesNotMatch(pageSource, /router\.push\("\/construction\/assignments"\)/);
   assert.doesNotMatch(pageSource, /<Button[^>]*>进入施工派工<\/Button>/);
@@ -63,6 +63,18 @@ test("order detail confirmation flow uses the prototype right-side drawer", () =
   assert.match(cssSource, /\.order-fulfillment-drawer-body/);
   assert.match(cssSource, /\.order-fulfillment-product-row/);
   assert.match(cssSource, /\.order-fulfillment-checklist/);
+});
+
+test("order detail fulfillment preview reflects inventory match state", () => {
+  const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
+  const fulfillmentSource = readFileSync("src/features/orders/fulfillment.ts", "utf8");
+
+  assert.match(pageSource, /inventoryAllocations/);
+  assert.match(pageSource, /getFulfillmentInventoryStatus/);
+  assert.match(fulfillmentSource, /已匹配/);
+  assert.match(fulfillmentSource, /已出库/);
+  assert.match(fulfillmentSource, /待库房匹配/);
+  assert.doesNotMatch(pageSource, /<Tag color="processing">待库房匹配<\/Tag>/);
 });
 
 test("order detail fulfillment draft persists checks and notes per order", () => {

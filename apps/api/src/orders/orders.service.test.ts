@@ -4,6 +4,45 @@ import { test } from "node:test";
 import { ConstructionType, OrderStatus, PaymentAccountType, PaymentType, StorePosition } from "@prisma/client";
 import { OrdersService } from "./orders.service";
 
+test("OrdersService detail includes item inventory allocations for fulfillment preview", async () => {
+  const findUniqueCalls: unknown[] = [];
+  const service = new OrdersService({
+    storeMember: { findUnique: async () => null },
+    order: {
+      findUnique: async (args: unknown) => {
+        findUniqueCalls.push(args);
+        return {
+          id: "order-1",
+          storeId: "store-1",
+          salesPersonId: "sales-1",
+          items: [
+            {
+              id: "item-1",
+              inventoryAllocations: [{ id: "allocation-1", status: "LOCKED" }]
+            }
+          ]
+        };
+      }
+    }
+  } as never, {} as never, { record: () => undefined } as never);
+
+  const result = await service.detail(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    "order-1"
+  );
+
+  assert.deepEqual(
+    (findUniqueCalls[0] as { include: { items: { include: { inventoryAllocations: unknown } } } }).include.items.include
+      .inventoryAllocations,
+    true
+  );
+  assert.equal((result.items[0].inventoryAllocations[0] as { status: string }).status, "LOCKED");
+});
+
 test("OrdersService recalculates paid and outstanding amount after payment", async () => {
   const updates: unknown[] = [];
   const tx = {

@@ -72,7 +72,7 @@ export class OrdersService {
       include: {
         customer: { select: { id: true, name: true, companyName: true, contactPerson: true } },
         vehicle: { select: { id: true, carPlate: true, carModel: true, carColor: true } },
-        items: { include: { product: true } },
+        items: { include: { product: true, inventoryAllocations: true } },
         amount: true,
         payments: { orderBy: { paidAt: "desc" }, include: { account: true } }
       }

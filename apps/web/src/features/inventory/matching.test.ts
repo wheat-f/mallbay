@@ -35,6 +35,8 @@ test("buildInventoryMatchRows calculates required locked available and shortage 
     productLabel: "品牌：品牌1 / 名称：漆面保护膜 / 型号：PPF-100",
     requiredQuantity: 6,
     lockedQuantity: 2,
+    outboundQuantity: 1,
+    pendingQuantity: 3,
     availableQuantity: 3,
     shortageQuantity: 0,
     unit: "ROLL",
@@ -64,6 +66,8 @@ test("buildInventoryMatchRows treats outbound allocations as fulfilled demand", 
   });
 
   assert.equal(rows[0]?.lockedQuantity, 0);
+  assert.equal(rows[0]?.outboundQuantity, 2);
+  assert.equal(rows[0]?.pendingQuantity, 0);
   assert.equal(rows[0]?.availableQuantity, 0);
   assert.equal(rows[0]?.shortageQuantity, 0);
 });
@@ -77,6 +81,8 @@ test("buildPurchaseRequirementFromShortages creates payload only for shortage ro
         productLabel: "产品1",
         requiredQuantity: 6,
         lockedQuantity: 2,
+        outboundQuantity: 0,
+        pendingQuantity: 4,
         availableQuantity: 3,
         shortageQuantity: 1,
         unit: "ROLL",
@@ -88,6 +94,8 @@ test("buildPurchaseRequirementFromShortages creates payload only for shortage ro
         productLabel: "产品2",
         requiredQuantity: 1,
         lockedQuantity: 1,
+        outboundQuantity: 0,
+        pendingQuantity: 0,
         availableQuantity: 0,
         shortageQuantity: 0,
         unit: "METER",

@@ -24,6 +24,7 @@ import { useState } from "react";
 import { orderApi, productApi } from "../../../src/lib/api";
 import type { OrderAuditEvent } from "../../../src/features/orders/api";
 import { centsToYuan, getOrderProductLabel, yuanToCents } from "../../../src/features/orders/create-order-form";
+import { getFulfillmentInventoryStatus } from "../../../src/features/orders/fulfillment";
 import {
   getConstructionLocationLabel,
   getConstructionTypeLabel,
@@ -45,7 +46,19 @@ type OrderDetail = {
   remark?: string | null;
   customer?: { name?: string | null; companyName?: string | null; contactPerson?: string | null };
   vehicle?: { carPlate?: string | null; carModel?: string | null; carColor?: string | null };
-  items?: { id: string; productId: string; quantity: number; unitPriceCents: number; amountCents: number; product?: { name: string; brand: string; model: string } }[];
+  items?: {
+    id: string;
+    productId: string;
+    quantity: number;
+    unitPriceCents: number;
+    amountCents: number;
+    product?: { name: string; brand: string; model: string };
+    inventoryAllocations?: Array<{
+      lockedQuantity?: number | string | null;
+      outboundQuantity?: number | string | null;
+      status?: string | null;
+    }>;
+  }[];
   amount?: {
     productAmountCents: number;
     laborCostCents: number;
@@ -195,7 +208,7 @@ export default function OrderDetailPage() {
 
   const continueToInventoryMatching = () => {
     clearFulfillmentDraft(params.id);
-    router.push("/inventory/matching");
+    router.push(`/inventory/matching?orderId=${params.id}`);
   };
 
   const openOrderPaymentEntry = () => {
@@ -661,17 +674,21 @@ export default function OrderDetailPage() {
                 <b>共 {order?.items?.length ?? 0} 项货品</b>
               </div>
               <div className="order-fulfillment-product-list">
-                {(order?.items ?? []).map((item) => (
-                  <div key={item.id} className="order-fulfillment-product-row">
-                    <span><InboxOutlined /></span>
-                    <div>
-                      <strong>{`${item.product?.brand ?? ""} ${item.product?.name ?? ""}`.trim() || "未命名产品"}</strong>
-                      <p>{item.product?.model ?? "型号待完善"}</p>
+                {(order?.items ?? []).map((item) => {
+                  const inventoryStatus = getFulfillmentInventoryStatus(item);
+
+                  return (
+                    <div key={item.id} className="order-fulfillment-product-row">
+                      <span><InboxOutlined /></span>
+                      <div>
+                        <strong>{`${item.product?.brand ?? ""} ${item.product?.name ?? ""}`.trim() || "未命名产品"}</strong>
+                        <p>{item.product?.model ?? "型号待完善"}</p>
+                      </div>
+                      <b>x{item.quantity}</b>
+                      <Tag color={inventoryStatus.color}>{inventoryStatus.label}</Tag>
                     </div>
-                    <b>x{item.quantity}</b>
-                    <Tag color="processing">待库房匹配</Tag>
-                  </div>
-                ))}
+                  );
+                })}
                 {(order?.items ?? []).length === 0 ? <Typography.Text type="secondary">暂无产品明细，提交前请先补齐商品清单。</Typography.Text> : null}
               </div>
             </section>

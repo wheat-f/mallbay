@@ -48,8 +48,8 @@ test("inventory matching page links only the shortage workflow into the purchase
 test("inventory matching page disables write actions for read-only inventory users", () => {
   assert.match(matchingPageSource, /const canManageInventory =/);
   assert.match(matchingPageSource, /disabled=\{!canManageInventory \|\| !activeSelectedOrderId \|\| allocationRows\.length === 0\}/);
-  assert.match(matchingPageSource, /disabled=\{!canManageInventory \|\| isAllocating\}/);
-  assert.match(matchingPageSource, /disabled=\{!canManageInventory \|\| !activeSelectedOrderId \|\| shortageRows\.length === 0 \|\| isCreatingRequirement\}/);
+  assert.match(matchingPageSource, /disabled=\{!canManageInventory \|\| !hasPendingProducts \|\| isAllocating\}/);
+  assert.match(matchingPageSource, /disabled=\{!canManageInventory \|\| !activeSelectedOrderId \|\| !hasPendingProducts \|\| shortageRows\.length === 0 \|\| isCreatingRequirement\}/);
 });
 
 test("inventory matching page uses current Ant Design component props", () => {
@@ -106,6 +106,7 @@ test("inventory matching page separates order demand, lock, and result stages", 
 test("inventory matching lock form presents each product as a guided allocation card", () => {
   assert.match(matchingPageSource, /inventory-allocation-editor-card/);
   assert.match(matchingPageSource, /待锁数量/);
+  assert.match(matchingPageSource, /已出库/);
   assert.match(matchingPageSource, /可用批次/);
   assert.match(matchingPageSource, /showSearch/);
   assert.match(matchingPageSource, /optionFilterProp="label"/);
@@ -119,6 +120,23 @@ test("inventory matching lock form presents each product as a guided allocation 
   assert.match(cssSource, /\.inventory-allocation-editor-grid \.ant-input/);
   assert.doesNotMatch(cssSource, /\.inventory-allocation-editor-grid\s*\{[^}]*align-items:\s*end/);
   assert.doesNotMatch(matchingPageSource, /<Space className="w-full" align="baseline" wrap>/);
+});
+
+test("inventory matching page treats outbound products as completed instead of still pending", () => {
+  assert.match(matchingPageSource, /type InventoryOrderMatchResponse = InventoryMatchInput &/);
+  assert.match(matchingPageSource, /const orderMatch = orderMatchQuery\.data as InventoryOrderMatchResponse \| undefined/);
+  assert.match(matchingPageSource, /pendingMatchRows\.find\(\(order\) => order\.id === activeSelectedOrderId\) \?\? orderMatch\?\.order/);
+  assert.match(matchingPageSource, /const lockableRows = matchRows\.filter\(\(row\) => row\.pendingQuantity > 0\)/);
+  assert.match(matchingPageSource, /const completedRows = matchRows\.filter/);
+  assert.match(matchingPageSource, /已完成/);
+  assert.match(matchingPageSource, /待处理产品/);
+  assert.match(matchingPageSource, /已出库产品/);
+  assert.match(matchingPageSource, /该订单库存流程已完成，无需继续锁库或出库。/);
+  assert.match(matchingPageSource, /库存匹配、锁库和出库已完成。/);
+  assert.match(matchingPageSource, /row\.pendingQuantity/);
+  assert.match(matchingPageSource, /row\.outboundQuantity/);
+  assert.match(matchingPageSource, /disabled=\{!canManageInventory \|\| !activeSelectedOrderId \|\| !hasPendingProducts\}/);
+  assert.doesNotMatch(matchingPageSource, /待选产品/);
 });
 
 test("inventory matching page keeps only essential related workspace links", () => {

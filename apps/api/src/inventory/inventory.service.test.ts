@@ -231,6 +231,85 @@ test("InventoryService locks stock through allocations and creates purchase requ
   assert.equal(serialized.includes("PurchaseOrder"), false);
 });
 
+test("InventoryService reuses released allocation when locking the same order batch again", async () => {
+  const writes: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)
+  };
+  const tx = {
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        storeId: "store-1",
+        orderNo: "ORD-1",
+        items: [
+          {
+            id: "item-1",
+            productId: "product-1",
+            quantity: 1,
+            product: { unit: ProductUnit.ROLL },
+            inventoryAllocations: [
+              {
+                id: "allocation-released",
+                batchId: "batch-1",
+                status: "RELEASED",
+                lockedQuantity: 1,
+                outboundQuantity: 0
+              }
+            ]
+          }
+        ]
+      })
+    },
+    orderInventoryAllocation: {
+      create: async (args: unknown) => {
+        writes.push({ kind: "create-allocation", args });
+        throw new Error("should not create a duplicate allocation");
+      },
+      update: async (args: unknown) => {
+        writes.push({ kind: "update-allocation", args });
+        return { id: "allocation-released" };
+      }
+    },
+    inventoryMovement: {
+      create: async (args: unknown) => writes.push({ kind: "create-movement", args })
+    },
+    inventoryBatch: {
+      findMany: async () => [{ id: "batch-1", productId: "product-1", availableQuantity: 1, lockedQuantity: 0 }],
+      update: async (args: unknown) => writes.push({ kind: "update-batch", args })
+    },
+    purchaseRequirement: {
+      create: async (args: unknown) => {
+        writes.push({ kind: "create-requirement", args });
+        return { id: "pr-1", status: "OPEN" };
+      }
+    }
+  };
+  const service = new InventoryService(prisma as never);
+
+  const result = await service.lockOrderInventory(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    "order-1"
+  );
+
+  assert.equal(result.locked.length, 1);
+  assert.equal(result.purchaseRequirement, undefined);
+  assert.equal(writes.some((write) => (write as { kind: string }).kind === "create-allocation"), false);
+  assert.equal(
+    JSON.stringify(writes).includes('"sourceId":"allocation-released"'),
+    true
+  );
+  assert.equal(
+    JSON.stringify(writes).includes('"status":"LOCKED"'),
+    true
+  );
+});
+
 test("InventoryService creates purchase order from purchase requirement items", async () => {
   const writes: unknown[] = [];
   const tx = {
@@ -1024,6 +1103,14 @@ test("InventoryService order match includes locked allocations and batch trace",
     "order-1"
   );
 
+  assert.deepEqual(
+    (findUniqueCalls[0] as { include: { customer: unknown; vehicle: unknown } }).include.customer,
+    true
+  );
+  assert.deepEqual(
+    (findUniqueCalls[0] as { include: { customer: unknown; vehicle: unknown } }).include.vehicle,
+    true
+  );
   assert.deepEqual(
     (findUniqueCalls[0] as { include: { items: { include: { inventoryAllocations: unknown } } } }).include.items.include
       .inventoryAllocations,

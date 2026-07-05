@@ -5821,7 +5821,7 @@ body {
 
 .inventory-allocation-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(86px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 8px;
 }
 
@@ -5925,6 +5925,12 @@ body {
 
 .inventory-allocation-editor-grid .ant-input-number-input {
   height: 44px;
+}
+
+.inventory-allocation-editor-card-complete .inventory-complete-note {
+  margin: 0;
+  min-height: 52px;
+  align-items: center;
 }
 
 .inventory-allocation-desktop-table .ant-table-wrapper,

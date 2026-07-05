@@ -51,6 +51,8 @@ export type InventoryMatchRow = {
   productLabel: string;
   requiredQuantity: number;
   lockedQuantity: number;
+  outboundQuantity: number;
+  pendingQuantity: number;
   availableQuantity: number;
   shortageQuantity: number;
   unit: ProductUnit;
@@ -79,14 +81,17 @@ export function buildInventoryMatchRows(match: InventoryMatchInput | undefined):
     }));
     const availableQuantity = availableBatches.reduce((sum, batch) => sum + batch.availableQuantity, 0);
     const coveredQuantity = lockedQuantity + outboundQuantity;
+    const pendingQuantity = Math.max(0, requiredQuantity - coveredQuantity);
     return {
       orderItemId: item.orderItem.id,
       productId: item.orderItem.productId,
       productLabel: getOrderItemProductLabel(item.orderItem.product),
       requiredQuantity,
       lockedQuantity,
+      outboundQuantity,
+      pendingQuantity,
       availableQuantity,
-      shortageQuantity: Math.max(0, requiredQuantity - coveredQuantity - availableQuantity),
+      shortageQuantity: Math.max(0, pendingQuantity - availableQuantity),
       unit: normalizeUnit(item.orderItem.product?.unit),
       availableBatches
     };

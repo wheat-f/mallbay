@@ -63,6 +63,7 @@ model User {
   afterSalesCreated          AfterSale[]                @relation("AfterSaleCreatedBy")
   afterSalesAssigned         AfterSaleAssignment[]      @relation("AfterSaleAssignedWorker")
   afterSalesAssignedBy       AfterSaleAssignment[]      @relation("AfterSaleAssignedBy")
+  afterSalePhotosUploaded    AfterSalePhoto[]           @relation("AfterSalePhotoUploadedBy")
   penalties                  Penalty[]                  @relation("PenaltyWorker")
   penaltiesCreated           Penalty[]                  @relation("PenaltyCreatedBy")
   salesCommissionRules       SalesCommissionRule[]      @relation("SalesCommissionRuleCreatedBy")
@@ -404,6 +405,12 @@ enum AfterSaleResponsibility {
   CONSTRUCTION
   MATERIAL
   STORE
+}
+
+enum AfterSalePhotoStage {
+  ISSUE
+  CONSTRUCTION_AFTER
+  SUPPLEMENT
 }
 
 enum CommissionRuleType {
@@ -1197,11 +1204,28 @@ model AfterSale {
   customer    Customer              @relation(fields: [customerId], references: [id])
   createdBy   User                  @relation("AfterSaleCreatedBy", fields: [createdById], references: [id])
   assignments AfterSaleAssignment[]
+  photos      AfterSalePhoto[]
   penalties   Penalty[]
 
   @@index([storeId, status])
   @@index([orderId])
   @@index([warrantyId])
+}
+
+model AfterSalePhoto {
+  id           String              @id @default(cuid())
+  afterSaleId  String
+  stage        AfterSalePhotoStage
+  url          String
+  note         String?
+  uploadedById String?
+  createdAt    DateTime            @default(now())
+
+  afterSale  AfterSale @relation(fields: [afterSaleId], references: [id], onDelete: Cascade)
+  uploadedBy User?     @relation("AfterSalePhotoUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([afterSaleId, stage, createdAt])
+  @@index([uploadedById])
 }
 
 model AfterSaleAssignment {

@@ -10652,6 +10652,12 @@ body {
     linear-gradient(135deg, #0f766e, #7aa99f);
 }
 
+.after-sale-photo-card.is-supplement {
+  background:
+    linear-gradient(180deg, rgba(59, 42, 9, 0) 0%, rgba(59, 42, 9, 0.76) 78%),
+    linear-gradient(135deg, #a16207, #9aa86f);
+}
+
 .after-sale-photo-card.is-vehicle {
   background:
     linear-gradient(180deg, rgba(15, 58, 95, 0) 0%, rgba(15, 58, 95, 0.76) 78%),
@@ -10665,6 +10671,12 @@ body {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+.after-sale-photo-evidence-row {
+  display: grid;
+  gap: 4px;
+  min-width: 132px;
 }
 
 .after-sale-photo-links a {

@@ -170,6 +170,8 @@ test("after-sales page exposes inline responsibility and penalty handling", () =
   assert.match(pageSource, /name="constructionPhotoUrlsText"/);
   assert.match(pageSource, /issuePhotoUrls: parsePhotoUrls\(values\.issuePhotoUrlsText\)/);
   assert.match(pageSource, /constructionPhotoUrls: parsePhotoUrls\(values\.constructionPhotoUrlsText\)/);
+  assert.match(pageSource, /name="supplementPhotoUrlsText"/);
+  assert.match(pageSource, /supplementPhotoUrls: parsePhotoUrls\(values\.supplementPhotoUrlsText\)/);
   assert.match(pageSource, /constructionIssueCategory: values\.constructionIssueCategory/);
   assert.match(pageSource, /施工问题分类/);
   assert.match(pageSource, /刀工问题/);
@@ -212,6 +214,9 @@ test("after-sales detail page follows the prototype detail penalty layout", () =
   assert.match(pageSource, /问题描述与取证/);
   assert.match(pageSource, /售后处理记录/);
   assert.doesNotMatch(pageSource, /售后处理对比/);
+  assert.match(pageSource, /getAfterSalePhotoGroups\(afterSale\.photos/);
+  assert.match(pageSource, /supplementPhotos/);
+  assert.match(pageSource, /补充证据/);
   assert.match(pageSource, /责任判定/);
   assert.match(pageSource, /惩罚处理/);
   assert.match(pageSource, /客户信息待确认/);
@@ -224,9 +229,11 @@ test("after-sales detail page follows the prototype detail penalty layout", () =
   assert.match(pageSource, /getAfterSaleResponsiblePersonLabel/);
   assert.match(pageSource, /afterSale\.penalties/);
   assert.match(pageSource, /afterSale\.assignments/);
+  assert.match(pageSource, /afterSale\.photos/);
   assert.match(pageSource, /真实记录/);
-  assert.doesNotMatch(pageSource, /补充证据/);
   assert.doesNotMatch(pageSource, /待上传高清证据/);
+  assert.doesNotMatch(pageSource, /afterSale\.issuePhotoUrls/);
+  assert.doesNotMatch(pageSource, /afterSale\.constructionPhotoUrls/);
   assert.doesNotMatch(pageSource, /处罚备注说明/);
   assert.doesNotMatch(pageSource, /placeholder="在此输入对技师的改进建议或详细处理理由/);
   assert.doesNotMatch(pageSource, /const RESPONSIBILITY_OPTIONS/);

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { AfterSaleStatus, StorePosition } from "@prisma/client";
+import { AfterSalePhotoStage, AfterSaleStatus, StorePosition } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto } from "./dto/after-sales.dto";
@@ -23,17 +23,24 @@ export class AfterSalesService {
     if (!PermissionPolicy.canManageAfterSales(actor, order.storeId)) {
       throw new ForbiddenException("无权限");
     }
-    return this.prisma.afterSale.create({
+    const issuePhotos = sanitizePhotoEvidence(dto.issuePhotos, dto.issuePhotoUrls, "问题照片");
+    const issuePhotoUrls = issuePhotos.map((photo) => photo.url);
+    const afterSale = await this.prisma.afterSale.create({
       data: {
         storeId: order.storeId,
         orderId: order.id,
         warrantyId: order.warranty?.id,
         customerId: order.customerId,
         description: dto.description,
-        issuePhotoUrls: sanitizePhotoUrls(dto.issuePhotoUrls),
+        issuePhotoUrls,
         createdById: actor.id
       }
     });
+    await this.createPhotoEvidence(
+      afterSale.id,
+      buildAfterSalePhotoRows(AfterSalePhotoStage.ISSUE, issuePhotos, actor.id)
+    );
+    return afterSale;
   }
 
   async list(user: AuthenticatedAfterSalesUser, query: ListAfterSalesDto) {
@@ -101,16 +108,23 @@ export class AfterSalesService {
     if (!PermissionPolicy.canManageAfterSales(actor, afterSale.storeId)) {
       throw new ForbiddenException("无权限");
     }
+    const constructionPhotos = sanitizePhotoEvidence(dto.constructionPhotos, dto.constructionPhotoUrls, "施工后照片");
+    const supplementPhotos = sanitizePhotoEvidence(dto.supplementPhotos, dto.supplementPhotoUrls, "补充证据");
+    const constructionPhotoUrls = constructionPhotos.map((photo) => photo.url);
     const updated = await this.prisma.afterSale.update({
       where: { id },
       data: {
         responsibility: dto.responsibility,
         constructionIssueCategory: dto.constructionIssueCategory?.trim() || undefined,
-        constructionPhotoUrls: sanitizePhotoUrls(dto.constructionPhotoUrls),
+        constructionPhotoUrls,
         resolutionNote: dto.resolutionNote,
         status: AfterSaleStatus.RESOLVED
       }
     });
+    await this.createPhotoEvidence(afterSale.id, [
+      ...buildAfterSalePhotoRows(AfterSalePhotoStage.CONSTRUCTION_AFTER, constructionPhotos, actor.id),
+      ...buildAfterSalePhotoRows(AfterSalePhotoStage.SUPPLEMENT, supplementPhotos, actor.id)
+    ]);
     if (dto.penaltyWorkerUserId && dto.penaltyAmountCents && dto.penaltyAmountCents > 0) {
       await this.prisma.penalty.create({
         data: {
@@ -152,10 +166,49 @@ export class AfterSalesService {
     });
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
   }
+
+  private async createPhotoEvidence(
+    afterSaleId: string,
+    photos: Array<{ stage: AfterSalePhotoStage; url: string; note: string; uploadedById: string }>
+  ) {
+    if (photos.length === 0) return;
+    await this.prisma.afterSalePhoto.createMany({
+      data: photos.map((photo) => ({
+        afterSaleId,
+        stage: photo.stage,
+        url: photo.url,
+        note: photo.note,
+        uploadedById: photo.uploadedById
+      }))
+    });
+  }
 }
 
 function sanitizePhotoUrls(urls?: string[]) {
   return [...new Set((urls ?? []).map((url) => url.trim()).filter(Boolean))].slice(0, 12);
+}
+
+function sanitizePhotoEvidence(
+  photos: Array<{ url?: string; note?: string | null }> | undefined,
+  urls: string[] | undefined,
+  defaultNote: string
+) {
+  const merged = [
+    ...(photos ?? []).map((photo) => ({ url: photo.url?.trim() ?? "", note: photo.note?.trim() || defaultNote })),
+    ...sanitizePhotoUrls(urls).map((url) => ({ url, note: defaultNote }))
+  ];
+  const seen = new Set<string>();
+  const result: Array<{ url: string; note: string }> = [];
+  for (const photo of merged) {
+    if (!photo.url || seen.has(photo.url)) continue;
+    seen.add(photo.url);
+    result.push(photo);
+  }
+  return result.slice(0, 12);
+}
+
+function buildAfterSalePhotoRows(stage: AfterSalePhotoStage, photos: Array<{ url: string; note: string }>, uploadedById: string) {
+  return photos.map((photo) => ({ stage, url: photo.url, uploadedById, note: photo.note }));
 }
 
 function buildAfterSalesListScope(actor: UserWithStoreMember, storeId: string) {
@@ -229,6 +282,18 @@ const afterSaleSummarySelect = {
       assignedAt: true,
       worker: { select: userDisplaySelect }
     }
+  },
+  photos: {
+    select: {
+      id: true,
+      stage: true,
+      url: true,
+      note: true,
+      uploadedById: true,
+      createdAt: true,
+      uploadedBy: { select: userDisplaySelect }
+    },
+    orderBy: { createdAt: "asc" }
   },
   penalties: {
     select: {

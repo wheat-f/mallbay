@@ -21,6 +21,31 @@ test("afterSalesApi.create posts JSON to /after-sales", async () => {
   }
 });
 
+test("afterSalesApi.judge posts construction and supplemental photo evidence", async () => {
+  const calls: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    calls.push({ input, init });
+    return new Response(JSON.stringify({ id: "after-sale-1" }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  try {
+    await afterSalesApi.judge("after-sale-1", {
+      responsibility: "CONSTRUCTION",
+      constructionPhotoUrls: ["https://img.example/after.jpg"],
+      supplementPhotoUrls: ["https://img.example/supplement.jpg"],
+      resolutionNote: "已补证"
+    });
+    const body = JSON.parse(String((calls[0] as { init: RequestInit }).init.body));
+    assert.deepEqual(body.constructionPhotoUrls, ["https://img.example/after.jpg"]);
+    assert.deepEqual(body.supplementPhotoUrls, ["https://img.example/supplement.jpg"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("afterSalesApi.detail gets a single after-sale detail", async () => {
   const calls: unknown[] = [];
   const originalFetch = globalThis.fetch;

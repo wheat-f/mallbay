@@ -1,5 +1,16 @@
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import { Type } from "class-transformer";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
 import { AfterSaleResponsibility } from "@prisma/client";
+
+export class AfterSalePhotoInputDto {
+  @IsString()
+  url!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string;
+}
 
 export class CreateAfterSaleDto {
   @IsString()
@@ -14,6 +25,13 @@ export class CreateAfterSaleDto {
   @ArrayMaxSize(12)
   @IsString({ each: true })
   issuePhotoUrls?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => AfterSalePhotoInputDto)
+  issuePhotos?: AfterSalePhotoInputDto[];
 }
 
 export class ListAfterSalesDto {
@@ -46,6 +64,26 @@ export class JudgeAfterSaleDto {
   @ArrayMaxSize(12)
   @IsString({ each: true })
   constructionPhotoUrls?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => AfterSalePhotoInputDto)
+  constructionPhotos?: AfterSalePhotoInputDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  supplementPhotoUrls?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => AfterSalePhotoInputDto)
+  supplementPhotos?: AfterSalePhotoInputDto[];
 
   @IsOptional()
   @IsInt()

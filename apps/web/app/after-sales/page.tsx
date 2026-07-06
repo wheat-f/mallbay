@@ -26,6 +26,7 @@ type AfterSalesActionValues = {
   responsibility?: AfterSaleResponsibility;
   constructionIssueCategory?: string;
   constructionPhotoUrlsText?: string;
+  supplementPhotoUrlsText?: string;
   penaltyWorkerUserId?: string;
   penaltyAmountYuan?: number;
   penaltyReason?: string;
@@ -151,6 +152,7 @@ export default function AfterSalesPage() {
           responsibility: values.responsibility,
           constructionIssueCategory: values.constructionIssueCategory,
           constructionPhotoUrls: parsePhotoUrls(values.constructionPhotoUrlsText),
+          supplementPhotoUrls: parsePhotoUrls(values.supplementPhotoUrlsText),
           penaltyWorkerUserId: values.penaltyWorkerUserId,
           penaltyAmountCents: yuanToCents(values.penaltyAmountYuan),
           penaltyReason: values.penaltyReason,
@@ -456,6 +458,10 @@ export default function AfterSalesPage() {
 
               <Form.Item name="constructionPhotoUrlsText" label="施工后照片对比">
                 <Input.TextArea rows={2} placeholder="每行一个施工后照片链接，用于和问题照片对比归档" />
+              </Form.Item>
+
+              <Form.Item name="supplementPhotoUrlsText" label="补充证据">
+                <Input.TextArea rows={2} placeholder="每行一个补充证据链接，可用于沟通记录、复查照片或其他说明材料" />
               </Form.Item>
 
               <div className="after-sales-process-actions">

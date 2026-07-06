@@ -5,6 +5,12 @@ export type CreateAfterSalePayload = {
   orderId: string;
   description: string;
   issuePhotoUrls?: string[];
+  issuePhotos?: AfterSalePhotoInputPayload[];
+};
+
+export type AfterSalePhotoInputPayload = {
+  url: string;
+  note?: string;
 };
 
 export type JudgeAfterSalePayload = {
@@ -12,6 +18,9 @@ export type JudgeAfterSalePayload = {
   penaltyWorkerUserId?: string;
   constructionIssueCategory?: string;
   constructionPhotoUrls?: string[];
+  constructionPhotos?: AfterSalePhotoInputPayload[];
+  supplementPhotoUrls?: string[];
+  supplementPhotos?: AfterSalePhotoInputPayload[];
   penaltyAmountCents?: number;
   penaltyReason?: string;
   resolutionNote?: string;

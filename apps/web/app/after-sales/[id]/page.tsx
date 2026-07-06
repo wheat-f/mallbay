@@ -18,7 +18,6 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { useMemo } from "react";
 import { afterSalesApi } from "../../../src/lib/api";
 import {
   getAfterSaleBusinessLabel,
@@ -56,6 +55,7 @@ export default function AfterSaleDetailPage() {
   });
 
   const afterSale = afterSaleQuery.data;
+  const photoGroups = afterSale ? getAfterSalePhotoGroups(afterSale.photos) : getAfterSalePhotoGroups([]);
   const timeline = getAfterSaleDetailTimeline(afterSale);
   const closeMutation = useMutation({
     mutationFn: () => {
@@ -134,8 +134,9 @@ export default function AfterSaleDetailPage() {
                 <span>{afterSale.description || "暂无问题描述"}</span>
               </div>
               <div className="after-sale-evidence-grid">
-                <PhotoEvidenceCard title="问题照片" urls={afterSale.issuePhotoUrls} emptyText="暂无问题照片" tone="defect" />
-                <PhotoEvidenceCard title="施工后照片" urls={afterSale.constructionPhotoUrls} emptyText="暂无施工后照片" tone="after" />
+                <PhotoEvidenceCard title="问题照片" photos={photoGroups.issuePhotos} emptyText="暂无问题照片" tone="defect" />
+                <PhotoEvidenceCard title="施工后照片" photos={photoGroups.constructionAfterPhotos} emptyText="暂无施工后照片" tone="after" />
+                <PhotoEvidenceCard title="补充证据" photos={photoGroups.supplementPhotos} emptyText="暂无补充证据" tone="supplement" />
                 <div className="after-sale-photo-card is-vehicle">
                   <CameraOutlined />
                   <strong>车辆与订单</strong>
@@ -152,7 +153,7 @@ export default function AfterSaleDetailPage() {
               <div className="after-sale-treatment-record">
                 <DetailMetric label="处理分类" value={afterSale.constructionIssueCategory || "未填写"} hint="真实记录：来自售后处理表单" />
                 <DetailMetric label="处理方案" value={afterSale.resolutionNote || "未填写"} hint="处理完成前可在售后列表处理面板补充" />
-                <DetailMetric label="施工后照片" value={getPhotoCountLabel(afterSale.constructionPhotoUrls, "暂无照片")} hint="只展示已保存到售后单的照片链接" />
+                <DetailMetric label="施工后照片" value={getPhotoCountLabel(photoGroups.constructionAfterPhotos, "暂无照片")} hint="真实记录：来自 afterSale.photos" />
               </div>
             </Card>
           </div>
@@ -231,27 +232,29 @@ function DetailMetric({ label, value, hint }: { label: string; value: string; hi
 
 function PhotoEvidenceCard({
   title,
-  urls,
+  photos,
   emptyText,
   tone
 }: {
   title: string;
-  urls?: string[] | null;
+  photos: AfterSalePhotoEvidence[];
   emptyText: string;
-  tone: "defect" | "after";
+  tone: "defect" | "after" | "supplement";
 }) {
-  const savedUrls = urls?.filter(Boolean) ?? [];
   return (
     <div className={`after-sale-photo-card is-${tone}`}>
       <CameraOutlined />
       <strong>{title}</strong>
-      <span>{savedUrls.length > 0 ? `${savedUrls.length} 张照片已归档` : emptyText}</span>
-      {savedUrls.length > 0 ? (
+      <span>{photos.length > 0 ? `${photos.length} 张照片已归档` : emptyText}</span>
+      {photos.length > 0 ? (
         <div className="after-sale-photo-links">
-          {savedUrls.map((url, index) => (
-            <a key={url} href={url} target="_blank" rel="noreferrer">
-              查看照片 {index + 1}
-            </a>
+          {photos.map((photo, index) => (
+            <div key={photo.id ?? photo.url} className="after-sale-photo-evidence-row">
+              <a href={photo.url} target="_blank" rel="noreferrer">
+                查看照片 {index + 1}
+              </a>
+              <span>{photo.note || "无备注"} / {getUserDisplayName(photo.uploadedBy) || "上传人待确认"}</span>
+            </div>
           ))}
         </div>
       ) : null}
@@ -302,8 +305,19 @@ function getPenaltyIcon(key: string) {
   return <DollarOutlined />;
 }
 
-function getPhotoCountLabel(urls?: string[] | null, fallback = "待上传") {
-  const count = urls?.filter(Boolean).length ?? 0;
+type AfterSalePhotoEvidence = NonNullable<AfterSaleSummary["photos"]>[number];
+
+function getAfterSalePhotoGroups(photos?: AfterSaleSummary["photos"]) {
+  const photoList = photos ?? [];
+  return {
+    issuePhotos: photoList.filter((photo) => photo.stage === "ISSUE"),
+    constructionAfterPhotos: photoList.filter((photo) => photo.stage === "CONSTRUCTION_AFTER"),
+    supplementPhotos: photoList.filter((photo) => photo.stage === "SUPPLEMENT")
+  };
+}
+
+function getPhotoCountLabel(photos?: AfterSalePhotoEvidence[] | null, fallback = "待上传") {
+  const count = photos?.filter((photo) => Boolean(photo.url)).length ?? 0;
   return count > 0 ? `${count} 张照片已归档` : fallback;
 }
 

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { AfterSaleResponsibility, AfterSaleStatus, StorePosition } from "@prisma/client";
 import { AfterSalesService } from "./after-sales.service";
 
-test("AfterSalesService creates after-sale linked to order warranty customer and issue photos", async () => {
+test("AfterSalesService creates after-sale linked to order warranty customer and issue photo evidence", async () => {
   const writes: unknown[] = [];
   const prisma = {
     order: {
@@ -19,6 +19,9 @@ test("AfterSalesService creates after-sale linked to order warranty customer and
         writes.push(args);
         return { id: "after-sale-1", status: AfterSaleStatus.OPEN };
       }
+    },
+    afterSalePhoto: {
+      createMany: async (args: unknown) => writes.push(args)
     }
   };
   const service = new AfterSalesService(prisma as never);
@@ -29,16 +32,24 @@ test("AfterSalesService creates after-sale linked to order warranty customer and
       isAuditor: false,
       storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
     },
-    { orderId: "order-1", description: "边角起翘", issuePhotoUrls: ["https://img.example/issue-1.jpg"] }
+    {
+      orderId: "order-1",
+      description: "边角起翘",
+      issuePhotos: [{ url: "https://img.example/issue-1.jpg", note: "左后门边角起翘" }]
+    }
   );
 
   assert.equal(result.id, "after-sale-1");
   assert.equal(JSON.stringify(writes).includes("warranty-1"), true);
   assert.equal(JSON.stringify(writes).includes("customer-1"), true);
-  assert.equal(JSON.stringify(writes).includes("issue-1.jpg"), true);
+  const serialized = JSON.stringify(writes);
+  assert.equal(serialized.includes("issue-1.jpg"), true);
+  assert.equal(serialized.includes("左后门边角起翘"), true);
+  assert.equal(serialized.includes('"stage":"ISSUE"'), true);
+  assert.equal(serialized.includes('"uploadedById":"scheduler-1"'), true);
 });
 
-test("AfterSalesService assigns workers and records responsibility category photos and penalty", async () => {
+test("AfterSalesService assigns workers and records responsibility category photo evidence and penalty", async () => {
   const writes: unknown[] = [];
   const prisma = {
     afterSale: {
@@ -57,6 +68,9 @@ test("AfterSalesService assigns workers and records responsibility category phot
         writes.push(args);
         return { id: "penalty-1" };
       }
+    },
+    afterSalePhoto: {
+      createMany: async (args: unknown) => writes.push(args)
     }
   };
   const service = new AfterSalesService(prisma as never);
@@ -80,7 +94,8 @@ test("AfterSalesService assigns workers and records responsibility category phot
     {
       responsibility: AfterSaleResponsibility.CONSTRUCTION,
       constructionIssueCategory: "刀工问题",
-      constructionPhotoUrls: ["https://img.example/after-1.jpg"],
+      constructionPhotos: [{ url: "https://img.example/after-1.jpg", note: "返工后边角复查" }],
+      supplementPhotos: [{ url: "https://img.example/supplement-1.jpg", note: "客户确认记录" }],
       penaltyWorkerUserId: "worker-1",
       penaltyAmountCents: 1000,
       penaltyReason: "返工处罚"
@@ -92,10 +107,16 @@ test("AfterSalesService assigns workers and records responsibility category phot
   assert.equal(serialized.includes(AfterSaleResponsibility.CONSTRUCTION), true);
   assert.equal(serialized.includes("刀工问题"), true);
   assert.equal(serialized.includes("after-1.jpg"), true);
+  assert.equal(serialized.includes("supplement-1.jpg"), true);
+  assert.equal(serialized.includes("返工后边角复查"), true);
+  assert.equal(serialized.includes("客户确认记录"), true);
+  assert.equal(serialized.includes('"stage":"CONSTRUCTION_AFTER"'), true);
+  assert.equal(serialized.includes('"stage":"SUPPLEMENT"'), true);
+  assert.equal(serialized.includes('"uploadedById":"manager-1"'), true);
   assert.equal(serialized.includes("\"amountCents\":1000"), true);
 });
 
-test("AfterSalesService lists after-sales with order customer vehicle warranty and photo summary", async () => {
+test("AfterSalesService lists after-sales with order customer vehicle warranty and normalized photo evidence", async () => {
   const calls: unknown[] = [];
   const prisma = {
     storeMember: { findUnique: async () => null },
@@ -123,8 +144,10 @@ test("AfterSalesService lists after-sales with order customer vehicle warranty a
   assert.match(serialized, /"customer"/);
   assert.match(serialized, /"vehicle"/);
   assert.match(serialized, /"warranty"/);
-  assert.match(serialized, /"issuePhotoUrls"/);
-  assert.match(serialized, /"constructionPhotoUrls"/);
+  assert.match(serialized, /"photos"/);
+  assert.match(serialized, /"stage"/);
+  assert.match(serialized, /"uploadedBy"/);
+  assert.match(serialized, /"note"/);
   assert.match(serialized, /"constructionIssueCategory"/);
 });
 
@@ -160,6 +183,8 @@ test("AfterSalesService returns after-sale detail with assigned workers and pena
   assert.match(serialized, /"amountCents"/);
   assert.match(serialized, /"reason"/);
   assert.match(serialized, /"createdBy"/);
+  assert.match(serialized, /"photos"/);
+  assert.match(serialized, /"uploadedBy"/);
   assert.match(serialized, /"order"/);
   assert.match(serialized, /"customer"/);
   assert.match(serialized, /"vehicle"/);

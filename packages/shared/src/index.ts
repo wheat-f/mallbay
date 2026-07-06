@@ -125,6 +125,8 @@ export type AfterSaleStatus = "OPEN" | "ASSIGNED" | "RESOLVED" | "CLOSED" | "CAN
 
 export type AfterSaleResponsibility = "PENDING" | "CUSTOMER" | "CONSTRUCTION" | "MATERIAL" | "STORE";
 
+export type AfterSalePhotoStage = "ISSUE" | "CONSTRUCTION_AFTER" | "SUPPLEMENT";
+
 export type CommissionRuleType = "FIXED_RATE" | "FIXED_AMOUNT" | "SALES_TIER" | "CONSTRUCTION_TYPE";
 
 export type FinanceApprovalStatus = "PENDING" | "APPROVED" | "REJECTED" | "PAID" | "CANCELLED";
@@ -258,6 +260,20 @@ export type AfterSaleSummary = {
   responsibility: AfterSaleResponsibility;
   issuePhotoUrls?: string[];
   constructionPhotoUrls?: string[];
+  photos?: Array<{
+    id: string;
+    stage: AfterSalePhotoStage;
+    url: string;
+    note?: string | null;
+    uploadedById?: string | null;
+    createdAt?: string | Date | null;
+    uploadedBy?: {
+      id?: string;
+      username?: string | null;
+      nickname?: string | null;
+      avatarUrl?: string | null;
+    } | null;
+  }>;
   constructionIssueCategory?: string | null;
   resolutionNote?: string | null;
   assignments?: Array<{

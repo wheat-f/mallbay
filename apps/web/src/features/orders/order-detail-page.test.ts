@@ -164,8 +164,14 @@ test("order detail commercial editor uses a prototype right-side drawer", () => 
   assert.match(pageSource, /\bDrawer\b/);
   assert.match(pageSource, /openCommercialsDrawer/);
   assert.match(pageSource, /outstandingCents/);
+  assert.match(pageSource, /commercialEditableStatuses/);
+  assert.match(pageSource, /"DISPATCHED"/);
+  assert.match(pageSource, /"IN_CONSTRUCTION"/);
+  assert.match(pageSource, /"COMPLETED"/);
+  assert.match(pageSource, /id: item\.id/);
   assert.match(pageSource, /收款未完全确认前可修改产品清单/);
-  assert.doesNotMatch(pageSource, /const canEditCommercials = order\?\.status === "PENDING_DISPATCH"/);
+  assert.match(pageSource, /施工后确认实际用料时，可在收款未完全确认前调整产品、数量、单价和人工费/);
+  assert.doesNotMatch(pageSource, /order\.status === "PENDING_DISPATCH" && hasEditableOutstandingAmount/);
   assert.match(pageSource, /rootClassName="order-commercials-drawer"/);
   assert.match(pageSource, /order-commercials-drawer-footer/);
   assert.match(pageSource, /order-commercials-item-grid/);
@@ -176,14 +182,14 @@ test("order detail commercial editor uses a prototype right-side drawer", () => 
   assert.doesNotMatch(pageSource, /openCommercialsModal/);
 });
 
-test("order detail exposes return-to-edit flow before editing locked orders", () => {
+test("order detail edits active unpaid order commercials without requiring return-to-edit", () => {
   const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
 
-  assert.match(pageSource, /returnToPendingMutation/);
-  assert.match(pageSource, /反审核退回修改/);
-  assert.match(pageSource, /returnReason/);
-  assert.match(pageSource, /orderApi\.returnToPendingDispatch\(params\.id/);
-  assert.match(pageSource, /ORDER_RETURNED_TO_PENDING_DISPATCH/);
+  assert.doesNotMatch(pageSource, /反审核退回修改/);
+  assert.doesNotMatch(pageSource, /returnToPendingMutation/);
+  assert.doesNotMatch(pageSource, /orderApi\.returnToPendingDispatch\(params\.id/);
+  assert.match(pageSource, /canEditCommercials/);
+  assert.match(pageSource, /修改订单/);
 });
 
 test("order detail drawers avoid force rendering closed portal content", () => {

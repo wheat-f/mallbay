@@ -79,7 +79,7 @@ type ProductOption = {
 };
 
 type CommercialsFormValues = {
-  items: { productId: string; quantity: number; unitPriceYuan: number }[];
+  items: { id?: string; productId: string; quantity: number; unitPriceYuan: number }[];
   laborCostYuan: number;
   remark?: string;
   changeReason: string;
@@ -102,14 +102,14 @@ const emptyFulfillmentChecklist: FulfillmentChecklist = {
   commercialConfirmed: false
 };
 
+const commercialEditableStatuses = ["PENDING_DISPATCH", "DISPATCHED", "IN_CONSTRUCTION", "COMPLETED"] as const;
+
 export default function OrderDetailPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [commercialsOpen, setCommercialsOpen] = useState(false);
-  const [returnDrawerOpen, setReturnDrawerOpen] = useState(false);
-  const [returnReason, setReturnReason] = useState("");
   const [fulfillmentDrawerOpen, setFulfillmentDrawerOpen] = useState(false);
   const [fulfillmentChecklist, setFulfillmentChecklist] = useState<FulfillmentChecklist>(emptyFulfillmentChecklist);
   const [fulfillmentNote, setFulfillmentNote] = useState("");
@@ -132,6 +132,7 @@ export default function OrderDetailPage() {
     mutationFn: (values: CommercialsFormValues) =>
       orderApi.updateCommercials(params.id, {
         items: values.items.map((item) => ({
+          id: item.id,
           productId: item.productId,
           quantity: item.quantity,
           unitPriceCents: yuanToCents(item.unitPriceYuan)
@@ -149,28 +150,15 @@ export default function OrderDetailPage() {
     },
     onError: (error: Error) => message.error(error.message)
   });
-  const returnToPendingMutation = useMutation({
-    mutationFn: () =>
-      orderApi.returnToPendingDispatch(params.id, {
-        reason: returnReason.trim()
-      }),
-    onSuccess: async () => {
-      message.success("订单已反审核退回修改");
-      setReturnDrawerOpen(false);
-      setReturnReason("");
-      await queryClient.invalidateQueries({ queryKey: ["order-detail", params.id] });
-      await queryClient.invalidateQueries({ queryKey: ["order-audit-events", params.id] });
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
   const productOptions = ((productsQuery.data?.items ?? []) as ProductOption[]).map((product) => ({
     label: getOrderProductLabel(product),
     value: product.id
   }));
   const hasEditableOutstandingAmount = (order?.amount?.outstandingCents ?? 0) > 0;
-  const canEditCommercials = Boolean(order && order.status === "PENDING_DISPATCH" && hasEditableOutstandingAmount);
-  const canReturnToPendingForEdit = Boolean(
-    order && order.status !== "PENDING_DISPATCH" && order.status !== "CANCELLED" && hasEditableOutstandingAmount
+  const canEditCommercials = Boolean(
+    order
+      && commercialEditableStatuses.includes(order.status as (typeof commercialEditableStatuses)[number])
+      && hasEditableOutstandingAmount
   );
   const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH";
   const orderSteps = getOrderSteps(order?.status);
@@ -192,6 +180,7 @@ export default function OrderDetailPage() {
     if (!order) return;
     commercialsForm.setFieldsValue({
       items: (order.items ?? []).map((item) => ({
+        id: item.id,
         productId: item.productId,
         quantity: item.quantity,
         unitPriceYuan: centsToYuan(item.unitPriceCents) ?? 0
@@ -271,11 +260,6 @@ export default function OrderDetailPage() {
                 {canEditCommercials ? (
                   <Button icon={<EditOutlined />} onClick={openCommercialsDrawer}>
                     修改订单
-                  </Button>
-                ) : null}
-                {canReturnToPendingForEdit ? (
-                  <Button icon={<EditOutlined />} onClick={() => setReturnDrawerOpen(true)}>
-                    反审核退回修改
                   </Button>
                 ) : null}
                 {shouldShowFulfillmentConfirmation ? (
@@ -502,6 +486,9 @@ export default function OrderDetailPage() {
             layout="vertical"
             onFinish={(values) => updateCommercialsMutation.mutate(values)}
           >
+            <Typography.Paragraph type="secondary">
+              施工后确认实际用料时，可在收款未完全确认前调整产品、数量、单价和人工费；已锁库或已出库的库存记录会保留追踪。
+            </Typography.Paragraph>
             <Form.List name="items">
               {(fields, { add, remove }) => (
                 <>
@@ -509,6 +496,9 @@ export default function OrderDetailPage() {
                     const { key, ...fieldProps } = field;
                     return (
                       <div key={key} className="order-commercials-item-grid">
+                        <Form.Item {...fieldProps} name={[field.name, "id"]} hidden>
+                          <Input />
+                        </Form.Item>
                         <Form.Item
                           {...fieldProps}
                           name={[field.name, "productId"]}
@@ -566,42 +556,6 @@ export default function OrderDetailPage() {
               <Input.TextArea rows={3} placeholder="说明本次修改产品、数量或金额的原因" />
             </Form.Item>
           </Form>
-        </Drawer>
-
-        <Drawer
-          title="反审核退回修改"
-          open={returnDrawerOpen}
-          onClose={() => setReturnDrawerOpen(false)}
-          rootClassName="order-commercials-drawer"
-          destroyOnHidden
-          footer={(
-            <div className="order-commercials-drawer-footer">
-              <Button onClick={() => setReturnDrawerOpen(false)}>取消</Button>
-              <Button
-                type="primary"
-                loading={returnToPendingMutation.isPending}
-                disabled={!returnReason.trim()}
-                onClick={() => returnToPendingMutation.mutate()}
-              >
-                确认退回
-              </Button>
-            </div>
-          )}
-        >
-          <div className="order-return-drawer-body">
-            <Typography.Paragraph>
-              订单将退回待派工状态，退回后可重新修改产品、数量、价格和施工人工费。
-            </Typography.Paragraph>
-            <Input.TextArea
-              rows={4}
-              value={returnReason}
-              onChange={(event) => setReturnReason(event.target.value)}
-              placeholder="请填写反审核退回原因"
-            />
-            <Typography.Text type="secondary">
-              审计动作：ORDER_RETURNED_TO_PENDING_DISPATCH
-            </Typography.Text>
-          </div>
         </Drawer>
 
         <Drawer

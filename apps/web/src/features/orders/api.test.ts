@@ -107,7 +107,7 @@ test("orderApi.updateCommercials patches order items amount and change reason", 
   }) as typeof fetch;
 
   await orderApi.updateCommercials("order-1", {
-    items: [{ productId: "product-1", quantity: 2, unitPriceCents: 1000 }],
+    items: [{ id: "item-1", productId: "product-1", quantity: 2, unitPriceCents: 1000 }],
     laborCostCents: 500,
     remark: "调整备注",
     changeReason: "客户变更施工范围"
@@ -116,7 +116,7 @@ test("orderApi.updateCommercials patches order items amount and change reason", 
   assert.equal(capturedInput, "http://localhost:3001/orders/order-1/commercials");
   assert.equal(capturedInit?.method, "PATCH");
   assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
-    items: [{ productId: "product-1", quantity: 2, unitPriceCents: 1000 }],
+    items: [{ id: "item-1", productId: "product-1", quantity: 2, unitPriceCents: 1000 }],
     laborCostCents: 500,
     remark: "调整备注",
     changeReason: "客户变更施工范围"

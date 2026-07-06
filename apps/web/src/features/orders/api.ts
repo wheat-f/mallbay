@@ -32,7 +32,7 @@ export type CreateOrderPayload = {
 };
 
 export type UpdateOrderCommercialsPayload = {
-  items: CreateOrderPayload["items"];
+  items: Array<CreateOrderPayload["items"][number] & { id?: string }>;
   laborCostCents: number;
   remark?: string;
   changeReason: string;

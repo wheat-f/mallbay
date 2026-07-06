@@ -156,7 +156,7 @@ export class OrdersService {
       const order = await tx.order.findUnique({
         where: { id: orderId },
         include: {
-          items: true,
+          items: { include: { inventoryAllocations: true } },
           amount: true
         }
       });
@@ -166,8 +166,11 @@ export class OrdersService {
       if (!canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
         throw new ForbiddenException("无权限");
       }
-      if (order.status !== OrderStatus.PENDING_DISPATCH) {
-        throw new BadRequestException("已进入履约的订单不能直接修改明细");
+      if (!isOrderCommercialsEditableStatus(order.status)) {
+        throw new BadRequestException("当前订单状态不能修改产品清单");
+      }
+      if (order.amount.outstandingCents <= 0) {
+        throw new BadRequestException("订单收款已确认完成，不能修改产品清单");
       }
 
       const productIds = [...new Set(dto.items.map((item) => item.productId))];
@@ -184,6 +187,7 @@ export class OrdersService {
       }
 
       const nextItems = dto.items.map((item) => ({
+        ...(item.id ? { id: item.id } : {}),
         productId: item.productId,
         quantity: item.quantity,
         unitPriceCents: item.unitPriceCents,
@@ -217,13 +221,7 @@ export class OrdersService {
         profitCents
       };
 
-      await tx.orderItem.deleteMany({ where: { orderId } });
-      await tx.orderItem.createMany({
-        data: nextItems.map((item) => ({
-          orderId,
-          ...item
-        }))
-      });
+      await syncOrderItemsForCommercialUpdate(tx, orderId, order.items, nextItems);
       await tx.orderAmount.update({
         where: { orderId },
         data: {
@@ -567,6 +565,105 @@ function canManageOrderCommercials(user: UserWithStoreMember, storeId: string, s
   return PermissionPolicy.isStoreMember(user, storeId) &&
     user.storeMember?.position === StorePosition.SALES &&
     user.id === salesPersonId;
+}
+
+function isOrderCommercialsEditableStatus(status: OrderStatus) {
+  const editableStatuses: OrderStatus[] = [
+    OrderStatus.PENDING_DISPATCH,
+    OrderStatus.DISPATCHED,
+    OrderStatus.IN_CONSTRUCTION,
+    OrderStatus.COMPLETED
+  ];
+  return editableStatuses.includes(status);
+}
+
+type ExistingCommercialOrderItem = {
+  id?: string;
+  inventoryAllocations?: Array<{
+    status?: string | null;
+    lockedQuantity?: unknown;
+    outboundQuantity?: unknown;
+  }>;
+};
+
+type NextCommercialOrderItem = {
+  id?: string;
+  productId: string;
+  quantity: number;
+  unitPriceCents: number;
+  amountCents: number;
+};
+
+async function syncOrderItemsForCommercialUpdate(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  existingItems: ExistingCommercialOrderItem[],
+  nextItems: NextCommercialOrderItem[]
+) {
+  const nextItemsHaveIds = nextItems.some((item) => Boolean(item.id));
+  if (!nextItemsHaveIds) {
+    await tx.orderItem.deleteMany({ where: { orderId } });
+    await tx.orderItem.createMany({
+      data: nextItems.map(({ id: _id, ...item }) => ({
+        orderId,
+        ...item
+      }))
+    });
+    return;
+  }
+
+  const existingItemsById = new Map(existingItems.filter((item) => item.id).map((item) => [item.id!, item]));
+  const nextItemIds = new Set(nextItems.map((item) => item.id).filter(Boolean) as string[]);
+  for (const itemId of nextItemIds) {
+    if (!existingItemsById.has(itemId)) {
+      throw new BadRequestException("订单明细不存在或不属于当前订单");
+    }
+  }
+
+  for (const item of nextItems) {
+    const { id, ...data } = item;
+    if (id) {
+      await tx.orderItem.update({ where: { id }, data });
+    } else {
+      await tx.orderItem.create({ data: { orderId, ...data } });
+    }
+  }
+
+  for (const item of existingItems) {
+    if (!item.id || nextItemIds.has(item.id)) continue;
+    assertCanRemoveCommercialOrderItem(item);
+    await tx.orderItem.deleteMany({ where: { id: item.id } });
+  }
+}
+
+function assertCanRemoveCommercialOrderItem(item: ExistingCommercialOrderItem) {
+  const allocations = item.inventoryAllocations ?? [];
+  const hasOutbound = allocations.some(
+    (allocation) => allocation.status === "OUTBOUND" || toNullableNumber(allocation.outboundQuantity) > 0
+  );
+  if (hasOutbound) {
+    throw new BadRequestException("已出库的订单产品不能直接删除，请通过库存调整处理差异");
+  }
+  const hasActiveLock = allocations.some(
+    (allocation) =>
+      allocation.status === "LOCKED"
+      && toNullableNumber(allocation.lockedQuantity) > toNullableNumber(allocation.outboundQuantity)
+  );
+  if (hasActiveLock) {
+    throw new BadRequestException("已锁库的订单产品不能直接删除，请先释放库存或在库存匹配中调整");
+  }
+}
+
+function toNullableNumber(value: unknown) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return Number(value);
+  if (value && typeof value === "object" && "toNumber" in value && typeof value.toNumber === "function") {
+    return value.toNumber();
+  }
+  if (value && typeof value === "object" && "toString" in value && typeof value.toString === "function") {
+    return Number(value.toString());
+  }
+  return 0;
 }
 
 function toOrderItemAuditSummary(item: {

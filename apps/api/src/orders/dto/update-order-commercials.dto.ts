@@ -12,6 +12,12 @@ import {
 } from "class-validator";
 import { CreateOrderItemDto } from "./create-order.dto";
 
+export class UpdateOrderCommercialsItemDto extends CreateOrderItemDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+}
+
 export class UpdateOrderCommercialsDto {
   @IsString()
   @IsNotEmpty()
@@ -21,8 +27,8 @@ export class UpdateOrderCommercialsDto {
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => CreateOrderItemDto)
-  items!: CreateOrderItemDto[];
+  @Type(() => UpdateOrderCommercialsItemDto)
+  items!: UpdateOrderCommercialsItemDto[];
 
   @Type(() => Number)
   @IsInt()

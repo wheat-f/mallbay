@@ -876,7 +876,102 @@ test("OrdersService lists payment account audit events with payment management v
   ]);
 });
 
-test("OrdersService rejects commercial updates after dispatch", async () => {
+test("OrdersService updates unpaid active order commercials without returning to pending dispatch", async () => {
+  const operations: unknown[] = [];
+  const auditEvents: unknown[] = [];
+  const tx = {
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        storeId: "store-1",
+        salesPersonId: "sales-1",
+        status: OrderStatus.DISPATCHED,
+        remark: "旧备注",
+        items: [
+          {
+            id: "item-1",
+            productId: "product-old",
+            quantity: 1,
+            unitPriceCents: 1000,
+            amountCents: 1000,
+            inventoryAllocations: [{ id: "allocation-1", status: "LOCKED", lockedQuantity: 1, outboundQuantity: 0 }]
+          }
+        ],
+        amount: {
+          productAmountCents: 1000,
+          laborCostCents: 200,
+          totalAmountCents: 1200,
+          paidAmountCents: 300,
+          outstandingCents: 900,
+          materialCostCents: 100,
+          salesCommissionCents: 50,
+          profitCents: 1050
+        }
+      }),
+      update: async (args: unknown) => operations.push({ orderUpdate: args })
+    },
+    product: {
+      findMany: async () => [{ id: "product-new", storeId: "store-1", status: "ACTIVE" }]
+    },
+    orderItem: {
+      update: async (args: unknown) => operations.push({ itemUpdate: args }),
+      deleteMany: async (args: unknown) => operations.push({ itemDeleteMany: args }),
+      createMany: async (args: unknown) => operations.push({ itemCreateMany: args })
+    },
+    orderAmount: {
+      update: async (args: unknown) => operations.push({ amountUpdate: args })
+    },
+    auditEvent: {
+      create: async (args: unknown) => operations.push({ auditCreate: args })
+    }
+  };
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const service = new OrdersService(
+    prisma as never,
+    {} as never,
+    { record: (event: unknown) => auditEvents.push(event) } as never
+  );
+
+  const result = await service.updateCommercials(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    "order-1",
+    {
+      items: [{ id: "item-1", productId: "product-new", quantity: 2, unitPriceCents: 500 }],
+      laborCostCents: 400,
+      remark: "新备注",
+      changeReason: "施工后确认实际用料"
+    }
+  );
+
+  assert.deepEqual(result, { id: "order-1" });
+  assert.deepEqual(
+    operations.filter((operation) => "itemUpdate" in (operation as Record<string, unknown>)),
+    [
+      {
+        itemUpdate: {
+          where: { id: "item-1" },
+          data: {
+            productId: "product-new",
+            quantity: 2,
+            unitPriceCents: 500,
+            amountCents: 1000
+          }
+        }
+      }
+    ]
+  );
+  assert.equal(JSON.stringify(operations).includes("ORDER_RETURNED_TO_PENDING_DISPATCH"), false);
+  assert.deepEqual(auditEvents.map((event) => (event as { action: string }).action), ["ORDER_COMMERCIALS_UPDATED"]);
+});
+
+test("OrdersService rejects commercial updates after payment is fully settled", async () => {
   const tx = {
     order: {
       findUnique: async () => ({
@@ -885,7 +980,7 @@ test("OrdersService rejects commercial updates after dispatch", async () => {
         salesPersonId: "sales-1",
         status: OrderStatus.DISPATCHED,
         items: [],
-        amount: { paidAmountCents: 0 }
+        amount: { paidAmountCents: 1200, outstandingCents: 0 }
       })
     }
   };
@@ -910,6 +1005,6 @@ test("OrdersService rejects commercial updates after dispatch", async () => {
           changeReason: "客户调整施工产品"
         }
       ),
-    /已进入履约的订单不能直接修改明细/
+    /订单收款已确认完成，不能修改产品清单/
   );
 });

@@ -43,6 +43,51 @@ test("InventoryService creates a batch and purchase-in movement", async () => {
   assert.equal(JSON.stringify(writes).includes("\"quantity\":10"), true);
 });
 
+test("InventoryService receives one roll as base meter stock with package snapshot", async () => {
+  const writes: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    inventoryBatch: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "batch-1", storeId: "store-1", productId: "product-1", batchNo: "ROLL-001" };
+      }
+    },
+    inventoryMovement: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "movement-1" };
+      }
+    }
+  };
+  const service = new InventoryService(prisma as never);
+
+  await service.createBatch(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    {
+      storeId: "store-1",
+      productId: "product-1",
+      batchNo: "ROLL-001",
+      totalQuantity: 1,
+      unit: ProductUnit.ROLL,
+      baseUnit: ProductUnit.METER,
+      baseQuantityPerPackage: 18
+    } as never
+  );
+
+  const serialized = JSON.stringify(writes);
+  assert.match(serialized, /"packageUnit":"ROLL"/);
+  assert.match(serialized, /"packageQuantity":1/);
+  assert.match(serialized, /"unit":"METER"/);
+  assert.match(serialized, /"totalQuantity":18/);
+  assert.match(serialized, /"availableQuantity":18/);
+  assert.match(serialized, /"quantity":18/);
+});
+
 test("InventoryService manages store warehouses as inventory master data", async () => {
   const calls: unknown[] = [];
   const prisma = {
@@ -231,6 +276,77 @@ test("InventoryService locks stock through allocations and creates purchase requ
   assert.equal(serialized.includes("PurchaseOrder"), false);
 });
 
+test("InventoryService auto locks using order item required base quantity", async () => {
+  const writes: unknown[] = [];
+  const tx = {
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        storeId: "store-1",
+        orderNo: "ORD-1",
+        items: [
+          {
+            id: "item-1",
+            productId: "product-1",
+            quantity: 1,
+            requiredBaseQuantity: 18,
+            baseUnit: ProductUnit.METER,
+            product: { unit: ProductUnit.ROLL },
+            inventoryAllocations: []
+          }
+        ]
+      })
+    },
+    orderInventoryAllocation: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "allocation-1" };
+      }
+    },
+    inventoryMovement: {
+      create: async (args: unknown) => writes.push(args)
+    },
+    inventoryBatch: {
+      findMany: async () => [
+        {
+          id: "batch-1",
+          productId: "product-1",
+          unit: ProductUnit.METER,
+          availableQuantity: 18,
+          lockedQuantity: 0
+        }
+      ],
+      update: async (args: unknown) => writes.push(args)
+    },
+    purchaseRequirement: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "pr-1" };
+      }
+    }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  const result = await service.lockOrderInventory(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    "order-1"
+  );
+
+  assert.equal(result.locked[0].quantity, 18);
+  assert.equal(result.purchaseRequirement, undefined);
+  const serialized = JSON.stringify(writes);
+  assert.match(serialized, /"availableQuantity":\{"decrement":18\}/);
+  assert.match(serialized, /"lockedQuantity":18/);
+  assert.match(serialized, /"unit":"METER"/);
+});
+
 test("InventoryService reuses released allocation when locking the same order batch again", async () => {
   const writes: unknown[] = [];
   const prisma = {
@@ -308,6 +424,70 @@ test("InventoryService reuses released allocation when locking the same order ba
     JSON.stringify(writes).includes('"status":"LOCKED"'),
     true
   );
+});
+
+test("InventoryService locks selected batch by base unit quantity", async () => {
+  const writes: unknown[] = [];
+  const tx = {
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        storeId: "store-1",
+        items: [
+          {
+            id: "item-1",
+            productId: "product-1",
+            quantity: 1,
+            product: { unit: ProductUnit.ROLL }
+          }
+        ]
+      })
+    },
+    inventoryBatch: {
+      findUnique: async () => ({
+        id: "batch-1",
+        storeId: "store-1",
+        productId: "product-1",
+        unit: ProductUnit.METER,
+        packageUnit: ProductUnit.ROLL,
+        baseQuantityPerPackage: 18,
+        availableQuantity: 18,
+        lockedQuantity: 0
+      }),
+      update: async (args: unknown) => writes.push(args)
+    },
+    orderInventoryAllocation: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "allocation-1" };
+      }
+    },
+    inventoryMovement: {
+      create: async (args: unknown) => writes.push(args)
+    }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  await service.createOrderInventoryAllocations(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    "order-1",
+    {
+      allocations: [{ orderItemId: "item-1", batchId: "batch-1", quantity: 12, unit: ProductUnit.METER }]
+    } as never
+  );
+
+  const serialized = JSON.stringify(writes);
+  assert.match(serialized, /"availableQuantity":\{"decrement":12\}/);
+  assert.match(serialized, /"lockedQuantity":\{"increment":12\}/);
+  assert.match(serialized, /"lockedQuantity":12/);
+  assert.match(serialized, /"unit":"METER"/);
 });
 
 test("InventoryService creates purchase order from purchase requirement items", async () => {
@@ -1179,6 +1359,65 @@ test("InventoryService receive purchase item updates purchase requirement fulfil
   assert.equal(serialized.includes("\"status\":\"FULFILLED\""), true);
 });
 
+test("InventoryService receives purchase item package quantity as base stock", async () => {
+  const writes: unknown[] = [];
+  const tx = {
+    purchaseOrderItem: {
+      findUnique: async () => ({
+        id: "poi-1",
+        purchaseOrderId: "po-1",
+        purchaseRequirementItemId: null,
+        productId: "product-1",
+        quantity: 1,
+        receivedQuantity: 0,
+        unitCostCents: 1000,
+        product: {
+          unit: ProductUnit.ROLL,
+          inventoryUnit: ProductUnit.METER,
+          metersPerRoll: 18
+        },
+        purchaseOrder: { id: "po-1", storeId: "store-1", orderNo: "PO1", supplierName: "3M" }
+      }),
+      update: async (args: unknown) => writes.push(args),
+      findMany: async () => [{ id: "poi-1", quantity: 1, receivedQuantity: 0 }]
+    },
+    inventoryBatch: {
+      upsert: async (args: unknown) => {
+        writes.push(args);
+        return { id: "batch-1" };
+      }
+    },
+    inventoryMovement: {
+      create: async (args: unknown) => writes.push(args)
+    },
+    purchaseOrder: {
+      update: async (args: unknown) => writes.push(args)
+    }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  await service.receivePurchaseItem(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    "poi-1",
+    { quantity: 1, batchNo: "ROLL-PO-1", supplierName: "3M" }
+  );
+
+  const serialized = JSON.stringify(writes);
+  assert.match(serialized, /"packageUnit":"ROLL"/);
+  assert.match(serialized, /"packageQuantity":1/);
+  assert.match(serialized, /"unit":"METER"/);
+  assert.match(serialized, /"totalQuantity":18/);
+  assert.match(serialized, /"availableQuantity":18/);
+  assert.match(serialized, /"quantity":18/);
+});
+
 test("InventoryService receives purchase item batches with per-line failures", async () => {
   const purchaseItem = {
     id: "poi-1",
@@ -1400,4 +1639,64 @@ test("InventoryService applies manual stock operations with explicit movement ty
   assert.equal(serialized.includes("\"availableQuantity\":{\"decrement\":1.5}"), true);
   assert.equal(serialized.includes("\"quantity\":1.5"), true);
   assert.equal(serialized.includes(InventoryMovementType.DAMAGE_OUT), true);
+});
+
+test("InventoryService partially outbounds locked inventory by selected unit", async () => {
+  const writes: unknown[] = [];
+  const tx = {
+    order: {
+      findUnique: async () => ({ id: "order-1", storeId: "store-1" })
+    },
+    orderInventoryAllocation: {
+      findMany: async () => [
+        {
+          id: "allocation-1",
+          storeId: "store-1",
+          orderId: "order-1",
+          batchId: "batch-1",
+          productId: "product-1",
+          lockedQuantity: 18,
+          outboundQuantity: 0,
+          status: "LOCKED",
+          batch: {
+            id: "batch-1",
+            unit: ProductUnit.METER,
+            packageUnit: ProductUnit.ROLL,
+            baseQuantityPerPackage: 18,
+            lockedQuantity: 18,
+            outboundQuantity: 0
+          }
+        }
+      ],
+      update: async (args: unknown) => writes.push(args)
+    },
+    inventoryBatch: {
+      update: async (args: unknown) => writes.push(args)
+    },
+    inventoryMovement: {
+      create: async (args: unknown) => writes.push(args)
+    }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  await service.outboundOrderInventory(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    "order-1",
+    { lines: [{ allocationId: "allocation-1", quantity: 12, unit: ProductUnit.METER }] } as never
+  );
+
+  const serialized = JSON.stringify(writes);
+  assert.match(serialized, /"lockedQuantity":\{"decrement":12\}/);
+  assert.match(serialized, /"outboundQuantity":\{"increment":12\}/);
+  assert.match(serialized, /"movementType":"ORDER_OUT"/);
+  assert.match(serialized, /"quantity":12/);
+  assert.match(serialized, /"status":"LOCKED"/);
+  assert.doesNotMatch(serialized, /"status":"OUTBOUND"/);
 });

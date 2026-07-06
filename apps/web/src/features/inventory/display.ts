@@ -18,6 +18,7 @@ export type PurchaseInboundItemLike = {
     model?: string | null;
     category?: ProductCategory | string | null;
     specification?: string | null;
+    unit?: ProductUnit | string | null;
     inventoryUnit?: ProductUnit | string | null;
     salesUnit?: ProductUnit | string | null;
     rollWidthMeters?: number | string | null;
@@ -116,14 +117,54 @@ export function getInventoryBatchLabel(
     batchNo?: string | null;
     productId?: string | null;
     availableQuantity?: number | string | null;
+    unit?: ProductUnit | string | null;
+    packageUnit?: ProductUnit | string | null;
+    baseQuantityPerPackage?: number | string | null;
   },
   products: ProductLookup
 ) {
   return [
     batch.batchNo ?? "-",
     getInventoryProductLabel(batch.productId, products),
-    `可用 ${batch.availableQuantity ?? 0}`
+    formatBatchStockLabel(batch)
   ].join(" · ");
+}
+
+export function formatBatchStockLabel(batch: {
+  availableQuantity?: number | string | null;
+  unit?: ProductUnit | string | null;
+  packageUnit?: ProductUnit | string | null;
+  baseQuantityPerPackage?: number | string | null;
+}) {
+  const availableQuantity = toNumber(batch.availableQuantity);
+  const baseLabel = batch.unit
+    ? `可用 ${formatQuantity(availableQuantity, 3)} ${getProductUnitLabel(batch.unit)}`
+    : `可用 ${formatQuantity(availableQuantity, 3)}`;
+  const conversionRate = toNumber(batch.baseQuantityPerPackage);
+
+  if (!batch.packageUnit || !batch.unit || batch.packageUnit === batch.unit || conversionRate <= 0) {
+    return baseLabel;
+  }
+
+  const packageQuantity = availableQuantity / conversionRate;
+  return `${baseLabel} / 折合 ${formatQuantity(packageQuantity, 3)} ${getProductUnitLabel(batch.packageUnit)}`;
+}
+
+export function formatPackageSnapshotLabel(batch: {
+  packageQuantity?: number | string | null;
+  packageUnit?: ProductUnit | string | null;
+  baseQuantityPerPackage?: number | string | null;
+  unit?: ProductUnit | string | null;
+}) {
+  const packageQuantity = toNumber(batch.packageQuantity);
+  const conversionRate = toNumber(batch.baseQuantityPerPackage);
+
+  if (!batch.packageUnit || !batch.unit || conversionRate <= 0) {
+    return "原始入库待确认";
+  }
+
+  const packageUnitLabel = getProductUnitLabel(batch.packageUnit);
+  return `原始入库 ${formatQuantity(packageQuantity, 3)} ${packageUnitLabel} · 1 ${packageUnitLabel} = ${formatQuantity(conversionRate, 3)} ${getProductUnitLabel(batch.unit)}`;
 }
 
 export function getPurchaseRequirementSourceOrderLabel(

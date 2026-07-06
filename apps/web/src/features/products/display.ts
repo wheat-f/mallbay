@@ -11,6 +11,8 @@ export const PRODUCT_CATEGORY_OPTIONS: Array<{ label: string; value: ProductCate
 export const PRODUCT_UNIT_OPTIONS: Array<{ label: string; value: ProductUnit }> = [
   { label: "卷", value: "ROLL" },
   { label: "米", value: "METER" },
+  { label: "平方米", value: "SQUARE_METER" },
+  { label: "平方厘米", value: "SQUARE_CENTIMETER" },
   { label: "件", value: "PIECE" }
 ];
 

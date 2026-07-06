@@ -24,6 +24,9 @@ export type CreateInventoryBatchPayload = {
   batchNo: string;
   supplierName?: string;
   totalQuantity: number;
+  unit?: ProductUnit;
+  baseUnit?: ProductUnit;
+  baseQuantityPerPackage?: number;
   unitCostCents?: number;
   productionDate?: string;
   receivedAt?: string;
@@ -142,15 +145,27 @@ export type CreateOrderInventoryAllocationsPayload = {
     orderItemId: string;
     batchId: string;
     quantity: number;
+    unit?: ProductUnit;
   }>;
 };
 
 export type ReceivePurchaseItemPayload = {
   quantity: number;
   batchNo: string;
+  unit?: ProductUnit;
+  baseUnit?: ProductUnit;
+  baseQuantityPerPackage?: number;
   supplierName?: string;
   warehouseId?: string;
   warehouseName?: string;
+};
+
+export type OutboundOrderInventoryPayload = {
+  lines: Array<{
+    allocationId: string;
+    quantity: number;
+    unit: ProductUnit;
+  }>;
 };
 
 export type ReceivePurchaseItemBatchesResult = {
@@ -285,8 +300,11 @@ export const inventoryApi = {
   lockOrder: (orderId: string) =>
     request<unknown>(`/inventory/orders/${orderId}/lock`, { method: "POST" }),
 
-  outboundOrder: (orderId: string) =>
-    request<unknown>(`/inventory/orders/${orderId}/outbound`, { method: "POST" }),
+  outboundOrder: (orderId: string, payload: OutboundOrderInventoryPayload) =>
+    request<unknown>(`/inventory/orders/${orderId}/outbound`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
 
   releaseOrder: (orderId: string) =>
     request<unknown>(`/inventory/orders/${orderId}/release`, { method: "POST" }),

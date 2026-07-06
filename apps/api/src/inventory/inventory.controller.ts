@@ -18,6 +18,7 @@ import {
   ListInventoryDto,
   ListSuppliersDto,
   ListWarehousesDto,
+  OutboundOrderInventoryDto,
   ReceivePurchaseItemBatchesDto,
   ReceivePurchaseItemDto,
   SplitBatchDto,
@@ -182,8 +183,12 @@ export class InventoryController {
   }
 
   @Post("orders/:orderId/outbound")
-  outboundOrderInventory(@Req() req: AuthRequest, @Param("orderId") orderId: string) {
-    return this.inventory.outboundOrderInventory(req.user, orderId);
+  outboundOrderInventory(
+    @Req() req: AuthRequest,
+    @Param("orderId") orderId: string,
+    @Body() dto: OutboundOrderInventoryDto
+  ) {
+    return this.inventory.outboundOrderInventory(req.user, orderId, dto);
   }
 
   @Post("orders/:orderId/release")

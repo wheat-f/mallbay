@@ -19,6 +19,8 @@ test("getProductCategoryLabel formats product category enum as Chinese business 
 test("getProductUnitLabel formats product units", () => {
   assert.equal(getProductUnitLabel("ROLL"), "卷");
   assert.equal(getProductUnitLabel("METER"), "米");
+  assert.equal(getProductUnitLabel("SQUARE_METER"), "平方米");
+  assert.equal(getProductUnitLabel("SQUARE_CENTIMETER"), "平方厘米");
   assert.equal(getProductUnitLabel("PIECE"), "件");
   assert.equal(getProductUnitLabel("UNKNOWN"), "单位待确认");
 });

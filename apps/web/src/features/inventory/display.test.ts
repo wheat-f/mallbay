@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   getInventoryBatchLabel,
+  formatBatchStockLabel,
+  formatPackageSnapshotLabel,
   getInventoryBatchSplitSummary,
   getInventoryAllocationStatusLabel,
   getInventoryMovementTypeLabel,
@@ -111,6 +113,30 @@ test("inventory product and batch labels use product display helpers", () => {
       products
     ),
     "BOP001 · 品牌：品牌1 / 名称：漆面保护膜 / 型号：PPF-100 · 可用 12"
+  );
+});
+
+test("formatBatchStockLabel shows base and package equivalent quantities", () => {
+  assert.equal(
+    formatBatchStockLabel({
+      availableQuantity: 6,
+      unit: "METER",
+      packageUnit: "ROLL",
+      baseQuantityPerPackage: 18
+    }),
+    "可用 6 米 / 折合 0.333 卷"
+  );
+});
+
+test("formatPackageSnapshotLabel shows original inbound package conversion", () => {
+  assert.equal(
+    formatPackageSnapshotLabel({
+      packageQuantity: 1,
+      packageUnit: "ROLL",
+      baseQuantityPerPackage: 18,
+      unit: "METER"
+    }),
+    "原始入库 1 卷 · 1 卷 = 18 米"
   );
 });
 

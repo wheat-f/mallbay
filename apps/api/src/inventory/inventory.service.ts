@@ -20,11 +20,13 @@ import type {
   CreateSupplierRatingHistoryDto,
   CreateSupplierDto,
   ListInventoryDto,
+  OutboundOrderInventoryDto,
   ReceivePurchaseItemBatchesDto,
   ReceivePurchaseItemDto,
   UpdateWarehouseDto,
   UpdateSupplierDto
 } from "./dto/inventory.dto";
+import { convertToBaseQuantity } from "./domain/unit-conversion";
 
 export type AuthenticatedInventoryUser = UserWithStoreMember & {
   username?: string;
@@ -126,14 +128,29 @@ export class InventoryService {
       throw new ForbiddenException("无权限");
     }
     const warehouse = await this.resolveReceivingWarehouse(this.prisma, dto.storeId, dto.warehouseId, dto.warehouseName);
+    const packageUnit = dto.unit ?? ProductUnit.PIECE;
+    const baseUnit = dto.baseUnit ?? packageUnit;
+    const baseQuantityPerPackage = dto.baseQuantityPerPackage ?? 1;
+    const baseTotalQuantity = convertToBaseQuantity({
+      quantity: dto.totalQuantity,
+      fromUnit: packageUnit,
+      baseUnit,
+      packageUnit,
+      baseQuantityPerPackage
+    });
     const batch = await this.prisma.inventoryBatch.create({
       data: {
         storeId: dto.storeId,
         productId: dto.productId,
         batchNo: dto.batchNo,
         supplierName: dto.supplierName,
-        totalQuantity: dto.totalQuantity,
-        availableQuantity: dto.totalQuantity,
+        unit: baseUnit,
+        packageUnit,
+        packageQuantity: dto.totalQuantity,
+        baseUnit,
+        baseQuantityPerPackage,
+        totalQuantity: baseTotalQuantity,
+        availableQuantity: baseTotalQuantity,
         lockedQuantity: 0,
         unitCostCents: dto.unitCostCents,
         productionDate: dto.productionDate ? new Date(dto.productionDate) : undefined,
@@ -148,7 +165,11 @@ export class InventoryService {
         batchId: batch.id,
         productId: dto.productId,
         movementType: InventoryMovementType.PURCHASE_IN,
-        quantity: dto.totalQuantity,
+        quantity: baseTotalQuantity,
+        unit: baseUnit,
+        fromUnit: packageUnit,
+        toUnit: baseUnit,
+        conversionRate: baseQuantityPerPackage,
         warehouseId: warehouse?.id,
         warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName),
         createdById: actor.id,
@@ -715,14 +736,21 @@ export class InventoryService {
         if (!batch || batch.storeId !== order.storeId || batch.productId !== orderItem.productId) {
           throw new BadRequestException("库存批次与订单明细不匹配");
         }
-        if (allocation.quantity > decimalToNumber(batch.availableQuantity)) {
+        const lockBaseQuantity = convertToBaseQuantity({
+          quantity: allocation.quantity,
+          fromUnit: allocation.unit ?? batch.unit,
+          baseUnit: batch.unit,
+          packageUnit: batch.packageUnit,
+          baseQuantityPerPackage: decimalToNumber(batch.baseQuantityPerPackage ?? 1)
+        });
+        if (lockBaseQuantity > decimalToNumber(batch.availableQuantity)) {
           throw new BadRequestException("锁库数量超出可用库存");
         }
         await tx.inventoryBatch.update({
           where: { id: batch.id },
           data: {
-            availableQuantity: { decrement: allocation.quantity },
-            lockedQuantity: { increment: allocation.quantity }
+            availableQuantity: { decrement: lockBaseQuantity },
+            lockedQuantity: { increment: lockBaseQuantity }
           }
         });
         const row = await tx.orderInventoryAllocation.create({
@@ -732,7 +760,7 @@ export class InventoryService {
             orderItemId: orderItem.id,
             productId: orderItem.productId,
             batchId: batch.id,
-            lockedQuantity: allocation.quantity,
+            lockedQuantity: lockBaseQuantity,
             lockedById: actor.id
           }
         });
@@ -743,15 +771,18 @@ export class InventoryService {
             productId: orderItem.productId,
             orderId,
             movementType: InventoryMovementType.ORDER_LOCK,
-            quantity: allocation.quantity,
-            unit: orderItem.product.unit,
+            quantity: lockBaseQuantity,
+            unit: batch.unit,
+            fromUnit: allocation.unit ?? batch.unit,
+            toUnit: batch.unit,
+            conversionRate: decimalToNumber(batch.baseQuantityPerPackage ?? 1),
             sourceType: "ORDER_INVENTORY_ALLOCATION",
             sourceId: row.id,
             createdById: actor.id,
             note: "订单库存锁定"
           }
         });
-        locked.push({ batchId: batch.id, orderItemId: orderItem.id, quantity: allocation.quantity });
+        locked.push({ batchId: batch.id, orderItemId: orderItem.id, quantity: lockBaseQuantity });
       }
       return { locked };
     });
@@ -943,7 +974,7 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const item = await tx.purchaseOrderItem.findUnique({
         where: { id: purchaseOrderItemId },
-        include: { purchaseOrder: true }
+        include: { purchaseOrder: true, product: true }
       });
       if (!item) throw new NotFoundException("采购明细不存在");
       if (!PermissionPolicy.canManagePurchase(actor, item.purchaseOrder.storeId)) {
@@ -965,6 +996,23 @@ export class InventoryService {
         dto.warehouseId,
         dto.warehouseName
       );
+      const product = (item as {
+        product?: {
+          unit?: ProductUnit | null;
+          inventoryUnit?: ProductUnit | null;
+          metersPerRoll?: number | { toNumber?: () => number; toString: () => string } | null;
+        };
+      }).product;
+      const packageUnit = dto.unit ?? product?.unit ?? ProductUnit.PIECE;
+      const baseUnit = dto.baseUnit ?? product?.inventoryUnit ?? packageUnit;
+      const baseQuantityPerPackage = dto.baseQuantityPerPackage ?? decimalToNumber(product?.metersPerRoll ?? 1);
+      const baseReceivedQuantity = convertToBaseQuantity({
+        quantity: dto.quantity,
+        fromUnit: packageUnit,
+        baseUnit,
+        packageUnit,
+        baseQuantityPerPackage
+      });
       const batch = await tx.inventoryBatch.upsert({
         where: {
           storeId_productId_batchNo: {
@@ -978,8 +1026,13 @@ export class InventoryService {
           productId: item.productId,
           batchNo: dto.batchNo,
           supplierName: dto.supplierName ?? item.purchaseOrder.supplierName,
-          totalQuantity: dto.quantity,
-          availableQuantity: dto.quantity,
+          unit: baseUnit,
+          packageUnit,
+          packageQuantity: dto.quantity,
+          baseUnit,
+          baseQuantityPerPackage,
+          totalQuantity: baseReceivedQuantity,
+          availableQuantity: baseReceivedQuantity,
           unitCostCents: item.unitCostCents,
           receivedAt: new Date(),
           warehouseId: warehouse?.id,
@@ -988,8 +1041,13 @@ export class InventoryService {
           sourceId: purchaseOrderItemId
         },
         update: {
-          totalQuantity: { increment: dto.quantity },
-          availableQuantity: { increment: dto.quantity },
+          totalQuantity: { increment: baseReceivedQuantity },
+          availableQuantity: { increment: baseReceivedQuantity },
+          packageQuantity: { increment: dto.quantity },
+          packageUnit,
+          baseUnit,
+          baseQuantityPerPackage,
+          unit: baseUnit,
           receivedAt: new Date(),
           warehouseId: warehouse?.id,
           warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName)
@@ -1001,7 +1059,11 @@ export class InventoryService {
           batchId: batch.id,
           productId: item.productId,
           movementType: InventoryMovementType.PURCHASE_IN,
-          quantity: dto.quantity,
+          quantity: baseReceivedQuantity,
+          unit: baseUnit,
+          fromUnit: packageUnit,
+          toUnit: baseUnit,
+          conversionRate: baseQuantityPerPackage,
           sourceType: "PURCHASE_ORDER_ITEM",
           sourceId: purchaseOrderItemId,
           warehouseId: warehouse?.id,
@@ -1110,10 +1172,12 @@ export class InventoryService {
       const locked: Array<{ batchId: string; productId: string; quantity: number }> = [];
       const missing: Array<{ productId: string; orderItemId: string; quantity: number; unit: ProductUnit }> = [];
       for (const item of order.items) {
+        const requiredQuantity = decimalToNumber(item.requiredBaseQuantity ?? item.quantity);
+        const requiredUnit = item.baseUnit ?? item.product.unit;
         const coveredQuantity = (item.inventoryAllocations ?? [])
           .filter((allocation) => allocation.status !== "RELEASED")
           .reduce((sum, allocation) => sum + decimalToNumber(allocation.lockedQuantity), 0);
-        let remaining = Math.max(0, item.quantity - coveredQuantity);
+        let remaining = Math.max(0, requiredQuantity - coveredQuantity);
         const batches = await tx.inventoryBatch.findMany({
           where: { storeId: order.storeId, productId: item.productId, availableQuantity: { gt: 0 } },
           orderBy: { receivedAt: "asc" }
@@ -1162,7 +1226,7 @@ export class InventoryService {
               orderId,
               movementType: InventoryMovementType.ORDER_LOCK,
               quantity,
-              unit: item.product.unit,
+              unit: batch.unit,
               sourceType: "ORDER_INVENTORY_ALLOCATION",
               sourceId: allocation.id,
               createdById: actor.id,
@@ -1173,7 +1237,7 @@ export class InventoryService {
           remaining -= quantity;
         }
         if (remaining > 0) {
-          missing.push({ productId: item.productId, orderItemId: item.id, quantity: remaining, unit: item.product.unit });
+          missing.push({ productId: item.productId, orderItemId: item.id, quantity: remaining, unit: requiredUnit });
         }
       }
 
@@ -1200,7 +1264,7 @@ export class InventoryService {
     });
   }
 
-  async outboundOrderInventory(user: AuthenticatedInventoryUser, orderId: string) {
+  async outboundOrderInventory(user: AuthenticatedInventoryUser, orderId: string, dto?: OutboundOrderInventoryDto) {
     const actor = await this.withStoreMember(user);
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId } });
@@ -1209,11 +1273,40 @@ export class InventoryService {
         throw new ForbiddenException("无权限");
       }
       const allocations = await tx.orderInventoryAllocation.findMany({
-        where: { orderId, status: "LOCKED" }
+        where: {
+          orderId,
+          status: "LOCKED",
+          ...(dto?.lines?.length ? { id: { in: dto.lines.map((line) => line.allocationId) } } : {})
+        },
+        include: { batch: true }
       });
-      for (const allocation of allocations) {
-        const quantity = decimalToNumber(allocation.lockedQuantity) - decimalToNumber(allocation.outboundQuantity);
+      const allocationsById = new Map(allocations.map((allocation) => [allocation.id, allocation]));
+      const outboundLines = dto?.lines?.length
+        ? dto.lines
+        : allocations.map((allocation) => ({
+          allocationId: allocation.id,
+          quantity: decimalToNumber(allocation.lockedQuantity) - decimalToNumber(allocation.outboundQuantity),
+          unit: allocation.batch.unit
+        }));
+
+      for (const line of outboundLines) {
+        const allocation = allocationsById.get(line.allocationId);
+        if (!allocation) {
+          throw new BadRequestException("出库明细不存在或未锁定");
+        }
+        const remainingLocked = decimalToNumber(allocation.lockedQuantity) - decimalToNumber(allocation.outboundQuantity);
+        const quantity = convertToBaseQuantity({
+          quantity: line.quantity,
+          fromUnit: line.unit,
+          baseUnit: allocation.batch.unit,
+          packageUnit: allocation.batch.packageUnit,
+          baseQuantityPerPackage: decimalToNumber(allocation.batch.baseQuantityPerPackage ?? 1)
+        });
         if (quantity <= 0) continue;
+        if (quantity > remainingLocked) {
+          throw new BadRequestException("出库数量不能超过已锁定未出库数量");
+        }
+        const fullyOutbound = quantity >= remainingLocked;
         await tx.inventoryBatch.update({
           where: { id: allocation.batchId },
           data: {
@@ -1225,7 +1318,7 @@ export class InventoryService {
           where: { id: allocation.id },
           data: {
             outboundQuantity: { increment: quantity },
-            status: "OUTBOUND",
+            status: fullyOutbound ? "OUTBOUND" : "LOCKED",
             outboundById: actor.id,
             outboundAt: new Date()
           }
@@ -1238,6 +1331,10 @@ export class InventoryService {
             orderId,
             movementType: InventoryMovementType.ORDER_OUT,
             quantity,
+            unit: allocation.batch.unit,
+            fromUnit: line.unit,
+            toUnit: allocation.batch.unit,
+            conversionRate: decimalToNumber(allocation.batch.baseQuantityPerPackage ?? 1),
             sourceType: "ORDER_INVENTORY_ALLOCATION",
             sourceId: allocation.id,
             createdById: actor.id,
@@ -1245,7 +1342,7 @@ export class InventoryService {
           }
         });
       }
-      return { outbound: allocations.length };
+      return { outbound: outboundLines.length };
     });
   }
 

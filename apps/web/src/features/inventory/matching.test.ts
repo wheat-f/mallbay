@@ -33,6 +33,8 @@ test("buildInventoryMatchRows calculates required locked available and shortage 
     orderItemId: "item-1",
     productId: "product-1",
     productLabel: "品牌：品牌1 / 名称：漆面保护膜 / 型号：PPF-100",
+    salesQuantity: 6,
+    salesUnit: "ROLL",
     requiredQuantity: 6,
     lockedQuantity: 2,
     outboundQuantity: 1,
@@ -41,10 +43,42 @@ test("buildInventoryMatchRows calculates required locked available and shortage 
     shortageQuantity: 0,
     unit: "ROLL",
     availableBatches: [
-      { id: "batch-1", batchNo: "B001", availableQuantity: 2 },
-      { id: "batch-2", batchNo: "B002", availableQuantity: 1 }
+      { id: "batch-1", batchNo: "B001", availableQuantity: 2, unit: "ROLL", packageUnit: null, packageQuantity: undefined, baseQuantityPerPackage: undefined },
+      { id: "batch-2", batchNo: "B002", availableQuantity: 1, unit: "ROLL", packageUnit: null, packageQuantity: undefined, baseQuantityPerPackage: undefined }
     ]
   });
+});
+
+test("buildInventoryMatchRows uses base demand snapshots for roll products", () => {
+  const rows = buildInventoryMatchRows({
+    items: [
+      {
+        orderItem: {
+          id: "item-1",
+          productId: "product-1",
+          quantity: 1,
+          salesUnit: "ROLL",
+          baseUnit: "METER",
+          baseQuantityPerSalesUnit: 18,
+          requiredBaseQuantity: 18,
+          product: { unit: "ROLL", inventoryUnit: "METER", salesUnit: "ROLL", brand: "品牌1", name: "漆面保护膜", model: "PPF-100" },
+          inventoryAllocations: [
+            { lockedQuantity: 18, outboundQuantity: 12, status: "LOCKED" }
+          ]
+        },
+        availableBatches: []
+      }
+    ]
+  });
+
+  assert.equal(rows[0]?.salesQuantity, 1);
+  assert.equal(rows[0]?.salesUnit, "ROLL");
+  assert.equal(rows[0]?.requiredQuantity, 18);
+  assert.equal(rows[0]?.unit, "METER");
+  assert.equal(rows[0]?.lockedQuantity, 6);
+  assert.equal(rows[0]?.outboundQuantity, 12);
+  assert.equal(rows[0]?.pendingQuantity, 0);
+  assert.equal(rows[0]?.shortageQuantity, 0);
 });
 
 test("buildInventoryMatchRows treats outbound allocations as fulfilled demand", () => {
@@ -80,6 +114,8 @@ test("buildPurchaseRequirementFromShortages creates payload only for shortage ro
         productId: "product-1",
         productLabel: "产品1",
         requiredQuantity: 6,
+        salesQuantity: 6,
+        salesUnit: "ROLL",
         lockedQuantity: 2,
         outboundQuantity: 0,
         pendingQuantity: 4,
@@ -93,6 +129,8 @@ test("buildPurchaseRequirementFromShortages creates payload only for shortage ro
         productId: "product-2",
         productLabel: "产品2",
         requiredQuantity: 1,
+        salesQuantity: 1,
+        salesUnit: "METER",
         lockedQuantity: 1,
         outboundQuantity: 0,
         pendingQuantity: 0,
@@ -178,6 +216,7 @@ test("buildInventoryAllocationRows formats locked allocation batch trace", () =>
         lockedQuantity: 2,
         outboundQuantity: 0,
         remainingQuantity: 2,
+        unit: "ROLL",
         status: "LOCKED"
       }
     ]
@@ -217,24 +256,24 @@ test("filterInventoryBatches filters candidate batches by scanned batch number",
   assert.deepEqual(
     filterInventoryBatches(
       [
-        { id: "batch-1", batchNo: "BOP001", availableQuantity: 20 },
-        { id: "batch-2", batchNo: "PPF-2026-02", availableQuantity: 10 }
+        { id: "batch-1", batchNo: "BOP001", availableQuantity: 20, unit: "METER" },
+        { id: "batch-2", batchNo: "PPF-2026-02", availableQuantity: 10, unit: "METER" }
       ],
       "op001"
     ),
-    [{ id: "batch-1", batchNo: "BOP001", availableQuantity: 20 }]
+    [{ id: "batch-1", batchNo: "BOP001", availableQuantity: 20, unit: "METER" }]
   );
   assert.deepEqual(
     filterInventoryBatches(
       [
-        { id: "batch-1", batchNo: "BOP001", availableQuantity: 20 },
-        { id: "batch-2", batchNo: "PPF-2026-02", availableQuantity: 10 }
+        { id: "batch-1", batchNo: "BOP001", availableQuantity: 20, unit: "METER" },
+        { id: "batch-2", batchNo: "PPF-2026-02", availableQuantity: 10, unit: "METER" }
       ],
       ""
     ),
     [
-      { id: "batch-1", batchNo: "BOP001", availableQuantity: 20 },
-      { id: "batch-2", batchNo: "PPF-2026-02", availableQuantity: 10 }
+      { id: "batch-1", batchNo: "BOP001", availableQuantity: 20, unit: "METER" },
+      { id: "batch-2", batchNo: "PPF-2026-02", availableQuantity: 10, unit: "METER" }
     ]
   );
 });

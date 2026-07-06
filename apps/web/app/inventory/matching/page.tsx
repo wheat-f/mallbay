@@ -13,6 +13,8 @@ import {
   getInventoryOrderCustomerLabel,
   getInventoryOrderVehicleLabel,
   getInventoryProductLabel,
+  formatBatchStockLabel,
+  formatPackageSnapshotLabel,
   INVENTORY_PRODUCT_MISSING_LABEL,
   type InventoryOrderLike
 } from "../../../src/features/inventory/display";
@@ -44,12 +46,19 @@ type InventoryBatchRow = {
   productId?: string | null;
   batchNo?: string | null;
   availableQuantity?: number | string | null;
+  unit?: ProductUnit | string | null;
+  packageUnit?: ProductUnit | string | null;
+  packageQuantity?: number | string | null;
+  baseQuantityPerPackage?: number | string | null;
 };
 
 type AvailableInventoryPreviewRow = {
   id: string;
   productLabel: string;
-  unit?: ProductUnit;
+  unit?: ProductUnit | string | null;
+  packageUnit?: ProductUnit | string | null;
+  packageQuantity?: number | string | null;
+  baseQuantityPerPackage?: number | string | null;
   batchNo?: string | null;
   availableQuantity?: number | string | null;
 };
@@ -62,6 +71,14 @@ type AllocationFormValues = {
   allocations?: Array<{
     batchId?: string;
     quantity?: number;
+    unit?: ProductUnit;
+  }>;
+};
+
+type OutboundFormValues = {
+  lines?: Array<{
+    quantity?: number;
+    unit?: ProductUnit;
   }>;
 };
 
@@ -83,6 +100,7 @@ function InventoryMatchingContent() {
     user?.storeMember?.position === "MANAGER" ||
     user?.storeMember?.position === "PURCHASING";
   const [allocationForm] = Form.useForm<AllocationFormValues>();
+  const [outboundForm] = Form.useForm<OutboundFormValues>();
 
   const productsQuery = useQuery({
     queryKey: ["inventory-products", storeId],
@@ -145,14 +163,21 @@ function InventoryMatchingContent() {
           productLabel: row.productLabel,
           unit: row.unit,
           batchNo: batch.batchNo,
-          availableQuantity: batch.availableQuantity
+          availableQuantity: batch.availableQuantity,
+          packageUnit: batch.packageUnit,
+          packageQuantity: batch.packageQuantity,
+          baseQuantityPerPackage: batch.baseQuantityPerPackage
         }))
       )
     : batchRows.slice(0, 5).map((batch) => ({
         id: batch.id,
         productLabel: getInventoryProductLabel(batch.productId, productMap),
         batchNo: batch.batchNo,
-        availableQuantity: batch.availableQuantity
+        availableQuantity: batch.availableQuantity,
+        unit: batch.unit,
+        packageUnit: batch.packageUnit,
+        packageQuantity: batch.packageQuantity,
+        baseQuantityPerPackage: batch.baseQuantityPerPackage
       }));
 
   const createShortagePurchaseRequirement = useMutation({
@@ -191,7 +216,8 @@ function InventoryMatchingContent() {
         allocations: (values.allocations ?? []).map((allocation, index) => ({
           orderItemId: lockableRows[index].orderItemId,
           batchId: allocation.batchId!,
-          quantity: allocation.quantity!
+          quantity: allocation.quantity!,
+          unit: allocation.unit ?? lockableRows[index].unit
         }))
       });
     },
@@ -208,12 +234,23 @@ function InventoryMatchingContent() {
   });
 
   const outboundSelectedOrder = useMutation({
-    mutationFn: () => {
+    mutationFn: (values: OutboundFormValues) => {
       if (!activeSelectedOrderId) throw new Error("请先选择待匹配订单");
-      return inventoryApi.outboundOrder(activeSelectedOrderId);
+      const lines = (values.lines ?? [])
+        .map((line, index) => ({
+          allocationId: allocationRows[index]?.id,
+          quantity: line.quantity,
+          unit: line.unit ?? allocationRows[index]?.unit
+        }))
+        .filter((line): line is { allocationId: string; quantity: number; unit: ProductUnit } =>
+          Boolean(line.allocationId) && Number(line.quantity ?? 0) > 0 && Boolean(line.unit)
+        );
+      if (lines.length === 0) throw new Error("请至少填写一条出库数量");
+      return inventoryApi.outboundOrder(activeSelectedOrderId, { lines });
     },
     onSuccess: async () => {
       message.success("订单库存已出库");
+      outboundForm.resetFields();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["inventory-order-match", activeSelectedOrderId] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
@@ -322,7 +359,7 @@ function InventoryMatchingContent() {
                               })
                             : INVENTORY_PRODUCT_MISSING_LABEL}
                         </strong>
-                        <span>需求量</span>
+                        <span>销售需求</span>
                         <strong>{item.quantity ?? 0}</strong>
                       </div>
                     ))}
@@ -363,8 +400,7 @@ function InventoryMatchingContent() {
                       title: "可用",
                       render: (_, row) => (
                         <Tag color={Number(row.availableQuantity) > 0 ? "success" : "default"}>
-                          {row.availableQuantity ?? 0}
-                          {row.unit ? ` ${getProductUnitLabel(row.unit)}` : ""}
+                          {formatBatchStockLabel(row)}
                         </Tag>
                       )
                     }
@@ -378,6 +414,7 @@ function InventoryMatchingContent() {
                         lockableRows.map((row, index) => {
                           const pendingLockQuantity = row.pendingQuantity;
                           const maxLockQuantity = Math.min(row.availableQuantity, pendingLockQuantity || row.availableQuantity);
+                          const unitOptions = buildUnitOptions(row.unit, row.salesUnit);
                           const rowStatus = row.shortageQuantity > 0
                             ? { label: "需补货", color: "error" as const }
                             : row.lockedQuantity > 0
@@ -397,7 +434,10 @@ function InventoryMatchingContent() {
                               <div className="inventory-allocation-metrics">
                                 <div>
                                   <span>需求量</span>
-                                  <strong>{row.requiredQuantity} {getProductUnitLabel(row.unit)}</strong>
+                                  <strong>
+                                    {row.salesQuantity} {getProductUnitLabel(row.salesUnit)}
+                                    {row.salesUnit !== row.unit ? ` / ${row.requiredQuantity} ${getProductUnitLabel(row.unit)}` : ""}
+                                  </strong>
                                 </div>
                                 <div>
                                   <span>已锁数量</span>
@@ -435,7 +475,11 @@ function InventoryMatchingContent() {
                                     disabled={!canManageInventory || row.availableBatches.length === 0 || pendingLockQuantity <= 0}
                                     options={row.availableBatches.map((batch) => ({
                                       value: batch.id,
-                                      label: `${batch.batchNo} · 可用 ${batch.availableQuantity} ${getProductUnitLabel(row.unit)}`
+                                      label: [
+                                        batch.batchNo,
+                                        formatBatchStockLabel(batch),
+                                        formatPackageSnapshotLabel(batch)
+                                      ].join(" · ")
                                     }))}
                                   />
                                 </Form.Item>
@@ -450,6 +494,18 @@ function InventoryMatchingContent() {
                                     max={maxLockQuantity || undefined}
                                     placeholder="输入本次锁定数量"
                                     disabled={!canManageInventory || row.availableQuantity <= 0 || pendingLockQuantity <= 0}
+                                  />
+                                </Form.Item>
+                                <Form.Item
+                                  label="锁定单位"
+                                  name={["allocations", index, "unit"]}
+                                  initialValue={row.unit}
+                                  rules={[{ required: true, message: "请选择单位" }]}
+                                  className="!mb-0"
+                                >
+                                  <Select
+                                    disabled={!canManageInventory || row.availableQuantity <= 0 || pendingLockQuantity <= 0}
+                                    options={unitOptions}
                                   />
                                 </Form.Item>
                               </div>
@@ -469,7 +525,10 @@ function InventoryMatchingContent() {
                             <div className="inventory-allocation-metrics">
                               <div>
                                 <span>需求量</span>
-                                <strong>{row.requiredQuantity} {getProductUnitLabel(row.unit)}</strong>
+                                <strong>
+                                  {row.salesQuantity} {getProductUnitLabel(row.salesUnit)}
+                                  {row.salesUnit !== row.unit ? ` / ${row.requiredQuantity} ${getProductUnitLabel(row.unit)}` : ""}
+                                </strong>
                               </div>
                               <div>
                                 <span>已锁数量</span>
@@ -525,23 +584,14 @@ function InventoryMatchingContent() {
                     <Typography.Title level={5} className="!mb-1">已锁批次与出库</Typography.Title>
                     <Typography.Text type="secondary">当前订单锁库结果、出库进度和释放状态在这里查看。</Typography.Text>
                   </div>
-                  <Space wrap>
-                    <Button
-                      disabled={!canManageInventory || !activeSelectedOrderId || allocationRows.length === 0}
-                      loading={outboundSelectedOrder.isPending}
-                      onClick={() => outboundSelectedOrder.mutate()}
-                    >
-                      确认出库
-                    </Button>
-                    <Button
-                      danger
-                      disabled={!canManageInventory || !activeSelectedOrderId || allocationRows.length === 0}
-                      loading={releaseSelectedOrder.isPending}
-                      onClick={() => releaseSelectedOrder.mutate()}
-                    >
-                      释放锁库
-                    </Button>
-                  </Space>
+                  <Button
+                    danger
+                    disabled={!canManageInventory || !activeSelectedOrderId || allocationRows.length === 0}
+                    loading={releaseSelectedOrder.isPending}
+                    onClick={() => releaseSelectedOrder.mutate()}
+                  >
+                    释放锁库
+                  </Button>
                 </div>
                 <Table
                   className="inventory-tab-desktop-table inventory-allocation-desktop-table"
@@ -552,12 +602,64 @@ function InventoryMatchingContent() {
                   columns={[
                     { title: "产品", dataIndex: "productLabel" },
                     { title: "批次", dataIndex: "batchLabel" },
-                    { title: "锁定数量", dataIndex: "lockedQuantity" },
-                    { title: "已出库", dataIndex: "outboundQuantity" },
-                    { title: "剩余锁定", dataIndex: "remainingQuantity" },
+                    { title: "锁定数量", render: (_, row) => `${row.lockedQuantity} ${getProductUnitLabel(row.unit)}` },
+                    { title: "已出库", render: (_, row) => `${row.outboundQuantity} ${getProductUnitLabel(row.unit)}` },
+                    { title: "待出库", render: (_, row) => `${row.remainingQuantity} ${getProductUnitLabel(row.unit)}` },
                     { title: "状态", render: (_, row) => <Tag>{getInventoryAllocationStatusLabel(row.status)}</Tag> }
                   ]}
                 />
+                {allocationRows.length > 0 ? (
+                  <Form form={outboundForm} layout="vertical" onFinish={(values) => outboundSelectedOrder.mutate(values)}>
+                    <div className="inventory-lock-form-list">
+                      {allocationRows.map((row, index) => (
+                        <div key={row.id} className="inventory-allocation-editor-card">
+                          <div className="inventory-allocation-editor-head">
+                            <div>
+                              <Typography.Text strong>{row.productLabel}</Typography.Text>
+                              <span>{row.batchLabel} · 待出库 {row.remainingQuantity} {getProductUnitLabel(row.unit)}</span>
+                            </div>
+                            <Tag>{getInventoryAllocationStatusLabel(row.status)}</Tag>
+                          </div>
+                          <div className="inventory-allocation-editor-grid">
+                            <Form.Item
+                              label="本次出库数量"
+                              name={["lines", index, "quantity"]}
+                              rules={[{ required: true, message: "请输入出库数量" }]}
+                              className="!mb-0"
+                            >
+                              <InputNumber
+                                min={0.001}
+                                max={row.remainingQuantity || undefined}
+                                placeholder="输入本次出库数量"
+                                disabled={!canManageInventory || row.remainingQuantity <= 0}
+                              />
+                            </Form.Item>
+                            <Form.Item
+                              label="出库单位"
+                              name={["lines", index, "unit"]}
+                              initialValue={row.unit}
+                              rules={[{ required: true, message: "请选择单位" }]}
+                              className="!mb-0"
+                            >
+                              <Select
+                                disabled={!canManageInventory || row.remainingQuantity <= 0}
+                                options={buildUnitOptions(row.unit)}
+                              />
+                            </Form.Item>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      disabled={!canManageInventory || !activeSelectedOrderId || allocationRows.length === 0}
+                      loading={outboundSelectedOrder.isPending}
+                    >
+                      确认出库
+                    </Button>
+                  </Form>
+                ) : null}
                 <div className="inventory-tab-mobile-cards inventory-allocation-mobile-cards">
                   {allocationRows.length > 0 ? (
                     allocationRows.map((row) => (
@@ -573,15 +675,15 @@ function InventoryMatchingContent() {
                           </div>
                           <div>
                             <dt>锁定数量</dt>
-                            <dd>{row.lockedQuantity}</dd>
+                            <dd>{row.lockedQuantity} {getProductUnitLabel(row.unit)}</dd>
                           </div>
                           <div>
                             <dt>已出库</dt>
-                            <dd>{row.outboundQuantity}</dd>
+                            <dd>{row.outboundQuantity} {getProductUnitLabel(row.unit)}</dd>
                           </div>
                           <div>
-                            <dt>剩余锁定</dt>
-                            <dd>{row.remainingQuantity}</dd>
+                            <dt>待出库</dt>
+                            <dd>{row.remainingQuantity} {getProductUnitLabel(row.unit)}</dd>
                           </div>
                         </dl>
                       </article>
@@ -612,4 +714,11 @@ function InventoryMatchingContent() {
       </section>
     </div>
   );
+}
+
+function buildUnitOptions(...units: Array<ProductUnit | undefined>) {
+  return Array.from(new Set(units.filter(Boolean) as ProductUnit[])).map((unit) => ({
+    value: unit,
+    label: getProductUnitLabel(unit)
+  }));
 }

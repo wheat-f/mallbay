@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { inventoryApi } from "../../src/lib/api";
-import { getInventoryMovementSummary, getInventoryMovementTypeLabel } from "../../src/features/inventory/display";
+import { formatBatchStockLabel, getInventoryMovementSummary, getInventoryMovementTypeLabel } from "../../src/features/inventory/display";
 import { getProductDisplayName } from "../../src/features/products/display";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../src/stores/auth-store";
@@ -167,7 +167,7 @@ export default function InventoryOverviewPage() {
                   name: row.product.name ?? undefined,
                   model: row.product.model ?? undefined
                 }) : "产品信息待确认" },
-                { title: "可用", render: (_, row) => <Tag color="warning">{String(row.availableQuantity ?? 0)}</Tag> }
+                { title: "可用", render: (_, row) => <Tag color="warning">{formatBatchStockLabel(row)}</Tag> }
               ]}
             />
           </Card>
@@ -193,7 +193,7 @@ export default function InventoryOverviewPage() {
               {lockedRows.length > 0 ? lockedRows.map((row) => (
                 <div key={row.id} className="inventory-overview-lock-row">
                   <span>{row.batchNo}</span>
-                  <strong>{String(row.lockedQuantity ?? 0)}</strong>
+                  <strong>{formatBatchStockLabel({ ...row, availableQuantity: row.lockedQuantity })}</strong>
                 </div>
               )) : <Typography.Text type="secondary">暂无锁库待出库批次</Typography.Text>}
             </div>

@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   ArrayNotEmpty,
+  ArrayMinSize,
   IsDateString,
   IsBoolean,
   IsEnum,
@@ -232,9 +233,23 @@ export class CreateInventoryBatchDto {
   supplierName?: string;
 
   @Type(() => Number)
-  @IsInt()
-  @Min(1)
+  @IsNumber()
+  @Min(0.001)
   totalQuantity!: number;
+
+  @IsOptional()
+  @IsEnum(ProductUnit)
+  unit?: ProductUnit;
+
+  @IsOptional()
+  @IsEnum(ProductUnit)
+  baseUnit?: ProductUnit;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  baseQuantityPerPackage?: number;
 
   @IsOptional()
   @Type(() => Number)
@@ -372,12 +387,26 @@ export class CreatePurchaseOrderFromRequirementDto {
 
 export class ReceivePurchaseItemDto {
   @Type(() => Number)
-  @IsInt()
-  @Min(1)
+  @IsNumber()
+  @Min(0.001)
   quantity!: number;
 
   @IsString()
   batchNo!: string;
+
+  @IsOptional()
+  @IsEnum(ProductUnit)
+  unit?: ProductUnit;
+
+  @IsOptional()
+  @IsEnum(ProductUnit)
+  baseUnit?: ProductUnit;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  baseQuantityPerPackage?: number;
 
   @IsOptional()
   @IsString()
@@ -454,10 +483,34 @@ export class CreateOrderInventoryAllocationItemDto {
   @IsNumber()
   @Min(0.001)
   quantity!: number;
+
+  @IsOptional()
+  @IsEnum(ProductUnit)
+  unit?: ProductUnit;
 }
 
 export class CreateOrderInventoryAllocationsDto {
   @ValidateNested({ each: true })
   @Type(() => CreateOrderInventoryAllocationItemDto)
   allocations!: CreateOrderInventoryAllocationItemDto[];
+}
+
+export class OutboundOrderInventoryLineDto {
+  @IsString()
+  allocationId!: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  quantity!: number;
+
+  @IsEnum(ProductUnit)
+  unit!: ProductUnit;
+}
+
+export class OutboundOrderInventoryDto {
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => OutboundOrderInventoryLineDto)
+  lines!: OutboundOrderInventoryLineDto[];
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import type { InventorySupplierSummary, InventoryWarehouseSummary } from "@mallbay/shared";
+import type { InventorySupplierSummary, InventoryWarehouseSummary, ProductUnit } from "@mallbay/shared";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, App, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Radio, Select, Table, Tag } from "antd";
 import {
@@ -29,6 +29,7 @@ import {
 import { PurchaseModuleNav } from "../../../../src/features/purchases/purchase-module-nav";
 import { parseInboundScanLines } from "../../../../src/features/inventory/inbound-scan";
 import { exportRowsToExcel } from "../../../../src/lib/export-excel";
+import { PRODUCT_UNIT_OPTIONS } from "../../../../src/features/products/display";
 
 type PurchaseOrderItemRow = PurchaseInboundItemLike & {
   id: string;
@@ -48,6 +49,9 @@ type PurchaseOrderDetail = {
 type ReceiveBatchFormRow = {
   batchNo?: string;
   quantity?: number;
+  unit?: ProductUnit;
+  baseUnit?: ProductUnit;
+  baseQuantityPerPackage?: number;
   supplierName?: string;
 };
 
@@ -92,7 +96,16 @@ export default function PurchaseOrderDetailPage() {
   const receivePurchaseItemBatches = useMutation({
     mutationFn: (values: {
       itemId: string;
-      batches: Array<{ quantity: number; batchNo: string; supplierName?: string; warehouseId?: string; warehouseName?: string }>;
+      batches: Array<{
+        quantity: number;
+        batchNo: string;
+        unit?: ProductUnit;
+        baseUnit?: ProductUnit;
+        baseQuantityPerPackage?: number;
+        supplierName?: string;
+        warehouseId?: string;
+        warehouseName?: string;
+      }>;
     }) =>
       purchaseApi.receiveOrderItemBatches(values.itemId, values.batches),
     onSuccess: async (result) => {
@@ -198,6 +211,7 @@ export default function PurchaseOrderDetailPage() {
   const createEmptyBatchRow = (): ReceiveBatchFormRow => ({
     batchNo: "",
     quantity: selectedReceiveItem ? Math.min(1, remainingReceiveQuantity || 1) : 1,
+    ...getReceiveConversionDefaults(selectedReceiveItem),
     supplierName: getDefaultSupplierName()
   });
   const ensureReceiveItemSelected = () => {
@@ -217,10 +231,12 @@ export default function PurchaseOrderDetailPage() {
     const wholeRows = Number.isInteger(remaining) ? remaining : Math.ceil(remaining);
     const rowCount = Math.min(wholeRows, 50);
     const defaultSupplierName = getDefaultSupplierName();
+    const conversionDefaults = getReceiveConversionDefaults(selectedReceiveItem);
     receiveForm.setFieldsValue({
       batches: Array.from({ length: rowCount }, (_, index) => ({
         batchNo: "",
         quantity: index === rowCount - 1 ? Number((remaining - (rowCount - 1)).toFixed(3)) : 1,
+        ...conversionDefaults,
         supplierName: defaultSupplierName || purchaseOrder?.supplierName || undefined
       }))
     });
@@ -241,8 +257,10 @@ export default function PurchaseOrderDetailPage() {
       return;
     }
     const defaultSupplierName = getDefaultSupplierName();
+    const conversionDefaults = getReceiveConversionDefaults(selectedReceiveItem);
     const importedBatches = parsed.batches.map((batch) => ({
       ...batch,
+      ...conversionDefaults,
       supplierName: batch.supplierName || defaultSupplierName
     }));
     const existingBatches = ((receiveForm.getFieldValue("batches") ?? []) as ReceiveBatchFormRow[]).filter(Boolean);
@@ -463,6 +481,9 @@ export default function PurchaseOrderDetailPage() {
                       .map((batch) => ({
                         batchNo: batch.batchNo?.trim() ?? "",
                         quantity: Number(batch.quantity ?? 0),
+                        unit: batch.unit,
+                        baseUnit: batch.baseUnit,
+                        baseQuantityPerPackage: Number(batch.baseQuantityPerPackage ?? 1),
                         supplierName: batch.supplierName?.trim() || values.supplierName?.trim() || purchaseOrder.supplierName || undefined,
                         warehouseId: values.warehouseId,
                         warehouseName: selectedWarehouse?.label
@@ -570,10 +591,37 @@ export default function PurchaseOrderDetailPage() {
                               <Form.Item
                                 {...restField}
                                 name={[field.name, "quantity"]}
-                                label={index === 0 ? "数量" : " "}
+                                label={index === 0 ? "包装数量" : " "}
                                 rules={[{ required: true, message: "请输入数量" }]}
                               >
                                 <InputNumber className="w-full" min={0.001} placeholder="数量" />
+                              </Form.Item>
+                              <Form.Item
+                                {...restField}
+                                name={[field.name, "unit"]}
+                                label={index === 0 ? "包装单位" : " "}
+                                initialValue={getReceiveConversionDefaults(selectedReceiveItem).unit}
+                                rules={[{ required: true, message: "请选择包装单位" }]}
+                              >
+                                <Select options={PRODUCT_UNIT_OPTIONS} />
+                              </Form.Item>
+                              <Form.Item
+                                {...restField}
+                                name={[field.name, "baseUnit"]}
+                                label={index === 0 ? "库存单位" : " "}
+                                initialValue={getReceiveConversionDefaults(selectedReceiveItem).baseUnit}
+                                rules={[{ required: true, message: "请选择库存单位" }]}
+                              >
+                                <Select options={PRODUCT_UNIT_OPTIONS} />
+                              </Form.Item>
+                              <Form.Item
+                                {...restField}
+                                name={[field.name, "baseQuantityPerPackage"]}
+                                label={index === 0 ? "换算率" : " "}
+                                initialValue={getReceiveConversionDefaults(selectedReceiveItem).baseQuantityPerPackage}
+                                rules={[{ required: true, message: "请输入换算率" }]}
+                              >
+                                <InputNumber className="w-full" min={0.001} placeholder="1包装=多少库存单位" />
                               </Form.Item>
                               <Form.Item
                                 {...restField}
@@ -687,6 +735,34 @@ function toNumber(value?: number | string | null) {
 function getRemainingPurchaseQuantity(item?: PurchaseOrderItemRow) {
   if (!item) return 0;
   return Math.max(0, Number((toNumber(item.quantity) - toNumber(item.receivedQuantity)).toFixed(3)));
+}
+
+function getReceiveConversionDefaults(item?: PurchaseOrderItemRow): Required<Pick<ReceiveBatchFormRow, "unit" | "baseUnit" | "baseQuantityPerPackage">> {
+  const product = item?.product;
+  const packageUnit = normalizeProductUnit(product?.unit ?? product?.salesUnit ?? product?.inventoryUnit);
+  const baseUnit = normalizeProductUnit(product?.inventoryUnit ?? packageUnit);
+  const baseQuantityPerPackage = packageUnit === baseUnit
+    ? 1
+    : toNumber(product?.metersPerRoll) || toNumber(product?.rollLengthMeters) || 1;
+
+  return {
+    unit: packageUnit,
+    baseUnit,
+    baseQuantityPerPackage
+  };
+}
+
+function normalizeProductUnit(value?: ProductUnit | string | null): ProductUnit {
+  if (
+    value === "ROLL" ||
+    value === "METER" ||
+    value === "SQUARE_METER" ||
+    value === "SQUARE_CENTIMETER" ||
+    value === "PIECE"
+  ) {
+    return value;
+  }
+  return "PIECE";
 }
 
 function hasDuplicateBatchNo(batches: Array<{ batchNo: string }>) {

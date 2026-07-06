@@ -172,6 +172,12 @@ test("phase three schema exposes inventory purchase and warranty models", () => 
   assert.match(schema, /availableQuantity\s+Decimal/, "InventoryBatch availableQuantity must use Decimal");
   assert.match(schema, /lockedQuantity\s+Decimal/, "InventoryBatch lockedQuantity must use Decimal");
   assert.match(schema, /outboundQuantity\s+Decimal/, "InventoryBatch outboundQuantity must use Decimal");
+  assert.match(schema, /SQUARE_METER/, "ProductUnit must support square meter");
+  assert.match(schema, /SQUARE_CENTIMETER/, "ProductUnit must support square centimeter");
+  assert.match(schema, /packageUnit\s+ProductUnit/, "InventoryBatch must preserve package unit");
+  assert.match(schema, /packageQuantity\s+Decimal/, "InventoryBatch must preserve package quantity");
+  assert.match(schema, /baseUnit\s+ProductUnit/, "InventoryBatch must store canonical base unit");
+  assert.match(schema, /baseQuantityPerPackage\s+Decimal/, "InventoryBatch must store batch conversion rate");
   assert.match(schema, /lockedQuantity\s+Decimal/, "OrderInventoryAllocation must store locked quantity");
   assert.match(schema, /outboundQuantity\s+Decimal/, "OrderInventoryAllocation must store outbound quantity");
   assert.ok(schema.includes("COUNT_IN"), "inventory movement types must include count-in");

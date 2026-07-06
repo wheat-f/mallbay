@@ -7,7 +7,7 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { ConstructionLocation, ConstructionType, OrderStatus, ProductStatus } from "@prisma/client";
+import { ConstructionLocation, ConstructionType, OrderStatus, ProductStatus, ProductUnit } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../../common/policies/permission.policy";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateOrderDto } from "../dto/create-order.dto";
@@ -84,6 +84,7 @@ export class CreateOrderUseCase {
       if (activeProductIds.size !== productIds.length) {
         throw new BadRequestException("订单包含不存在或已停用的产品");
       }
+      const productsById = new Map(products.map((product) => [product.id, product]));
 
       const productAmountCents = dto.items.reduce(
         (sum, item) => sum + item.quantity * item.unitPriceCents,
@@ -132,13 +133,26 @@ export class CreateOrderUseCase {
       });
 
       await tx.orderItem.createMany({
-        data: dto.items.map((item) => ({
-          orderId: order.id,
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPriceCents: item.unitPriceCents,
-          amountCents: item.quantity * item.unitPriceCents
-        }))
+        data: dto.items.map((item) => {
+          const product = productsById.get(item.productId);
+          const salesUnit = product?.salesUnit ?? product?.unit ?? ProductUnit.PIECE;
+          const baseUnit = product?.inventoryUnit ?? salesUnit;
+          const baseQuantityPerSalesUnit =
+            salesUnit === ProductUnit.ROLL && product?.metersPerRoll
+              ? decimalToNumber(product.metersPerRoll)
+              : 1;
+          return {
+            orderId: order.id,
+            productId: item.productId,
+            quantity: item.quantity,
+            salesUnit,
+            baseUnit,
+            baseQuantityPerSalesUnit,
+            requiredBaseQuantity: item.quantity * baseQuantityPerSalesUnit,
+            unitPriceCents: item.unitPriceCents,
+            amountCents: item.quantity * item.unitPriceCents
+          };
+        })
       });
 
       await tx.orderAmount.create({
@@ -253,6 +267,12 @@ function normalizeOptionalText(value: string | null | undefined) {
 
 function calculateProfitCents(totalAmountCents: number, materialCostCents: number, salesCommissionCents: number) {
   return totalAmountCents - materialCostCents - salesCommissionCents;
+}
+
+function decimalToNumber(value: number | { toNumber?: () => number; toString: () => string }) {
+  if (typeof value === "number") return value;
+  if (typeof value.toNumber === "function") return value.toNumber();
+  return Number(value.toString());
 }
 
 function createDefaultOrderNumberGenerator(): OrderNumberGenerator {

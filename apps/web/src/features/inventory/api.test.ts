@@ -47,6 +47,32 @@ test("inventoryApi.lockOrder posts to /inventory/orders/:orderId/lock", async ()
   }
 });
 
+test("inventoryApi.outboundOrder posts selected outbound lines", async () => {
+  const calls: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    calls.push({ input, init });
+    return new Response(JSON.stringify({ outbound: 1 }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  try {
+    await inventoryApi.outboundOrder("order-1", {
+      lines: [{ allocationId: "allocation-1", quantity: 12, unit: "METER" }]
+    });
+
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/orders/order-1/outbound");
+    assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
+    assert.equal(
+      (calls[0] as { init: RequestInit }).init.body,
+      JSON.stringify({ lines: [{ allocationId: "allocation-1", quantity: 12, unit: "METER" }] })
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("inventoryApi queries pending match orders by store", async () => {
   const calls: unknown[] = [];
   const originalFetch = globalThis.fetch;

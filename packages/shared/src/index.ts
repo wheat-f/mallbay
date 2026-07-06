@@ -27,7 +27,7 @@ export type CustomerNoteType = "PREFERENCE" | "REQUIREMENT" | "COMMUNICATION";
 
 export type ProductCategory = "PPF" | "COLOR_FILM" | "HEAT_FILM" | "MODIFICATION" | "OTHER";
 
-export type ProductUnit = "ROLL" | "METER" | "PIECE";
+export type ProductUnit = "ROLL" | "METER" | "SQUARE_METER" | "SQUARE_CENTIMETER" | "PIECE";
 
 export type ProductStatus = "ACTIVE" | "INACTIVE";
 
@@ -158,6 +158,10 @@ export type InventoryBatchSummary = {
   warehouseId?: string | null;
   warehouseName?: string | null;
   unit: ProductUnit;
+  packageUnit?: ProductUnit | null;
+  packageQuantity?: number | string | null;
+  baseUnit?: ProductUnit | null;
+  baseQuantityPerPackage?: number | string | null;
   totalQuantity: number;
   availableQuantity: number;
   lockedQuantity: number;

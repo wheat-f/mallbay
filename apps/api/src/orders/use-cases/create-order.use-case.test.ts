@@ -4,6 +4,7 @@ import {
   ConstructionLocation,
   ConstructionType,
   PaymentType,
+  ProductUnit,
   StorePosition
 } from "@prisma/client";
 import { CreateOrderUseCase } from "./create-order.use-case";
@@ -98,6 +99,61 @@ test("CreateOrderUseCase creates order items amount and deposit payment in one t
     }),
     "orderPayment.create"
   ]);
+});
+
+test("CreateOrderUseCase snapshots order item base inventory demand", async () => {
+  const orderItemCreates: unknown[] = [];
+  const tx = {
+    dailyCapacity: { findUnique: async () => null },
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
+    },
+    customerVehicle: { findUnique: async () => null },
+    product: {
+      findMany: async () => [
+        {
+          id: "product-1",
+          status: "ACTIVE",
+          unit: ProductUnit.ROLL,
+          salesUnit: ProductUnit.ROLL,
+          inventoryUnit: ProductUnit.METER,
+          metersPerRoll: 18
+        }
+      ]
+    },
+    order: { create: async () => ({ id: "order-1", orderNo: "ORD202606010001" }) },
+    orderItem: { createMany: async (args: unknown) => orderItemCreates.push(args) },
+    orderAmount: { create: async () => undefined },
+    orderPayment: { create: async () => undefined }
+  };
+  const prisma = {
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const useCase = new CreateOrderUseCase(prisma as never, {
+    next: () => "ORD202606010001"
+  });
+
+  await useCase.execute(
+    {
+      id: "sales-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SALES }
+    },
+    {
+      storeId: "store-1",
+      customerId: "customer-1",
+      constructionType: ConstructionType.PPF,
+      constructionLocation: ConstructionLocation.IN_STORE,
+      items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
+      laborCostCents: 200000
+    }
+  );
+
+  const serialized = JSON.stringify(orderItemCreates);
+  assert.match(serialized, /"salesUnit":"ROLL"/);
+  assert.match(serialized, /"baseUnit":"METER"/);
+  assert.match(serialized, /"baseQuantityPerSalesUnit":18/);
+  assert.match(serialized, /"requiredBaseQuantity":18/);
 });
 
 test("CreateOrderUseCase reserves daily capacity for scheduled in store orders", async () => {

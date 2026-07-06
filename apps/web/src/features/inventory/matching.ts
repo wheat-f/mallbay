@@ -9,8 +9,14 @@ export type InventoryMatchInput = {
       id: string;
       productId: string;
       quantity: number | string;
+      salesUnit?: ProductUnit | string | null;
+      baseUnit?: ProductUnit | string | null;
+      baseQuantityPerSalesUnit?: number | string | null;
+      requiredBaseQuantity?: number | string | null;
       product?: {
         unit?: ProductUnit | string;
+        inventoryUnit?: ProductUnit | string | null;
+        salesUnit?: ProductUnit | string | null;
         brand?: string | null;
         name?: string | null;
         model?: string | null;
@@ -23,6 +29,10 @@ export type InventoryMatchInput = {
         status?: string | null;
         batch?: {
           batchNo?: string | null;
+          unit?: ProductUnit | string | null;
+          packageUnit?: ProductUnit | string | null;
+          packageQuantity?: number | string | null;
+          baseQuantityPerPackage?: number | string | null;
         } | null;
       }>;
     };
@@ -30,6 +40,10 @@ export type InventoryMatchInput = {
       id: string;
       batchNo: string;
       availableQuantity: number | string;
+      unit?: ProductUnit | string | null;
+      packageUnit?: ProductUnit | string | null;
+      packageQuantity?: number | string | null;
+      baseQuantityPerPackage?: number | string | null;
     }>;
   }>;
 };
@@ -42,6 +56,7 @@ export type InventoryAllocationRow = {
   lockedQuantity: number;
   outboundQuantity: number;
   remainingQuantity: number;
+  unit: ProductUnit;
   status: string;
 };
 
@@ -49,6 +64,8 @@ export type InventoryMatchRow = {
   orderItemId: string;
   productId: string;
   productLabel: string;
+  salesQuantity: number;
+  salesUnit: ProductUnit;
   requiredQuantity: number;
   lockedQuantity: number;
   outboundQuantity: number;
@@ -60,6 +77,10 @@ export type InventoryMatchRow = {
     id: string;
     batchNo: string;
     availableQuantity: number;
+    unit: ProductUnit;
+    packageUnit?: ProductUnit | null;
+    packageQuantity?: number | string | null;
+    baseQuantityPerPackage?: number | string | null;
   }>;
 };
 
@@ -67,17 +88,25 @@ export type InventoryCandidateBatch = InventoryMatchRow["availableBatches"][numb
 
 export function buildInventoryMatchRows(match: InventoryMatchInput | undefined): InventoryMatchRow[] {
   return (match?.items ?? []).map((item) => {
-    const requiredQuantity = toNumber(item.orderItem.quantity);
+    const salesQuantity = toNumber(item.orderItem.quantity);
+    const salesUnit = normalizeUnit(item.orderItem.salesUnit ?? item.orderItem.product?.salesUnit ?? item.orderItem.product?.unit);
+    const baseUnit = normalizeUnit(item.orderItem.baseUnit ?? item.orderItem.product?.inventoryUnit ?? item.orderItem.product?.unit ?? salesUnit);
+    const conversionRate = toNumber(item.orderItem.baseQuantityPerSalesUnit) || 1;
+    const requiredQuantity = toNumber(item.orderItem.requiredBaseQuantity) || normalizeQuantity(salesQuantity * conversionRate);
     const lockedQuantity = (item.orderItem.inventoryAllocations ?? [])
-      .filter((allocation) => allocation.status !== "RELEASED" && allocation.status !== "OUTBOUND")
+      .filter((allocation) => allocation.status !== "RELEASED")
       .reduce((sum, allocation) => sum + Math.max(0, toNumber(allocation.lockedQuantity) - toNumber(allocation.outboundQuantity)), 0);
     const outboundQuantity = (item.orderItem.inventoryAllocations ?? [])
-      .filter((allocation) => allocation.status === "OUTBOUND")
-      .reduce((sum, allocation) => sum + Math.max(toNumber(allocation.outboundQuantity), toNumber(allocation.lockedQuantity)), 0);
+      .filter((allocation) => allocation.status !== "RELEASED")
+      .reduce((sum, allocation) => sum + toNumber(allocation.outboundQuantity), 0);
     const availableBatches = (item.availableBatches ?? []).map((batch) => ({
       id: batch.id,
       batchNo: batch.batchNo,
-      availableQuantity: toNumber(batch.availableQuantity)
+      availableQuantity: toNumber(batch.availableQuantity),
+      unit: normalizeUnit(batch.unit ?? baseUnit),
+      packageUnit: batch.packageUnit ? normalizeUnit(batch.packageUnit) : null,
+      packageQuantity: batch.packageQuantity,
+      baseQuantityPerPackage: batch.baseQuantityPerPackage
     }));
     const availableQuantity = availableBatches.reduce((sum, batch) => sum + batch.availableQuantity, 0);
     const coveredQuantity = lockedQuantity + outboundQuantity;
@@ -86,13 +115,15 @@ export function buildInventoryMatchRows(match: InventoryMatchInput | undefined):
       orderItemId: item.orderItem.id,
       productId: item.orderItem.productId,
       productLabel: getOrderItemProductLabel(item.orderItem.product),
+      salesQuantity,
+      salesUnit,
       requiredQuantity,
       lockedQuantity,
       outboundQuantity,
       pendingQuantity,
       availableQuantity,
       shortageQuantity: Math.max(0, pendingQuantity - availableQuantity),
-      unit: normalizeUnit(item.orderItem.product?.unit),
+      unit: baseUnit,
       availableBatches
     };
   });
@@ -142,6 +173,7 @@ export function buildInventoryAllocationRows(match: InventoryMatchInput | undefi
           lockedQuantity,
           outboundQuantity,
           remainingQuantity: Math.max(0, lockedQuantity - outboundQuantity),
+          unit: normalizeUnit(allocation.batch?.unit ?? item.orderItem.baseUnit ?? item.orderItem.product?.inventoryUnit ?? item.orderItem.product?.unit),
           status: allocation.status ?? "-"
         };
       });
@@ -164,6 +196,16 @@ function toNumber(value?: number | string | null) {
 }
 
 function normalizeUnit(value?: ProductUnit | string | null): ProductUnit {
-  if (value === "ROLL" || value === "METER" || value === "PIECE") return value;
+  if (
+    value === "ROLL" ||
+    value === "METER" ||
+    value === "SQUARE_METER" ||
+    value === "SQUARE_CENTIMETER" ||
+    value === "PIECE"
+  ) return value;
   return "ROLL";
+}
+
+function normalizeQuantity(value: number) {
+  return Number(value.toFixed(3));
 }

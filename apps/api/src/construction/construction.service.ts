@@ -771,7 +771,13 @@ export class ConstructionService {
 }
 
 const constructionRecordInclude = {
-  order: true,
+  order: {
+    include: {
+      customer: true,
+      vehicle: true,
+      items: { include: { product: true } }
+    }
+  },
   assignments: true,
   photos: true
 } satisfies Prisma.ConstructionRecordInclude;

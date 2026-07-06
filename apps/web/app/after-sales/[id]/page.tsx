@@ -1,7 +1,7 @@
 "use client";
 
 import type { AfterSaleResponsibility, AfterSaleStatus, AfterSaleSummary } from "@mallbay/shared";
-import { App, Button, Card, Empty, Input, Skeleton, Tag } from "antd";
+import { App, Button, Card, Empty, Skeleton, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   CameraOutlined,
@@ -25,7 +25,6 @@ import {
   getAfterSaleOrderLabel,
   getAfterSalePenaltyRiskNote,
   getAfterSalePenaltyRows,
-  getAfterSaleResponsibilityCards,
   getAfterSaleResponsibilityDescription,
   getAfterSaleResponsibilityLabel,
   getAfterSaleResponsiblePersonLabel,
@@ -50,16 +49,13 @@ export default function AfterSaleDetailPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
 
-  const afterSalesQuery = useQuery({
-    queryKey: ["after-sales", storeId],
-    queryFn: () => afterSalesApi.list(storeId!),
-    enabled: Boolean(storeId)
+  const afterSaleQuery = useQuery({
+    queryKey: ["after-sales", afterSaleId],
+    queryFn: () => afterSalesApi.detail(afterSaleId),
+    enabled: Boolean(afterSaleId)
   });
 
-  const afterSale = useMemo(
-    () => afterSalesQuery.data?.find((item) => item.id === afterSaleId),
-    [afterSaleId, afterSalesQuery.data]
-  );
+  const afterSale = afterSaleQuery.data;
   const timeline = getAfterSaleDetailTimeline(afterSale);
   const closeMutation = useMutation({
     mutationFn: () => {
@@ -68,6 +64,7 @@ export default function AfterSaleDetailPage() {
     },
     onSuccess: async () => {
       message.success("售后工单已归档");
+      await queryClient.invalidateQueries({ queryKey: ["after-sales", afterSaleId] });
       await queryClient.invalidateQueries({ queryKey: ["after-sales", storeId] });
     },
     onError: (error: Error) => message.error(error.message)
@@ -103,7 +100,7 @@ export default function AfterSaleDetailPage() {
         </div>
       </section>
 
-      {afterSalesQuery.isLoading ? (
+      {afterSaleQuery.isLoading ? (
         <Card className="after-sale-detail-loading">
           <Skeleton active paragraph={{ rows: 10 }} />
         </Card>
@@ -137,32 +134,25 @@ export default function AfterSaleDetailPage() {
                 <span>{afterSale.description || "暂无问题描述"}</span>
               </div>
               <div className="after-sale-evidence-grid">
-                {[
-                  ["问题近景", getPhotoCountLabel(afterSale.issuePhotoUrls, "待上传问题照片"), "defect"],
-                  ["车辆全景", getOrderVehicleLabel(afterSale), "vehicle"],
-                  ["细节复核", "待上传高清证据", "detail"]
-                ].map(([title, description, tone]) => (
-                  <div key={title} className={`after-sale-photo-card is-${tone}`}>
-                    <CameraOutlined />
-                    <strong>{title}</strong>
-                    <span>{description}</span>
-                  </div>
-                ))}
-                <button className="after-sale-photo-add" type="button">
+                <PhotoEvidenceCard title="问题照片" urls={afterSale.issuePhotoUrls} emptyText="暂无问题照片" tone="defect" />
+                <PhotoEvidenceCard title="施工后照片" urls={afterSale.constructionPhotoUrls} emptyText="暂无施工后照片" tone="after" />
+                <div className="after-sale-photo-card is-vehicle">
                   <CameraOutlined />
-                  <span>补充证据</span>
-                </button>
+                  <strong>车辆与订单</strong>
+                  <span>{getOrderVehicleLabel(afterSale)}</span>
+                </div>
               </div>
             </Card>
 
             <Card className="after-sale-detail-card">
               <div className="after-sale-card-title">
                 <CheckCircleOutlined />
-                <h2>售后处理对比</h2>
+                <h2>售后处理记录</h2>
               </div>
-              <div className="after-sale-compare-grid">
-                <ComparePanel tone="before" title="处理前（问题点）" badge={getPhotoCountLabel(afterSale.issuePhotoUrls, "待复核")} />
-                <ComparePanel tone="after" title="处理后（重施工完成）" badge={getPhotoCountLabel(afterSale.constructionPhotoUrls, "待上传")} />
+              <div className="after-sale-treatment-record">
+                <DetailMetric label="处理分类" value={afterSale.constructionIssueCategory || "未填写"} hint="真实记录：来自售后处理表单" />
+                <DetailMetric label="处理方案" value={afterSale.resolutionNote || "未填写"} hint="处理完成前可在售后列表处理面板补充" />
+                <DetailMetric label="施工后照片" value={getPhotoCountLabel(afterSale.constructionPhotoUrls, "暂无照片")} hint="只展示已保存到售后单的照片链接" />
               </div>
             </Card>
           </div>
@@ -171,16 +161,14 @@ export default function AfterSaleDetailPage() {
             <Card className="after-sale-detail-card after-sale-responsibility-panel">
               <h2>责任判定</h2>
               <div className="after-sale-responsibility-list">
-                {getAfterSaleResponsibilityCards(afterSale.responsibility).map((option) => (
-                  <div key={option.value} className={option.active ? "is-active" : undefined}>
-                    {getResponsibilityIcon(option.value)}
-                    <div>
-                      <strong>{option.title}</strong>
-                      <span>{option.description}</span>
-                    </div>
-                    {option.active ? <CheckCircleOutlined /> : null}
+                <div className={afterSale.responsibility !== "PENDING" ? "is-active" : undefined}>
+                  {getResponsibilityIcon(afterSale.responsibility)}
+                  <div>
+                    <strong>{getAfterSaleResponsibilityLabel(afterSale.responsibility)}</strong>
+                    <span>{getAfterSaleResponsibilityDescription(afterSale.responsibility)}</span>
                   </div>
-                ))}
+                  {afterSale.responsibility !== "PENDING" ? <CheckCircleOutlined /> : null}
+                </div>
               </div>
               <div className="after-sale-worker-card">
                 <span>责任对象</span>
@@ -191,6 +179,11 @@ export default function AfterSaleDetailPage() {
                   afterSale.constructionIssueCategory
                 ].filter(Boolean).join(" / ")}</p>
               </div>
+              <div className="after-sale-worker-card">
+                <span>处理人员</span>
+                <strong>{getAfterSaleAssignmentLabels(afterSale).join("、") || "暂无派单人员"}</strong>
+                <p>真实记录：来自售后派单记录 afterSale.assignments</p>
+              </div>
             </Card>
 
             <Card className="after-sale-detail-card after-sale-penalty-panel">
@@ -198,10 +191,7 @@ export default function AfterSaleDetailPage() {
               {getAfterSalePenaltyRows(afterSale).map((row) => (
                 <PenaltyRow key={row.key} icon={getPenaltyIcon(row.key)} label={row.label} value={row.value} />
               ))}
-              <label className="after-sale-penalty-note">
-                <span>处罚备注说明</span>
-                <Input.TextArea rows={3} placeholder="在此输入对技师的改进建议或详细处理理由..." />
-              </label>
+              <PenaltyRecordList afterSale={afterSale} />
               <div className="after-sale-risk-note">
                 <ExclamationCircleOutlined />
                 <span>{getAfterSalePenaltyRiskNote(afterSale)}</span>
@@ -239,13 +229,32 @@ function DetailMetric({ label, value, hint }: { label: string; value: string; hi
   );
 }
 
-function ComparePanel({ title, badge, tone }: { title: string; badge: string; tone: "before" | "after" }) {
+function PhotoEvidenceCard({
+  title,
+  urls,
+  emptyText,
+  tone
+}: {
+  title: string;
+  urls?: string[] | null;
+  emptyText: string;
+  tone: "defect" | "after";
+}) {
+  const savedUrls = urls?.filter(Boolean) ?? [];
   return (
-    <div className={`after-sale-compare-panel is-${tone}`}>
-      <span>{title}</span>
-      <div>
-        <strong>{badge}</strong>
-      </div>
+    <div className={`after-sale-photo-card is-${tone}`}>
+      <CameraOutlined />
+      <strong>{title}</strong>
+      <span>{savedUrls.length > 0 ? `${savedUrls.length} 张照片已归档` : emptyText}</span>
+      {savedUrls.length > 0 ? (
+        <div className="after-sale-photo-links">
+          {savedUrls.map((url, index) => (
+            <a key={url} href={url} target="_blank" rel="noreferrer">
+              查看照片 {index + 1}
+            </a>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -262,7 +271,25 @@ function PenaltyRow({ icon, label, value }: { icon: ReactNode; label: string; va
   );
 }
 
-function getResponsibilityIcon(responsibility: Exclude<AfterSaleResponsibility, "PENDING">) {
+function PenaltyRecordList({ afterSale }: { afterSale: AfterSaleSummary }) {
+  const penalties = afterSale.penalties ?? [];
+  if (penalties.length === 0) {
+    return <div className="after-sale-penalty-empty">真实记录：暂无已保存处罚记录</div>;
+  }
+  return (
+    <div className="after-sale-penalty-records">
+      <span>真实记录：afterSale.penalties</span>
+      {penalties.map((penalty) => (
+        <div key={penalty.id ?? `${penalty.workerUserId}-${penalty.reason}`} className="after-sale-penalty-record">
+          <strong>{getUserDisplayName(penalty.worker) || "处罚对象待确认"}</strong>
+          <span>{formatPenaltyAmount(penalty.amountCents)} / {penalty.reason || "未填写原因"}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function getResponsibilityIcon(responsibility: AfterSaleResponsibility) {
   if (responsibility === "CONSTRUCTION") return <ToolOutlined />;
   if (responsibility === "MATERIAL") return <SafetyCertificateOutlined />;
   if (responsibility === "CUSTOMER") return <UserOutlined />;
@@ -278,6 +305,19 @@ function getPenaltyIcon(key: string) {
 function getPhotoCountLabel(urls?: string[] | null, fallback = "待上传") {
   const count = urls?.filter(Boolean).length ?? 0;
   return count > 0 ? `${count} 张照片已归档` : fallback;
+}
+
+function getAfterSaleAssignmentLabels(afterSale: AfterSaleSummary) {
+  return (afterSale.assignments ?? []).map((assignment) => getUserDisplayName(assignment.worker)).filter(Boolean);
+}
+
+function getUserDisplayName(user?: { nickname?: string | null; username?: string | null } | null) {
+  return user?.nickname ?? user?.username ?? "";
+}
+
+function formatPenaltyAmount(amountCents?: number | null) {
+  if (!amountCents) return "未录入金额";
+  return `¥${(amountCents / 100).toFixed(2)}`;
 }
 
 export function getAfterSaleDetailTimeline(afterSale?: AfterSaleSummary): AfterSaleTimelineItem[] {

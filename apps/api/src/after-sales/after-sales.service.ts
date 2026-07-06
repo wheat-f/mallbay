@@ -45,34 +45,21 @@ export class AfterSalesService {
     return this.prisma.afterSale.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        storeId: true,
-        orderId: true,
-        warrantyId: true,
-        customerId: true,
-        description: true,
-        status: true,
-        responsibility: true,
-        issuePhotoUrls: true,
-        constructionPhotoUrls: true,
-        constructionIssueCategory: true,
-        resolutionNote: true,
-        closedAt: true,
-        createdAt: true,
-        updatedAt: true,
-        assignments: true,
-        penalties: true,
-        warranty: { select: { warrantyNo: true, status: true, scope: true } },
-        order: {
-          select: {
-            orderNo: true,
-            customer: { select: { name: true, companyName: true, contactPerson: true } },
-            vehicle: { select: { carPlate: true, carModel: true, carColor: true } }
-          }
-        }
-      }
+      select: afterSaleSummarySelect
     });
+  }
+
+  async detail(user: AuthenticatedAfterSalesUser, id: string) {
+    const actor = await this.withStoreMember(user);
+    const afterSale = await this.prisma.afterSale.findFirst({
+      where: buildAfterSalesDetailScope(actor, id),
+      select: afterSaleSummarySelect
+    });
+    if (!afterSale) throw new NotFoundException("售后单不存在");
+    if (!PermissionPolicy.canViewStoreData(actor, afterSale.storeId)) {
+      throw new ForbiddenException("无权限");
+    }
+    return afterSale;
   }
 
   async assign(user: AuthenticatedAfterSalesUser, id: string, dto: AssignAfterSaleDto) {
@@ -189,3 +176,78 @@ function buildAfterSalesListScope(actor: UserWithStoreMember, storeId: string) {
   }
   return where;
 }
+
+function buildAfterSalesDetailScope(actor: UserWithStoreMember, id: string) {
+  const where: {
+    id: string;
+    storeId?: string;
+    assignments?: { some: { workerUserId: string } };
+    order?: { salesPersonId: string };
+  } = { id };
+  if (!actor.isAuditor) {
+    where.storeId = actor.storeMember?.storeId ?? "__no_store__";
+  }
+  if (
+    !actor.isAuditor &&
+    (actor.storeMember?.position === StorePosition.CONSTRUCTION || actor.storeMember?.position === StorePosition.APPRENTICE)
+  ) {
+    where.assignments = { some: { workerUserId: actor.id } };
+  }
+  if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
+    where.order = { salesPersonId: actor.id };
+  }
+  return where;
+}
+
+const userDisplaySelect = {
+  id: true,
+  username: true,
+  nickname: true,
+  avatarUrl: true
+} as const;
+
+const afterSaleSummarySelect = {
+  id: true,
+  storeId: true,
+  orderId: true,
+  warrantyId: true,
+  customerId: true,
+  description: true,
+  status: true,
+  responsibility: true,
+  issuePhotoUrls: true,
+  constructionPhotoUrls: true,
+  constructionIssueCategory: true,
+  resolutionNote: true,
+  closedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  assignments: {
+    select: {
+      id: true,
+      workerUserId: true,
+      assignedAt: true,
+      worker: { select: userDisplaySelect }
+    }
+  },
+  penalties: {
+    select: {
+      id: true,
+      workerUserId: true,
+      amountCents: true,
+      reason: true,
+      createdAt: true,
+      worker: { select: userDisplaySelect },
+      createdBy: { select: userDisplaySelect }
+    },
+    orderBy: { createdAt: "desc" }
+  },
+  warranty: { select: { warrantyNo: true, status: true, scope: true } },
+  order: {
+    select: {
+      orderNo: true,
+      customer: { select: { name: true, companyName: true, contactPerson: true } },
+      vehicle: { select: { carPlate: true, carModel: true, carColor: true } }
+    }
+  }
+} as const;

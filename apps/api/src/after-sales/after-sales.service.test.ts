@@ -128,6 +128,43 @@ test("AfterSalesService lists after-sales with order customer vehicle warranty a
   assert.match(serialized, /"constructionIssueCategory"/);
 });
 
+test("AfterSalesService returns after-sale detail with assigned workers and penalty workers", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    afterSale: {
+      findFirst: async (args: unknown) => {
+        calls.push(args);
+        return { id: "after-sale-1", storeId: "store-1" };
+      }
+    }
+  };
+  const service = new AfterSalesService(prisma as never);
+
+  await service.detail(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    "after-sale-1"
+  );
+
+  assert.deepEqual((calls[0] as { where: unknown }).where, { id: "after-sale-1", storeId: "store-1" });
+  const serialized = JSON.stringify(calls[0]);
+  assert.match(serialized, /"assignments"/);
+  assert.match(serialized, /"worker"/);
+  assert.match(serialized, /"username"/);
+  assert.match(serialized, /"nickname"/);
+  assert.match(serialized, /"penalties"/);
+  assert.match(serialized, /"amountCents"/);
+  assert.match(serialized, /"reason"/);
+  assert.match(serialized, /"createdBy"/);
+  assert.match(serialized, /"order"/);
+  assert.match(serialized, /"customer"/);
+  assert.match(serialized, /"vehicle"/);
+});
+
 test("AfterSalesService closes a resolved after-sale", async () => {
   const writes: unknown[] = [];
   const prisma = {

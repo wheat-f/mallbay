@@ -109,7 +109,8 @@ export class PermissionPolicy {
     storeId: string,
     assignedWorkerId: string
   ) {
-    return this.canWorkOnConstructionTask(user, storeId, assignedWorkerId);
+    return this.canDispatchConstruction(user, storeId) ||
+      this.canWorkOnConstructionTask(user, storeId, assignedWorkerId);
   }
 
   static canQualityCheckConstruction(user: UserWithStoreMember, storeId: string) {

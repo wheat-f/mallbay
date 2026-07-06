@@ -48,6 +48,20 @@ test("after-sale responsibility detail helpers keep page copy data-driven", () =
     ]
   );
   assert.equal(getAfterSaleResponsiblePersonLabel({ responsibility: "PENDING" }), "待责任判定");
+  assert.equal(
+    getAfterSaleResponsiblePersonLabel({
+      responsibility: "CONSTRUCTION",
+      assignments: [{ worker: { nickname: "张师傅", username: "worker-1" } }]
+    }),
+    "张师傅"
+  );
+  assert.equal(
+    getAfterSaleResponsiblePersonLabel({
+      responsibility: "CONSTRUCTION",
+      penalties: [{ worker: { username: "罚款技师" }, amountCents: 1000, reason: "返工处罚" }]
+    }),
+    "罚款技师"
+  );
   assert.equal(getAfterSaleResponsiblePersonLabel({ responsibility: "CUSTOMER" }), "不涉及施工技师处罚");
   assert.deepEqual(getAfterSalePenaltyRows({ responsibility: "CONSTRUCTION", constructionIssueCategory: "刀工问题", resolutionNote: "返工复检" }), [
     { key: "responsibility", label: "责任类型", value: "施工方责任" },

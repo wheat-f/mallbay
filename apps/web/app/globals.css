@@ -10646,6 +10646,36 @@ body {
   line-height: 18px;
 }
 
+.after-sale-photo-card.is-after {
+  background:
+    linear-gradient(180deg, rgba(7, 42, 33, 0) 0%, rgba(7, 42, 33, 0.76) 78%),
+    linear-gradient(135deg, #0f766e, #7aa99f);
+}
+
+.after-sale-photo-card.is-vehicle {
+  background:
+    linear-gradient(180deg, rgba(15, 58, 95, 0) 0%, rgba(15, 58, 95, 0.76) 78%),
+    linear-gradient(135deg, #0f3a5f, #92a7b7);
+}
+
+.after-sale-photo-links {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.after-sale-photo-links a {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.16);
+  padding: 5px 8px;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .after-sale-photo-add {
   flex-direction: column;
   align-items: center;
@@ -10719,6 +10749,20 @@ body {
   background: var(--mb-success);
 }
 
+.after-sale-treatment-record {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.after-sale-treatment-record > div {
+  min-height: 118px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-container-low);
+  padding: 14px;
+}
+
 .after-sale-responsibility-panel h2,
 .after-sale-penalty-panel h2,
 .after-sale-detail-side .after-sale-detail-card > .ant-card-body > h2 {
@@ -10787,6 +10831,13 @@ body {
   line-height: 20px;
 }
 
+.after-sale-worker-card p {
+  margin: 8px 0 0;
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .after-sale-penalty-panel.ant-card {
   position: relative;
   overflow: hidden;
@@ -10829,6 +10880,45 @@ body {
   display: grid;
   gap: 8px;
   margin-top: 14px;
+}
+
+.after-sale-penalty-empty,
+.after-sale-penalty-records {
+  margin-top: 14px;
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-container-low);
+  padding: 12px;
+}
+
+.after-sale-penalty-empty,
+.after-sale-penalty-records > span {
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.after-sale-penalty-records {
+  display: grid;
+  gap: 10px;
+}
+
+.after-sale-penalty-record {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid var(--mb-border);
+  padding-top: 10px;
+}
+
+.after-sale-penalty-record strong {
+  color: var(--mb-text-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.after-sale-penalty-record span {
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .after-sale-risk-note {
@@ -10907,6 +10997,7 @@ body {
 @media (max-width: 760px) {
   .after-sale-summary-grid,
   .after-sale-evidence-grid,
+  .after-sale-treatment-record,
   .after-sale-compare-grid {
     grid-template-columns: minmax(0, 1fr);
   }

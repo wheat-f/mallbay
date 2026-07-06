@@ -199,7 +199,7 @@ test("after-sales detail page follows the prototype detail penalty layout", () =
   const pageSource = readFileSync(detailPath, "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
-  assert.match(pageSource, /afterSalesApi\.list/);
+  assert.match(pageSource, /afterSalesApi\.detail\(afterSaleId\)/);
   assert.match(pageSource, /售后工单详情与责任判罚/);
   assert.match(pageSource, /返回售后列表/);
   assert.doesNotMatch(pageSource, /返回售后管理/);
@@ -210,17 +210,25 @@ test("after-sales detail page follows the prototype detail penalty layout", () =
   assert.doesNotMatch(pageSource, /工单ID: \$\{afterSale\.orderId\}/);
   assert.doesNotMatch(pageSource, /value=\{getAfterSaleOrderLabel\(afterSale\)\} hint=\{`工单ID:/);
   assert.match(pageSource, /问题描述与取证/);
-  assert.match(pageSource, /售后处理对比/);
+  assert.match(pageSource, /售后处理记录/);
+  assert.doesNotMatch(pageSource, /售后处理对比/);
   assert.match(pageSource, /责任判定/);
   assert.match(pageSource, /惩罚处理/);
   assert.match(pageSource, /客户信息待确认/);
   assert.match(pageSource, /车辆信息待确认/);
   assert.doesNotMatch(pageSource, /客户未加载/);
   assert.doesNotMatch(pageSource, /车辆未加载/);
-  assert.match(pageSource, /getAfterSaleResponsibilityCards/);
+  assert.doesNotMatch(pageSource, /getAfterSaleResponsibilityCards/);
   assert.match(pageSource, /getAfterSalePenaltyRows/);
   assert.match(pageSource, /getAfterSalePenaltyRiskNote/);
   assert.match(pageSource, /getAfterSaleResponsiblePersonLabel/);
+  assert.match(pageSource, /afterSale\.penalties/);
+  assert.match(pageSource, /afterSale\.assignments/);
+  assert.match(pageSource, /真实记录/);
+  assert.doesNotMatch(pageSource, /补充证据/);
+  assert.doesNotMatch(pageSource, /待上传高清证据/);
+  assert.doesNotMatch(pageSource, /处罚备注说明/);
+  assert.doesNotMatch(pageSource, /placeholder="在此输入对技师的改进建议或详细处理理由/);
   assert.doesNotMatch(pageSource, /const RESPONSIBILITY_OPTIONS/);
   assert.doesNotMatch(pageSource, /工资扣减（施工提成）/);
   assert.doesNotMatch(pageSource, /质量罚款/);

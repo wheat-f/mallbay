@@ -19,6 +19,11 @@ export class AfterSalesController {
     return this.afterSales.list(req.user, query);
   }
 
+  @Get(":id")
+  detail(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.afterSales.detail(req.user, id);
+  }
+
   @Post()
   create(@Req() req: AuthRequest, @Body() dto: CreateAfterSaleDto) {
     return this.afterSales.create(req.user, dto);

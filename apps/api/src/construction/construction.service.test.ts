@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  ConstructionPhotoStage,
   InventoryMovementType,
   LeaveRequestStatus,
   OrderStatus,
@@ -188,6 +189,41 @@ test("ConstructionService limits sales assignment list to their own orders", asy
   });
 });
 
+test("ConstructionService includes order customer vehicle and items in assignment rows", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    constructionRecord: {
+      findMany: async (args: unknown) => {
+        calls.push(args);
+        return [];
+      }
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  await service.listAssignments(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    { storeId: "store-1" }
+  );
+
+  assert.deepEqual((calls[0] as { include: unknown }).include, {
+    order: {
+      include: {
+        customer: true,
+        vehicle: true,
+        items: { include: { product: true } }
+      }
+    },
+    assignments: true,
+    photos: true
+  });
+});
+
 test("ConstructionService lists construction store members even before profiles are maintained", async () => {
   const calls: unknown[] = [];
   const prisma = {
@@ -289,6 +325,69 @@ test("ConstructionService lists store schedules for construction dispatchers", a
   assert.deepEqual((calls[0] as { include: unknown }).include, {
     worker: { select: { username: true, nickname: true } }
   });
+});
+
+test("ConstructionService allows construction dispatchers to upload photos", async () => {
+  const writes: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    constructionRecord: {
+      findUnique: async () => ({
+        id: "record-1",
+        storeId: "store-1",
+        orderId: "order-1",
+        assignments: [{ workerUserId: "worker-1" }]
+      })
+    },
+    constructionPhoto: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "photo-1" };
+      }
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  const result = await service.uploadPhoto(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    "record-1",
+    { stage: ConstructionPhotoStage.BEFORE, url: "https://oss.example.com/photo.jpg" }
+  );
+
+  assert.deepEqual(result, { id: "photo-1" });
+  assert.equal(JSON.stringify(writes).includes("https://oss.example.com/photo.jpg"), true);
+});
+
+test("ConstructionService rejects construction photo uploads from unrelated roles", async () => {
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    constructionRecord: {
+      findUnique: async () => ({
+        id: "record-1",
+        storeId: "store-1",
+        orderId: "order-1",
+        assignments: [{ workerUserId: "worker-1" }]
+      })
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  await assert.rejects(
+    () => service.uploadPhoto(
+      {
+        id: "sales-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.SALES }
+      },
+      "record-1",
+      { stage: ConstructionPhotoStage.BEFORE, url: "https://oss.example.com/photo.jpg" }
+    ),
+    /无权限/
+  );
 });
 
 test("ConstructionService limits worker schedules to their own rows", async () => {

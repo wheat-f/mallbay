@@ -21,6 +21,8 @@ export const afterSalesApi = {
   list: (storeId: string) =>
     request<AfterSaleSummary[]>(`/after-sales${toQueryString({ storeId })}`),
 
+  detail: (id: string) => request<AfterSaleSummary>(`/after-sales/${id}`),
+
   create: (payload: CreateAfterSalePayload) =>
     request<AfterSaleSummary>("/after-sales", {
       method: "POST",

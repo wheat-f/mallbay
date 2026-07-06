@@ -260,7 +260,39 @@ export type AfterSaleSummary = {
   constructionPhotoUrls?: string[];
   constructionIssueCategory?: string | null;
   resolutionNote?: string | null;
+  assignments?: Array<{
+    id?: string;
+    workerUserId?: string;
+    assignedAt?: string | Date | null;
+    worker?: {
+      id?: string;
+      username?: string | null;
+      nickname?: string | null;
+      avatarUrl?: string | null;
+    } | null;
+  }>;
+  penalties?: Array<{
+    id?: string;
+    workerUserId?: string;
+    amountCents?: number | null;
+    reason?: string | null;
+    createdAt?: string | Date | null;
+    worker?: {
+      id?: string;
+      username?: string | null;
+      nickname?: string | null;
+      avatarUrl?: string | null;
+    } | null;
+    createdBy?: {
+      id?: string;
+      username?: string | null;
+      nickname?: string | null;
+      avatarUrl?: string | null;
+    } | null;
+  }>;
   closedAt?: string | Date | null;
+  createdAt?: string | Date | null;
+  updatedAt?: string | Date | null;
 };
 
 export type SalesCommissionRuleSummary = {

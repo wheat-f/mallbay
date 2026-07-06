@@ -58,9 +58,18 @@ export function getAfterSaleResponsibilityCards(responsibility?: string | null) 
   }));
 }
 
-export function getAfterSaleResponsiblePersonLabel(afterSale?: Pick<AfterSaleSummary, "responsibility"> | null) {
+export function getAfterSaleResponsiblePersonLabel(
+  afterSale?: Pick<AfterSaleSummary, "responsibility" | "assignments" | "penalties"> | null
+) {
   if (!afterSale || afterSale.responsibility === "PENDING") return "待责任判定";
-  if (afterSale.responsibility === "CONSTRUCTION") return "待在处理面板选择责任技师";
+  if (afterSale.responsibility === "CONSTRUCTION") {
+    const penaltyWorker = afterSale.penalties?.find((penalty) => penalty.worker)?.worker;
+    const assignedWorkers = afterSale.assignments?.map((assignment) => assignment.worker).filter(Boolean) ?? [];
+    const names = [penaltyWorker, ...assignedWorkers]
+      .map((worker) => worker?.nickname ?? worker?.username)
+      .filter(Boolean);
+    return [...new Set(names)].join("、") || "责任技师待确认";
+  }
   return "不涉及施工技师处罚";
 }
 

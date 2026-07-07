@@ -106,7 +106,7 @@ export default function WarehouseManagementPage() {
           className="management-readonly-alert"
           type="info"
           showIcon
-          message="只读模式"
+          title="只读模式"
           description="当前账号可查看仓库配置，不能新增、编辑或停用仓库。"
         />
       ) : null}

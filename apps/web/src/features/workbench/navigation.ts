@@ -100,7 +100,7 @@ export function getWorkbenchSections(position: StorePosition, storeId: string): 
         { label: "请假申请", description: "提交请假申请并查看审批进度", href: "/construction/leaves" },
         { label: "施工物料", description: "核验订单物料、锁定批次和损耗记录", href: "/construction/materials" },
         { label: "售后任务", description: "查看分配给自己的售后处理任务", href: "/after-sales/tasks" },
-        { label: "施工档案", description: "查看账号、门店和同步状态", href: "/construction/profile" }
+        { label: "施工档案", description: "查看施工记录、照片和质检档案", href: "/construction/profile" }
       ]
     }];
   }

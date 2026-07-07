@@ -83,11 +83,19 @@ test("construction task detail page is a desktop execution workspace", () => {
   assert.match(pageSource, /worker-task-progress/);
   assert.match(pageSource, /worker-task-detail-actions/);
   assert.match(pageSource, /worker-task-detail-grid/);
+  assert.match(pageSource, /worker-task-material-card/);
   assert.match(pageSource, /worker-task-photo-card/);
   assert.match(pageSource, /worker-task-photo-checklist/);
+  assert.match(pageSource, /worker-task-photo-preview-list/);
+  assert.match(pageSource, /previewPhoto/);
+  assert.match(pageSource, /<Modal/);
+  assert.match(pageSource, /<Image src=\{previewPhoto\.url\}/);
   assert.match(pageSource, /开始验车/);
   assert.match(pageSource, /上传照片/);
   assert.match(pageSource, /提交完工/);
+  assert.match(pageSource, /领取物料/);
+  assert.match(pageSource, /物料领取/);
+  assert.match(pageSource, /请先领取已锁定的施工物料/);
   assert.match(pageSource, /照片凭证/);
   assert.match(pageSource, /验车照片/);
   assert.match(pageSource, /膜箱照片/);
@@ -98,6 +106,13 @@ test("construction task detail page is a desktop execution workspace", () => {
   assert.match(pageSource, /constructionApi\.uploadPhoto/);
   assert.match(pageSource, /constructionApi\.startOrder/);
   assert.match(pageSource, /constructionApi\.completeOrder/);
+  assert.match(pageSource, /constructionApi\.orderMaterials/);
+  assert.match(pageSource, /constructionApi\.pickupMaterials/);
+  assert.match(pageSource, /pendingAllocationIds/);
+  assert.match(pageSource, /materialPickupState/);
+  assert.match(pageSource, /completeBlockReason/);
+  assert.doesNotMatch(pageSource, /施工照片链接/);
+  assert.doesNotMatch(pageSource, /粘贴施工照片链接/);
   assert.doesNotMatch(pageSource, /params\.id<\/h1>/);
   assert.doesNotMatch(pageSource, /record\?\.order\?\.orderNo \?\? params\.id/);
   assert.doesNotMatch(pageSource, /desktopHref=\{`\/construction\/orders\/\$\{params\.id\}`\}/);
@@ -106,16 +121,8 @@ test("construction task detail page is a desktop execution workspace", () => {
   assert.match(cssSource, /\.worker-task-progress/);
   assert.match(cssSource, /\.worker-task-detail-actions/);
   assert.match(cssSource, /\.worker-task-detail-grid/);
+  assert.match(cssSource, /\.worker-task-material-card/);
   assert.match(cssSource, /\.worker-task-photo-checklist/);
-});
-
-test("construction mobile task detail uses business copy for photo link fields", () => {
-  const pageSource = readFileSync("app/construction/tasks/[id]/page.tsx", "utf8");
-
-  assert.match(pageSource, /施工照片链接/);
-  assert.match(pageSource, /粘贴施工照片链接/);
-  assert.doesNotMatch(pageSource, /图片 URL/);
-  assert.doesNotMatch(pageSource, /粘贴图片 URL/);
 });
 
 test("construction worker pages use web management shell while keeping the mini shell source", () => {
@@ -174,22 +181,24 @@ test("construction worker pages no longer redirect desktop web users through a m
   assert.match(profilePageSource, /StorePageHeader/);
 });
 
-test("construction profile page shows store business name instead of technical store id", () => {
+test("construction profile page shows worker archive instead of offline settings", () => {
   const pageSource = readFileSync("app/construction/profile/page.tsx", "utf8");
+  const navigationSource = readFileSync("src/features/workbench/navigation.ts", "utf8");
+  const shellSource = readFileSync("src/features/workbench/management-shell.tsx", "utf8");
 
-  assert.match(pageSource, /门店名称/);
+  assert.match(pageSource, /施工档案/);
+  assert.match(pageSource, /施工履约档案/);
+  assert.match(pageSource, /照片与质检归档/);
+  assert.match(pageSource, /constructionApi\.assignments/);
+  assert.match(pageSource, /getWorkerTaskStatusLabel/);
+  assert.match(pageSource, /getWorkerPhotoStageLabel/);
   assert.match(pageSource, /storeMember\?\.store\.name \?\? "未加入门店"/);
-  assert.doesNotMatch(pageSource, /<strong>门店 ID<\/strong>/);
-  assert.doesNotMatch(pageSource, /storeMember\?\.store\.id \?\? "未加入门店"/);
-});
-
-test("construction profile page presents cloud connection as business status", () => {
-  const pageSource = readFileSync("app/construction/profile/page.tsx", "utf8");
-
-  assert.match(pageSource, /云端服务/);
-  assert.match(pageSource, /已加密连接/);
-  assert.doesNotMatch(pageSource, /api\.mallbay-cloud/);
-  assert.doesNotMatch(pageSource, /服务连接地址/);
+  assert.match(navigationSource, /查看施工记录、照片和质检档案/);
+  assert.match(shellSource, /搜索工单、照片或质检记录/);
+  assert.doesNotMatch(pageSource, /连接与离线设置/);
+  assert.doesNotMatch(pageSource, /当前网络状态/);
+  assert.doesNotMatch(pageSource, /延迟 \(Ping\)/);
+  assert.doesNotMatch(pageSource, /离线缓存空间/);
 });
 
 test("construction materials page follows the prototype material management entry", () => {
@@ -202,6 +211,7 @@ test("construction materials page follows the prototype material management entr
 
   assert.doesNotMatch(pageSource, /ConstructionMobileShell/);
   assert.match(pageSource, /StorePageHeader/);
+  assert.match(pageSource, /施工物料辅助工作台/);
   assert.match(pageSource, /worker-materials-page/);
   assert.match(pageSource, /worker-materials-hero/);
   assert.match(pageSource, /construction-materials-workspace/);
@@ -212,20 +222,26 @@ test("construction materials page follows the prototype material management entr
   assert.match(pageSource, /待领物料/);
   assert.match(pageSource, /批次追溯/);
   assert.match(pageSource, /扫码核验/);
-  assert.match(pageSource, /膜箱照片/);
-  assert.match(pageSource, /膜桶照片/);
-  assert.match(pageSource, /施工耗材/);
+  assert.match(pageSource, /物料准备清单/);
+  assert.match(pageSource, /标签核对/);
+  assert.match(pageSource, /辅助入口/);
   assert.match(pageSource, /异常损耗记录后同步库存流水/);
   assert.doesNotMatch(pageSource, /异常损耗后续进入库存流水/);
-  assert.match(pageSource, /施工照片上传/);
+  assert.doesNotMatch(pageSource, /施工照片上传/);
+  assert.doesNotMatch(pageSource, /膜箱照片/);
+  assert.doesNotMatch(pageSource, /膜桶照片/);
   assert.match(pageSource, /constructionApi\.orderMaterials/);
   assert.match(pageSource, /constructionApi\.verifyMaterialBatch/);
   assert.match(pageSource, /constructionApi\.pickupMaterials/);
+  assert.match(pageSource, /pendingAllocationIds/);
+  assert.match(pageSource, /batch\) => !batch\.pickedUp/);
+  assert.match(pageSource, /hasPendingPickup/);
+  assert.doesNotMatch(pageSource, /allAllocationIds/);
   assert.match(pageSource, /constructionApi\.recordMaterialLoss/);
   assert.doesNotMatch(pageSource, /const materialBatches/);
   assert.doesNotMatch(pageSource, /MB20260614008/);
   assert.doesNotMatch(pageSource, /XPEL Ultimate Plus/);
-  assert.match(pageSource, /router\.push\("\/construction\/camera"\)/);
+  assert.doesNotMatch(pageSource, /router\.push\("\/construction\/camera"\)/);
   assert.match(pageSource, /router\.push\("\/inventory\/movements"\)/);
   assert.match(pageSource, /router\.push\("\/construction\/tasks"\)/);
   assert.match(cssSource, /\.worker-materials-page/);
@@ -415,7 +431,7 @@ test("construction offline page follows the prototype upload queue layout", () =
   assert.match(cssSource, /\.construction-offline-progress/);
 });
 
-test("construction profile page follows the prototype connection and offline settings center", () => {
+test("construction profile page follows the archive workspace", () => {
   const pageSource = readFileSync("app/construction/profile/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
@@ -423,40 +439,30 @@ test("construction profile page follows the prototype connection and offline set
   assert.match(pageSource, /StorePageHeader/);
   assert.match(pageSource, /worker-profile-page/);
   assert.match(pageSource, /worker-profile-grid/);
-  assert.match(pageSource, /construction-profile-status-card/);
-  assert.match(pageSource, /construction-profile-config-section/);
-  assert.match(pageSource, /construction-profile-config-list/);
-  assert.match(pageSource, /construction-profile-cache-card/);
-  assert.match(pageSource, /construction-profile-cache-actions/);
-  assert.match(pageSource, /construction-profile-toggle-list/);
-  assert.match(pageSource, /当前网络状态/);
-  assert.match(pageSource, /延迟 \(Ping\)/);
-  assert.match(pageSource, /云端服务/);
-  assert.match(pageSource, /已加密连接/);
-  assert.match(pageSource, /离线缓存空间/);
-  assert.match(pageSource, /建议限制/);
-  assert.match(pageSource, /router\.push\("\/construction\/offline"\)/);
+  assert.match(pageSource, /worker-archive-hero/);
+  assert.match(pageSource, /worker-archive-kpis/);
+  assert.match(pageSource, /worker-archive-main-card/);
+  assert.match(pageSource, /worker-archive-photo-card/);
+  assert.match(pageSource, /worker-archive-capability-card/);
+  assert.match(pageSource, /参与工单/);
+  assert.match(pageSource, /已完工/);
+  assert.match(pageSource, /照片凭证/);
+  assert.match(pageSource, /质检通过/);
+  assert.match(pageSource, /最近施工记录/);
+  assert.match(pageSource, /照片阶段统计/);
+  assert.match(pageSource, /router\.push\("\/construction\/tasks"\)/);
+  assert.match(pageSource, /router\.push\("\/construction\/schedules"\)/);
   assert.match(pageSource, /router\.push\(`\/workbench\/\$\{storeMember\.store\.id\}`\)/);
-  assert.doesNotMatch(pageSource, /API 终端地址/);
-  assert.doesNotMatch(pageSource, /服务连接地址/);
-  assert.doesNotMatch(pageSource, /https:\/\/api\.mallbay-cloud\.com\/v2/);
-  assert.doesNotMatch(pageSource, /construction-profile-hero/);
-  assert.doesNotMatch(pageSource, /Avatar/);
-  assert.doesNotMatch(pageSource, /快捷入口/);
-  assert.doesNotMatch(pageSource, /MallBay Worker|Workplace Solutions/);
-  assert.doesNotMatch(pageSource, /MallBay 施工端/);
-  assert.match(pageSource, /mallbay 施工端/);
+  assert.doesNotMatch(pageSource, /查看离线队列/);
+  assert.doesNotMatch(pageSource, /立即同步/);
+  assert.doesNotMatch(pageSource, /清理缓存/);
   assert.doesNotMatch(pageSource, /v\d+\.\d+\.\d+-dev/);
   assert.doesNotMatch(pageSource, /localhost:3001/);
   assert.match(cssSource, /\.worker-profile-page/);
   assert.match(cssSource, /\.worker-profile-grid/);
-  assert.match(cssSource, /\.construction-profile-status-card/);
-  assert.match(cssSource, /\.construction-mobile-shell-settings/);
-  assert.match(cssSource, /\.construction-mobile-settings-header/);
-  assert.match(cssSource, /\.construction-profile-config-section/);
-  assert.match(cssSource, /\.construction-profile-setting-row/);
-  assert.match(cssSource, /\.construction-profile-config-list/);
-  assert.match(cssSource, /\.construction-profile-cache-card/);
-  assert.match(cssSource, /\.construction-profile-cache-actions/);
-  assert.match(cssSource, /\.construction-profile-toggle-list/);
+  assert.match(cssSource, /\.worker-archive-hero/);
+  assert.match(cssSource, /\.worker-archive-kpis/);
+  assert.match(cssSource, /\.worker-archive-main-card/);
+  assert.match(cssSource, /\.worker-archive-photo-card/);
+  assert.match(cssSource, /\.worker-archive-capability-card/);
 });

@@ -312,7 +312,23 @@ const afterSaleSummarySelect = {
     select: {
       orderNo: true,
       customer: { select: { name: true, companyName: true, contactPerson: true } },
-      vehicle: { select: { carPlate: true, carModel: true, carColor: true } }
+      vehicle: { select: { carPlate: true, carModel: true, carColor: true } },
+      constructionRecord: {
+        select: {
+          id: true,
+          photos: {
+            select: {
+              id: true,
+              stage: true,
+              url: true,
+              uploadedById: true,
+              createdAt: true,
+              uploadedBy: { select: userDisplaySelect }
+            },
+            orderBy: { createdAt: "asc" }
+          }
+        }
+      }
     }
   }
 } as const;

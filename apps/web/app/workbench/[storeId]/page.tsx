@@ -708,7 +708,7 @@ export default function WorkbenchPage() {
             className="workbench-data-alert"
             type="warning"
             showIcon
-            message="门店详情暂时未完整加载"
+            title="门店详情暂时未完整加载"
             description="已使用当前登录身份展示可用业务入口。请稍后刷新以同步门店资料、照片和完整成员列表。"
           />
         )}

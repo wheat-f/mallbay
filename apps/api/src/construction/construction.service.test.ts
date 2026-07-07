@@ -419,6 +419,69 @@ test("ConstructionService limits worker schedules to their own rows", async () =
   });
 });
 
+test("ConstructionService allows construction workers to update their own schedule status", async () => {
+  const writes: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    schedule: {
+      upsert: async (args: unknown) => {
+        writes.push(args);
+        return { id: "schedule-1", workerId: "worker-1", status: ScheduleStatus.OUTSIDE };
+      }
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  const result = await service.upsertSchedule(
+    {
+      id: "worker-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+    },
+    {
+      storeId: "store-1",
+      workerId: "worker-1",
+      date: "2026-07-06",
+      status: ScheduleStatus.OUTSIDE,
+      note: "外出补录"
+    }
+  );
+
+  assert.deepEqual(result, { id: "schedule-1", workerId: "worker-1", status: ScheduleStatus.OUTSIDE });
+  assert.deepEqual((writes[0] as { where: unknown }).where, {
+    workerId_date: { workerId: "worker-1", date: new Date("2026-07-06T00:00:00.000Z") }
+  });
+});
+
+test("ConstructionService rejects construction workers updating another worker schedule", async () => {
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    schedule: {
+      upsert: async () => {
+        throw new Error("should not write");
+      }
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  await assert.rejects(
+    () => service.upsertSchedule(
+      {
+        id: "worker-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+      },
+      {
+        storeId: "store-1",
+        workerId: "worker-2",
+        date: "2026-07-06",
+        status: ScheduleStatus.WORKING
+      }
+    ),
+    /无权限/
+  );
+});
+
 test("ConstructionService builds order material checklist for assigned workers", async () => {
   const prisma = {
     storeMember: { findUnique: async () => null },
@@ -500,6 +563,75 @@ test("ConstructionService builds order material checklist for assigned workers",
   assert.equal(result.materials[0]?.productLabel, "品牌A / 漆面保护膜 / M-001 / 1.52m");
   assert.equal(result.materials[0]?.batches[0]?.batchNo, "BATCH-001");
   assert.equal(result.materials[0]?.batches[0]?.verified, true);
+});
+
+test("ConstructionService skips already picked material allocations on repeated pickup", async () => {
+  const writes: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    constructionRecord: {
+      findUnique: async () => ({
+        id: "record-1",
+        storeId: "store-1",
+        orderId: "order-1",
+        assignments: [{ workerUserId: "worker-1" }],
+        photos: []
+      })
+    },
+    orderInventoryAllocation: {
+      findMany: async () => [
+        {
+          id: "allocation-picked",
+          storeId: "store-1",
+          batchId: "batch-1",
+          productId: "product-1",
+          batch: { unit: ProductUnit.ROLL, batchNo: "BATCH-001" }
+        },
+        {
+          id: "allocation-pending",
+          storeId: "store-1",
+          batchId: "batch-2",
+          productId: "product-1",
+          batch: { unit: ProductUnit.ROLL, batchNo: "BATCH-002" }
+        }
+      ]
+    },
+    inventoryMovement: {
+      findMany: async () => [{ sourceId: "allocation-picked" }],
+      createMany: async (args: unknown) => {
+        writes.push(args);
+        return { count: 1 };
+      }
+    },
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        orderNo: "ORD20260621001",
+        status: OrderStatus.IN_CONSTRUCTION,
+        constructionType: "PPF",
+        constructionLocation: "IN_STORE",
+        appointmentDate: null,
+        appointmentTimeSlot: null,
+        items: [],
+        inventoryMovements: []
+      })
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  await service.pickupMaterials(
+    {
+      id: "worker-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+    },
+    "order-1",
+    { allocationIds: ["allocation-picked", "allocation-pending"] }
+  );
+
+  const serialized = JSON.stringify(writes);
+  assert.equal(serialized.includes("allocation-pending"), true);
+  assert.equal(serialized.includes("allocation-picked"), false);
 });
 
 test("ConstructionService records material loss through inventory movement", async () => {
@@ -642,6 +774,12 @@ test("ConstructionService starts completes and quality checks assigned tasks", a
     order: {
       update: async (args: unknown) => updates.push(args)
     },
+    orderInventoryAllocation: {
+      findMany: async () => []
+    },
+    inventoryMovement: {
+      findMany: async () => []
+    },
     workerCommissionSnapshot: {
       findFirst: async () => null,
       createMany: async (args: unknown) => updates.push(args)
@@ -673,4 +811,50 @@ test("ConstructionService starts completes and quality checks assigned tasks", a
     { result: QualityCheckResult.PASS, note: "ok" }
   );
   assert.equal(JSON.stringify(updates).includes("qualityResult"), true);
+});
+
+test("ConstructionService rejects completing when locked materials have not been picked up", async () => {
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    constructionRecord: {
+      findUnique: async () => ({
+        id: "record-1",
+        orderId: "order-1",
+        storeId: "store-1",
+        startedAt: new Date("2026-06-01T01:00:00.000Z"),
+        completedAt: null,
+        order: { id: "order-1", status: OrderStatus.IN_CONSTRUCTION },
+        assignments: [{ workerUserId: "worker-1" }],
+        photos: [{ stage: "BEFORE" }, { stage: "AFTER" }]
+      }),
+      update: async () => ({ id: "record-1" })
+    },
+    orderInventoryAllocation: {
+      findMany: async () => [{ id: "allocation-1" }]
+    },
+    inventoryMovement: {
+      findMany: async () => []
+    },
+    order: {
+      update: async () => undefined
+    },
+    workerCommissionSnapshot: {
+      findFirst: async () => null,
+      createMany: async () => undefined
+    }
+  };
+  const service = new ConstructionService(prisma as never, {} as never);
+
+  await assert.rejects(
+    () => service.completeOrder(
+      {
+        id: "worker-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+      },
+      "record-1",
+      { completedAt: "2026-06-01T10:30:00.000Z" }
+    ),
+    /请先领取已锁定的施工物料/
+  );
 });

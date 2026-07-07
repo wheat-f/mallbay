@@ -278,7 +278,7 @@ export default function AdminStorePage() {
             className="workbench-data-alert"
             type="error"
             showIcon
-            message="无法加载门店详情"
+            title="无法加载门店详情"
             description="请确认当前账号具有运营管理权限，或稍后刷新重试。"
             action={
               <Button size="small" onClick={() => router.push("/admin")}>

@@ -1,149 +1,217 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Button, Card, Progress, Switch, Tag } from "antd";
+import { useMemo } from "react";
+import { Button, Card, Empty, Table, Tag } from "antd";
 import {
-  ApiOutlined,
-  CloudSyncOutlined,
-  DatabaseOutlined,
-  DeleteOutlined,
-  SafetyCertificateOutlined,
+  CalendarOutlined,
+  CheckCircleOutlined,
+  FileImageOutlined,
   ShopOutlined,
-  SyncOutlined
+  SolutionOutlined,
+  ToolOutlined,
+  UserOutlined
 } from "@ant-design/icons";
+import { getWorkerPhotoStageLabel, getWorkerTaskStatusLabel } from "@mallbay/shared";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
+import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 
-const queueStorageKey = "mallbay-construction-offline-queue";
-const lastSyncStorageKey = "mallbay-construction-last-sync-at";
-const maxCacheSizeMb = 200;
+type ArchiveRecord = {
+  id: string;
+  orderId: string;
+  status: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  actualMinutes?: number | null;
+  order?: {
+    orderNo?: string | null;
+    appointmentDate?: string | null;
+    appointmentTimeSlot?: string | null;
+    constructionType?: string | null;
+    constructionLocation?: string | null;
+    customer?: { name?: string | null } | null;
+    vehicle?: { plateNo?: string | null; brand?: string | null; model?: string | null } | null;
+  } | null;
+  photos?: { id: string; stage: string; url?: string | null }[];
+  qualityChecks?: { id: string; result?: string | null; checkedAt?: string | null }[];
+};
+
+const photoStages = ["BEFORE", "DURING", "AFTER"] as const;
 
 export default function ConstructionProfilePage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeMember = user?.storeMember;
-  const [cacheUsedMb, setCacheUsedMb] = useState(0);
-  const [lastSyncAt, setLastSyncAt] = useState("暂无记录");
-  const [wifiOnly, setWifiOnly] = useState(true);
-  const [autoLog, setAutoLog] = useState(false);
-  const cachePercent = useMemo(
-    () => Math.min(Math.round((cacheUsedMb / maxCacheSizeMb) * 100), 100),
-    [cacheUsedMb]
-  );
+  const storeId = storeMember?.store.id;
 
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      const queue = window.localStorage.getItem(queueStorageKey) ?? "[]";
-      setCacheUsedMb(queue.length / 1024 / 1024);
-      setLastSyncAt(window.localStorage.getItem(lastSyncStorageKey) ?? "暂无记录");
-    }, 0);
+  const archiveQuery = useQuery({
+    queryKey: ["construction-worker-archive", storeId],
+    queryFn: () => constructionApi.assignments({ storeId: storeId! }),
+    enabled: Boolean(storeId)
+  });
 
-    return () => window.clearTimeout(timeoutId);
-  }, []);
+  const records = useMemo(() => (archiveQuery.data ?? []) as ArchiveRecord[], [archiveQuery.data]);
+  const completedRecords = records.filter((record) => record.status === "COMPLETED");
+  const photoCount = records.reduce((total, record) => total + (record.photos?.length ?? 0), 0);
+  const qualityPassedCount = records.filter((record) =>
+    (record.qualityChecks ?? []).some((check) => check.result === "PASSED")
+  ).length;
+  const stageCounts = photoStages.map((stage) => ({
+    stage,
+    label: getWorkerPhotoStageLabel(stage),
+    count: records.reduce(
+      (total, record) => total + (record.photos ?? []).filter((photo) => photo.stage === stage).length,
+      0
+    )
+  }));
 
   return (
     <div className="management-page worker-profile-page">
-      <StorePageHeader title="连接与离线设置" description="管理施工端网络、云端同步和本地缓存策略。">
-        <Button icon={<SyncOutlined />} onClick={() => router.push("/construction/offline")}>
-          查看离线队列
+      <StorePageHeader title="施工档案" description="汇总我的施工工单、照片凭证、质检与履约记录。">
+        <Button icon={<CalendarOutlined />} onClick={() => router.push("/construction/schedules")}>
+          查看排班
         </Button>
-        <Button type="primary" icon={<CloudSyncOutlined />} onClick={() => router.push("/construction/tasks")}>
+        <Button type="primary" icon={<ToolOutlined />} onClick={() => router.push("/construction/tasks")}>
           返回我的任务
         </Button>
       </StorePageHeader>
 
-      <section className="construction-profile-status-card worker-profile-status-card">
+      <section className="worker-archive-hero">
         <div>
-          <span>当前网络状态</span>
-          <strong>
-            <i /> 已连接
-          </strong>
+          <Tag color="processing">施工履约档案</Tag>
+          <h2>{user?.nickname ?? user?.username ?? "施工人员"}</h2>
+          <p>
+            {storeMember?.store.name ?? "未加入门店"} · {getPositionLabel(storeMember?.position)} ·
+            真实记录来自已分配施工工单、照片和质检结果。
+          </p>
         </div>
-        <div className="construction-profile-status-icon">
-          <CloudSyncOutlined />
-        </div>
-        <dl>
-          <div>
-            <dt>延迟 (Ping)</dt>
-            <dd>24 ms</dd>
-          </div>
-          <div>
-            <dt>最后同步</dt>
-            <dd>{lastSyncAt}</dd>
-          </div>
-          <div>
-            <dt>终端</dt>
-            <dd>Web 后台</dd>
-          </div>
-        </dl>
+        <Button
+          icon={<ShopOutlined />}
+          disabled={!storeMember}
+          onClick={() => storeMember && router.push(`/workbench/${storeMember.store.id}`)}
+        >
+          进入门店工作台
+        </Button>
+      </section>
+
+      <section className="worker-archive-kpis" aria-label="施工档案概览">
+        {[
+          { label: "参与工单", value: records.length, icon: <SolutionOutlined /> },
+          { label: "已完工", value: completedRecords.length, icon: <CheckCircleOutlined /> },
+          { label: "照片凭证", value: photoCount, icon: <FileImageOutlined /> },
+          { label: "质检通过", value: qualityPassedCount, icon: <CheckCircleOutlined /> }
+        ].map((item) => (
+          <article key={item.label}>
+            <span>{item.icon}</span>
+            <div>
+              <strong>{item.value}</strong>
+              <em>{item.label}</em>
+            </div>
+          </article>
+        ))}
       </section>
 
       <section className="worker-profile-grid">
-        <Card className="construction-profile-config-section" title="基础配置">
-          <div className="construction-profile-config-list">
-            <button
-              type="button"
-              className="construction-profile-setting-row"
-              onClick={() => storeMember && router.push(`/workbench/${storeMember.store.id}`)}
-              disabled={!storeMember}
-            >
-              <ShopOutlined />
-              <span>
-                <strong>门店名称</strong>
-                <em>{storeMember?.store.name ?? "未加入门店"}</em>
-              </span>
-              <b>{storeMember ? "进入工作台" : "待邀请"}</b>
-            </button>
-            <button type="button" className="construction-profile-setting-row" onClick={() => router.push("/construction/offline")}>
-              <ApiOutlined />
-              <span>
-                <strong>云端服务</strong>
-                <em>已加密连接，点击查看离线同步队列</em>
-              </span>
-              <SafetyCertificateOutlined />
-            </button>
-          </div>
+        <Card className="worker-archive-main-card" title="最近施工记录">
+          <Table<ArchiveRecord>
+            rowKey="id"
+            loading={archiveQuery.isLoading}
+            dataSource={records}
+            pagination={records.length > 6 ? { pageSize: 6 } : false}
+            locale={{ emptyText: <Empty description="暂无施工记录" /> }}
+            columns={[
+              {
+                title: "订单",
+                render: (_, record) => (
+                  <div className="worker-archive-order">
+                    <strong>{record.order?.orderNo ?? "订单信息待确认"}</strong>
+                    <span>{record.order?.customer?.name ?? "客户待确认"}</span>
+                  </div>
+                )
+              },
+              {
+                title: "车辆",
+                render: (_, record) => formatVehicle(record)
+              },
+              {
+                title: "预约",
+                render: (_, record) => formatSchedule(record)
+              },
+              {
+                title: "状态",
+                render: (_, record) => <Tag color={getStatusColor(record.status)}>{getWorkerTaskStatusLabel(record.status)}</Tag>
+              },
+              {
+                title: "照片",
+                render: (_, record) => `${record.photos?.length ?? 0} 张`
+              }
+            ]}
+          />
         </Card>
 
-        <Card className="construction-profile-cache-card" title="离线缓存空间">
-          <div className="construction-mobile-section-head">
-            <div>
-              <h2>离线缓存空间</h2>
-              <p>建议限制：{maxCacheSizeMb}MB</p>
+        <aside className="worker-archive-side">
+          <Card className="worker-archive-photo-card" title="照片与质检归档">
+            <h3>照片阶段统计</h3>
+            <div className="worker-archive-photo-stages">
+              {stageCounts.map((item) => (
+                <div key={item.stage}>
+                  <span>{item.label}</span>
+                  <strong>{item.count} 张</strong>
+                </div>
+              ))}
             </div>
-            <strong>{cacheUsedMb.toFixed(1)} MB</strong>
-          </div>
-          <Progress percent={cachePercent} showInfo={false} />
-          <div className="construction-profile-cache-actions">
-            <Button type="primary" icon={<SyncOutlined />} onClick={() => router.push("/construction/offline")}>
-              立即同步
-            </Button>
-            <Button danger icon={<DeleteOutlined />} onClick={() => router.push("/construction/offline")}>
-              清理缓存
-            </Button>
-          </div>
-        </Card>
+            <div className="worker-archive-quality">
+              <span>质检通过</span>
+              <strong>{qualityPassedCount} 单</strong>
+            </div>
+          </Card>
 
-        <Card className="construction-profile-toggle-list" title="同步策略">
-          <label>
-            <DatabaseOutlined />
-            <span>仅在 Wi-Fi 下下载数据</span>
-            <Switch checked={wifiOnly} onChange={setWifiOnly} />
-          </label>
-          <label>
-            <CloudSyncOutlined />
-            <span>自动保存操作日志</span>
-            <Switch checked={autoLog} onChange={setAutoLog} />
-          </label>
-        </Card>
-
-        <Card className="worker-profile-version-card">
-          <Tag color="processing">mallbay 施工端</Tag>
-          <h2>施工人员 Web 工作区</h2>
-          <p>Web 后台用于查看任务、排班、物料与离线队列；小程序作为外出施工和现场拍照的移动入口。</p>
-        </Card>
+          <Card className="worker-archive-capability-card" title="账号与门店">
+            <div className="worker-archive-capability-list">
+              <div>
+                <UserOutlined />
+                <span>
+                  <strong>{getPositionLabel(storeMember?.position)}</strong>
+                  <em>当前施工身份</em>
+                </span>
+              </div>
+              <div>
+                <ShopOutlined />
+                <span>
+                  <strong>{storeMember?.store.name ?? "未加入门店"}</strong>
+                  <em>所属门店</em>
+                </span>
+              </div>
+            </div>
+          </Card>
+        </aside>
       </section>
     </div>
   );
+}
+
+function formatSchedule(record: ArchiveRecord) {
+  const date = record.order?.appointmentDate?.slice(0, 10) ?? "日期待定";
+  return `${date} ${record.order?.appointmentTimeSlot ?? "时段待定"}`;
+}
+
+function formatVehicle(record: ArchiveRecord) {
+  const vehicle = record.order?.vehicle;
+  return [vehicle?.plateNo, vehicle?.brand, vehicle?.model].filter(Boolean).join(" / ") || "车辆待确认";
+}
+
+function getStatusColor(status: string) {
+  if (status === "COMPLETED") return "success";
+  if (status === "IN_CONSTRUCTION") return "processing";
+  if (status === "DISPATCHED") return "warning";
+  return "default";
+}
+
+function getPositionLabel(position?: string) {
+  if (position === "CONSTRUCTION") return "施工员";
+  if (position === "APPRENTICE") return "学徒";
+  if (position === "SCHEDULER") return "施工主管";
+  return "施工身份待确认";
 }

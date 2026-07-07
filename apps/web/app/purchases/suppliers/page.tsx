@@ -181,7 +181,7 @@ export default function InventorySuppliersPage() {
           className="management-readonly-alert"
           type="info"
           showIcon
-          message="只读模式"
+          title="只读模式"
           description="客服可查看供应商、采购单和批次合作记录，不能新增、编辑、维护联系人或评级。"
         />
       ) : null}

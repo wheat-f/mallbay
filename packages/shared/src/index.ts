@@ -375,6 +375,22 @@ export type BusinessOrderSummary = {
     color?: string | null;
     carColor?: string | null;
   } | null;
+  constructionRecord?: {
+    id?: string;
+    photos?: Array<{
+      id: string;
+      stage: "BEFORE" | "DURING" | "AFTER";
+      url: string;
+      uploadedById?: string | null;
+      createdAt?: string | Date | null;
+      uploadedBy?: {
+        id?: string;
+        username?: string | null;
+        nickname?: string | null;
+        avatarUrl?: string | null;
+      } | null;
+    }>;
+  } | null;
 };
 
 export type ReportSummary = {

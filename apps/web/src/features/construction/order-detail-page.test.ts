@@ -43,11 +43,13 @@ test("construction order detail page follows the prototype quality workspace lay
   assert.doesNotMatch(pageSource, /<Table/);
 });
 
-test("construction order detail uses business copy for photo link fields", () => {
+test("construction order detail keeps one upload entry inside each photo stage card", () => {
   const pageSource = readFileSync("app/construction/orders/[id]/page.tsx", "utf8");
 
-  assert.match(pageSource, /施工照片链接/);
-  assert.match(pageSource, /粘贴施工照片链接/);
+  assert.match(pageSource, /上传\{stage\.title\}/);
+  assert.match(pageSource, /ConstructionPhotoStageGrid/);
+  assert.doesNotMatch(pageSource, /name="url" label="施工照片链接"/);
+  assert.doesNotMatch(pageSource, /粘贴施工照片链接/);
   assert.doesNotMatch(pageSource, /图片 URL/);
   assert.doesNotMatch(pageSource, /粘贴图片 URL/);
 });
@@ -73,4 +75,27 @@ test("construction order detail returns to the dispatch list instead of the work
   assert.match(pageSource, /返回施工派单/);
   assert.match(pageSource, /router\.push\("\/construction\/assignments"\)/);
   assert.doesNotMatch(pageSource, /返回工作台/);
+});
+
+test("construction order detail previews archived construction photos", () => {
+  const pageSource = readFileSync("app/construction/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /const \[previewPhoto, setPreviewPhoto\]/);
+  assert.match(pageSource, /<Modal/);
+  assert.match(pageSource, /<Image src=\{previewPhoto\.url\}/);
+  assert.match(pageSource, /onClick=\{\(\) => onPreview\(photo\)\}/);
+  assert.match(pageSource, /stagePhotos\.map\(\(photo, index\)/);
+  assert.doesNotMatch(pageSource, /stagePhotos\.slice/);
+  assert.doesNotMatch(pageSource, /href=\{photo\.url\} target="_blank"/);
+});
+
+test("construction order detail loads the active workspace by workflow status", () => {
+  const pageSource = readFileSync("app/construction/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /const workspace = getConstructionWorkspace\(record\)/);
+  assert.match(pageSource, /workspace === "photos"/);
+  assert.match(pageSource, /workspace === "quality"/);
+  assert.match(pageSource, /if \(record\.qualityResult\) return "summary"/);
+  assert.match(pageSource, /if \(record\.status === "COMPLETED"\) return "quality"/);
+  assert.doesNotMatch(pageSource, /<aside className="construction-detail-side">[\s\S]*<Form form=\{qualityForm\}/);
 });

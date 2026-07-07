@@ -95,7 +95,7 @@ export default function InventoryOverviewPage() {
           className="management-readonly-alert"
           type="info"
           showIcon
-          message="只读模式"
+          title="只读模式"
           description="客服可查看库存匹配建议、批次、锁库结果和库存流水，不能执行锁库、出库、调整或其他库存操作。"
         />
       ) : null}

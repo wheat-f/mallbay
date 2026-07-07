@@ -3,7 +3,6 @@
 import { App, Button, Card, Empty, InputNumber, Select, Space, Table, Tag } from "antd";
 import {
   BarcodeOutlined,
-  CameraOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   InboxOutlined,
@@ -91,20 +90,23 @@ export default function ConstructionMaterialsPage() {
   });
 
   const materialData = materialsQuery.data;
-  const allAllocationIds = (materialData?.materials ?? []).flatMap((item) => item.batches.map((batch) => batch.allocationId));
+  const pendingAllocationIds = (materialData?.materials ?? []).flatMap((item) =>
+    item.batches.filter((batch) => !batch.pickedUp).map((batch) => batch.allocationId)
+  );
   const pendingPickupBatches = Math.max(
     0,
     (materialData?.summary.allocatedBatches ?? 0) - (materialData?.summary.pickedBatches ?? 0)
   );
+  const hasPendingPickup = pendingAllocationIds.length > 0;
 
   return (
     <div className="management-page worker-materials-page">
-      <StorePageHeader title="施工物料核验" description="按真实施工任务核对订单物料、锁定批次、现场领取和损耗流水。">
+      <StorePageHeader title="施工物料辅助工作台" description="按真实施工任务核对订单物料、锁定批次、现场领取和损耗流水。">
         <Button icon={<ClockCircleOutlined />} onClick={() => router.push("/inventory/movements")}>
           查看库存流水
         </Button>
-        <Button type="primary" icon={<CameraOutlined />} onClick={() => router.push("/construction/camera")}>
-          施工照片上传
+        <Button type="primary" icon={<ToolOutlined />} onClick={() => router.push("/construction/tasks")}>
+          返回我的任务
         </Button>
       </StorePageHeader>
 
@@ -112,7 +114,7 @@ export default function ConstructionMaterialsPage() {
         <div>
           <Tag color="processing">选择施工任务</Tag>
           <h2>{materialData?.order.orderNo ?? "请选择订单"}</h2>
-          <p>开工前完成膜箱照片、膜桶照片、锁定批次扫码核验和物料领取记录，异常损耗记录后同步库存流水。</p>
+          <p>辅助核对锁定批次、扫码核验和物料领取记录，异常损耗记录后同步库存流水。</p>
         </div>
         <Space wrap>
           <Select
@@ -129,11 +131,11 @@ export default function ConstructionMaterialsPage() {
           <Button
             type="primary"
             icon={<InboxOutlined />}
-            disabled={allAllocationIds.length === 0}
+            disabled={!hasPendingPickup}
             loading={pickupMutation.isPending}
-            onClick={() => pickupMutation.mutate(allAllocationIds)}
+            onClick={() => pickupMutation.mutate(pendingAllocationIds)}
           >
-            领取物料
+            {hasPendingPickup ? "领取物料" : "已领取"}
           </Button>
           <Button icon={<ToolOutlined />} onClick={() => router.push("/construction/tasks")}>
             返回我的任务
@@ -147,7 +149,7 @@ export default function ConstructionMaterialsPage() {
             { label: "待领物料", value: pendingPickupBatches, tone: "primary" },
             { label: "锁定批次", value: materialData?.summary.allocatedBatches ?? 0, tone: "warning" },
             { label: "已核验批次", value: materialData?.summary.verifiedBatches ?? 0, tone: "success" },
-            { label: "已存证照片", value: materialData?.summary.photoCount ?? 0, tone: "primary" }
+            { label: "物料明细", value: materialData?.summary.requiredItems ?? 0, tone: "primary" }
           ].map((item) => (
             <article key={item.label} className={`construction-materials-stat is-${item.tone}`}>
               <strong>{item.value}</strong>
@@ -257,10 +259,10 @@ export default function ConstructionMaterialsPage() {
           </Card>
 
           <aside className="worker-materials-side">
-            <Card className="construction-materials-card" title="施工耗材与照片" extra={<ToolOutlined />}>
-              <p className="worker-materials-card-copy">开工前确认膜箱照片、膜桶照片和常用耗材齐备。</p>
+            <Card className="construction-materials-card" title="物料准备清单" extra={<ToolOutlined />}>
+              <p className="worker-materials-card-copy">开工前确认产品标签、锁定批次和常用耗材齐备。</p>
               <div className="construction-materials-consumables">
-                {["膜箱照片", "膜桶照片", "裁膜刀片", "刮板毛毡", "安装液", "无尘布"].map((item) => (
+                {["膜箱标签核对", "膜桶标签核对", "裁膜刀片", "刮板毛毡", "安装液", "无尘布"].map((item) => (
                   <span key={item}>
                     <CheckCircleOutlined />
                     {item}
@@ -269,16 +271,22 @@ export default function ConstructionMaterialsPage() {
               </div>
             </Card>
 
-            <Card className="construction-materials-card" title="现场操作">
+            <Card className="construction-materials-card" title="辅助入口">
               <div className="construction-materials-actions">
-                <Button type="primary" icon={<CameraOutlined />} onClick={() => router.push("/construction/camera")}>
-                  施工照片上传
-                </Button>
-                <Button icon={<InboxOutlined />} disabled={allAllocationIds.length === 0} onClick={() => pickupMutation.mutate(allAllocationIds)}>
-                  领取物料
+                <Button
+                  type="primary"
+                  icon={<InboxOutlined />}
+                  disabled={!hasPendingPickup}
+                  loading={pickupMutation.isPending}
+                  onClick={() => pickupMutation.mutate(pendingAllocationIds)}
+                >
+                  {hasPendingPickup ? "领取物料" : "已领取"}
                 </Button>
                 <Button icon={<ClockCircleOutlined />} onClick={() => router.push("/inventory/movements")}>
                   查看损耗流水
+                </Button>
+                <Button icon={<ToolOutlined />} onClick={() => router.push("/construction/tasks")}>
+                  返回我的任务
                 </Button>
               </div>
             </Card>

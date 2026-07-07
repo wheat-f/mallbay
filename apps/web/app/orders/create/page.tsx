@@ -393,7 +393,7 @@ function CreateOrderContent() {
                     className="mt-1"
                     type={capacityStatus?.state === "available" ? "success" : "warning"}
                     showIcon
-                    message={capacityStatus?.message ?? "正在检查施工容量..."}
+                    title={capacityStatus?.message ?? "正在检查施工容量..."}
                     action={
                       capacityStatus?.state === "missing" || capacityStatus?.state === "full" ? (
                         <Button size="small" onClick={() => router.push(getConstructionCapacityHref(selectedAppointmentDateValue))}>

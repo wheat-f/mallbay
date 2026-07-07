@@ -467,7 +467,7 @@ export default function ConstructionAssignmentsPage() {
             <span>确认提交派工与库房匹配</span>
           </div>
         }
-        width={480}
+        size={480}
         open={confirmDrawerOpen}
         onClose={() => setConfirmDrawerOpen(false)}
         footer={

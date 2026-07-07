@@ -73,7 +73,7 @@ export function getManagementSearchPlaceholder(pathname: string) {
   if (pathname.startsWith("/construction/leaves")) return "搜索请假日期或原因...";
   if (pathname.startsWith("/construction/schedules")) return "搜索排班日期或状态...";
   if (pathname.startsWith("/construction/materials")) return "搜索物料、批次或订单...";
-  if (pathname.startsWith("/construction/profile")) return "搜索连接、缓存或门店...";
+  if (pathname.startsWith("/construction/profile")) return "搜索工单、照片或质检记录...";
   if (pathname.startsWith("/construction/offline")) return "搜索离线记录、订单或状态...";
   if (pathname.startsWith("/construction/capacities")) return "搜索订单或日期...";
   if (pathname.startsWith("/construction/orders")) return "搜索订单号或客户姓名...";

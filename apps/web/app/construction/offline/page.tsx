@@ -158,7 +158,7 @@ export default function ConstructionOfflinePage() {
         type="warning"
         showIcon
         icon={<WarningOutlined />}
-        message={`缓存接近上限（${maxCacheSizeMb}MB），请尽快连接网络同步数据。`}
+        title={`缓存接近上限（${maxCacheSizeMb}MB），请尽快连接网络同步数据。`}
       />
 
       <section className="worker-offline-grid">

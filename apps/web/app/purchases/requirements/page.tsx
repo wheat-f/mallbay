@@ -176,7 +176,7 @@ export default function PurchaseRequirementsPage() {
 
       <Drawer
         title="新建采购需求"
-        width={520}
+        size={520}
         open={isCreateDrawerOpen}
         onClose={() => setIsCreateDrawerOpen(false)}
         destroyOnHidden

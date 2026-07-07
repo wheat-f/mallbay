@@ -265,6 +265,7 @@ export class ConstructionService {
     if (!stages.has(ConstructionPhotoStage.BEFORE) || !stages.has(ConstructionPhotoStage.AFTER)) {
       throw new BadRequestException("完工前必须上传施工前和施工后照片");
     }
+    await this.assertLockedMaterialsPickedUp(record.orderId);
     const completedAt = dto.completedAt ? new Date(dto.completedAt) : new Date();
     const startedAt = record.startedAt ?? completedAt;
     const actualMinutes = Math.max(0, Math.round((completedAt.getTime() - startedAt.getTime()) / 60000));
@@ -282,6 +283,28 @@ export class ConstructionService {
     });
     await this.createCommissionSnapshots(actor.id, record);
     return updated;
+  }
+
+  private async assertLockedMaterialsPickedUp(orderId: string) {
+    const allocations = await this.prisma.orderInventoryAllocation.findMany({
+      where: { orderId },
+      select: { id: true }
+    });
+    if (allocations.length === 0) return;
+
+    const allocationIds = allocations.map((allocation) => allocation.id);
+    const pickupMovements = await this.prisma.inventoryMovement.findMany({
+      where: {
+        orderId,
+        sourceType: "CONSTRUCTION_MATERIAL_PICKUP",
+        sourceId: { in: allocationIds }
+      },
+      select: { sourceId: true }
+    });
+    const pickedAllocationIds = new Set(pickupMovements.map((movement) => movement.sourceId).filter(Boolean));
+    if (pickedAllocationIds.size < allocationIds.length) {
+      throw new BadRequestException("请先领取已锁定的施工物料");
+    }
   }
 
   async qualityCheck(user: AuthenticatedConstructionUser, recordId: string, dto: QualityCheckDto) {
@@ -440,21 +463,33 @@ export class ConstructionService {
     if (allocations.length !== allocationIds.length) {
       throw new BadRequestException("存在不属于该订单的锁定批次");
     }
-    await this.prisma.inventoryMovement.createMany({
-      data: allocations.map((allocation) => ({
-        storeId: allocation.storeId,
-        batchId: allocation.batchId,
-        productId: allocation.productId,
+    const existingPickupMovements = await this.prisma.inventoryMovement.findMany({
+      where: {
         orderId,
-        movementType: InventoryMovementType.STOCK_ADJUST,
-        quantity: 0,
-        unit: allocation.batch.unit,
         sourceType: "CONSTRUCTION_MATERIAL_PICKUP",
-        sourceId: allocation.id,
-        createdById: actor.id,
-        note: dto.note ?? `施工领取物料：${allocation.batch.batchNo}`
-      }))
+        sourceId: { in: allocationIds }
+      },
+      select: { sourceId: true }
     });
+    const pickedAllocationIds = new Set(existingPickupMovements.map((movement) => movement.sourceId).filter(Boolean));
+    const pendingAllocations = allocations.filter((allocation) => !pickedAllocationIds.has(allocation.id));
+    if (pendingAllocations.length > 0) {
+      await this.prisma.inventoryMovement.createMany({
+        data: pendingAllocations.map((allocation) => ({
+          storeId: allocation.storeId,
+          batchId: allocation.batchId,
+          productId: allocation.productId,
+          orderId,
+          movementType: InventoryMovementType.STOCK_ADJUST,
+          quantity: 0,
+          unit: allocation.batch.unit,
+          sourceType: "CONSTRUCTION_MATERIAL_PICKUP",
+          sourceId: allocation.id,
+          createdById: actor.id,
+          note: dto.note ?? `施工领取物料：${allocation.batch.batchNo}`
+        }))
+      });
+    }
     return this.getOrderMaterials(user, orderId);
   }
 
@@ -606,7 +641,13 @@ export class ConstructionService {
 
   async upsertSchedule(user: AuthenticatedConstructionUser, dto: UpsertScheduleDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canDispatchConstruction(actor, dto.storeId)) {
+    const position = actor.storeMember?.position;
+    const canUpdateOwnSchedule = (
+      actor.storeMember?.storeId === dto.storeId &&
+      (position === StorePosition.CONSTRUCTION || position === StorePosition.APPRENTICE) &&
+      actor.id === dto.workerId
+    );
+    if (!PermissionPolicy.canDispatchConstruction(actor, dto.storeId) && !canUpdateOwnSchedule) {
       throw new ForbiddenException("无权限");
     }
     const date = normalizeDate(dto.date);

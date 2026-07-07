@@ -1,7 +1,7 @@
 "use client";
 
 import type { AfterSaleResponsibility, AfterSaleStatus, AfterSaleSummary } from "@mallbay/shared";
-import { App, Button, Card, Empty, Skeleton, Tag } from "antd";
+import { App, Button, Card, Empty, Image, Modal, Skeleton, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   CameraOutlined,
@@ -18,6 +18,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { afterSalesApi } from "../../../src/lib/api";
 import {
   getAfterSaleBusinessLabel,
@@ -56,6 +57,7 @@ export default function AfterSaleDetailPage() {
 
   const afterSale = afterSaleQuery.data;
   const photoGroups = afterSale ? getAfterSalePhotoGroups(afterSale.photos) : getAfterSalePhotoGroups([]);
+  const constructionPhotos = afterSale ? getConstructionPhotoEvidence(afterSale) : [];
   const timeline = getAfterSaleDetailTimeline(afterSale);
   const closeMutation = useMutation({
     mutationFn: () => {
@@ -135,13 +137,9 @@ export default function AfterSaleDetailPage() {
               </div>
               <div className="after-sale-evidence-grid">
                 <PhotoEvidenceCard title="问题照片" photos={photoGroups.issuePhotos} emptyText="暂无问题照片" tone="defect" />
-                <PhotoEvidenceCard title="施工后照片" photos={photoGroups.constructionAfterPhotos} emptyText="暂无施工后照片" tone="after" />
+                <PhotoEvidenceCard title="原施工照片" photos={constructionPhotos} emptyText="暂无原施工照片" tone="vehicle" />
+                <PhotoEvidenceCard title="售后施工后照片" photos={photoGroups.constructionAfterPhotos} emptyText="暂无施工后照片" tone="after" />
                 <PhotoEvidenceCard title="补充证据" photos={photoGroups.supplementPhotos} emptyText="暂无补充证据" tone="supplement" />
-                <div className="after-sale-photo-card is-vehicle">
-                  <CameraOutlined />
-                  <strong>车辆与订单</strong>
-                  <span>{getOrderVehicleLabel(afterSale)}</span>
-                </div>
               </div>
             </Card>
 
@@ -239,25 +237,50 @@ function PhotoEvidenceCard({
   title: string;
   photos: AfterSalePhotoEvidence[];
   emptyText: string;
-  tone: "defect" | "after" | "supplement";
+  tone: "defect" | "after" | "supplement" | "vehicle";
 }) {
+  const [previewPhoto, setPreviewPhoto] = useState<AfterSalePhotoEvidence | null>(null);
+  const viewableCount = photos.filter((photo) => isViewablePhotoUrl(photo.url)).length;
+  const photoCountLabel =
+    photos.length === 0 ? emptyText : viewableCount === photos.length ? `${photos.length} 张照片已归档` : `${viewableCount}/${photos.length} 张可查看`;
   return (
     <div className={`after-sale-photo-card is-${tone}`}>
       <CameraOutlined />
       <strong>{title}</strong>
-      <span>{photos.length > 0 ? `${photos.length} 张照片已归档` : emptyText}</span>
+      <span>{photoCountLabel}</span>
       {photos.length > 0 ? (
         <div className="after-sale-photo-links">
           {photos.map((photo, index) => (
             <div key={photo.id ?? photo.url} className="after-sale-photo-evidence-row">
-              <a href={photo.url} target="_blank" rel="noreferrer">
-                查看照片 {index + 1}
-              </a>
+              {isViewablePhotoUrl(photo.url) ? (
+                <button type="button" onClick={() => setPreviewPhoto(photo)}>
+                  查看照片 {index + 1}
+                </button>
+              ) : (
+                <em>地址无效</em>
+              )}
               <span>{photo.note || "无备注"} / {getUserDisplayName(photo.uploadedBy) || "上传人待确认"}</span>
             </div>
           ))}
         </div>
       ) : null}
+      <Modal
+        title={previewPhoto?.note || title}
+        open={Boolean(previewPhoto)}
+        onCancel={() => setPreviewPhoto(null)}
+        footer={null}
+        width={760}
+        centered
+      >
+        {previewPhoto ? (
+          <div className="after-sale-photo-preview">
+            <Image src={previewPhoto.url} alt={previewPhoto.note || title} />
+            <a href={previewPhoto.url} target="_blank" rel="noreferrer">
+              在新窗口打开原图
+            </a>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }
@@ -306,6 +329,7 @@ function getPenaltyIcon(key: string) {
 }
 
 type AfterSalePhotoEvidence = NonNullable<AfterSaleSummary["photos"]>[number];
+type ConstructionPhotoEvidence = NonNullable<NonNullable<AfterSaleSummary["order"]>["constructionRecord"]>["photos"];
 
 function getAfterSalePhotoGroups(photos?: AfterSaleSummary["photos"]) {
   const photoList = photos ?? [];
@@ -314,6 +338,31 @@ function getAfterSalePhotoGroups(photos?: AfterSaleSummary["photos"]) {
     constructionAfterPhotos: photoList.filter((photo) => photo.stage === "CONSTRUCTION_AFTER"),
     supplementPhotos: photoList.filter((photo) => photo.stage === "SUPPLEMENT")
   };
+}
+
+function getConstructionPhotoEvidence(afterSale: AfterSaleSummary): AfterSalePhotoEvidence[] {
+  const photos: ConstructionPhotoEvidence = afterSale.order?.constructionRecord?.photos ?? [];
+  return photos.map((photo) => ({
+    id: photo.id,
+    stage: "SUPPLEMENT",
+    url: photo.url,
+    note: getConstructionPhotoStageLabel(photo.stage),
+    uploadedById: photo.uploadedById,
+    createdAt: photo.createdAt,
+    uploadedBy: photo.uploadedBy
+  }));
+}
+
+function getConstructionPhotoStageLabel(stage: string) {
+  if (stage === "BEFORE") return "施工前照片";
+  if (stage === "DURING") return "施工中照片";
+  if (stage === "AFTER") return "施工后照片";
+  return "施工照片";
+}
+
+function isViewablePhotoUrl(url?: string | null) {
+  if (!url) return false;
+  return /^(https?:\/\/|\/)/.test(url.trim());
 }
 
 function getPhotoCountLabel(photos?: AfterSalePhotoEvidence[] | null, fallback = "待上传") {

@@ -2,28 +2,32 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
-test("warranties home is a work-order list instead of an inline registration form", () => {
+test("warranties home uses warranty cards as the primary list", () => {
   const pageSource = readFileSync("app/warranties/page.tsx", "utf8");
 
   assert.match(pageSource, /title="质保管理"/);
-  assert.match(pageSource, /title="工单列表"/);
-  assert.match(pageSource, /orderApi\.list\(\{ storeId: storeId!, page: 1, pageSize: 100 \}\)/);
-  assert.match(pageSource, /statusFilter/);
-  assert.match(pageSource, /工单状态/);
-  assert.match(pageSource, /订单号 \/ 客户 \/ 车牌/);
+  assert.match(pageSource, /title="质保卡列表"/);
+  assert.match(pageSource, /warrantiesApi\.list\(storeId!\)/);
+  assert.match(pageSource, /orderApi\.list\(\{ storeId: storeId!, status: "COMPLETED", page: 1, pageSize: 100 \}\)/);
+  assert.match(pageSource, /warrantyStatusFilter/);
+  assert.match(pageSource, /质保状态/);
+  assert.match(pageSource, /质保编号 \/ 订单号 \/ 客户 \/ 车牌 \/ 范围/);
+  assert.doesNotMatch(pageSource, /title="工单列表"/);
   assert.doesNotMatch(pageSource, /<Form/);
   assert.doesNotMatch(pageSource, /系统自动提取信息 \(来自工单\)/);
 });
 
-test("warranties home shows warranty actions only when business state allows it", () => {
+test("warranties home separates pending generation orders from warranty card actions", () => {
   const pageSource = readFileSync("app/warranties/page.tsx", "utf8");
 
-  assert.match(pageSource, /function renderWarrantyAction/);
-  assert.match(pageSource, /row\.warranty/);
+  assert.match(pageSource, /function renderWarrantyCardAction/);
+  assert.match(pageSource, /function renderPendingWarrantyOrder/);
+  assert.match(pageSource, /pendingGenerationRows/);
+  assert.match(pageSource, /待生成质保工单/);
   assert.match(pageSource, /查看电子质保/);
-  assert.match(pageSource, /row\.status === "COMPLETED"/);
+  assert.match(pageSource, /router\.push\(`\/warranties\/\$\{row\.id\}`\)/);
   assert.match(pageSource, /生成电子质保/);
-  assert.match(pageSource, /return null/);
+  assert.match(pageSource, /router\.push\(`\/warranties\/create\?orderId=\$\{row\.id\}`\)/);
   assert.match(pageSource, /warrantyByOrderId/);
 });
 

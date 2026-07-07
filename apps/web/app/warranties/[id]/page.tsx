@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Skeleton, Tag } from "antd";
+import { Alert, Button, Card, Drawer, Skeleton, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
@@ -14,6 +14,7 @@ import {
 } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
 import { warrantiesApi } from "../../../src/lib/api";
 import {
   getWarrantyCardRows,
@@ -26,6 +27,7 @@ export default function WarrantyDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const warrantyId = params.id;
+  const [isWarrantyLogOpen, setIsWarrantyLogOpen] = useState(false);
 
   const warrantyQuery = useQuery({
     queryKey: ["warranty-detail", warrantyId],
@@ -38,6 +40,7 @@ export default function WarrantyDetailPage() {
   const cardRows = warranty ? getWarrantyCardRows(warranty) : [];
   const summaryItems = warranty ? getWarrantySummaryItems(warranty) : [];
   const scopeItems = splitWarrantyScope(warranty?.scope);
+  const warrantyLogEntries = warranty ? getWarrantyLogEntries(warranty, reminder) : [];
 
   return (
     <div className="management-page">
@@ -68,7 +71,9 @@ export default function WarrantyDetailPage() {
               <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/warranties")}>
                 返回质保列表
               </Button>
-              <Button icon={<HistoryOutlined />}>查看质保日志</Button>
+              <Button icon={<HistoryOutlined />} onClick={() => setIsWarrantyLogOpen(true)}>
+                查看质保日志
+              </Button>
               <Button danger icon={<StopOutlined />}>
                 作废/重开质保
               </Button>
@@ -205,6 +210,31 @@ export default function WarrantyDetailPage() {
               </div>
             </aside>
           </section>
+
+          <Drawer
+            title="质保日志"
+            size="large"
+            open={isWarrantyLogOpen}
+            onClose={() => setIsWarrantyLogOpen(false)}
+            destroyOnHidden
+          >
+            <div className="warranty-log-drawer">
+              <div className="warranty-log-summary">
+                <span>质保编号</span>
+                <strong>{warranty.warrantyNo}</strong>
+                <Tag color={reminder.color}>{getWarrantyStatusLabel(warranty.status)}</Tag>
+              </div>
+              <div className="warranty-log-list">
+                {warrantyLogEntries.map((entry) => (
+                  <article key={entry.key} className="warranty-log-entry">
+                    <span>{entry.time}</span>
+                    <strong>{entry.title}</strong>
+                    <p>{entry.description}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </Drawer>
         </>
       ) : null}
     </div>
@@ -229,5 +259,43 @@ function getWarrantySummaryItems(warranty: Parameters<typeof getWarrantyOrderLab
     { label: "手机号码", value: "联系方式待确认" },
     { label: "车牌号码", value: order?.vehicle?.plateNo ?? order?.vehicle?.carPlate ?? "-" },
     { label: "车辆型号", value: order?.vehicle?.model ?? order?.vehicle?.carModel ?? "-" }
+  ];
+}
+
+function getWarrantyLogEntries(
+  warranty: Parameters<typeof getWarrantyOrderLabel>[0] & {
+    warrantyNo?: string | null;
+    scope?: string | null;
+    status?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+  },
+  reminder: { label: string }
+) {
+  return [
+    {
+      key: "created",
+      title: "质保创建",
+      time: formatDate(warranty.startDate),
+      description: `电子质保 ${warranty.warrantyNo ?? "-"} 已生效，关联 ${getWarrantyOrderLabel(warranty)}。`
+    },
+    {
+      key: "scope",
+      title: "质保范围确认",
+      time: formatDate(warranty.startDate),
+      description: warranty.scope ? `质保范围：${warranty.scope}` : "暂未设置具体质保范围。"
+    },
+    {
+      key: "expiry",
+      title: "质保到期提醒",
+      time: formatDate(warranty.endDate),
+      description: `当前提醒：${reminder.label}，状态为 ${getWarrantyStatusLabel(warranty.status)}。`
+    },
+    {
+      key: "trace",
+      title: "材料与施工追溯",
+      time: formatDate(warranty.startDate),
+      description: "售后核验时可继续查看关联订单、库存批次、施工影像和售后记录。"
+    }
   ];
 }

@@ -15,10 +15,12 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.21",
+    "@types/bcryptjs": "2.4.6",
     "@types/node": "24.12.3",
     "tsx": "^4.19.2"
   },
   "dependencies": {
-    "ali-oss": "^6.23.0"
+    "ali-oss": "^6.23.0",
+    "bcryptjs": "2.4.3"
   }
 }

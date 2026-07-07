@@ -12,19 +12,22 @@ import {
   Skeleton,
   Table,
   Tag,
-  Typography
+  Typography,
+  Upload
 } from "antd";
 import {
   ArrowLeftOutlined,
   CarOutlined,
   EditOutlined,
   FileTextOutlined,
-  PlusOutlined
+  PlusOutlined,
+  UploadOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import type { UploadProps } from "antd";
 import { customerApi } from "../../../src/lib/api";
 import type {
   CreateCustomerNotePayload,
@@ -151,6 +154,7 @@ type EditCustomerFormValues = Partial<CreateCustomerPayload>;
 type VehicleFormValues = Omit<CreateVehiclePayload, "customerId">;
 type NoteFormValues = Pick<CreateCustomerNotePayload, "content" | "noteType">;
 type TagFormValues = Pick<CreateCustomerTagPayload, "label">;
+type UploadRequestOption = Parameters<NonNullable<UploadProps["customRequest"]>>[0];
 
 const sourceLabels: Record<string, string> = {
   ONLINE_DOUYIN: "抖音",
@@ -185,6 +189,7 @@ export default function CustomerDetailPage() {
   const [tagForm] = Form.useForm<TagFormValues>();
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
   const [vehicleDrawerOpen, setVehicleDrawerOpen] = useState(false);
+  const [vehiclePhotoUploading, setVehiclePhotoUploading] = useState(false);
   const customerId = params.id;
   const detailQueryKey = ["customer-detail", customerId];
 
@@ -285,6 +290,22 @@ export default function CustomerDetailPage() {
   const submitVehicleDrawer = async () => {
     const values = await vehicleForm.validateFields();
     await vehicleMutation.mutateAsync(values);
+  };
+
+  const handleVehiclePhotoUpload = async (options: UploadRequestOption) => {
+    setVehiclePhotoUploading(true);
+    try {
+      const result = await customerApi.uploadVehiclePhoto(options.file as File);
+      vehicleForm.setFieldValue("photoUrl", result.url);
+      message.success("车辆照片已上传");
+      options.onSuccess?.(result);
+    } catch (error) {
+      const uploadError = error as Error;
+      message.error(uploadError.message);
+      options.onError?.(uploadError);
+    } finally {
+      setVehiclePhotoUploading(false);
+    }
   };
 
   return (
@@ -771,8 +792,26 @@ export default function CustomerDetailPage() {
               <Form.Item name="carColor" label="车身颜色">
                 <Input maxLength={50} />
               </Form.Item>
-              <Form.Item name="photoUrl" label="车辆照片链接">
-                <Input placeholder="粘贴已上传的车辆照片链接" />
+              <Form.Item name="photoUrl" label="车辆照片" hidden>
+                <Input type="hidden" />
+              </Form.Item>
+              <Form.Item shouldUpdate={(previous, current) => previous.photoUrl !== current.photoUrl} noStyle>
+                {({ getFieldValue }) => (
+                  <div className="customers-vehicle-photo-upload">
+                    <Upload accept="image/*" showUploadList={false} customRequest={handleVehiclePhotoUpload}>
+                      <Button icon={<UploadOutlined />} loading={vehiclePhotoUploading}>
+                        直接上传车辆照片
+                      </Button>
+                    </Upload>
+                    {getFieldValue("photoUrl") ? (
+                      <a href={getFieldValue("photoUrl")} target="_blank" rel="noreferrer">
+                        查看已上传照片
+                      </a>
+                    ) : (
+                      <span>支持 JPG、PNG 等图片，上传后自动写入车辆档案。</span>
+                    )}
+                  </div>
+                )}
               </Form.Item>
             </Form>
           </Drawer>

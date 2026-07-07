@@ -7,7 +7,7 @@ test("warranties page links warranty rows to the warranty detail page", () => {
 
   assert.match(pageSource, /useRouter/);
   assert.match(pageSource, /router\.push\(`\/warranties\/\$\{row\.id\}`\)/);
-  assert.match(pageSource, />\s*详情\s*<\/Button>/);
+  assert.match(pageSource, />\s*查看电子质保\s*<\/Button>/);
 });
 
 test("warranty detail page shows warranty core information and traceability entries", () => {
@@ -46,6 +46,13 @@ test("warranty detail page follows the prototype traceability workspace layout",
   assert.doesNotMatch(detailSource, /返回质保管理/);
   assert.match(detailSource, /<span>质保查询<\/span>/);
   assert.match(detailSource, /查看质保日志/);
+  assert.match(detailSource, /isWarrantyLogOpen/);
+  assert.match(detailSource, /setIsWarrantyLogOpen\(true\)/);
+  assert.match(detailSource, /<Drawer/);
+  assert.match(detailSource, /title="质保日志"/);
+  assert.match(detailSource, /getWarrantyLogEntries/);
+  assert.match(detailSource, /质保创建/);
+  assert.match(detailSource, /材料与施工追溯/);
   assert.match(detailSource, /作废\/重开质保/);
   assert.match(detailSource, /下载电子质保卡/);
   assert.match(detailSource, /售后服务记录/);

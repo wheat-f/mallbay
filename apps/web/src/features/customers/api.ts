@@ -1,5 +1,5 @@
 import type { CustomerNoteType, CustomerSourceType, CustomerType, Gender } from "@mallbay/shared";
-import { request } from "../../lib/request";
+import { request, requestMultipart } from "../../lib/request";
 
 export type CreateCustomerPayload = {
   storeId: string;
@@ -92,6 +92,12 @@ export const customerApi = {
       method: "PATCH",
       body: JSON.stringify(payload)
     }),
+
+  uploadVehiclePhoto: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return requestMultipart<{ url: string }>("/customers/vehicles/photos/upload", formData);
+  },
 
   createCustomerUser: (payload: CreateCustomerUserPayload & { customerId: string }) =>
     request<unknown>("/customers/users", {

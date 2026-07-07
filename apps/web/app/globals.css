@@ -4235,6 +4235,31 @@ body {
   padding: 12px;
 }
 
+.customers-vehicle-photo-upload {
+  display: grid;
+  gap: 8px;
+  border: 1px dashed var(--mb-border-strong);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-container-low);
+  padding: 12px;
+}
+
+.customers-vehicle-photo-upload .ant-btn {
+  width: 100%;
+}
+
+.customers-vehicle-photo-upload a,
+.customers-vehicle-photo-upload span {
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.customers-vehicle-photo-upload a {
+  color: var(--mb-primary);
+}
+
 .customers-create-drawer-footer {
   display: flex;
   justify-content: flex-end;
@@ -8741,6 +8766,77 @@ body {
   color: color-mix(in srgb, var(--mb-info), #1f2937 28%);
   font-size: 12px;
   line-height: 18px;
+}
+
+.warranty-log-drawer {
+  display: grid;
+  gap: 16px;
+}
+
+.warranty-log-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  align-items: center;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-lg);
+  background: var(--mb-surface-container-low);
+  padding: 16px;
+}
+
+.warranty-log-summary span,
+.warranty-log-entry span {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
+}
+
+.warranty-log-summary strong {
+  min-width: 0;
+  color: var(--mb-text-primary);
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 26px;
+  overflow-wrap: anywhere;
+}
+
+.warranty-log-summary .ant-tag {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  margin: 0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 800;
+}
+
+.warranty-log-list {
+  position: relative;
+  display: grid;
+  gap: 12px;
+}
+
+.warranty-log-entry {
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface);
+  padding: 14px;
+}
+
+.warranty-log-entry strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--mb-text-primary);
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 22px;
+}
+
+.warranty-log-entry p {
+  margin: 6px 0 0;
+  color: var(--mb-text-secondary);
+  font-size: 13px;
+  line-height: 21px;
 }
 
 .operation-action-grid {

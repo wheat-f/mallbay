@@ -120,6 +120,18 @@ test("customers vehicle drawer can add vehicles and edit any existing vehicle", 
   assert.match(pageSource, /editingVehicle \? "编辑车辆" : "新增车辆"/);
 });
 
+test("customers vehicle drawer uploads vehicle photos directly", () => {
+  assert.match(apiSource, /requestMultipart/);
+  assert.match(apiSource, /uploadVehiclePhoto: \(file: File\)/);
+  assert.match(apiSource, /\/customers\/vehicles\/photos\/upload/);
+  assert.match(pageSource, /Upload/);
+  assert.match(pageSource, /UploadOutlined/);
+  assert.match(pageSource, /uploadVehiclePhoto/);
+  assert.match(pageSource, /customRequest=\{handleVehiclePhotoUpload\}/);
+  assert.match(pageSource, /直接上传车辆照片/);
+  assert.doesNotMatch(pageSource, /label="车辆照片链接"/);
+});
+
 test("customers create drawer supports creating multiple vehicles with a new customer", () => {
   assert.match(pageSource, /toCreateVehiclePayloads/);
   assert.match(pageSource, /Promise\.all\(vehiclePayloads\.map/);

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -10,10 +11,15 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
+  UseInterceptors,
   UseGuards
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import type { MulterFile } from "../users/multer-file.type";
+import { OssService } from "../users/oss.service";
 import { CustomersService, type AuthenticatedCustomerUser } from "./customers.service";
 import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
 import { CreateCustomerTagDto } from "./dto/create-customer-tag.dto";
@@ -31,7 +37,10 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("customers")
 export class CustomersController {
-  constructor(@Inject(CustomersService) private readonly customers: CustomersService) {}
+  constructor(
+    @Inject(CustomersService) private readonly customers: CustomersService,
+    @Inject(OssService) private readonly ossService: OssService
+  ) {}
 
   @Post()
   create(@Req() req: AuthRequest, @Body() dto: CreateCustomerDto) {
@@ -61,6 +70,26 @@ export class CustomersController {
   @Post("vehicles")
   createVehicle(@Req() req: AuthRequest, @Body() dto: CreateVehicleDto) {
     return this.customers.createVehicle(req.user, dto);
+  }
+
+  @Post("vehicles/photos/upload")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter(_req, file, cb) {
+        if (!file.mimetype.startsWith("image/")) {
+          return cb(new BadRequestException("只允许上传图片"), false);
+        }
+        cb(null, true);
+      }
+    })
+  )
+  async uploadVehiclePhoto(@Req() req: AuthRequest, @UploadedFile() file: MulterFile) {
+    if (!file) {
+      throw new BadRequestException("请上传图片文件");
+    }
+    const url = await this.ossService.uploadVehiclePhoto(req.user.id, file);
+    return { url };
   }
 
   @Post("users")

@@ -9,7 +9,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
-import * as bcrypt from "bcrypt";
+import * as bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";

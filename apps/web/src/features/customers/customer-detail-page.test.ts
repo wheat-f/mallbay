@@ -52,21 +52,27 @@ test("customer detail edit actions use prototype right-side drawers", () => {
   assert.match(cssSource, /\.customer-detail-drawer-footer/);
 });
 
-test("customer detail vehicle drawer uses business copy for photo link fields", () => {
+test("customer detail vehicle drawer uploads vehicle photos directly", () => {
   const pageSource = readFileSync("app/customers/[id]/page.tsx", "utf8");
 
-  assert.match(pageSource, /车辆照片链接/);
-  assert.match(pageSource, /粘贴已上传的车辆照片链接/);
+  assert.match(pageSource, /Upload/);
+  assert.match(pageSource, /UploadOutlined/);
+  assert.match(pageSource, /uploadVehiclePhoto/);
+  assert.match(pageSource, /customRequest=\{handleVehiclePhotoUpload\}/);
+  assert.match(pageSource, /直接上传车辆照片/);
+  assert.doesNotMatch(pageSource, /车辆照片链接/);
+  assert.doesNotMatch(pageSource, /粘贴已上传的车辆照片链接/);
   assert.doesNotMatch(pageSource, /车辆照片 URL/);
 });
 
 test("customer detail page replaces nested tables with mobile record cards", () => {
   const pageSource = readFileSync("app/customers/[id]/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
-  const baseHiddenIndex = cssSource.indexOf(".customer-record-mobile-cards {\n  display: none");
-  const desktopTableIndex = cssSource.indexOf(".customer-record-desktop-table");
-  const mobileDisplayIndex = cssSource.indexOf(".customer-record-mobile-cards", desktopTableIndex);
-  const customerRecordBreakpoint = cssSource.match(
+  const normalizedCssSource = cssSource.replace(/\r\n/g, "\n");
+  const baseHiddenIndex = normalizedCssSource.indexOf(".customer-record-mobile-cards {\n  display: none");
+  const desktopTableIndex = normalizedCssSource.indexOf(".customer-record-desktop-table");
+  const mobileDisplayIndex = normalizedCssSource.indexOf(".customer-record-mobile-cards", desktopTableIndex);
+  const customerRecordBreakpoint = normalizedCssSource.match(
     /@media \(max-width: (\d+)px\) \{\s*\.customer-record-desktop-table\s*\{\s*display: none;\s*\}\s*\.customer-record-mobile-cards\s*\{\s*display: grid;/
   );
 
@@ -76,7 +82,7 @@ test("customer detail page replaces nested tables with mobile record cards", () 
   assert.match(pageSource, /customer-order-mobile-card/);
   assert.match(pageSource, /customer-warranty-mobile-card/);
   assert.match(pageSource, /customer-after-sale-mobile-card/);
-  assert.match(cssSource, /\.customer-record-mobile-cards\s*\{[\s\S]*display: none;/);
+  assert.match(normalizedCssSource, /\.customer-record-mobile-cards\s*\{[\s\S]*display: none;/);
   assert.equal(customerRecordBreakpoint?.[1], "900");
   assert.ok(baseHiddenIndex >= 0, "base hidden rule must exist");
   assert.ok(desktopTableIndex > baseHiddenIndex, "mobile breakpoint must come after the base hidden rule");

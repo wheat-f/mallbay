@@ -1,10 +1,19 @@
 "use client";
 
-import { App, Button, Card, Drawer, Empty, Form, Input, Select, Space, Table, Tag, Tooltip } from "antd";
-import { CarOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { App, Button, Card, Drawer, Empty, Form, Input, Select, Space, Table, Tag, Tooltip, Upload } from "antd";
+import {
+  CarOutlined,
+  EditOutlined,
+  EyeOutlined,
+  FileTextOutlined,
+  PlusOutlined,
+  SearchOutlined,
+  UploadOutlined
+} from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import type { UploadProps } from "antd";
 import { customerApi } from "../../src/lib/api";
 import {
   toCreateCustomerPayload,
@@ -65,6 +74,7 @@ type EditCustomerFormValues = {
 };
 
 type VehicleFormValues = UpdateVehiclePayload;
+type UploadRequestOption = Parameters<NonNullable<UploadProps["customRequest"]>>[0];
 
 const quickSearchModes = [
   { label: "手机号", placeholder: "输入手机号进行搜索" },
@@ -94,6 +104,8 @@ export default function CustomersPage() {
   const [editCustomer, setEditCustomer] = useState<CustomerRow | null>(null);
   const [vehicleCustomer, setVehicleCustomer] = useState<CustomerRow | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<CustomerVehicle | null>(null);
+  const [vehiclePhotoUploading, setVehiclePhotoUploading] = useState(false);
+  const [createVehiclePhotoUploading, setCreateVehiclePhotoUploading] = useState(false);
   const [createCustomerType, setCreateCustomerType] = useState("PERSONAL");
   const [editCustomerType, setEditCustomerType] = useState("PERSONAL");
   const [createForm] = Form.useForm<CreateCustomerFormValues>();
@@ -262,6 +274,42 @@ export default function CustomersPage() {
     setVehicleCustomer(null);
     setEditingVehicle(null);
     vehicleForm.resetFields();
+  };
+
+  const uploadVehiclePhoto = async (
+    options: UploadRequestOption,
+    onUploaded: (url: string) => void,
+    setUploading: (uploading: boolean) => void
+  ) => {
+    setUploading(true);
+    try {
+      const result = await customerApi.uploadVehiclePhoto(options.file as File);
+      onUploaded(result.url);
+      message.success("车辆照片已上传");
+      options.onSuccess?.(result);
+    } catch (error) {
+      const uploadError = error as Error;
+      message.error(uploadError.message);
+      options.onError?.(uploadError);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleVehiclePhotoUpload = (options: UploadRequestOption) => {
+    void uploadVehiclePhoto(
+      options,
+      (url) => vehicleForm.setFieldValue("photoUrl", url),
+      setVehiclePhotoUploading
+    );
+  };
+
+  const handleCreateVehiclePhotoUpload = (fieldName: number) => (options: UploadRequestOption) => {
+    void uploadVehiclePhoto(
+      options,
+      (url) => createForm.setFieldValue(["vehicles", fieldName, "photoUrl"], url),
+      setCreateVehiclePhotoUploading
+    );
   };
 
   return (
@@ -855,8 +903,26 @@ export default function CustomersPage() {
                 <Form.Item name="carColor" label="车身颜色">
                   <Input maxLength={50} />
                 </Form.Item>
-                <Form.Item name="photoUrl" label="车辆照片链接">
-                  <Input />
+                <Form.Item name="photoUrl" label="车辆照片" hidden>
+                  <Input type="hidden" />
+                </Form.Item>
+                <Form.Item shouldUpdate={(previous, current) => previous.photoUrl !== current.photoUrl} noStyle>
+                  {({ getFieldValue }) => (
+                    <div className="customers-vehicle-photo-upload">
+                      <Upload accept="image/*" showUploadList={false} customRequest={handleVehiclePhotoUpload}>
+                        <Button icon={<UploadOutlined />} loading={vehiclePhotoUploading}>
+                          直接上传车辆照片
+                        </Button>
+                      </Upload>
+                      {getFieldValue("photoUrl") ? (
+                        <a href={getFieldValue("photoUrl")} target="_blank" rel="noreferrer">
+                          查看已上传照片
+                        </a>
+                      ) : (
+                        <span>支持 JPG、PNG 等图片，上传后自动写入车辆档案。</span>
+                      )}
+                    </div>
+                  )}
                 </Form.Item>
               </div>
             </section>
@@ -1073,8 +1139,38 @@ export default function CustomersPage() {
                             <Form.Item name={[field.name, "carColor"]} label="车身颜色">
                               <Input maxLength={50} />
                             </Form.Item>
-                            <Form.Item name={[field.name, "photoUrl"]} label="车辆照片链接">
-                              <Input />
+                            <Form.Item name={[field.name, "photoUrl"]} label="车辆照片" hidden>
+                              <Input type="hidden" />
+                            </Form.Item>
+                            <Form.Item
+                              shouldUpdate={(previous, current) =>
+                                previous.vehicles?.[field.name]?.photoUrl !== current.vehicles?.[field.name]?.photoUrl
+                              }
+                              noStyle
+                            >
+                              {({ getFieldValue }) => {
+                                const photoUrl = getFieldValue(["vehicles", field.name, "photoUrl"]) as string | undefined;
+                                return (
+                                  <div className="customers-vehicle-photo-upload">
+                                    <Upload
+                                      accept="image/*"
+                                      showUploadList={false}
+                                      customRequest={handleCreateVehiclePhotoUpload(field.name)}
+                                    >
+                                      <Button icon={<UploadOutlined />} loading={createVehiclePhotoUploading}>
+                                        直接上传车辆照片
+                                      </Button>
+                                    </Upload>
+                                    {photoUrl ? (
+                                      <a href={photoUrl} target="_blank" rel="noreferrer">
+                                        查看已上传照片
+                                      </a>
+                                    ) : (
+                                      <span>支持 JPG、PNG 等图片，上传后自动写入车辆档案。</span>
+                                    )}
+                                  </div>
+                                );
+                              }}
                             </Form.Item>
                           </div>
                         </article>

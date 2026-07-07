@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException
 } from "@nestjs/common";
-import * as bcrypt from "bcrypt";
+import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
 import { BindEmailDto } from "./dto/bind-email.dto";
 import { BindPhoneDto } from "./dto/bind-phone.dto";

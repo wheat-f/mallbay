@@ -1,7 +1,8 @@
 "use client";
 
 import type { AfterSaleResponsibility, AfterSaleStatus, AfterSaleSummary } from "@mallbay/shared";
-import { App, Button, Card, Empty, Image, Modal, Skeleton, Tag } from "antd";
+import type { FormInstance } from "antd";
+import { App, AutoComplete, Button, Card, Empty, Form, Image, Input, InputNumber, Modal, Select, Skeleton, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   CameraOutlined,
@@ -10,17 +11,21 @@ import {
   ExclamationCircleOutlined,
   ExportOutlined,
   FileSearchOutlined,
+  SendOutlined,
   SafetyCertificateOutlined,
+  TeamOutlined,
   ToolOutlined,
   UserOutlined,
   WarningOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { afterSalesApi } from "../../../src/lib/api";
+import { afterSalesApi, constructionApi } from "../../../src/lib/api";
 import {
+  AFTER_SALE_RESPONSIBILITY_OPTIONS,
   getAfterSaleBusinessLabel,
   getAfterSaleOrderLabel,
   getAfterSalePenaltyRiskNote,
@@ -28,8 +33,10 @@ import {
   getAfterSaleResponsibilityDescription,
   getAfterSaleResponsibilityLabel,
   getAfterSaleResponsiblePersonLabel,
-  getAfterSaleStatusLabel
+  getAfterSaleStatusLabel,
+  yuanToCents
 } from "../../../src/features/after-sales/display";
+import { getConstructionWorkerLabel } from "../../../src/features/construction/display";
 import { useAuthStore } from "../../../src/stores/auth-store";
 
 type AfterSaleTimelineItem = {
@@ -39,12 +46,36 @@ type AfterSaleTimelineItem = {
   tone: "primary" | "success" | "warning" | "muted";
 };
 
+type AfterSaleWorkerOption = {
+  userId: string;
+  skillTags?: string[];
+  isActive?: boolean;
+  user?: { username?: string | null; nickname?: string | null } | null;
+};
+
+type AssignFormValues = {
+  workerUserIds: string[];
+};
+
+type JudgeFormValues = {
+  responsibility: AfterSaleResponsibility;
+  constructionIssueCategory?: string;
+  constructionPhotoUrlsText?: string;
+  supplementPhotoUrlsText?: string;
+  penaltyWorkerUserId?: string;
+  penaltyAmountYuan?: number;
+  penaltyReason?: string;
+  resolutionNote?: string;
+};
+
 
 export default function AfterSaleDetailPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const [assignForm] = Form.useForm<AssignFormValues>();
+  const [judgeForm] = Form.useForm<JudgeFormValues>();
   const afterSaleId = params.id;
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
@@ -59,6 +90,69 @@ export default function AfterSaleDetailPage() {
   const photoGroups = afterSale ? getAfterSalePhotoGroups(afterSale.photos) : getAfterSalePhotoGroups([]);
   const constructionPhotos = afterSale ? getConstructionPhotoEvidence(afterSale) : [];
   const timeline = getAfterSaleDetailTimeline(afterSale);
+  const workersQuery = useQuery({
+    queryKey: ["after-sales", "workers", storeId],
+    queryFn: () => constructionApi.workers(storeId!),
+    enabled: Boolean(storeId && afterSale && afterSale.status !== "CLOSED")
+  });
+  const workerOptions = ((workersQuery.data ?? []) as AfterSaleWorkerOption[])
+    .filter((worker) => worker.isActive !== false)
+    .map((worker) => ({
+      value: worker.userId,
+      label: getConstructionWorkerLabel(worker)
+    }));
+  const selectedResponsibility = Form.useWatch("responsibility", judgeForm);
+  const hasAssignments = (afterSale?.assignments?.length ?? 0) > 0;
+  const hasJudgedResponsibility = Boolean(afterSale && afterSale.responsibility !== "PENDING");
+
+  useEffect(() => {
+    if (!afterSale) return;
+    assignForm.setFieldsValue({
+      workerUserIds: afterSale.assignments?.map((assignment) => assignment.workerUserId).filter(isNonEmptyString) ?? []
+    });
+    judgeForm.setFieldsValue({
+      responsibility: afterSale.responsibility === "PENDING" ? undefined : afterSale.responsibility,
+      constructionIssueCategory: afterSale.constructionIssueCategory ?? undefined,
+      resolutionNote: afterSale.resolutionNote ?? undefined
+    });
+  }, [afterSale, assignForm, judgeForm]);
+
+  const invalidateAfterSale = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["after-sales", afterSaleId] });
+    await queryClient.invalidateQueries({ queryKey: ["after-sales", storeId] });
+  };
+  const assignMutation = useMutation({
+    mutationFn: (values: AssignFormValues) => {
+      if (!afterSale) throw new Error("售后工单未加载");
+      if (!values.workerUserIds?.length) throw new Error("请选择售后处理人员");
+      return afterSalesApi.assign(afterSale.id, values.workerUserIds);
+    },
+    onSuccess: async () => {
+      message.success("售后工单已派单");
+      await invalidateAfterSale();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+  const judgeMutation = useMutation({
+    mutationFn: (values: JudgeFormValues) => {
+      if (!afterSale) throw new Error("售后工单未加载");
+      return afterSalesApi.judge(afterSale.id, {
+        responsibility: values.responsibility,
+        constructionIssueCategory: values.constructionIssueCategory,
+        constructionPhotoUrls: parsePhotoUrls(values.constructionPhotoUrlsText),
+        supplementPhotoUrls: parsePhotoUrls(values.supplementPhotoUrlsText),
+        penaltyWorkerUserId: values.penaltyWorkerUserId,
+        penaltyAmountCents: yuanToCents(values.penaltyAmountYuan),
+        penaltyReason: values.penaltyReason,
+        resolutionNote: values.resolutionNote
+      });
+    },
+    onSuccess: async () => {
+      message.success("售后处理结果已保存");
+      await invalidateAfterSale();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
   const closeMutation = useMutation({
     mutationFn: () => {
       if (!afterSale) throw new Error("售后工单未加载");
@@ -66,8 +160,7 @@ export default function AfterSaleDetailPage() {
     },
     onSuccess: async () => {
       message.success("售后工单已归档");
-      await queryClient.invalidateQueries({ queryKey: ["after-sales", afterSaleId] });
-      await queryClient.invalidateQueries({ queryKey: ["after-sales", storeId] });
+      await invalidateAfterSale();
     },
     onError: (error: Error) => message.error(error.message)
   });
@@ -81,8 +174,8 @@ export default function AfterSaleDetailPage() {
             <span>/</span>
             <span>{afterSale ? getAfterSaleBusinessLabel(afterSale) : "工单详情"}</span>
           </div>
-          <h1>售后工单详情与责任判罚</h1>
-          <p>{afterSale ? getAfterSaleBusinessLabel(afterSale) : "集中查看售后证据、责任判定、处罚处理和处理日志"}</p>
+          <h1>售后工单处理</h1>
+          <p>{afterSale ? getAfterSaleBusinessLabel(afterSale) : "按派单、判责、处理方案和归档关闭的顺序处理售后问题"}</p>
         </div>
         <div className="after-sale-detail-actions">
           <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/after-sales")}>
@@ -128,6 +221,14 @@ export default function AfterSaleDetailPage() {
 
             <Card className="after-sale-detail-card">
               <div className="after-sale-card-title">
+                <SafetyCertificateOutlined />
+                <h2>售后处理流程</h2>
+              </div>
+              <AfterSaleWorkflowSteps afterSale={afterSale} />
+            </Card>
+
+            <Card className="after-sale-detail-card">
+              <div className="after-sale-card-title">
                 <WarningOutlined />
                 <h2>问题描述与取证</h2>
               </div>
@@ -143,6 +244,29 @@ export default function AfterSaleDetailPage() {
               </div>
             </Card>
 
+            <Card className="after-sale-detail-card after-sale-action-panel">
+              <div className="after-sale-card-title">
+                <ToolOutlined />
+                <h2>当前处理</h2>
+              </div>
+              <AfterSaleActionPanel
+                afterSale={afterSale}
+                assignForm={assignForm}
+                judgeForm={judgeForm}
+                workerOptions={workerOptions}
+                workersLoading={workersQuery.isLoading}
+                selectedResponsibility={selectedResponsibility}
+                hasAssignments={hasAssignments}
+                hasJudgedResponsibility={hasJudgedResponsibility}
+                assignPending={assignMutation.isPending}
+                judgePending={judgeMutation.isPending}
+                closePending={closeMutation.isPending}
+                onAssign={(values) => assignMutation.mutate(values)}
+                onJudge={(values) => judgeMutation.mutate(values)}
+                onClose={() => closeMutation.mutate()}
+              />
+            </Card>
+
             <Card className="after-sale-detail-card">
               <div className="after-sale-card-title">
                 <CheckCircleOutlined />
@@ -150,7 +274,7 @@ export default function AfterSaleDetailPage() {
               </div>
               <div className="after-sale-treatment-record">
                 <DetailMetric label="处理分类" value={afterSale.constructionIssueCategory || "未填写"} hint="真实记录：来自售后处理表单" />
-                <DetailMetric label="处理方案" value={afterSale.resolutionNote || "未填写"} hint="处理完成前可在售后列表处理面板补充" />
+                <DetailMetric label="处理方案" value={afterSale.resolutionNote || "未填写"} hint="处理完成前可在当前处理区补充" />
                 <DetailMetric label="施工后照片" value={getPhotoCountLabel(photoGroups.constructionAfterPhotos, "暂无照片")} hint="真实记录：来自 afterSale.photos" />
               </div>
             </Card>
@@ -186,7 +310,7 @@ export default function AfterSaleDetailPage() {
             </Card>
 
             <Card className="after-sale-detail-card after-sale-penalty-panel">
-              <h2>惩罚处理</h2>
+              <h2>处罚与追责摘要</h2>
               {getAfterSalePenaltyRows(afterSale).map((row) => (
                 <PenaltyRow key={row.key} icon={getPenaltyIcon(row.key)} label={row.label} value={row.value} />
               ))}
@@ -224,6 +348,166 @@ function DetailMetric({ label, value, hint }: { label: string; value: string; hi
       <span>{label}</span>
       <strong>{value}</strong>
       <p>{hint}</p>
+    </div>
+  );
+}
+
+function AfterSaleWorkflowSteps({ afterSale }: { afterSale: AfterSaleSummary }) {
+  const steps = [
+    { key: "assign", title: "派单处理", done: (afterSale.assignments?.length ?? 0) > 0, description: "选择售后处理师傅" },
+    { key: "judge", title: "责任判定", done: afterSale.responsibility !== "PENDING", description: "确认责任、分类和方案" },
+    { key: "resolve", title: "处理完成", done: afterSale.status === "RESOLVED" || afterSale.status === "CLOSED", description: "沉淀照片、方案和处罚" },
+    { key: "close", title: "归档关闭", done: afterSale.status === "CLOSED", description: "关闭售后并留存记录" }
+  ];
+
+  return (
+    <div className="after-sale-workflow-steps">
+      {steps.map((step, index) => (
+        <div key={step.key} className={step.done ? "after-sale-workflow-step is-done" : "after-sale-workflow-step"}>
+          <span>{step.done ? <CheckCircleOutlined /> : index + 1}</span>
+          <strong>{step.title}</strong>
+          <p>{step.description}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type AfterSaleActionPanelProps = {
+  afterSale: AfterSaleSummary;
+  assignForm: FormInstance<AssignFormValues>;
+  judgeForm: FormInstance<JudgeFormValues>;
+  workerOptions: { value: string; label: string }[];
+  workersLoading: boolean;
+  selectedResponsibility?: AfterSaleResponsibility;
+  hasAssignments: boolean;
+  hasJudgedResponsibility: boolean;
+  assignPending: boolean;
+  judgePending: boolean;
+  closePending: boolean;
+  onAssign: (values: AssignFormValues) => void;
+  onJudge: (values: JudgeFormValues) => void;
+  onClose: () => void;
+};
+
+function AfterSaleActionPanel({
+  afterSale,
+  assignForm,
+  judgeForm,
+  workerOptions,
+  workersLoading,
+  selectedResponsibility,
+  hasAssignments,
+  hasJudgedResponsibility,
+  assignPending,
+  judgePending,
+  closePending,
+  onAssign,
+  onJudge,
+  onClose
+}: AfterSaleActionPanelProps) {
+  if (afterSale.status === "CLOSED") {
+    return (
+      <div className="after-sale-action-result">
+        <CheckCircleOutlined />
+        <div>
+          <strong>售后已归档</strong>
+          <p>处理结果、责任判定、处罚记录和照片证据已沉淀到售后档案。</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasAssignments) {
+    return (
+      <div className="after-sale-action-section">
+        <div className="after-sale-action-copy">
+          <strong>派单处理</strong>
+          <span>先选择负责处理该售后问题的师傅，后续责任判定和处罚会基于真实处理记录继续。</span>
+        </div>
+        <Form form={assignForm} layout="vertical" className="after-sale-action-form" onFinish={onAssign}>
+          <Form.Item name="workerUserIds" label="派单处理师傅" rules={[{ required: true, message: "请选择售后处理人员" }]}>
+            <Select
+              mode="multiple"
+              optionFilterProp="label"
+              loading={workersLoading}
+              placeholder="选择施工人员"
+              options={workerOptions}
+            />
+          </Form.Item>
+          <Button htmlType="submit" type="primary" icon={<TeamOutlined />} loading={assignPending}>
+            确认派单
+          </Button>
+        </Form>
+      </div>
+    );
+  }
+
+  if (!hasJudgedResponsibility) {
+    return (
+      <div className="after-sale-action-section">
+        <div className="after-sale-action-copy">
+          <strong>责任判定与处理方案</strong>
+          <span>根据照片、客户诉求和售后处理结果确认责任来源，必要时补充施工后照片和处罚记录。</span>
+        </div>
+        <Form form={judgeForm} layout="vertical" className="after-sale-action-form" onFinish={onJudge}>
+          <div className="after-sale-action-grid">
+            <Form.Item name="responsibility" label="责任判定" rules={[{ required: true, message: "请选择责任" }]}>
+              <Select placeholder="责任待判定" options={AFTER_SALE_RESPONSIBILITY_OPTIONS} />
+            </Form.Item>
+            {selectedResponsibility === "CONSTRUCTION" ? (
+              <Form.Item name="constructionIssueCategory" label="施工问题分类">
+                <AutoComplete
+                  placeholder="选择或输入施工问题分类"
+                  options={[
+                    { value: "刀工问题" },
+                    { value: "个人疏忽问题" },
+                    { value: "裁膜问题" },
+                    { value: "包边凹槽处理问题" }
+                  ]}
+                />
+              </Form.Item>
+            ) : null}
+            <Form.Item name="resolutionNote" label="处理方案说明" rules={[{ required: true, message: "请填写处理方案" }]}>
+              <Input.TextArea rows={3} placeholder="记录返工、补膜、客户沟通或供应商追踪方案" />
+            </Form.Item>
+            <Form.Item name="constructionPhotoUrlsText" label="施工后照片对比">
+              <Input.TextArea rows={3} placeholder="每行一个施工后照片链接" />
+            </Form.Item>
+            <Form.Item name="supplementPhotoUrlsText" label="补充证据">
+              <Input.TextArea rows={3} placeholder="每行一个补充证据链接" />
+            </Form.Item>
+            <div className="after-sale-penalty-fields">
+              <strong>施工处罚设定</strong>
+              <Form.Item name="penaltyWorkerUserId" label="处罚人员">
+                <Select allowClear optionFilterProp="label" placeholder="选择处罚人员" options={workerOptions} />
+              </Form.Item>
+              <Form.Item name="penaltyAmountYuan" label="处罚金额（元）">
+                <InputNumber min={0} precision={2} placeholder="处罚金额" />
+              </Form.Item>
+              <Form.Item name="penaltyReason" label="处罚原因">
+                <Input placeholder="填写处罚原因" />
+              </Form.Item>
+            </div>
+          </div>
+          <Button htmlType="submit" type="primary" icon={<SendOutlined />} loading={judgePending}>
+            保存处理结果
+          </Button>
+        </Form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="after-sale-action-result">
+      <CheckCircleOutlined />
+      <div>
+        <strong>{afterSale.status === "RESOLVED" ? "归档关闭" : "处理结果已保存"}</strong>
+        <p>责任判定和处理方案已保存。确认客户沟通、处罚和售后追踪完成后，可关闭该售后工单。</p>
+      </div>
+      <Button type="primary" disabled={afterSale.status !== "RESOLVED"} loading={closePending} onClick={onClose}>
+        确认判罚并归档
+      </Button>
     </div>
   );
 }
@@ -381,6 +665,19 @@ function getUserDisplayName(user?: { nickname?: string | null; username?: string
 function formatPenaltyAmount(amountCents?: number | null) {
   if (!amountCents) return "未录入金额";
   return `¥${(amountCents / 100).toFixed(2)}`;
+}
+
+function parsePhotoUrls(text?: string) {
+  return Array.from(new Set(
+    (text ?? "")
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  ));
+}
+
+function isNonEmptyString(value?: string | null): value is string {
+  return Boolean(value);
 }
 
 export function getAfterSaleDetailTimeline(afterSale?: AfterSaleSummary): AfterSaleTimelineItem[] {

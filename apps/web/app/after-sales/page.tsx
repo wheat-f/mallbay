@@ -1,37 +1,22 @@
 "use client";
 
-import type { AfterSaleResponsibility, AfterSaleSummary } from "@mallbay/shared";
+import type { AfterSaleSummary } from "@mallbay/shared";
 import type { CreateAfterSalePayload } from "../../src/lib/api";
-import { App, AutoComplete, Button, Card, Empty, Form, Input, InputNumber, Select, Table, Tag } from "antd";
-import { EyeOutlined, PlusOutlined, SearchOutlined, SendOutlined } from "@ant-design/icons";
+import { App, Button, Card, Form, Input, Select, Table, Tag } from "antd";
+import { EyeOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { afterSalesApi, constructionApi, orderApi } from "../../src/lib/api";
+import { useMemo, useState } from "react";
+import { afterSalesApi, orderApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import {
-  AFTER_SALE_RESPONSIBILITY_OPTIONS,
   getAfterSaleBusinessLabel,
   getAfterSaleOrderLabel,
   getAfterSaleResponsibilityLabel,
-  getAfterSaleStatusLabel,
-  yuanToCents
+  getAfterSaleStatusLabel
 } from "../../src/features/after-sales/display";
 import { filterAfterSalesRows, type AfterSaleQuickFilters } from "../../src/features/after-sales/filter";
-import { getConstructionWorkerLabel } from "../../src/features/construction/display";
-
-type AfterSalesActionValues = {
-  workerUserIds?: string[];
-  responsibility?: AfterSaleResponsibility;
-  constructionIssueCategory?: string;
-  constructionPhotoUrlsText?: string;
-  supplementPhotoUrlsText?: string;
-  penaltyWorkerUserId?: string;
-  penaltyAmountYuan?: number;
-  penaltyReason?: string;
-  resolutionNote?: string;
-};
 
 type CreateAfterSaleFormValues = CreateAfterSalePayload & {
   issuePhotoUrlsText?: string;
@@ -44,13 +29,6 @@ type AfterSaleOrderOption = {
   vehicle?: { plateNo?: string | null } | null;
 };
 
-type AfterSaleWorkerOption = {
-  userId: string;
-  skillTags?: string[];
-  isActive?: boolean;
-  user?: { username?: string | null; nickname?: string | null } | null;
-};
-
 export default function AfterSalesPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -58,11 +36,9 @@ export default function AfterSalesPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const [createForm] = Form.useForm<CreateAfterSaleFormValues>();
-  const [afterSalesActionForm] = Form.useForm<AfterSalesActionValues>();
   const [selectedAfterSaleId, setSelectedAfterSaleId] = useState<string>();
   const [draftFilters, setDraftFilters] = useState<AfterSaleQuickFilters>({});
   const [appliedFilters, setAppliedFilters] = useState<AfterSaleQuickFilters>({});
-  const selectedResponsibility = Form.useWatch("responsibility", afterSalesActionForm);
 
   const listQuery = useQuery({
     queryKey: ["after-sales", storeId],
@@ -74,12 +50,6 @@ export default function AfterSalesPage() {
     queryFn: () => orderApi.list({ storeId: storeId!, page: 1, pageSize: 100 }),
     enabled: Boolean(storeId)
   });
-  const workersQuery = useQuery({
-    queryKey: ["after-sales", "workers", storeId],
-    queryFn: () => constructionApi.workers(storeId!),
-    enabled: Boolean(storeId)
-  });
-
   const orderOptions = ((ordersQuery.data?.items ?? []) as AfterSaleOrderOption[]).map((order) => ({
     value: order.id,
     label: [
@@ -104,19 +74,6 @@ export default function AfterSalesPage() {
     assigned: allAfterSaleRows.filter((item) => item.status === "ASSIGNED").length,
     resolved: allAfterSaleRows.filter((item) => item.status === "RESOLVED").length
   };
-  const workerOptions = ((workersQuery.data ?? []) as AfterSaleWorkerOption[])
-    .filter((worker) => worker.isActive !== false)
-    .map((worker) => ({
-      value: worker.userId,
-      label: getConstructionWorkerLabel(worker)
-    }));
-
-  useEffect(() => {
-    afterSalesActionForm.resetFields();
-    if (selectedAfterSale?.responsibility && selectedAfterSale.responsibility !== "PENDING") {
-      afterSalesActionForm.setFieldValue("responsibility", selectedAfterSale.responsibility);
-    }
-  }, [afterSalesActionForm, selectedAfterSale]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["after-sales", storeId] });
   const updateDraftFilter = (key: keyof AfterSaleQuickFilters, value: string) => {
@@ -141,34 +98,6 @@ export default function AfterSalesPage() {
     },
     onError: (error: Error) => message.error(error.message)
   });
-  const processMutation = useMutation({
-    mutationFn: async (values: AfterSalesActionValues) => {
-      if (!selectedAfterSale) throw new Error("请选择售后单");
-      if (values.workerUserIds?.length) {
-        await afterSalesApi.assign(selectedAfterSale.id, values.workerUserIds);
-      }
-      if (values.responsibility) {
-        await afterSalesApi.judge(selectedAfterSale.id, {
-          responsibility: values.responsibility,
-          constructionIssueCategory: values.constructionIssueCategory,
-          constructionPhotoUrls: parsePhotoUrls(values.constructionPhotoUrlsText),
-          supplementPhotoUrls: parsePhotoUrls(values.supplementPhotoUrlsText),
-          penaltyWorkerUserId: values.penaltyWorkerUserId,
-          penaltyAmountCents: yuanToCents(values.penaltyAmountYuan),
-          penaltyReason: values.penaltyReason,
-          resolutionNote: values.resolutionNote
-        });
-      }
-      return selectedAfterSale.id;
-    },
-    onSuccess: async () => {
-      message.success("售后处理已保存");
-      afterSalesActionForm.resetFields();
-      await invalidate();
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
   return (
     <div className="management-page">
       <StorePageHeader title="售后管理" description="售后申请、派单、责任判断和处罚记录" />
@@ -364,117 +293,6 @@ export default function AfterSalesPage() {
           />
         </Card>
 
-        <Card className="after-sales-process-panel">
-          <div className="after-sales-process-head">
-            <div>
-              <h2>处理选中工单</h2>
-              <p>
-                {selectedAfterSale
-                  ? `${getAfterSaleBusinessLabel(selectedAfterSale)}`
-                  : "请先从左侧列表选择工单"}
-              </p>
-            </div>
-            <Tag color={selectedAfterSale?.status === "RESOLVED" ? "success" : "processing"}>
-              {getAfterSaleStatusLabel(selectedAfterSale?.status)}
-            </Tag>
-          </div>
-
-          <div className="after-sales-summary-box">
-            <div>
-              <span>售后单</span>
-              <strong>{selectedAfterSale ? getAfterSaleBusinessLabel(selectedAfterSale) : "-"}</strong>
-            </div>
-            <div>
-              <span>关联订单</span>
-              <strong>{selectedAfterSale ? getAfterSaleOrderLabel(selectedAfterSale) : "-"}</strong>
-            </div>
-            <div>
-              <span>照片流程</span>
-              <strong>问题照片 / 施工后照片对比</strong>
-            </div>
-          </div>
-
-          {selectedAfterSale ? (
-            <Form
-              form={afterSalesActionForm}
-              layout="vertical"
-              className="after-sales-action-form"
-              onFinish={(values) => processMutation.mutate(values)}
-            >
-              <Form.Item name="workerUserIds" label="派单处理师傅">
-                <Select
-                  mode="multiple"
-                  optionFilterProp="label"
-                  loading={workersQuery.isLoading}
-                  placeholder="选择施工人员"
-                  options={workerOptions}
-                />
-              </Form.Item>
-
-              <div className="after-sales-responsibility-card">
-                <h3>责任判定</h3>
-                <Form.Item name="responsibility" rules={[{ required: true, message: "请选择责任" }]}>
-                  <Select placeholder="责任待判定" options={AFTER_SALE_RESPONSIBILITY_OPTIONS} />
-                </Form.Item>
-              </div>
-
-              <div className="after-sales-penalty-card">
-                <h3>施工处罚设定</h3>
-                {selectedResponsibility === "CONSTRUCTION" ? (
-                  <Form.Item name="constructionIssueCategory" label="施工问题分类">
-                    <AutoComplete
-                      placeholder="选择或输入施工问题分类"
-                      options={[
-                        { value: "刀工问题", label: "刀工问题" },
-                        { value: "个人疏忽问题", label: "个人疏忽问题" },
-                        { value: "裁膜问题", label: "裁膜问题" },
-                        { value: "包边凹槽处理问题", label: "包边凹槽处理问题" },
-                        { value: "其他施工问题", label: "其他施工问题" }
-                      ]}
-                    />
-                  </Form.Item>
-                ) : null}
-                <Form.Item name="penaltyWorkerUserId" label="处罚人员">
-                  <Select
-                    allowClear
-                    showSearch
-                    optionFilterProp="label"
-                    loading={workersQuery.isLoading}
-                    placeholder="选择处罚人员"
-                    options={workerOptions}
-                  />
-                </Form.Item>
-                <Form.Item name="penaltyAmountYuan" label="处罚金额（元）">
-                  <InputNumber className="w-full" min={0} precision={2} placeholder="处罚金额（元）" />
-                </Form.Item>
-                <Form.Item name="penaltyReason" label="处罚原因">
-                  <Input.TextArea rows={2} placeholder="填写处罚原因或工艺改进要求" />
-                </Form.Item>
-              </div>
-
-              <Form.Item name="resolutionNote" label="处理方案说明">
-                <Input.TextArea rows={3} placeholder="填写具体的售后处理方案、复查要求或客户沟通记录" />
-              </Form.Item>
-
-              <Form.Item name="constructionPhotoUrlsText" label="施工后照片对比">
-                <Input.TextArea rows={2} placeholder="每行一个施工后照片链接，用于和问题照片对比归档" />
-              </Form.Item>
-
-              <Form.Item name="supplementPhotoUrlsText" label="补充证据">
-                <Input.TextArea rows={2} placeholder="每行一个补充证据链接，可用于沟通记录、复查照片或其他说明材料" />
-              </Form.Item>
-
-              <div className="after-sales-process-actions">
-                <Button onClick={() => afterSalesActionForm.resetFields()}>取消</Button>
-                <Button htmlType="submit" type="primary" icon={<SendOutlined />} loading={processMutation.isPending}>
-                  保存处理结果
-                </Button>
-              </div>
-            </Form>
-          ) : (
-            <Empty className="after-sales-process-empty" description="暂无可处理工单" />
-          )}
-        </Card>
       </section>
     </div>
   );

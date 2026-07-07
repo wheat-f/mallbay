@@ -10912,6 +10912,152 @@ body {
   padding: 14px;
 }
 
+.after-sale-workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.after-sale-workflow-step {
+  min-width: 0;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-container-low);
+  padding: 14px;
+}
+
+.after-sale-workflow-step > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--mb-surface);
+  color: var(--mb-text-secondary);
+  font-weight: 900;
+}
+
+.after-sale-workflow-step.is-done {
+  border-color: rgba(30, 136, 76, 0.25);
+  background: rgba(30, 136, 76, 0.08);
+}
+
+.after-sale-workflow-step.is-done > span {
+  background: var(--mb-success);
+  color: #ffffff;
+}
+
+.after-sale-workflow-step strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--mb-text-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.after-sale-workflow-step p {
+  margin: 4px 0 0;
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.after-sale-action-panel .ant-card-body {
+  display: grid;
+  gap: 4px;
+}
+
+.after-sale-action-section {
+  display: grid;
+  gap: 18px;
+}
+
+.after-sale-action-copy {
+  display: grid;
+  gap: 6px;
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-primary-container);
+  padding: 14px;
+}
+
+.after-sale-action-copy strong {
+  color: var(--mb-primary);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.after-sale-action-copy span {
+  color: var(--mb-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.after-sale-action-form {
+  display: grid;
+  gap: 12px;
+}
+
+.after-sale-action-form .ant-form-item {
+  margin-bottom: 0;
+}
+
+.after-sale-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.after-sale-action-grid > .ant-form-item:nth-child(n + 3),
+.after-sale-penalty-fields {
+  grid-column: 1 / -1;
+}
+
+.after-sale-penalty-fields {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 0.8fr) minmax(220px, 1.2fr);
+  gap: 12px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-container-low);
+  padding: 14px;
+}
+
+.after-sale-penalty-fields > strong {
+  grid-column: 1 / -1;
+  color: var(--mb-text-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.after-sale-action-result {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-primary-container);
+  padding: 16px;
+}
+
+.after-sale-action-result > .anticon {
+  color: var(--mb-success);
+  font-size: 24px;
+}
+
+.after-sale-action-result strong {
+  color: var(--mb-text-primary);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.after-sale-action-result p {
+  margin: 4px 0 0;
+  color: var(--mb-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
 .after-sale-responsibility-panel h2,
 .after-sale-penalty-panel h2,
 .after-sale-detail-side .after-sale-detail-card > .ant-card-body > h2 {
@@ -11147,7 +11293,14 @@ body {
   .after-sale-summary-grid,
   .after-sale-evidence-grid,
   .after-sale-treatment-record,
-  .after-sale-compare-grid {
+  .after-sale-compare-grid,
+  .after-sale-workflow-steps,
+  .after-sale-action-grid,
+  .after-sale-penalty-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .after-sale-action-result {
     grid-template-columns: minmax(0, 1fr);
   }
 

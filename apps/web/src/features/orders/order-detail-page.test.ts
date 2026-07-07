@@ -23,12 +23,18 @@ test("order detail renders suggested and final labor cost with adjustment reason
 
 test("order detail exposes pending dispatch confirmation and fulfillment links", () => {
   const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
+  const drawerSource = readFileSync("src/features/orders/order-payment-drawer.tsx", "utf8");
 
   assert.match(pageSource, /shouldShowFulfillmentConfirmation/);
   assert.match(pageSource, /确认派工流转/);
   assert.match(pageSource, /openOrderPaymentEntry/);
+  assert.match(pageSource, /paymentDrawerOpen/);
+  assert.match(pageSource, /OrderPaymentDrawer/);
+  assert.match(pageSource, /setPaymentDrawerOpen\(true\)/);
   assert.match(pageSource, /openOrderInvoiceEntry/);
-  assert.match(pageSource, /\/finance\?section=ledger&action=record-payment&orderId=\$\{order\.id\}/);
+  assert.doesNotMatch(pageSource, /\/finance\?section=ledger&action=record-payment/);
+  assert.match(drawerSource, /orderApi\.addPayment/);
+  assert.match(drawerSource, /orderApi\.paymentAccounts/);
   assert.match(pageSource, /\/invoices\?action=create-invoice&orderId=\$\{order\.id\}/);
   assert.match(pageSource, /确认提交派工与库房匹配/);
   assert.match(pageSource, /openFulfillmentDrawer/);

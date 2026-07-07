@@ -27,6 +27,7 @@ import {
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { exportRowsToExcel } from "../../src/lib/export-excel";
+import { OrderPaymentDrawer } from "../../src/features/orders/order-payment-drawer";
 
 type OrderRow = {
   id: string;
@@ -95,6 +96,7 @@ function OrdersContent() {
   const [createdTo, setCreatedTo] = useState<string | undefined>(() => toOptionalParam(searchParams.get("createdTo")));
   const [page, setPage] = useState(() => toPositiveNumber(searchParams.get("page"), 1));
   const [pageSize, setPageSize] = useState(() => toPositiveNumber(searchParams.get("pageSize"), 20));
+  const [paymentOrder, setPaymentOrder] = useState<OrderRow | null>(null);
 
   const updateOrderListUrl = (next: Partial<OrderListFilterState>) => {
     const filters: OrderListFilterState = {
@@ -155,8 +157,8 @@ function OrdersContent() {
   });
 
   const rows = useMemo(() => (ordersQuery.data?.items ?? []) as OrderRow[], [ordersQuery.data]);
-  const openOrderPaymentEntry = (orderId: string) => {
-    router.push(`/finance?section=ledger&action=record-payment&orderId=${orderId}`);
+  const openOrderPaymentEntry = (order: OrderRow) => {
+    setPaymentOrder(order);
   };
   const openOrderInvoiceEntry = (orderId: string) => {
     router.push(`/invoices?action=create-invoice&orderId=${orderId}`);
@@ -196,7 +198,8 @@ function OrdersContent() {
   }, [ordersQuery.data?.total, rows]);
 
   return (
-    <div className="management-page">
+    <>
+      <div className="management-page">
           <StorePageHeader title="销售订单列表" description="查看销售订单、施工类型和收款进度">
             <Button icon={<DownloadOutlined />} disabled={rows.length === 0} onClick={exportOrders}>
               导出 Excel
@@ -387,7 +390,7 @@ function OrdersContent() {
                         <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/orders/${row.id}`)}>
                           详情
                         </Button>
-                        <Button size="small" icon={<CreditCardOutlined />} onClick={() => openOrderPaymentEntry(row.id)}>
+                        <Button size="small" icon={<CreditCardOutlined />} onClick={() => openOrderPaymentEntry(row)}>
                           收款
                         </Button>
                         <Button size="small" icon={<FileTextOutlined />} onClick={() => openOrderInvoiceEntry(row.id)}>
@@ -521,7 +524,7 @@ function OrdersContent() {
                     type="text"
                     title="记录收款"
                     icon={<CreditCardOutlined />}
-                    onClick={() => openOrderPaymentEntry(row.id)}
+                    onClick={() => openOrderPaymentEntry(row)}
                   />
                   <Button
                     size="small"
@@ -537,6 +540,16 @@ function OrdersContent() {
             />
           </Card>
         </div>
+      <OrderPaymentDrawer
+        open={Boolean(paymentOrder)}
+        order={paymentOrder}
+        storeId={storeId}
+        onClose={() => setPaymentOrder(null)}
+        onSuccess={async () => {
+          await ordersQuery.refetch();
+        }}
+      />
+    </>
   );
 }
 

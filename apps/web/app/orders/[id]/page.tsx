@@ -33,6 +33,7 @@ import {
   yuanCurrency
 } from "../../../src/features/orders/order-display";
 import { getAuditActorLabel } from "../../../src/features/audit/display";
+import { OrderPaymentDrawer } from "../../../src/features/orders/order-payment-drawer";
 
 type OrderDetail = {
   id: string;
@@ -110,6 +111,7 @@ export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [commercialsOpen, setCommercialsOpen] = useState(false);
+  const [paymentDrawerOpen, setPaymentDrawerOpen] = useState(false);
   const [fulfillmentDrawerOpen, setFulfillmentDrawerOpen] = useState(false);
   const [fulfillmentChecklist, setFulfillmentChecklist] = useState<FulfillmentChecklist>(emptyFulfillmentChecklist);
   const [fulfillmentNote, setFulfillmentNote] = useState("");
@@ -214,11 +216,7 @@ export default function OrderDetailPage() {
   };
 
   const openOrderPaymentEntry = () => {
-    if (!order) {
-      router.push("/finance?section=ledger&action=record-payment");
-      return;
-    }
-    router.push(`/finance?section=ledger&action=record-payment&orderId=${order.id}`);
+    setPaymentDrawerOpen(true);
   };
 
   const openOrderInvoiceEntry = () => {
@@ -461,6 +459,17 @@ export default function OrderDetailPage() {
           </>
         )}
       </div>
+
+      <OrderPaymentDrawer
+        open={paymentDrawerOpen}
+        order={order}
+        storeId={order?.storeId}
+        onClose={() => setPaymentDrawerOpen(false)}
+        onSuccess={async () => {
+          await queryClient.invalidateQueries({ queryKey: ["order-detail", params.id] });
+          await queryClient.invalidateQueries({ queryKey: ["order-audit-events", params.id] });
+        }}
+      />
 
         <Drawer
           title="修改订单明细"

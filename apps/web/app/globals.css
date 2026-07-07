@@ -2761,6 +2761,47 @@ body {
   line-height: 28px;
 }
 
+.order-payment-drawer .ant-drawer-content-wrapper {
+  width: min(520px, calc(100vw - 24px)) !important;
+}
+
+.order-payment-context {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 8px 12px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-container-low);
+  margin-bottom: 14px;
+  padding: 14px;
+}
+
+.order-payment-context span,
+.order-payment-drawer .order-payment-summary span {
+  color: var(--mb-text-secondary);
+}
+
+.order-payment-context strong {
+  min-width: 0;
+  color: var(--mb-text-primary);
+  word-break: break-word;
+}
+
+.order-payment-note {
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-success-container);
+  color: var(--mb-success);
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  font-weight: 700;
+}
+
+.order-payment-drawer-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .order-fulfillment-panel {
   border: 1px solid var(--mb-border);
   border-radius: var(--mb-radius-md);

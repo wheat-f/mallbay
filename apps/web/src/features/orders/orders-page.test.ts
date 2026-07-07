@@ -60,14 +60,23 @@ test("orders page exposes compact icon actions like the prototype", () => {
   assert.match(pageSource, /title="申请发票"/);
 });
 
-test("orders page routes list payment and invoice actions to finance and invoice modules", () => {
+test("orders page records payments inside the order workflow and keeps invoices in invoice module", () => {
   const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+  const drawerSource = readFileSync("src/features/orders/order-payment-drawer.tsx", "utf8");
 
   assert.match(pageSource, /openOrderPaymentEntry/);
+  assert.match(pageSource, /OrderPaymentDrawer/);
+  assert.match(pageSource, /setPaymentOrder\(order\)/);
   assert.match(pageSource, /openOrderInvoiceEntry/);
-  assert.match(pageSource, /\/finance\?section=ledger&action=record-payment&orderId=\$\{orderId\}/);
+  assert.doesNotMatch(pageSource, /\/finance\?section=ledger&action=record-payment/);
+  assert.match(drawerSource, /orderApi\.paymentAccounts/);
+  assert.match(drawerSource, /orderApi\.addPayment/);
+  assert.match(drawerSource, /记录订单收款/);
+  assert.match(drawerSource, /确认收款/);
+  assert.match(drawerSource, /已收金额/);
+  assert.match(drawerSource, /待收金额/);
   assert.match(pageSource, /\/invoices\?action=create-invoice&orderId=\$\{orderId\}/);
-  assert.match(pageSource, /onClick=\{\(\) => openOrderPaymentEntry\(row\.id\)\}/);
+  assert.match(pageSource, /onClick=\{\(\) => openOrderPaymentEntry\(row\)\}/);
   assert.match(pageSource, /onClick=\{\(\) => openOrderInvoiceEntry\(row\.id\)\}/);
 });
 

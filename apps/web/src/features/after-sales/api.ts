@@ -17,13 +17,14 @@ export type JudgeAfterSalePayload = {
   responsibility: AfterSaleResponsibility;
   penaltyWorkerUserId?: string;
   constructionIssueCategory?: string;
-  constructionPhotoUrls?: string[];
-  constructionPhotos?: AfterSalePhotoInputPayload[];
-  supplementPhotoUrls?: string[];
-  supplementPhotos?: AfterSalePhotoInputPayload[];
   penaltyAmountCents?: number;
   penaltyReason?: string;
   resolutionNote?: string;
+};
+
+export type SubmitAfterSaleEvidencePayload = {
+  constructionPhotos?: AfterSalePhotoInputPayload[];
+  supplementPhotos?: AfterSalePhotoInputPayload[];
 };
 
 export const afterSalesApi = {
@@ -46,6 +47,12 @@ export const afterSalesApi = {
 
   judge: (id: string, payload: JudgeAfterSalePayload) =>
     request<AfterSaleSummary>(`/after-sales/${id}/responsibility`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  submitEvidence: (id: string, payload: SubmitAfterSaleEvidencePayload) =>
+    request<AfterSaleSummary>(`/after-sales/${id}/evidence`, {
       method: "POST",
       body: JSON.stringify(payload)
     }),

@@ -6,7 +6,9 @@ import { filterAfterSalesRows } from "./filter";
 function cssBlock(cssSource: string, selector: string) {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = cssSource.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`));
-  assert.ok(match, `Missing CSS block for ${selector}`);
+  if (!match) {
+    throw new Error(`Missing CSS block for ${selector}`);
+  }
   return match[1];
 }
 
@@ -162,19 +164,27 @@ test("after-sales page uses mobile ticket cards instead of squeezing the desktop
   assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.after-sales-ticket-mobile-cards \{\r?\n\s{4}display: grid;/);
 });
 
-test("after-sales detail exposes inline responsibility and penalty handling", () => {
+test("after-sales detail separates manager judgment from worker evidence submission", () => {
   const pageSource = readFileSync("app/after-sales/[id]/page.tsx", "utf8");
 
+  assert.match(pageSource, /isAfterSalesManager/);
+  assert.match(pageSource, /isAssignedAfterSalesWorker/);
+  assert.match(pageSource, /mode=\{isAfterSalesManager \? "manager" : "worker"\}/);
   assert.match(pageSource, /责任判定/);
   assert.match(pageSource, /施工处罚设定/);
   assert.match(pageSource, /问题照片/);
-  assert.match(pageSource, /施工后照片对比/);
+  assert.match(pageSource, /售后处理取证/);
+  assert.match(pageSource, /施工后照片/);
+  assert.match(pageSource, /补充证据图片/);
+  assert.match(pageSource, /补充说明/);
+  assert.match(pageSource, /AfterSaleEvidenceUploader/);
+  assert.match(pageSource, /afterSalesApi\.submitEvidence/);
   assert.doesNotMatch(pageSource, /name="issuePhotoUrlsText"/);
-  assert.match(pageSource, /name="constructionPhotoUrlsText"/);
+  assert.doesNotMatch(pageSource, /name="constructionPhotoUrlsText"/);
   assert.doesNotMatch(pageSource, /issuePhotoUrls: parsePhotoUrls\(values\.issuePhotoUrlsText\)/);
-  assert.match(pageSource, /constructionPhotoUrls: parsePhotoUrls\(values\.constructionPhotoUrlsText\)/);
-  assert.match(pageSource, /name="supplementPhotoUrlsText"/);
-  assert.match(pageSource, /supplementPhotoUrls: parsePhotoUrls\(values\.supplementPhotoUrlsText\)/);
+  assert.doesNotMatch(pageSource, /constructionPhotoUrls: parsePhotoUrls\(values\.constructionPhotoUrlsText\)/);
+  assert.doesNotMatch(pageSource, /name="supplementPhotoUrlsText"/);
+  assert.doesNotMatch(pageSource, /supplementPhotoUrls: parsePhotoUrls\(values\.supplementPhotoUrlsText\)/);
   assert.match(pageSource, /constructionIssueCategory: values\.constructionIssueCategory/);
   assert.match(pageSource, /施工问题分类/);
   assert.match(pageSource, /刀工问题/);
@@ -185,6 +195,9 @@ test("after-sales detail exposes inline responsibility and penalty handling", ()
   assert.match(pageSource, /处理方案说明/);
   assert.match(pageSource, /assignForm/);
   assert.match(pageSource, /judgeForm/);
+  assert.match(pageSource, /evidenceForm/);
+  assert.match(pageSource, /施工员仅提交售后处理证据/);
+  assert.match(pageSource, /店长根据证据进行责任判定/);
   assert.doesNotMatch(pageSource, /operation-action-grid/);
 });
 

@@ -190,6 +190,9 @@ importers:
       '@nestjs/cli':
         specifier: ^11.0.21
         version: 11.0.21(@types/node@24.12.3)(esbuild@0.28.0)(postcss@8.5.14)(prettier@3.8.3)
+      '@types/node':
+        specifier: 24.12.3
+        version: 24.12.3
       tsx:
         specifier: ^4.19.2
         version: 4.22.0
@@ -215,6 +218,9 @@ importers:
         specifier: ^0.18.5
         version: 0.18.5
     devDependencies:
+      '@types/node':
+        specifier: ^24.12.3
+        version: 24.12.3
       tsx:
         specifier: ^4.19.2
         version: 4.22.0

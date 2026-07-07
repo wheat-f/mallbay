@@ -3,7 +3,7 @@ import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nest
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AfterSalesService, type AuthenticatedAfterSalesUser } from "./after-sales.service";
-import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto } from "./dto/after-sales.dto";
+import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, SubmitAfterSaleEvidenceDto } from "./dto/after-sales.dto";
 
 type AuthRequest = Request & {
   user: AuthenticatedAfterSalesUser;
@@ -37,6 +37,11 @@ export class AfterSalesController {
   @Post(":id/responsibility")
   judge(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: JudgeAfterSaleDto) {
     return this.afterSales.judgeResponsibility(req.user, id, dto);
+  }
+
+  @Post(":id/evidence")
+  submitEvidence(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: SubmitAfterSaleEvidenceDto) {
+    return this.afterSales.submitEvidence(req.user, id, dto);
   }
 
   @Post(":id/close")

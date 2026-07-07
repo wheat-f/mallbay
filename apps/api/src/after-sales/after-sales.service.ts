@@ -3,7 +3,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { AfterSalePhotoStage, AfterSaleStatus, StorePosition } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
-import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto } from "./dto/after-sales.dto";
+import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, SubmitAfterSaleEvidenceDto } from "./dto/after-sales.dto";
 
 export type AuthenticatedAfterSalesUser = UserWithStoreMember & {
   username?: string;
@@ -137,6 +137,30 @@ export class AfterSalesService {
       });
     }
     return updated;
+  }
+
+  async submitEvidence(user: AuthenticatedAfterSalesUser, id: string, dto: SubmitAfterSaleEvidenceDto) {
+    const actor = await this.withStoreMember(user);
+    const afterSale = await this.prisma.afterSale.findFirst({
+      where: buildAfterSalesDetailScope(actor, id),
+      select: { id: true, storeId: true }
+    });
+    if (!afterSale) throw new NotFoundException("售后单不存在");
+    const isAssignedWorker =
+      actor.storeMember?.position === StorePosition.CONSTRUCTION || actor.storeMember?.position === StorePosition.APPRENTICE;
+    if (!PermissionPolicy.canManageAfterSales(actor, afterSale.storeId) && !isAssignedWorker) {
+      throw new ForbiddenException("无权限");
+    }
+    const constructionPhotos = sanitizePhotoEvidence(dto.constructionPhotos, undefined, "施工后照片");
+    const supplementPhotos = sanitizePhotoEvidence(dto.supplementPhotos, undefined, "补充证据");
+    if (constructionPhotos.length === 0 && supplementPhotos.length === 0) {
+      throw new BadRequestException("请至少提交一张售后处理证据照片");
+    }
+    await this.createPhotoEvidence(afterSale.id, [
+      ...buildAfterSalePhotoRows(AfterSalePhotoStage.CONSTRUCTION_AFTER, constructionPhotos, actor.id),
+      ...buildAfterSalePhotoRows(AfterSalePhotoStage.SUPPLEMENT, supplementPhotos, actor.id)
+    ]);
+    return this.detail(user, id);
   }
 
   async close(user: AuthenticatedAfterSalesUser, id: string) {

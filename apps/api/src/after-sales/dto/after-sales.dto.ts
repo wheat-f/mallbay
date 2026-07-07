@@ -100,3 +100,19 @@ export class JudgeAfterSaleDto {
   @MaxLength(1000)
   resolutionNote?: string;
 }
+
+export class SubmitAfterSaleEvidenceDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => AfterSalePhotoInputDto)
+  constructionPhotos?: AfterSalePhotoInputDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => AfterSalePhotoInputDto)
+  supplementPhotos?: AfterSalePhotoInputDto[];
+}

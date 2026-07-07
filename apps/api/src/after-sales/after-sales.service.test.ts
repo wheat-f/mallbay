@@ -116,6 +116,58 @@ test("AfterSalesService assigns workers and records responsibility category phot
   assert.equal(serialized.includes("\"amountCents\":1000"), true);
 });
 
+test("AfterSalesService lets assigned workers submit after-sale evidence only", async () => {
+  const writes: unknown[] = [];
+  const prisma = {
+    afterSale: {
+      findFirst: async (args: { where: { assignments?: { some?: { workerUserId?: string } } } }) => {
+        if (args.where.assignments?.some?.workerUserId === "worker-1") {
+          return { id: "after-sale-1", storeId: "store-1" };
+        }
+        return null;
+      }
+    },
+    afterSalePhoto: {
+      createMany: async (args: unknown) => writes.push(args)
+    }
+  };
+  const service = new AfterSalesService(prisma as never);
+
+  await service.submitEvidence(
+    {
+      id: "worker-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+    },
+    "after-sale-1",
+    {
+      constructionPhotos: [{ url: "data:image/png;base64,after", note: "施工后补拍" }],
+      supplementPhotos: [{ url: "data:image/png;base64,confirm", note: "客户确认" }]
+    }
+  );
+
+  const serialized = JSON.stringify(writes);
+  assert.equal(serialized.includes('"stage":"CONSTRUCTION_AFTER"'), true);
+  assert.equal(serialized.includes('"stage":"SUPPLEMENT"'), true);
+  assert.equal(serialized.includes("施工后补拍"), true);
+  assert.equal(serialized.includes("客户确认"), true);
+  assert.equal(serialized.includes('"uploadedById":"worker-1"'), true);
+
+  await assert.rejects(
+    () =>
+      service.submitEvidence(
+        {
+          id: "worker-2",
+          isAuditor: false,
+          storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+        },
+        "after-sale-1",
+        { constructionPhotos: [{ url: "data:image/png;base64,other" }] }
+      ),
+    /售后单不存在/
+  );
+});
+
 test("AfterSalesService lists after-sales with order customer vehicle warranty and normalized photo evidence", async () => {
   const calls: unknown[] = [];
   const prisma = {

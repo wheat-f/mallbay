@@ -5,6 +5,7 @@
     "ignoreDeprecations": "6.0",
     "jsx": "preserve",
     "allowJs": false,
+    "types": ["node"],
     "noEmit": true,
     "incremental": true,
     "plugins": [

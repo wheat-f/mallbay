@@ -1,8 +1,9 @@
 "use client";
 
-import type { AfterSaleResponsibility, AfterSaleStatus, AfterSaleSummary } from "@mallbay/shared";
+import type { AfterSaleResponsibility, AfterSaleStatus, AfterSaleSummary, StorePosition } from "@mallbay/shared";
 import type { FormInstance } from "antd";
-import { App, AutoComplete, Button, Card, Empty, Form, Image, Input, InputNumber, Modal, Select, Skeleton, Tag } from "antd";
+import type { UploadFile } from "antd";
+import { App, AutoComplete, Button, Card, Empty, Form, Image, Input, InputNumber, Modal, Select, Skeleton, Tag, Upload } from "antd";
 import {
   ArrowLeftOutlined,
   CameraOutlined,
@@ -11,6 +12,7 @@ import {
   ExclamationCircleOutlined,
   ExportOutlined,
   FileSearchOutlined,
+  InboxOutlined,
   SendOutlined,
   SafetyCertificateOutlined,
   TeamOutlined,
@@ -60,12 +62,16 @@ type AssignFormValues = {
 type JudgeFormValues = {
   responsibility: AfterSaleResponsibility;
   constructionIssueCategory?: string;
-  constructionPhotoUrlsText?: string;
-  supplementPhotoUrlsText?: string;
   penaltyWorkerUserId?: string;
   penaltyAmountYuan?: number;
   penaltyReason?: string;
   resolutionNote?: string;
+};
+
+type EvidenceFormValues = {
+  constructionPhotos?: UploadFile[];
+  supplementPhotos?: UploadFile[];
+  evidenceNote?: string;
 };
 
 
@@ -76,6 +82,7 @@ export default function AfterSaleDetailPage() {
   const router = useRouter();
   const [assignForm] = Form.useForm<AssignFormValues>();
   const [judgeForm] = Form.useForm<JudgeFormValues>();
+  const [evidenceForm] = Form.useForm<EvidenceFormValues>();
   const afterSaleId = params.id;
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
@@ -104,6 +111,13 @@ export default function AfterSaleDetailPage() {
   const selectedResponsibility = Form.useWatch("responsibility", judgeForm);
   const hasAssignments = (afterSale?.assignments?.length ?? 0) > 0;
   const hasJudgedResponsibility = Boolean(afterSale && afterSale.responsibility !== "PENDING");
+  const userPosition = user?.storeMember?.position;
+  const isAfterSalesManager = Boolean(user?.isAuditor || isAfterSalesManagerPosition(userPosition));
+  const isAssignedAfterSalesWorker = Boolean(
+    user?.id &&
+      isAfterSalesWorkerPosition(userPosition) &&
+      afterSale?.assignments?.some((assignment) => assignment.workerUserId === user.id)
+  );
 
   useEffect(() => {
     if (!afterSale) return;
@@ -139,8 +153,6 @@ export default function AfterSaleDetailPage() {
       return afterSalesApi.judge(afterSale.id, {
         responsibility: values.responsibility,
         constructionIssueCategory: values.constructionIssueCategory,
-        constructionPhotoUrls: parsePhotoUrls(values.constructionPhotoUrlsText),
-        supplementPhotoUrls: parsePhotoUrls(values.supplementPhotoUrlsText),
         penaltyWorkerUserId: values.penaltyWorkerUserId,
         penaltyAmountCents: yuanToCents(values.penaltyAmountYuan),
         penaltyReason: values.penaltyReason,
@@ -149,6 +161,26 @@ export default function AfterSaleDetailPage() {
     },
     onSuccess: async () => {
       message.success("售后处理结果已保存");
+      await invalidateAfterSale();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+  const evidenceMutation = useMutation({
+    mutationFn: async (values: EvidenceFormValues) => {
+      if (!afterSale) throw new Error("售后工单未加载");
+      const constructionPhotos = await buildAfterSalePhotoInputs(values.constructionPhotos, "施工后照片", values.evidenceNote);
+      const supplementPhotos = await buildAfterSalePhotoInputs(values.supplementPhotos, "补充证据图片", values.evidenceNote);
+      if (constructionPhotos.length === 0 && supplementPhotos.length === 0) {
+        throw new Error("请至少上传一张售后处理证据照片");
+      }
+      return afterSalesApi.submitEvidence(afterSale.id, {
+        constructionPhotos,
+        supplementPhotos
+      });
+    },
+    onSuccess: async () => {
+      message.success("售后处理证据已提交");
+      evidenceForm.resetFields();
       await invalidateAfterSale();
     },
     onError: (error: Error) => message.error(error.message)
@@ -253,6 +285,9 @@ export default function AfterSaleDetailPage() {
                 afterSale={afterSale}
                 assignForm={assignForm}
                 judgeForm={judgeForm}
+                evidenceForm={evidenceForm}
+                mode={isAfterSalesManager ? "manager" : "worker"}
+                canSubmitEvidence={isAssignedAfterSalesWorker || isAfterSalesManager}
                 workerOptions={workerOptions}
                 workersLoading={workersQuery.isLoading}
                 selectedResponsibility={selectedResponsibility}
@@ -260,9 +295,11 @@ export default function AfterSaleDetailPage() {
                 hasJudgedResponsibility={hasJudgedResponsibility}
                 assignPending={assignMutation.isPending}
                 judgePending={judgeMutation.isPending}
+                evidencePending={evidenceMutation.isPending}
                 closePending={closeMutation.isPending}
                 onAssign={(values) => assignMutation.mutate(values)}
                 onJudge={(values) => judgeMutation.mutate(values)}
+                onSubmitEvidence={(values) => evidenceMutation.mutate(values)}
                 onClose={() => closeMutation.mutate()}
               />
             </Card>
@@ -377,6 +414,9 @@ type AfterSaleActionPanelProps = {
   afterSale: AfterSaleSummary;
   assignForm: FormInstance<AssignFormValues>;
   judgeForm: FormInstance<JudgeFormValues>;
+  evidenceForm: FormInstance<EvidenceFormValues>;
+  mode: "manager" | "worker";
+  canSubmitEvidence: boolean;
   workerOptions: { value: string; label: string }[];
   workersLoading: boolean;
   selectedResponsibility?: AfterSaleResponsibility;
@@ -384,9 +424,11 @@ type AfterSaleActionPanelProps = {
   hasJudgedResponsibility: boolean;
   assignPending: boolean;
   judgePending: boolean;
+  evidencePending: boolean;
   closePending: boolean;
   onAssign: (values: AssignFormValues) => void;
   onJudge: (values: JudgeFormValues) => void;
+  onSubmitEvidence: (values: EvidenceFormValues) => void;
   onClose: () => void;
 };
 
@@ -394,6 +436,9 @@ function AfterSaleActionPanel({
   afterSale,
   assignForm,
   judgeForm,
+  evidenceForm,
+  mode,
+  canSubmitEvidence,
   workerOptions,
   workersLoading,
   selectedResponsibility,
@@ -401,9 +446,11 @@ function AfterSaleActionPanel({
   hasJudgedResponsibility,
   assignPending,
   judgePending,
+  evidencePending,
   closePending,
   onAssign,
   onJudge,
+  onSubmitEvidence,
   onClose
 }: AfterSaleActionPanelProps) {
   if (afterSale.status === "CLOSED") {
@@ -418,7 +465,7 @@ function AfterSaleActionPanel({
     );
   }
 
-  if (!hasAssignments) {
+  if (!hasAssignments && mode === "manager") {
     return (
       <div className="after-sale-action-section">
         <div className="after-sale-action-copy">
@@ -443,12 +490,69 @@ function AfterSaleActionPanel({
     );
   }
 
+  if (!hasAssignments) {
+    return (
+      <div className="after-sale-action-result">
+        <TeamOutlined />
+        <div>
+          <strong>等待店长派单</strong>
+          <p>售后工单尚未分配给处理人员，施工员暂时不能提交处理证据。</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "worker") {
+    return (
+      <div className="after-sale-action-section">
+        <div className="after-sale-action-copy">
+          <strong>售后处理取证</strong>
+          <span>施工员仅提交售后处理证据，责任判定、处罚和归档由店长根据证据处理。</span>
+        </div>
+        <Form form={evidenceForm} layout="vertical" className="after-sale-action-form" onFinish={onSubmitEvidence}>
+          <div className="after-sale-evidence-upload-grid">
+            <Form.Item
+              name="constructionPhotos"
+              label="施工后照片"
+              valuePropName="fileList"
+              getValueFromEvent={normalizeUploadFileList}
+              rules={[{ validator: validateRequiredUpload("请上传至少一张施工后照片") }]}
+            >
+              <AfterSaleEvidenceUploader disabled={!canSubmitEvidence || hasJudgedResponsibility} emptyText="上传施工后照片" />
+            </Form.Item>
+            <Form.Item
+              name="supplementPhotos"
+              label="补充证据图片"
+              valuePropName="fileList"
+              getValueFromEvent={normalizeUploadFileList}
+            >
+              <AfterSaleEvidenceUploader disabled={!canSubmitEvidence || hasJudgedResponsibility} emptyText="上传沟通截图、供应商反馈或补充证据" />
+            </Form.Item>
+          </div>
+          <Form.Item name="evidenceNote" label="补充说明">
+            <Input.TextArea rows={3} placeholder="说明客户确认、供应商反馈、二次施工细节或异常原因" disabled={!canSubmitEvidence || hasJudgedResponsibility} />
+          </Form.Item>
+          <Button
+            htmlType="submit"
+            type="primary"
+            icon={<SendOutlined />}
+            loading={evidencePending}
+            disabled={!canSubmitEvidence || hasJudgedResponsibility}
+          >
+            提交处理证据
+          </Button>
+          {hasJudgedResponsibility ? <p className="after-sale-evidence-uploader-note">店长已完成责任判定，证据已进入售后处理记录。</p> : null}
+        </Form>
+      </div>
+    );
+  }
+
   if (!hasJudgedResponsibility) {
     return (
       <div className="after-sale-action-section">
         <div className="after-sale-action-copy">
           <strong>责任判定与处理方案</strong>
-          <span>根据照片、客户诉求和售后处理结果确认责任来源，必要时补充施工后照片和处罚记录。</span>
+          <span>店长根据证据进行责任判定，确认责任来源、处理分类、处理方案和必要处罚。</span>
         </div>
         <Form form={judgeForm} layout="vertical" className="after-sale-action-form" onFinish={onJudge}>
           <div className="after-sale-action-grid">
@@ -470,12 +574,6 @@ function AfterSaleActionPanel({
             ) : null}
             <Form.Item name="resolutionNote" label="处理方案说明" rules={[{ required: true, message: "请填写处理方案" }]}>
               <Input.TextArea rows={3} placeholder="记录返工、补膜、客户沟通或供应商追踪方案" />
-            </Form.Item>
-            <Form.Item name="constructionPhotoUrlsText" label="施工后照片对比">
-              <Input.TextArea rows={3} placeholder="每行一个施工后照片链接" />
-            </Form.Item>
-            <Form.Item name="supplementPhotoUrlsText" label="补充证据">
-              <Input.TextArea rows={3} placeholder="每行一个补充证据链接" />
             </Form.Item>
             <div className="after-sale-penalty-fields">
               <strong>施工处罚设定</strong>
@@ -509,6 +607,17 @@ function AfterSaleActionPanel({
         确认判罚并归档
       </Button>
     </div>
+  );
+}
+
+function AfterSaleEvidenceUploader({ disabled, emptyText }: { disabled?: boolean; emptyText: string }) {
+  return (
+    <Upload accept="image/*" beforeUpload={() => false} disabled={disabled} listType="picture-card" multiple>
+      <div className="after-sale-evidence-uploader-trigger">
+        <InboxOutlined />
+        <span>{emptyText}</span>
+      </div>
+    </Upload>
   );
 }
 
@@ -646,7 +755,7 @@ function getConstructionPhotoStageLabel(stage: string) {
 
 function isViewablePhotoUrl(url?: string | null) {
   if (!url) return false;
-  return /^(https?:\/\/|\/)/.test(url.trim());
+  return /^(https?:\/\/|\/|data:image\/)/.test(url.trim());
 }
 
 function getPhotoCountLabel(photos?: AfterSalePhotoEvidence[] | null, fallback = "待上传") {
@@ -667,17 +776,56 @@ function formatPenaltyAmount(amountCents?: number | null) {
   return `¥${(amountCents / 100).toFixed(2)}`;
 }
 
-function parsePhotoUrls(text?: string) {
-  return Array.from(new Set(
-    (text ?? "")
-      .split(/\r?\n|,/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-  ));
-}
-
 function isNonEmptyString(value?: string | null): value is string {
   return Boolean(value);
+}
+
+function isAfterSalesManagerPosition(position?: StorePosition) {
+  return position === "MANAGER" || position === "SCHEDULER" || position === "CUSTOMER_SERVICE";
+}
+
+function isAfterSalesWorkerPosition(position?: StorePosition) {
+  return position === "CONSTRUCTION" || position === "APPRENTICE";
+}
+
+function normalizeUploadFileList(event: { fileList?: UploadFile[] } | UploadFile[]) {
+  return Array.isArray(event) ? event.slice(-12) : event?.fileList?.slice(-12) ?? [];
+}
+
+function validateRequiredUpload(message: string) {
+  return async (_: unknown, fileList?: UploadFile[]) => {
+    if ((fileList ?? []).length > 0) return;
+    throw new Error(message);
+  };
+}
+
+async function buildAfterSalePhotoInputs(files?: UploadFile[], defaultNote = "售后证据", fallbackNote?: string) {
+  const result: Array<{ url: string; note: string }> = [];
+  for (const file of files ?? []) {
+    const url =
+      typeof file.url === "string" && file.url
+        ? file.url
+        : typeof file.thumbUrl === "string" && file.thumbUrl
+          ? file.thumbUrl
+          : file.originFileObj
+            ? await fileToDataUrl(file.originFileObj as File)
+            : "";
+    if (!url) continue;
+    result.push({
+      url,
+      note: [file.name, fallbackNote || defaultNote].filter(Boolean).join(" / ")
+    });
+  }
+  return result.slice(0, 12);
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("照片读取失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function getAfterSaleDetailTimeline(afterSale?: AfterSaleSummary): AfterSaleTimelineItem[] {

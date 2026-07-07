@@ -1,116 +1,115 @@
 "use client";
 
-import type { WarrantySummary } from "@mallbay/shared";
-import type { CreateWarrantyPayload } from "../../src/lib/api";
-import { App, Button, Card, Form, Input, Select, Table, Tag } from "antd";
+import type { OrderStatus, WarrantySummary } from "@mallbay/shared";
+import { Button, Card, Input, Select, Table, Tag } from "antd";
 import {
   DownloadOutlined,
   FileProtectOutlined,
-  FilterOutlined,
-  IdcardOutlined,
   PrinterOutlined,
   SearchOutlined,
   SafetyCertificateOutlined
 } from "@ant-design/icons";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { orderApi, warrantiesApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import {
-  getWarrantyCardRows,
   getWarrantyExpiryReminder,
-  getWarrantyOrderLabel,
   getWarrantyStatusLabel
 } from "../../src/features/warranties/display";
 
+type OrderWorkRow = {
+  id: string;
+  orderNo?: string | null;
+  status?: OrderStatus | null;
+  appointmentDate?: string | null;
+  appointmentTimeSlot?: string | null;
+  customer?: {
+    name?: string | null;
+    companyName?: string | null;
+    contactPerson?: string | null;
+    personalName?: string | null;
+  } | null;
+  vehicle?: {
+    carPlate?: string | null;
+    carModel?: string | null;
+    carColor?: string | null;
+    plateNo?: string | null;
+    model?: string | null;
+    color?: string | null;
+  } | null;
+};
+
+type WarrantyWorkRow = OrderWorkRow & {
+  warranty?: WarrantySummary;
+};
+
+const WARRANTY_WORK_STATUSES: Array<{ value: "ALL" | OrderStatus; label: string }> = [
+  { value: "ALL", label: "全部工单" },
+  { value: "PENDING_DISPATCH", label: "待派单" },
+  { value: "DISPATCHED", label: "已派工" },
+  { value: "IN_CONSTRUCTION", label: "施工中" },
+  { value: "COMPLETED", label: "已完工" },
+  { value: "WARRANTIED", label: "已质保" },
+  { value: "CANCELLED", label: "已取消" }
+];
+
 export default function WarrantiesPage() {
-  const { message } = App.useApp();
-  const queryClient = useQueryClient();
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const [form] = Form.useForm<CreateWarrantyPayload>();
-  const [warrantyNo, setWarrantyNo] = useState("");
-  const [summaryNow] = useState(() => Date.now());
-
-  type CompletedOrderOption = {
-    id: string;
-    orderNo?: string | null;
-    customer?: { personalName?: string | null; companyName?: string | null; name?: string | null } | null;
-    vehicle?: { plateNo?: string | null } | null;
-  };
+  const [keyword, setKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | OrderStatus>("ALL");
 
   const warrantiesQuery = useQuery({
     queryKey: ["warranties", storeId],
     queryFn: () => warrantiesApi.list(storeId!),
     enabled: Boolean(storeId)
   });
-  const lookupQuery = useQuery({
-    queryKey: ["warranty-lookup", warrantyNo],
-    queryFn: () => warrantiesApi.lookup(warrantyNo),
-    enabled: Boolean(warrantyNo)
-  });
-  const completedOrdersQuery = useQuery({
-    queryKey: ["warranties", "completed-orders", storeId],
-    queryFn: () => orderApi.list({ storeId: storeId!, status: "COMPLETED", page: 1, pageSize: 100 }),
+  const ordersQuery = useQuery({
+    queryKey: ["warranties", "work-orders", storeId],
+    queryFn: () => orderApi.list({ storeId: storeId!, page: 1, pageSize: 100 }),
     enabled: Boolean(storeId)
   });
-  const completedOrderOptions = ((completedOrdersQuery.data?.items ?? []) as CompletedOrderOption[]).map((order) => ({
-    value: order.id,
-    label: [
-      order.orderNo ?? "未编号订单",
-      order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name,
-      order.vehicle?.plateNo
-    ].filter(Boolean).join(" / ")
-  }));
-  const warrantyRows = useMemo(() => (warrantiesQuery.data ?? []) as WarrantySummary[], [warrantiesQuery.data]);
-  const warrantySummary = useMemo(() => {
-    const expiringSoon = warrantyRows.filter((row) => {
-      if (!row.endDate) return false;
-      const days = (new Date(row.endDate).getTime() - summaryNow) / 86_400_000;
-      return days >= 0 && days <= 30;
-    }).length;
-    return {
-      total: warrantyRows.length,
-      active: warrantyRows.filter((row) => row.status === "ACTIVE").length,
-      expiringSoon,
-      completedOrders: completedOrderOptions.length
-    };
-  }, [completedOrderOptions.length, summaryNow, warrantyRows]);
 
-  const createWarranty = useMutation({
-    mutationFn: (values: CreateWarrantyPayload) => warrantiesApi.createFromOrder(values),
-    onSuccess: async () => {
-      message.success("质保记录已生成");
-      form.resetFields();
-      await queryClient.invalidateQueries({ queryKey: ["warranties", storeId] });
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-  const lookupRows = lookupQuery.data ? getWarrantyCardRows(lookupQuery.data) : [];
+  const warrantyRows = useMemo(() => (warrantiesQuery.data ?? []) as WarrantySummary[], [warrantiesQuery.data]);
+  const warrantyByOrderId = useMemo(() => {
+    const map = new Map<string, WarrantySummary>();
+    warrantyRows.forEach((warranty) => map.set(warranty.orderId, warranty));
+    return map;
+  }, [warrantyRows]);
+  const workRows = useMemo(() => {
+    const rows = ((ordersQuery.data?.items ?? []) as OrderWorkRow[]).map((order) => ({
+      ...order,
+      warranty: warrantyByOrderId.get(order.id)
+    }));
+    return rows.filter((row) => {
+      if (statusFilter !== "ALL" && row.status !== statusFilter) return false;
+      const text = [row.orderNo, getOrderCustomerName(row), getOrderVehicleLabel(row), getOrderStatusLabel(row.status)]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return keyword.trim() ? text.includes(keyword.trim().toLowerCase()) : true;
+    });
+  }, [keyword, ordersQuery.data?.items, statusFilter, warrantyByOrderId]);
+  const completedWithoutWarranty = workRows.filter((row) => row.status === "COMPLETED" && !row.warranty).length;
+  const activeWarranties = warrantyRows.filter((row) => row.status === "ACTIVE").length;
 
   return (
     <div className="management-page">
-      <StorePageHeader title="质保登记台" description="电子质保登记、客户查询、到期提醒和售后追溯" />
+      <StorePageHeader title="质保管理" description="查看施工工单、生成电子质保、查询质保状态和售后追溯。" />
 
       <section className="warranty-command-bar">
         <div className="warranty-command-copy">
-          <span>质保编号查询</span>
-          <strong>核验客户质保状态，快速进入售后追溯</strong>
+          <span>质保工作台</span>
+          <strong>完工后生成质保，已质保可直接查看电子质保卡</strong>
         </div>
-        <Input.Search
-          prefix={<SearchOutlined />}
-          placeholder="输入质保编号、车牌或客户姓名"
-          allowClear
-          enterButton="查询"
-          onSearch={setWarrantyNo}
-        />
         <div className="warranty-command-actions">
           <Button icon={<PrinterOutlined />}>批量打印</Button>
           <Button icon={<DownloadOutlined />}>导出记录</Button>
-          <Button type="primary" icon={<FileProtectOutlined />} onClick={() => form.submit()}>
+          <Button type="primary" icon={<FileProtectOutlined />} onClick={() => router.push("/warranties/create")}>
             生成电子质保
           </Button>
         </div>
@@ -118,10 +117,10 @@ export default function WarrantiesPage() {
 
       <div className="management-kpi-grid">
         {[
-          ["质保记录", warrantySummary.total, "全部电子质保"],
-          ["有效质保", warrantySummary.active, "可用于售后追溯"],
-          ["即将到期", warrantySummary.expiringSoon, "30 天内需关注"],
-          ["待登记订单", warrantySummary.completedOrders, "已完工可生成"]
+          ["工单总数", ordersQuery.data?.total ?? 0, "当前门店施工订单"],
+          ["已完工待生成", completedWithoutWarranty, "可生成电子质保"],
+          ["有效质保", activeWarranties, "可用于售后追溯"],
+          ["质保记录", warrantyRows.length, "全部电子质保"]
         ].map(([label, value, description]) => (
           <Card key={label} className="management-kpi-card">
             <div className="management-kpi-label">{label}</div>
@@ -133,272 +132,106 @@ export default function WarrantiesPage() {
 
       <section className="warranty-filter-panel">
         <div className="warranty-filter-search">
-          <span>快速搜索</span>
+          <span>工单搜索</span>
           <Input.Search
             prefix={<SearchOutlined />}
-            placeholder="质保编号 / 客户 / 车牌 / VIN"
+            placeholder="订单号 / 客户 / 车牌"
             allowClear
-            onSearch={setWarrantyNo}
+            onSearch={setKeyword}
+            onChange={(event) => setKeyword(event.target.value)}
           />
         </div>
         <div className="warranty-filter-field">
-          <span>质保状态</span>
-          <Select
-            placeholder="全部状态"
-            allowClear
-            options={[
-              { value: "ACTIVE", label: "生效中" },
-              { value: "EXPIRED", label: "已过期" },
-              { value: "VOIDED", label: "已作废" }
-            ]}
-          />
+          <span>工单状态</span>
+          <Select value={statusFilter} options={WARRANTY_WORK_STATUSES} onChange={setStatusFilter} />
         </div>
-        <div className="warranty-filter-field">
-          <span>提醒范围</span>
-          <Select
-            placeholder="全部提醒"
-            allowClear
-            options={[
-              { value: "EXPIRING", label: "30 天内到期" },
-              { value: "OVERDUE", label: "已逾期" },
-              { value: "NORMAL", label: "正常" }
-            ]}
-          />
-        </div>
-        <Button type="primary" icon={<SearchOutlined />}>
-          查询
-        </Button>
-        <Button icon={<FilterOutlined />}>高级筛选</Button>
       </section>
 
-      <section className="warranty-workspace">
+      <section className="warranty-workspace warranty-workspace-list">
         <div className="warranty-main-column">
           <Card
             className="warranty-record-list"
-            title="已完工待质保订单"
-            extra={
-              <div className="warranty-table-actions">
-                <Button size="small" icon={<DownloadOutlined />}>导出</Button>
-                <Button size="small" icon={<PrinterOutlined />}>打印</Button>
-              </div>
-            }
+            title="工单列表"
+            extra={<span className="warranty-table-count">{workRows.length} 条</span>}
           >
             <div className="warranty-mobile-cards">
-              {warrantyRows.length > 0 ? (
-                warrantyRows.map((row) => {
-                  const reminder = getWarrantyExpiryReminder(row);
-
-                  return (
-                    <article key={row.id} className="warranty-mobile-card">
-                      <div className="warranty-mobile-card-head">
-                        <div className="min-w-0">
-                          <strong>{row.warrantyNo}</strong>
-                          <span>{getWarrantyOrderLabel(row)}</span>
-                        </div>
-                        <Tag>{getWarrantyStatusLabel(row.status)}</Tag>
+              {workRows.length > 0 ? (
+                workRows.map((row) => (
+                  <article key={row.id} className="warranty-mobile-card">
+                    <div className="warranty-mobile-card-head">
+                      <div className="min-w-0">
+                        <strong>{row.orderNo ?? "未编号订单"}</strong>
+                        <span>{getOrderCustomerName(row)} / {getOrderVehicleLabel(row)}</span>
                       </div>
-
-                      <dl className="warranty-mobile-fields">
-                        <div>
-                          <dt>质保范围</dt>
-                          <dd>{row.scope ?? "-"}</dd>
-                        </div>
-                        <div>
-                          <dt>到期提醒</dt>
-                          <dd><Tag color={reminder.color}>{reminder.label}</Tag></dd>
-                        </div>
-                        <div>
-                          <dt>开始日期</dt>
-                          <dd>{formatWarrantyDate(row.startDate)}</dd>
-                        </div>
-                        <div>
-                          <dt>结束日期</dt>
-                          <dd>{formatWarrantyDate(row.endDate)}</dd>
-                        </div>
-                      </dl>
-
-                      <Button size="small" block onClick={() => router.push(`/warranties/${row.id}`)}>
-                        查看详情
-                      </Button>
-                    </article>
-                  );
-                })
+                      <Tag>{getOrderStatusLabel(row.status)}</Tag>
+                    </div>
+                    <dl className="warranty-mobile-fields">
+                      <div>
+                        <dt>预约</dt>
+                        <dd>{formatAppointment(row)}</dd>
+                      </div>
+                      <div>
+                        <dt>质保</dt>
+                        <dd>{row.warranty ? getWarrantyStatusLabel(row.warranty.status) : getWarrantyActionText(row)}</dd>
+                      </div>
+                    </dl>
+                    {renderWarrantyAction(row, router)}
+                  </article>
+                ))
               ) : (
-                <div className="warranty-mobile-empty">暂无质保记录</div>
+                <div className="warranty-mobile-empty">暂无工单</div>
               )}
             </div>
-            <Table<WarrantySummary>
+            <Table<WarrantyWorkRow>
               className="warranty-desktop-table"
               rowKey="id"
-              loading={warrantiesQuery.isLoading}
-              dataSource={warrantyRows}
+              loading={ordersQuery.isLoading || warrantiesQuery.isLoading}
+              dataSource={workRows}
+              pagination={{ pageSize: 8 }}
               scroll={{ x: 980 }}
               columns={[
-                { title: "质保编号", dataIndex: "warrantyNo", width: 150 },
-                { title: "订单 / 客户 / 车辆", width: 260, render: (_, row) => getWarrantyOrderLabel(row) },
-                { title: "质保范围", dataIndex: "scope", width: 180 },
-                { title: "状态", width: 100, render: (_, row) => <Tag>{getWarrantyStatusLabel(row.status)}</Tag> },
+                { title: "工单", width: 160, render: (_, row) => row.orderNo ?? "未编号订单" },
+                { title: "客户", width: 180, render: (_, row) => getOrderCustomerName(row) },
+                { title: "车辆", width: 190, render: (_, row) => getOrderVehicleLabel(row) },
+                { title: "预约", width: 170, render: (_, row) => formatAppointment(row) },
+                { title: "工单状态", width: 110, render: (_, row) => <Tag>{getOrderStatusLabel(row.status)}</Tag> },
                 {
-                  title: "到期提醒",
-                  width: 110,
+                  title: "质保状态",
+                  width: 140,
                   render: (_, row) => {
-                    const reminder = getWarrantyExpiryReminder(row);
-                    return <Tag color={reminder.color}>{reminder.label}</Tag>;
+                    if (!row.warranty) return <Tag>{getWarrantyActionText(row)}</Tag>;
+                    const reminder = getWarrantyExpiryReminder(row.warranty);
+                    return <Tag color={reminder.color}>{getWarrantyStatusLabel(row.warranty.status)}</Tag>;
                   }
                 },
-                { title: "开始", width: 110, render: (_, row) => formatWarrantyDate(row.startDate) },
-                { title: "结束", width: 110, render: (_, row) => formatWarrantyDate(row.endDate) },
                 {
                   title: "操作",
-                  width: 90,
-                  render: (_, row) => (
-                    <Button size="small" onClick={() => router.push(`/warranties/${row.id}`)}>
-                      详情
-                    </Button>
-                  )
+                  width: 160,
+                  render: (_, row) => renderWarrantyAction(row, router)
                 }
               ]}
             />
           </Card>
-
-          <div className="warranty-guide-grid">
-            <article className="warranty-launch-card">
-              <span><SafetyCertificateOutlined /></span>
-              <div>
-                <h3>电子质保卡上线</h3>
-                <p>质保生成后同步沉淀订单、客户、车辆和施工范围，后续售后可直接按质保编号追溯。</p>
-              </div>
-            </article>
-            <article className="warranty-audit-guide">
-              <span><IdcardOutlined /></span>
-              <div>
-                <h3>质保审核指南</h3>
-                <p>登记前确认订单已完工、客户车辆信息完整、质保范围清晰，避免后续售后责任边界不清。</p>
-              </div>
-            </article>
-          </div>
         </div>
 
         <aside className="warranty-side-column warranty-support-grid">
-          <Card className="warranty-registration-panel" title="质保登记信息提取">
-            <div className="warranty-panel-intro">
-              <span>登记台</span>
-              <strong>从已完工订单生成电子质保</strong>
-              <p>选择订单后，系统复用订单客户、车辆、施工和产品信息，人工只维护质保范围与起始时间。</p>
-            </div>
-            <Form form={form} layout="vertical" onFinish={(values) => createWarranty.mutate(values)}>
-              <Form.Item name="orderId" label="已完工订单" rules={[{ required: true, message: "请选择已完工订单" }]}>
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  loading={completedOrdersQuery.isLoading}
-                  placeholder="选择已完工订单"
-                  options={completedOrderOptions}
-                />
-              </Form.Item>
-              <div className="warranty-parameter-card">
-                <div className="warranty-parameter-card-title">系统自动提取信息 (来自工单)</div>
-                <div className="warranty-parameter-grid">
-                  <label>
-                    <span>客户姓名</span>
-                    <Input value="选择订单后自动带入" disabled />
-                  </label>
-                  <label>
-                    <span>联系电话</span>
-                    <Input value="选择订单后自动带入" disabled />
-                  </label>
-                  <label>
-                    <span>车牌号</span>
-                    <Input value="选择订单后自动带入" disabled />
-                  </label>
-                  <label>
-                    <span>车架号 VIN</span>
-                    <Input value="选择订单后自动带入" disabled />
-                  </label>
+          <Card className="warranty-preview-panel" title="电子质保说明">
+            <div className="warranty-guide-grid warranty-guide-grid-side">
+              <article className="warranty-launch-card">
+                <span><SafetyCertificateOutlined /></span>
+                <div>
+                  <h3>生成条件</h3>
+                  <p>只有已完工且尚未生成质保的工单，才显示生成电子质保入口。</p>
                 </div>
-              </div>
-              <div className="warranty-proof-grid">
-                {[
-                  ["膜桶标签照片 (自动归档)", "扫码核验膜卷批次、序列号和施工记录"],
-                  ["完工车辆照片 (自动归档)", "留存完工交付影像，售后追溯时可直接调阅"]
-                ].map(([label, description]) => (
-                  <div key={label} className="warranty-proof-card">
-                    <div className="warranty-proof-thumb">
-                      <FileProtectOutlined />
-                    </div>
-                    <strong>{label}</strong>
-                    <span>{description}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="warranty-parameter-card">
-                <div className="warranty-parameter-card-title">质保参数配置</div>
-                <div className="warranty-parameter-grid">
-                  <label>
-                    <span>质保编号 (系统生成)</span>
-                    <Input value="提交后自动生成" disabled />
-                  </label>
-                  <label>
-                    <span>产品型号 (自动匹配)</span>
-                    <Input value="依据订单产品自动匹配" disabled />
-                  </label>
-                  <label>
-                    <span>质保年限</span>
-                    <Select
-                      value="5 年"
-                      disabled
-                      options={[{ value: "5 年", label: "5 年" }]}
-                    />
-                  </label>
-                  <label>
-                    <span>质保到期日期 (自动计算)</span>
-                    <Input value="按起始日期自动计算" disabled />
-                  </label>
+              </article>
+              <article className="warranty-audit-guide">
+                <span><FileProtectOutlined /></span>
+                <div>
+                  <h3>查看条件</h3>
+                  <p>已存在质保记录的工单显示查看电子质保，非完工工单不展示质保操作。</p>
                 </div>
-              </div>
-              <Form.Item name="scope" label="质保范围 (依据厂家标准)" rules={[{ required: true, message: "请输入质保范围" }]}>
-                <Input placeholder="黄变 / 开裂 / 脱胶 / 起泡" />
-              </Form.Item>
-              <Form.Item name="startDate" label="起始日期">
-                <Input placeholder="默认使用施工完工日期" />
-              </Form.Item>
-              <Button type="primary" htmlType="submit" block icon={<FileProtectOutlined />} loading={createWarranty.isPending}>
-                提交生成质保
-              </Button>
-            </Form>
-          </Card>
-
-          <Card className="warranty-preview-panel" title="电子质保卡预览">
-            <div className="warranty-card-preview">
-              <div className="warranty-card-topline">
-                <span>mallbay</span>
-                <SafetyCertificateOutlined />
-              </div>
-              <strong>{lookupQuery.data?.warrantyNo ?? "输入编号后预览"}</strong>
-              <p>{lookupQuery.data ? getWarrantyOrderLabel(lookupQuery.data) : "生成或查询后显示客户、车辆和施工范围"}</p>
-              <Tag color={lookupQuery.data?.status === "ACTIVE" ? "success" : "default"}>
-                {lookupQuery.data ? getWarrantyStatusLabel(lookupQuery.data.status) : "待查询"}
-              </Tag>
+              </article>
             </div>
-            <div className="warranty-preview-meta">
-              {(lookupRows.length > 0
-                ? lookupRows
-                : [
-                    { label: "质保编号", value: "-" },
-                    { label: "质保范围", value: "-" },
-                    { label: "开始日期", value: "-" },
-                    { label: "到期日期", value: "-" }
-                  ]
-              ).map((row) => (
-                <div key={row.label}>
-                  <span>{row.label}</span>
-                  <strong>{row.value}</strong>
-                </div>
-              ))}
-            </div>
-            <Button icon={<DownloadOutlined />} block>
-              下载电子质保卡
-            </Button>
           </Card>
         </aside>
       </section>
@@ -406,8 +239,60 @@ export default function WarrantiesPage() {
   );
 }
 
+function renderWarrantyAction(row: WarrantyWorkRow, router: ReturnType<typeof useRouter>) {
+  if (row.warranty) {
+    return (
+      <Button size="small" onClick={() => router.push(`/warranties/${row.warranty?.id}`)}>
+        查看电子质保
+      </Button>
+    );
+  }
+  if (row.status === "COMPLETED") {
+    return (
+      <Button size="small" type="primary" onClick={() => router.push(`/warranties/create?orderId=${row.id}`)}>
+        生成电子质保
+      </Button>
+    );
+  }
+  return null;
+}
+
+function getWarrantyActionText(row: WarrantyWorkRow) {
+  if (row.status === "COMPLETED") return "待生成";
+  if (row.status === "WARRANTIED") return "已生成";
+  return "暂不处理";
+}
+
+function getOrderCustomerName(row: OrderWorkRow) {
+  return row.customer?.companyName ?? row.customer?.personalName ?? row.customer?.name ?? row.customer?.contactPerson ?? "未登记客户";
+}
+
+function getOrderVehicleLabel(row: OrderWorkRow) {
+  const plate = row.vehicle?.carPlate ?? row.vehicle?.plateNo;
+  const model = row.vehicle?.carModel ?? row.vehicle?.model;
+  const color = row.vehicle?.carColor ?? row.vehicle?.color;
+  return [plate, model, color].filter(Boolean).join(" / ") || "车辆未登记";
+}
+
+function getOrderStatusLabel(status?: string | null) {
+  const labels: Record<string, string> = {
+    PENDING_DISPATCH: "待派单",
+    DISPATCHED: "已派工",
+    IN_CONSTRUCTION: "施工中",
+    COMPLETED: "已完工",
+    WARRANTIED: "已质保",
+    CANCELLED: "已取消"
+  };
+  return status ? labels[status] ?? status : "-";
+}
+
+function formatAppointment(row: OrderWorkRow) {
+  const date = formatWarrantyDate(row.appointmentDate);
+  return [date, row.appointmentTimeSlot].filter(Boolean).join(" ") || "-";
+}
+
 function formatWarrantyDate(value?: string | null) {
-  if (!value) return "-";
+  if (!value) return "";
   const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
   return match?.[1] ?? "质保日期待确认";
 }

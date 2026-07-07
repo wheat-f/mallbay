@@ -7920,6 +7920,19 @@ body {
   align-items: start;
 }
 
+.warranty-workspace-list {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+}
+
+.warranty-table-count {
+  color: var(--mb-text-secondary);
+  font-weight: 800;
+}
+
+.warranty-guide-grid-side {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .warranty-main-column,
 .warranty-side-column {
   display: grid;
@@ -12696,6 +12709,31 @@ body {
   line-height: 32px;
 }
 
+.finance-account-maintenance-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.8fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.finance-account-maintenance-main,
+.finance-account-maintenance-form {
+  min-width: 0;
+}
+
+.finance-account-maintenance-form {
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  padding: 16px;
+  background: var(--mb-surface-alt);
+}
+
+.finance-account-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .finance-section-panel {
   min-width: 0;
 }
@@ -16006,6 +16044,10 @@ button.workbench-task-row:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .finance-account-maintenance-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .finance-ledger-desktop-table {
     display: none;
   }
@@ -16401,6 +16443,10 @@ button.workbench-task-row:hover {
   }
 
   .warranty-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .warranty-workspace-list {
     grid-template-columns: minmax(0, 1fr);
   }
 

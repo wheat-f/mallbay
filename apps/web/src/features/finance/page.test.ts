@@ -77,28 +77,36 @@ test("finance page keeps application forms and account audit inside the workspac
   assert.doesNotMatch(pageSource, /<Modal/);
 });
 
-test("finance payment section uses the prototype reconciliation title", () => {
+test("finance payment section exposes collection account maintenance", () => {
   const pageSource = readFileSync("app/finance/page.tsx", "utf8");
 
-  assert.match(pageSource, /title="打款管理与对账"/);
+  assert.match(pageSource, /收款账户/);
+  assert.match(pageSource, /title="收款账户维护"/);
+  assert.match(pageSource, /新增账户/);
+  assert.match(pageSource, /保存账户/);
+  assert.match(pageSource, /orderApi\.createPaymentAccount/);
+  assert.match(pageSource, /orderApi\.updatePaymentAccount/);
+  assert.match(pageSource, /orderApi\.removePaymentAccount/);
   assert.doesNotMatch(pageSource, /title="账户审计"/);
 });
 
-test("finance payment section exposes prototype payout and reconciliation subsections", () => {
+test("finance payment section exposes account list and reconciliation subsections", () => {
   const pageSource = readFileSync("app/finance/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
-  assert.match(pageSource, /待打款列表/);
+  assert.match(pageSource, /收款账户列表/);
   assert.match(pageSource, /最近对账动态/);
   assert.match(pageSource, /finance-subsection-title/);
+  assert.match(pageSource, /finance-account-maintenance-layout/);
   assert.match(cssSource, /\.finance-subsection-title/);
+  assert.match(cssSource, /\.finance-account-maintenance-layout/);
 });
 
-test("finance payment section exposes the prototype payout type distribution", () => {
+test("finance payment section exposes collection type distribution", () => {
   const pageSource = readFileSync("app/finance/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
-  assert.match(pageSource, /打款类型分布/);
+  assert.match(pageSource, /收款类型分布/);
   assert.match(pageSource, /finance-payout-distribution/);
   assert.match(cssSource, /\.finance-payout-distribution/);
 });

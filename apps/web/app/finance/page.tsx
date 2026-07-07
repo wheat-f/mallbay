@@ -1,10 +1,20 @@
 "use client";
 
-import type { ExpenseApplicationSummary, FinanceApprovalStatus } from "@mallbay/shared";
+import type { ExpenseApplicationSummary, FinanceApprovalStatus, PaymentAccountType } from "@mallbay/shared";
 import type { CreateExpensePayload, CreateReimbursementPayload, OrderAuditEvent } from "../../src/lib/api";
-import type { PaymentAccountOption } from "../../src/features/orders/api";
+import type { PaymentAccountOption, PaymentAccountPayload, UpdatePaymentAccountPayload } from "../../src/features/orders/api";
 import { App, Button, Card, Form, Input, InputNumber, Select, Table, Tag } from "antd";
-import { AuditOutlined, DollarOutlined, DownloadOutlined, EyeOutlined, FileAddOutlined } from "@ant-design/icons";
+import {
+  AuditOutlined,
+  BankOutlined,
+  DollarOutlined,
+  DownloadOutlined,
+  EditOutlined,
+  EyeOutlined,
+  FileAddOutlined,
+  PlusOutlined,
+  StopOutlined
+} from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -57,9 +67,19 @@ type FinanceSectionKey = "expense" | "reimbursement" | "account" | "ledger";
 const FINANCE_SECTION_NAV_ITEMS: Array<{ key: FinanceSectionKey; label: string }> = [
   { key: "expense", label: "费用申请" },
   { key: "reimbursement", label: "报销审核" },
-  { key: "account", label: "打款管理" },
+  { key: "account", label: "收款账户" },
   { key: "ledger", label: "财务流水" }
 ];
+
+type PaymentAccountFormValues = {
+  id?: string;
+  name: string;
+  type: PaymentAccountType;
+  bankName?: string;
+  accountNo?: string;
+  isDefault?: boolean;
+  changeReason?: string;
+};
 
 export default function FinancePage() {
   return (
@@ -79,9 +99,11 @@ function FinanceContent() {
   const [expenseForm] = Form.useForm<MoneyApplicationFormValues>();
   const [reimbursementForm] = Form.useForm<MoneyReimbursementFormValues>();
   const [reviewForm] = Form.useForm<ReviewFormValues>();
+  const [paymentAccountForm] = Form.useForm<PaymentAccountFormValues>();
   const [selectedReimbursementId, setSelectedReimbursementId] = useState<string>();
   const [selectedAccount, setSelectedAccount] = useState<PaymentAccountOption | null>(null);
   const [ledgerFilter, setLedgerFilter] = useState<"ALL" | "INCOME" | "EXPENSE">("ALL");
+  const [editingPaymentAccount, setEditingPaymentAccount] = useState<PaymentAccountOption | null>(null);
   const financeSectionParam = searchParams.get("section");
   const financeActionParam = searchParams.get("action");
   const paymentOrderId = searchParams.get("orderId");
@@ -151,6 +173,23 @@ function FinanceContent() {
   };
 
   useEffect(() => {
+    if (editingPaymentAccount) {
+      paymentAccountForm.setFieldsValue({
+        id: editingPaymentAccount.id,
+        name: editingPaymentAccount.name,
+        type: editingPaymentAccount.type,
+        bankName: editingPaymentAccount.bankName,
+        accountNo: editingPaymentAccount.accountNo,
+        isDefault: editingPaymentAccount.isDefault,
+        changeReason: ""
+      });
+      return;
+    }
+    paymentAccountForm.resetFields();
+    paymentAccountForm.setFieldsValue({ type: "CORPORATE", isDefault: false });
+  }, [editingPaymentAccount, paymentAccountForm]);
+
+  useEffect(() => {
     reviewForm.resetFields();
     if (selectedReimbursement) {
       reviewForm.setFieldsValue({ id: selectedReimbursement.id });
@@ -165,7 +204,9 @@ function FinanceContent() {
     Promise.all([
       queryClient.invalidateQueries({ queryKey: ["finance-expenses", storeId] }),
       queryClient.invalidateQueries({ queryKey: ["finance-reimbursements", storeId] }),
-      queryClient.invalidateQueries({ queryKey: ["finance-payment-records", storeId] })
+      queryClient.invalidateQueries({ queryKey: ["finance-payment-records", storeId] }),
+      queryClient.invalidateQueries({ queryKey: ["finance-payment-accounts", storeId] }),
+      queryClient.invalidateQueries({ queryKey: ["order-payment-accounts", storeId] })
     ]);
 
   const createExpense = useMutation({
@@ -208,6 +249,47 @@ function FinanceContent() {
     mutationFn: (values: ReviewFormValues) => financeApi.reviewReimbursement(values.id, { status: values.status, note: values.note }),
     onSuccess: async () => {
       message.success("报销审批已更新");
+      await invalidateFinance();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+  const savePaymentAccount = useMutation({
+    mutationFn: (values: PaymentAccountFormValues) => {
+      if (!storeId) throw new Error("当前账号未加入门店");
+      if (values.id) {
+        const payload: UpdatePaymentAccountPayload = {
+          name: values.name,
+          type: values.type,
+          bankName: values.bankName,
+          accountNo: values.accountNo,
+          isDefault: values.isDefault,
+          changeReason: values.changeReason || "维护收款账户"
+        };
+        return orderApi.updatePaymentAccount(values.id, payload);
+      }
+      const payload: PaymentAccountPayload = {
+        storeId,
+        name: values.name,
+        type: values.type,
+        bankName: values.bankName,
+        accountNo: values.accountNo,
+        isDefault: values.isDefault
+      };
+      return orderApi.createPaymentAccount(payload);
+    },
+    onSuccess: async () => {
+      message.success(editingPaymentAccount ? "收款账户已更新" : "收款账户已新增");
+      setEditingPaymentAccount(null);
+      paymentAccountForm.resetFields();
+      await invalidateFinance();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+  const disablePaymentAccount = useMutation({
+    mutationFn: (id: string) => orderApi.removePaymentAccount(id),
+    onSuccess: async () => {
+      message.success("收款账户已停用");
+      setEditingPaymentAccount(null);
       await invalidateFinance();
     },
     onError: (error: Error) => message.error(error.message)
@@ -268,7 +350,7 @@ function FinanceContent() {
           <small>待处理单据</small>
         </div>
         <div>
-          <span>打款管理</span>
+          <span>收款账户</span>
           <strong>{paymentAccountRows.length}</strong>
           <small>可用账户</small>
         </div>
@@ -630,8 +712,26 @@ function FinanceContent() {
       {activeFinanceSection === "account" ? (
       <section className="finance-workspace finance-section-panel finance-workspace-single is-active">
         <div className="finance-main-column">
-            <Card className="finance-account-audit-panel" title="打款管理与对账">
-            <div className="finance-subsection-title">待打款列表</div>
+            <Card
+              className="finance-account-audit-panel"
+              title="收款账户维护"
+              extra={
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => {
+                    setEditingPaymentAccount(null);
+                    paymentAccountForm.resetFields();
+                    paymentAccountForm.setFieldsValue({ type: "CORPORATE", isDefault: paymentAccountRows.length === 0 });
+                  }}
+                >
+                  新增账户
+                </Button>
+              }
+            >
+            <div className="finance-account-maintenance-layout">
+              <div className="finance-account-maintenance-main">
+                <div className="finance-subsection-title">收款账户列表</div>
             <div className="finance-account-mobile-cards">
               {paymentAccountRows.length > 0 ? (
                 paymentAccountRows.map((account) => (
@@ -645,7 +745,10 @@ function FinanceContent() {
                         <strong>{account.name}</strong>
                         <span>{maskAccountNo(account.accountNo)}</span>
                       </div>
-                      <Tag>{getPaymentAccountTypeLabel(account.type)}</Tag>
+                      <div>
+                        {account.isDefault ? <Tag color="blue">默认</Tag> : null}
+                        <Tag>{getPaymentAccountTypeLabel(account.type)}</Tag>
+                      </div>
                     </div>
                   </article>
                 ))
@@ -667,11 +770,105 @@ function FinanceContent() {
               columns={[
                 { title: "账户", dataIndex: "name" },
                 { title: "类型", render: (_, row) => getPaymentAccountTypeLabel(row.type) },
-                { title: "账号", render: (_, row) => maskAccountNo(row.accountNo) }
+                { title: "开户行/平台", render: (_, row) => row.bankName ?? "-" },
+                { title: "账号", render: (_, row) => maskAccountNo(row.accountNo) },
+                {
+                  title: "状态",
+                  render: (_, row) => (
+                    <>
+                      <Tag color={row.isActive === false ? "default" : "success"}>{row.isActive === false ? "停用" : "启用"}</Tag>
+                      {row.isDefault ? <Tag color="blue">默认</Tag> : null}
+                    </>
+                  )
+                },
+                {
+                  title: "操作",
+                  width: 150,
+                  render: (_, row) => (
+                    <div className="finance-account-actions">
+                      <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setEditingPaymentAccount(row);
+                        }}
+                      >
+                        编辑
+                      </Button>
+                      <Button
+                        size="small"
+                        danger
+                        icon={<StopOutlined />}
+                        disabled={row.isActive === false}
+                        loading={disablePaymentAccount.isPending}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          disablePaymentAccount.mutate(row.id);
+                        }}
+                      >
+                        停用
+                      </Button>
+                    </div>
+                  )
+                }
               ]}
             />
+              </div>
+              <div className="finance-account-maintenance-form">
+                <div className="finance-subsection-title">{editingPaymentAccount ? "编辑收款账户" : "新增收款账户"}</div>
+                <Form
+                  form={paymentAccountForm}
+                  layout="vertical"
+                  onFinish={(values) => savePaymentAccount.mutate(values)}
+                >
+                  <Form.Item name="id" hidden>
+                    <Input />
+                  </Form.Item>
+                  <Form.Item name="name" label="账户名称" rules={[{ required: true, message: "请输入账户名称" }]}>
+                    <Input prefix={<BankOutlined />} placeholder="例如：门店对公账户 / 微信收款" />
+                  </Form.Item>
+                  <Form.Item name="type" label="账户类型" rules={[{ required: true, message: "请选择账户类型" }]}>
+                    <Select
+                      options={[
+                        { value: "CORPORATE", label: "对公账户" },
+                        { value: "PERSONAL", label: "个人账户" },
+                        { value: "WECHAT", label: "微信" },
+                        { value: "ALIPAY", label: "支付宝" },
+                        { value: "OTHER", label: "其他" }
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item name="bankName" label="开户行/平台">
+                    <Input placeholder="银行名称或收款平台" />
+                  </Form.Item>
+                  <Form.Item name="accountNo" label="账号">
+                    <Input placeholder="银行卡号、微信/支付宝账号或收款标识" />
+                  </Form.Item>
+                  <Form.Item name="isDefault" label="默认账户">
+                    <Select
+                      options={[
+                        { value: true, label: "设为默认" },
+                        { value: false, label: "普通账户" }
+                      ]}
+                    />
+                  </Form.Item>
+                  {editingPaymentAccount ? (
+                    <Form.Item name="changeReason" label="修改原因" rules={[{ required: true, message: "请输入修改原因" }]}>
+                      <Input.TextArea rows={2} placeholder="例如：更换收款账号、更新开户行信息" />
+                    </Form.Item>
+                  ) : null}
+                  <div className="finance-form-actions">
+                    <Button onClick={() => setEditingPaymentAccount(null)}>清空</Button>
+                    <Button type="primary" htmlType="submit" loading={savePaymentAccount.isPending}>
+                      保存账户
+                    </Button>
+                  </div>
+                </Form>
+              </div>
+            </div>
             <div className="finance-payout-distribution">
-              <div className="finance-subsection-title">打款类型分布</div>
+              <div className="finance-subsection-title">收款类型分布</div>
               <div className="finance-payout-distribution-chart" aria-label="打款类型分布">
                 <div className="finance-payout-donut">
                   <span>占比</span>
@@ -682,6 +879,14 @@ function FinanceContent() {
                 </div>
               </div>
               <div className="finance-payout-distribution-metrics">
+                <div>
+                  <span>默认账户</span>
+                  <strong>{paymentAccountRows.find((row) => row.isDefault)?.name ?? "-"}</strong>
+                </div>
+                <div>
+                  <span>可用账户</span>
+                  <strong>{paymentAccountRows.filter((row) => row.isActive !== false).length} 个</strong>
+                </div>
                 <div>
                   <span>待打款报销</span>
                   <strong>{financeSummary.pendingReimbursements} 笔</strong>

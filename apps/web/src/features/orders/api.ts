@@ -69,6 +69,7 @@ export type UpdatePaymentAccountPayload = Partial<Omit<PaymentAccountPayload, "s
 
 export type PaymentAccountOption = PaymentAccountPayload & {
   id: string;
+  isActive?: boolean;
 };
 
 export type OrderPaymentPayload = {

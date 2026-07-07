@@ -725,10 +725,24 @@ function AssignedConstructionRecordPanel({
           </span>
           <div>
             <h2>{record.order?.orderNo ?? "施工工单"}</h2>
-            <p>当前状态：{getConstructionStatusLabel(record.status)}</p>
+            <p>
+              当前状态：{getConstructionStatusLabel(record.status)} · 客户：{getOrderCustomerLabel(record.order)} · 车辆：
+              {getOrderVehicleLabel(record.order)}
+            </p>
           </div>
         </div>
         <Button type="primary" onClick={onOpenDetail}>查看施工工单</Button>
+      </div>
+
+      <div className="dispatch-info-grid dispatch-order-customer-grid">
+        <div className="dispatch-info-panel">
+          <h3>客户信息</h3>
+          <strong>{getOrderCustomerLabel(record.order)}</strong>
+        </div>
+        <div className="dispatch-info-panel">
+          <h3>车辆信息</h3>
+          <strong>{getOrderVehicleLabel(record.order)}</strong>
+        </div>
       </div>
 
       <div className="dispatch-info-grid">
@@ -766,7 +780,7 @@ function AssignedConstructionRecordPanel({
 }
 
 function getOrderVehicleLabel(order?: OrderRow) {
-  if (!order?.vehicle) return "车辆未登记";
+  if (!order?.vehicle) return "车辆信息待确认";
   const vehicleLabel = [
     order.vehicle.carPlate ?? order.vehicle.plateNo,
     order.vehicle.carModel ?? [order.vehicle.brand, order.vehicle.model].filter(Boolean).join(" "),
@@ -774,7 +788,7 @@ function getOrderVehicleLabel(order?: OrderRow) {
   ]
     .filter(Boolean)
     .join(" / ");
-  return vehicleLabel || "车辆未登记";
+  return vehicleLabel || "车辆信息待确认";
 }
 
 function getOrderItemsSummary(order?: OrderRow) {

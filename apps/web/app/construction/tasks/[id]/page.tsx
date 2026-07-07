@@ -4,7 +4,6 @@ import { useState } from "react";
 import { App, Button, Card, Descriptions, Empty, Image, Modal, Table, Tag, Upload } from "antd";
 import {
   ArrowLeftOutlined,
-  CameraOutlined,
   CheckOutlined,
   ClockCircleOutlined,
   FileImageOutlined,
@@ -173,9 +172,6 @@ export default function ConstructionTaskDetailPage() {
                 开始验车
               </Button>
             ) : null}
-            <Button icon={<CameraOutlined />} onClick={() => document.getElementById("task-photo-upload")?.scrollIntoView({ behavior: "smooth" })}>
-              上传照片
-            </Button>
             <Button
               icon={<InboxOutlined />}
               disabled={!pendingAllocationIds.length}
@@ -323,46 +319,6 @@ export default function ConstructionTaskDetailPage() {
               </Card>
             </div>
 
-            <aside className="worker-task-detail-side">
-              <Card title="执行节点">
-                <div className="worker-task-side-steps">
-                  {getTaskSteps(record.status, pendingUploads, materialPickupState).map((step) => (
-                    <div key={step.label} className={step.state === "done" ? "is-done" : step.state === "active" ? "is-active" : undefined}>
-                      <i>{step.state === "done" ? <CheckOutlined /> : step.index}</i>
-                      <span>{step.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-
-              <Card title="已上传照片">
-                <Table<TaskPhoto>
-                  rowKey="id"
-                  size="small"
-                  pagination={false}
-                  dataSource={photos}
-                  locale={{ emptyText: <Empty description="暂无照片" /> }}
-                  columns={[
-                    {
-                      title: "阶段",
-                      dataIndex: "stage",
-                      render: (stage: string) => getWorkerPhotoStageLabel(stage)
-                    },
-                    {
-                      title: "照片",
-                      render: (_: unknown, photo: TaskPhoto, index: number) =>
-                        photo.url ? (
-                          <Button type="link" size="small" onClick={() => setPreviewPhoto(photo)}>
-                            查看 {index + 1}
-                          </Button>
-                        ) : (
-                          "链接待补充"
-                        )
-                    }
-                  ]}
-                />
-              </Card>
-            </aside>
           </section>
         </>
       )}

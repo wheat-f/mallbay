@@ -26,7 +26,7 @@ test("construction assignments page keeps missing vehicle labels readable", () =
   assert.match(pageSource, /order\.vehicle\.carPlate \?\? order\.vehicle\.plateNo/);
   assert.match(pageSource, /order\.vehicle\.carModel \?\? \[order\.vehicle\.brand, order\.vehicle\.model\]/);
   assert.match(pageSource, /order\.vehicle\.carColor \?\? order\.vehicle\.color/);
-  assert.match(pageSource, /return vehicleLabel \|\| "车辆未登记"/);
+  assert.match(pageSource, /return vehicleLabel \|\| "车辆信息待确认"/);
 });
 
 test("construction assignments page formats appointment dates with business-safe fallback", () => {

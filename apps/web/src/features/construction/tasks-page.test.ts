@@ -91,7 +91,7 @@ test("construction task detail page is a desktop execution workspace", () => {
   assert.match(pageSource, /<Modal/);
   assert.match(pageSource, /<Image src=\{previewPhoto\.url\}/);
   assert.match(pageSource, /开始验车/);
-  assert.match(pageSource, /上传照片/);
+  assert.match(pageSource, /上传文件/);
   assert.match(pageSource, /提交完工/);
   assert.match(pageSource, /领取物料/);
   assert.match(pageSource, /物料领取/);

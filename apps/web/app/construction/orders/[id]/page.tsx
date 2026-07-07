@@ -24,7 +24,15 @@ type ConstructionRecord = {
   qualityNote?: string | null;
   actualMinutes?: number | null;
   overtimeMinutes?: number;
-  order?: { orderNo?: string | null } | null;
+  order?: {
+    orderNo?: string | null;
+    appointmentDate?: string | null;
+    appointmentTimeSlot?: string | null;
+    constructionLocation?: string | null;
+    constructionType?: string | null;
+    customer?: { name?: string | null; companyName?: string | null; contactPerson?: string | null } | null;
+    vehicle?: { carPlate?: string | null; carModel?: string | null; carColor?: string | null } | null;
+  } | null;
   assignments?: { workerUserId: string }[];
   photos?: { id: string; stage: string; url: string; uploadedById: string }[];
 };
@@ -109,7 +117,11 @@ export default function ConstructionOrderDetailPage() {
               <Tag className="construction-detail-status-tag">{record ? getConstructionStatusLabel(record.status) : "未派工"}</Tag>
             </div>
             <h1>{record?.order?.orderNo ?? "施工记录待生成"}</h1>
-            <p>跟踪施工团队、照片完整度、完工用时与质检结论，作为质保和售后追溯依据。</p>
+            <p>
+              {record
+                ? `${getOrderCustomerLabel(record)} · ${getOrderVehicleLabel(record)}`
+                : "跟踪施工团队、照片完整度、完工用时与质检结论，作为质保和售后追溯依据。"}
+            </p>
           </div>
           <div className="construction-detail-hero-metrics">
             <div>
@@ -138,6 +150,23 @@ export default function ConstructionOrderDetailPage() {
 
         <section className="construction-detail-grid">
           <div className="construction-detail-main">
+            <Card className="construction-team-panel" title="订单客户与车辆">
+              <div className="construction-order-context-grid">
+                <div>
+                  <span>客户</span>
+                  <strong>{getOrderCustomerLabel(record)}</strong>
+                </div>
+                <div>
+                  <span>车辆</span>
+                  <strong>{getOrderVehicleLabel(record)}</strong>
+                </div>
+                <div>
+                  <span>预约时间</span>
+                  <strong>{formatOrderAppointment(record)}</strong>
+                </div>
+              </div>
+            </Card>
+
             <Card className="construction-team-panel" title={<><UsergroupAddOutlined /> 施工团队</>}>
               {assignedWorkers.length ? (
                 <div className="construction-worker-chip-grid">
@@ -157,7 +186,6 @@ export default function ConstructionOrderDetailPage() {
               <ConstructionPhotoWorkspace
                 record={record}
                 photos={photos}
-                workerMap={workerMap}
                 onPreview={setPreviewPhoto}
                 onUploadFile={async (stage, file) => {
                   if (!record) {
@@ -169,7 +197,7 @@ export default function ConstructionOrderDetailPage() {
                 }}
               />
             ) : (
-              <ConstructionPhotoArchive photos={photos} workerMap={workerMap} onPreview={setPreviewPhoto} />
+              <ConstructionPhotoArchive photos={photos} onPreview={setPreviewPhoto} />
             )}
 
             {workspace === "quality" ? (
@@ -230,13 +258,11 @@ export default function ConstructionOrderDetailPage() {
 function ConstructionPhotoWorkspace({
   record,
   photos,
-  workerMap,
   onPreview,
   onUploadFile
 }: {
   record?: ConstructionRecord;
   photos: ConstructionPhoto[];
-  workerMap: Map<string, WorkerRow>;
   onPreview: (photo: ConstructionPhoto) => void;
   onUploadFile: (stage: PhotoStage, file: File) => Promise<void>;
 }) {
@@ -245,18 +271,16 @@ function ConstructionPhotoWorkspace({
       <Typography.Paragraph type="secondary" className="construction-stage-copy">
         当前工单尚未进入质检，先补齐施工前、施工中和施工后照片。已上传照片可直接预览，确认照片后再进入完工与质检流转。
       </Typography.Paragraph>
-      <ConstructionPhotoStageGrid photos={photos} workerMap={workerMap} onPreview={onPreview} onUploadFile={onUploadFile} disabled={!record} />
+      <ConstructionPhotoStageGrid photos={photos} onPreview={onPreview} onUploadFile={onUploadFile} disabled={!record} />
     </Card>
   );
 }
 
 function ConstructionPhotoArchive({
   photos,
-  workerMap,
   onPreview
 }: {
   photos: ConstructionPhoto[];
-  workerMap: Map<string, WorkerRow>;
   onPreview: (photo: ConstructionPhoto) => void;
 }) {
   return (
@@ -264,21 +288,19 @@ function ConstructionPhotoArchive({
       <Typography.Paragraph type="secondary" className="construction-stage-copy">
         施工阶段已结束，照片作为质检和售后追溯依据保留在这里。需要补拍时请返回施工任务补录，再进行质检。
       </Typography.Paragraph>
-      <ConstructionPhotoStageGrid photos={photos} workerMap={workerMap} onPreview={onPreview} readonly />
+      <ConstructionPhotoStageGrid photos={photos} onPreview={onPreview} readonly />
     </Card>
   );
 }
 
 function ConstructionPhotoStageGrid({
   photos,
-  workerMap,
   onPreview,
   onUploadFile,
   disabled,
   readonly
 }: {
   photos: ConstructionPhoto[];
-  workerMap: Map<string, WorkerRow>;
   onPreview: (photo: ConstructionPhoto) => void;
   onUploadFile?: (stage: PhotoStage, file: File) => Promise<void>;
   disabled?: boolean;
@@ -302,7 +324,7 @@ function ConstructionPhotoStageGrid({
                 stagePhotos.map((photo, index) => (
                   <button key={photo.id} type="button" onClick={() => onPreview(photo)}>
                     <span>{getConstructionPhotoStageLabel(photo.stage)} {index + 1}</span>
-                    <small>{getConstructionWorkerLabel(workerMap.get(photo.uploadedById) ?? photo.uploadedById)}</small>
+                    <small>{stage.title}归档照片</small>
                   </button>
                 ))
               ) : (
@@ -438,6 +460,22 @@ function getConstructionWorkspace(record?: ConstructionRecord): "photos" | "qual
   if (record.qualityResult) return "summary";
   if (record.status === "COMPLETED") return "quality";
   return "photos";
+}
+
+function getOrderCustomerLabel(record?: ConstructionRecord) {
+  const customer = record?.order?.customer;
+  return customer?.companyName ?? customer?.name ?? customer?.contactPerson ?? "客户信息待确认";
+}
+
+function getOrderVehicleLabel(record?: ConstructionRecord) {
+  const vehicle = record?.order?.vehicle;
+  const label = [vehicle?.carPlate, vehicle?.carModel, vehicle?.carColor].filter(Boolean).join(" / ");
+  return label || "车辆信息待确认";
+}
+
+function formatOrderAppointment(record?: ConstructionRecord) {
+  const date = record?.order?.appointmentDate?.slice(0, 10) ?? "日期待确认";
+  return `${date} ${record?.order?.appointmentTimeSlot ?? "时段待确认"}`;
 }
 
 function getWorkerAvatarText(worker: WorkerRow | undefined, index: number) {

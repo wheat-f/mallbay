@@ -48,6 +48,7 @@ ENV NODE_ENV=production
 
 # Copy the generated node_modules (includes prisma client + all deps)
 COPY --from=builder /app/node_modules           ./node_modules
+COPY --from=builder /app/apps/api/node_modules  ./apps/api/node_modules
 COPY --from=builder /app/packages               ./packages
 COPY --from=builder /app/package.json           ./package.json
 

@@ -112,7 +112,7 @@ test("construction capacity page presents calendar and maintenance panels in a p
 });
 
 test("construction capacity calendar becomes readable cards on phone widths", () => {
-  const cssSource = readFileSync("app/globals.css", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n");
 
   assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.capacity-calendar-grid\s*\{\n {4}grid-template-columns: minmax\(0, 1fr\);/);
   assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.capacity-weekday\s*\{\n {4}display: none;/);

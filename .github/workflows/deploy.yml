@@ -18,11 +18,53 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────────────
+  # Job 0: 测试、类型检查和构建门禁
+  # ──────────────────────────────────────────────────────────────
+  verify:
+    name: Verify Store Flow
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run API tests
+        run: pnpm test
+        working-directory: apps/api
+
+      - name: Run end-to-end flow tests
+        run: pnpm test:flow
+        working-directory: apps/api
+
+      - name: Run Web tests
+        run: pnpm test
+        working-directory: apps/web
+
+      - name: Run type checks
+        run: pnpm typecheck
+
+      - name: Run production build
+        run: pnpm build
+
+  # ──────────────────────────────────────────────────────────────
   # Job 1: 构建 API 镜像（PR 和 main push 都会执行，无环境变量差异）
   # ──────────────────────────────────────────────────────────────
   build-api:
     name: Build & Push API
     runs-on: ubuntu-latest
+    needs: verify
 
     steps:
       - name: Checkout code
@@ -63,6 +105,7 @@ jobs:
   build-web-test:
     name: Build & Push Web (Test)
     runs-on: ubuntu-latest
+    needs: verify
     if: github.event_name == 'pull_request'
     environment: test
 
@@ -108,6 +151,7 @@ jobs:
   build-web-prod:
     name: Build & Push Web (Production)
     runs-on: ubuntu-latest
+    needs: verify
     if: github.event_name == 'push' && github.ref_name == 'main'
     environment: production
 

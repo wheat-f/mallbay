@@ -31,7 +31,7 @@ test("members management page keeps member operations out of the workbench-only 
 
 test("members management module tabs are internal member views", () => {
   const source = readFileSync(pagePath, "utf8");
-  const cssSource = readFileSync("app/globals.css", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n");
 
   assert.match(source, /members-module-tabs/);
   assert.match(source, /MEMBER_VIEW_TABS/);
@@ -60,7 +60,7 @@ test("members management maps legacy construction position query to craftsman vi
 
 test("members management exposes construction workspaces as related links", () => {
   const source = readFileSync(pagePath, "utf8");
-  const cssSource = readFileSync("app/globals.css", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n");
 
   assert.match(source, /MEMBER_RELATED_WORKSPACES/);
   assert.match(source, /相关工作区/);
@@ -132,7 +132,7 @@ test("members removal guards missing store with business-safe copy", () => {
 
 test("members management page uses mobile cards for member rows", () => {
   const source = readFileSync(pagePath, "utf8");
-  const cssSource = readFileSync("app/globals.css", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n");
   const baseHiddenIndex = cssSource.indexOf(".members-mobile-cards {\n  display: none");
   const desktopTableIndex = cssSource.indexOf(".members-desktop-table");
   const mobileDisplayIndex = cssSource.indexOf(".members-mobile-cards", desktopTableIndex);

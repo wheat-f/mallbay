@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const source = readFileSync("app/reports/page.tsx", "utf8");
-const cssSource = readFileSync("app/globals.css", "utf8");
+const cssSource = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n");
 
 test("reports page exposes construction delivery trend table", () => {
   assert.match(source, /buildConstructionTrendRows/);

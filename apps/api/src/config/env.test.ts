@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { buildApiEnvFilePaths, getPrismaCliDatabaseUrl, readEnvValue } from "./env";
 
-const repoRoot = "/workspace/mallbay";
+const repoRoot = path.resolve(__dirname, "../../../..");
 const apiDir = path.join(repoRoot, "apps/api");
 const sourceModuleDir = path.join(apiDir, "src/config");
 const distModuleDir = path.join(apiDir, "dist/config");

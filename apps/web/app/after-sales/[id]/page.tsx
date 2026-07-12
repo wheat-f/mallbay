@@ -118,6 +118,10 @@ export default function AfterSaleDetailPage() {
       isAfterSalesWorkerPosition(userPosition) &&
       afterSale?.assignments?.some((assignment) => assignment.workerUserId === user.id)
   );
+  const canAssign = afterSale?.capabilities?.canAssign ?? (isAfterSalesManager && (afterSale?.status === "OPEN" || afterSale?.status === "ASSIGNED"));
+  const canSubmitEvidence = afterSale?.capabilities?.canSubmitEvidence ?? isAssignedAfterSalesWorker;
+  const canJudgeResponsibility = afterSale?.capabilities?.canJudgeResponsibility ?? (isAfterSalesManager && afterSale?.status === "ASSIGNED");
+  const canClose = afterSale?.capabilities?.canClose ?? (isAfterSalesManager && afterSale?.status === "RESOLVED");
 
   useEffect(() => {
     if (!afterSale) return;
@@ -170,12 +174,13 @@ export default function AfterSaleDetailPage() {
       if (!afterSale) throw new Error("售后工单未加载");
       const constructionPhotos = await buildAfterSalePhotoInputs(values.constructionPhotos, "施工后照片", values.evidenceNote);
       const supplementPhotos = await buildAfterSalePhotoInputs(values.supplementPhotos, "补充证据图片", values.evidenceNote);
-      if (constructionPhotos.length === 0 && supplementPhotos.length === 0) {
-        throw new Error("请至少上传一张售后处理证据照片");
+      if (constructionPhotos.length === 0) {
+        throw new Error("请至少上传一张施工后照片");
       }
       return afterSalesApi.submitEvidence(afterSale.id, {
         constructionPhotos,
-        supplementPhotos
+        supplementPhotos,
+        evidenceNote: values.evidenceNote
       });
     },
     onSuccess: async () => {
@@ -218,7 +223,7 @@ export default function AfterSaleDetailPage() {
           </Button>
           <Button
             type="primary"
-            disabled={!afterSale || afterSale.status !== "RESOLVED"}
+            disabled={!canClose}
             loading={closeMutation.isPending}
             onClick={() => closeMutation.mutate()}
           >
@@ -287,7 +292,10 @@ export default function AfterSaleDetailPage() {
                 judgeForm={judgeForm}
                 evidenceForm={evidenceForm}
                 mode={isAfterSalesManager ? "manager" : "worker"}
-                canSubmitEvidence={isAssignedAfterSalesWorker || isAfterSalesManager}
+                canAssign={canAssign}
+                canSubmitEvidence={canSubmitEvidence}
+                canJudgeResponsibility={canJudgeResponsibility}
+                canClose={canClose}
                 workerOptions={workerOptions}
                 workersLoading={workersQuery.isLoading}
                 selectedResponsibility={selectedResponsibility}
@@ -416,7 +424,10 @@ type AfterSaleActionPanelProps = {
   judgeForm: FormInstance<JudgeFormValues>;
   evidenceForm: FormInstance<EvidenceFormValues>;
   mode: "manager" | "worker";
+  canAssign: boolean;
   canSubmitEvidence: boolean;
+  canJudgeResponsibility: boolean;
+  canClose: boolean;
   workerOptions: { value: string; label: string }[];
   workersLoading: boolean;
   selectedResponsibility?: AfterSaleResponsibility;
@@ -438,7 +449,10 @@ function AfterSaleActionPanel({
   judgeForm,
   evidenceForm,
   mode,
+  canAssign,
   canSubmitEvidence,
+  canJudgeResponsibility,
+  canClose,
   workerOptions,
   workersLoading,
   selectedResponsibility,
@@ -465,7 +479,7 @@ function AfterSaleActionPanel({
     );
   }
 
-  if (!hasAssignments && mode === "manager") {
+  if (!hasAssignments && mode === "manager" && canAssign) {
     return (
       <div className="after-sale-action-section">
         <div className="after-sale-action-copy">
@@ -503,6 +517,17 @@ function AfterSaleActionPanel({
   }
 
   if (mode === "worker") {
+    if (!canSubmitEvidence) {
+      return (
+        <div className="after-sale-action-result">
+          <TeamOutlined />
+          <div>
+            <strong>当前账号暂不能提交证据</strong>
+            <p>请确认售后已派单给当前施工人员，或等待店长完成后续处理。</p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="after-sale-action-section">
         <div className="after-sale-action-copy">
@@ -547,7 +572,7 @@ function AfterSaleActionPanel({
     );
   }
 
-  if (!hasJudgedResponsibility) {
+  if (!hasJudgedResponsibility && canJudgeResponsibility) {
     return (
       <div className="after-sale-action-section">
         <div className="after-sale-action-copy">
@@ -603,7 +628,7 @@ function AfterSaleActionPanel({
         <strong>{afterSale.status === "RESOLVED" ? "归档关闭" : "处理结果已保存"}</strong>
         <p>责任判定和处理方案已保存。确认客户沟通、处罚和售后追踪完成后，可关闭该售后工单。</p>
       </div>
-      <Button type="primary" disabled={afterSale.status !== "RESOLVED"} loading={closePending} onClick={onClose}>
+      <Button type="primary" disabled={!canClose} loading={closePending} onClick={onClose}>
         确认判罚并归档
       </Button>
     </div>
@@ -831,6 +856,15 @@ function fileToDataUrl(file: File) {
 export function getAfterSaleDetailTimeline(afterSale?: AfterSaleSummary): AfterSaleTimelineItem[] {
   if (!afterSale) return [];
 
+  if (afterSale.events?.length) {
+    return afterSale.events.map((event) => ({
+      key: event.id,
+      title: getAfterSaleAuditActionLabel(event.action),
+      description: getAfterSaleAuditDescription(event.action, event.metadata),
+      tone: event.action === "AFTER_SALE_CREATED" ? "primary" : event.action === "AFTER_SALE_CLOSED" ? "success" : "warning"
+    }));
+  }
+
   const items: AfterSaleTimelineItem[] = [
     {
       key: "created",
@@ -877,6 +911,34 @@ export function getAfterSaleDetailTimeline(afterSale?: AfterSaleSummary): AfterS
   }
 
   return items;
+}
+
+function getAfterSaleAuditActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    AFTER_SALE_CREATED: "发起售后申请",
+    AFTER_SALE_ASSIGNED: "已派单处理",
+    AFTER_SALE_EVIDENCE_SUBMITTED: "补充处理证据",
+    AFTER_SALE_RESPONSIBILITY_JUDGED: "完成责任判定",
+    AFTER_SALE_CLOSED: "售后已归档"
+  };
+  return labels[action] ?? "售后记录变更";
+}
+
+function getAfterSaleAuditDescription(action: string, metadata?: Record<string, unknown> | null) {
+  if (action === "AFTER_SALE_ASSIGNED") {
+    const workerCount = Array.isArray(metadata?.workerUserIds) ? metadata.workerUserIds.length : 0;
+    return `已记录 ${workerCount || "相关"} 名处理人员。`;
+  }
+  if (action === "AFTER_SALE_EVIDENCE_SUBMITTED") {
+    return "施工后照片、补充证据和说明已保存。";
+  }
+  if (action === "AFTER_SALE_RESPONSIBILITY_JUDGED") {
+    return `责任判定已保存：${typeof metadata?.responsibility === "string" ? getAfterSaleResponsibilityLabel(metadata.responsibility as AfterSaleResponsibility) : "待确认"}。`;
+  }
+  if (action === "AFTER_SALE_CLOSED") {
+    return "售后处理结果已归档。";
+  }
+  return "售后记录已保存。";
 }
 
 function getAfterSaleStatusColor(status?: AfterSaleStatus) {

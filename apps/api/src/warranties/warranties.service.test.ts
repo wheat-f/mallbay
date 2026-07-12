@@ -200,3 +200,45 @@ test("WarrantiesService rejects sales viewing another sales person's warranty de
     /无权限/
   );
 });
+
+test("WarrantiesService returns persisted warranty audit events in detail", async () => {
+  const events = [{ id: "event-1", action: "WARRANTY_CREATED", targetType: "warranty", targetId: "warranty-1" }];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    warranty: {
+      findUnique: async () => ({
+        id: "warranty-1",
+        storeId: "store-1",
+        order: { salesPersonId: "sales-1" },
+        afterSales: [{ id: "after-sale-1" }]
+      })
+    },
+    auditEvent: {
+      findMany: async (args: unknown) => {
+        assert.deepEqual(args, {
+          where: {
+            OR: [
+              { targetType: "warranty", targetId: "warranty-1" },
+              { targetType: "after_sale", targetId: { in: ["after-sale-1"] } }
+            ]
+          },
+          orderBy: { createdAt: "desc" },
+          take: 50
+        });
+        return events;
+      }
+    }
+  };
+  const service = new WarrantiesService(prisma as never);
+
+  const result = await service.detail(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    "warranty-1"
+  );
+
+  assert.deepEqual(result.events, events);
+});

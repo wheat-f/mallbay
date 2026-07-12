@@ -241,6 +241,23 @@ export type WarrantySummary = {
   scope: string;
   startDate: string;
   endDate: string;
+  events?: WarrantyAuditEvent[];
+  afterSales?: Array<{
+    id: string;
+    status?: string | null;
+    description?: string | null;
+    createdAt?: string | Date | null;
+  }>;
+};
+
+export type WarrantyAuditEvent = {
+  id: string;
+  action: string;
+  actorId?: string | null;
+  targetType: string;
+  targetId?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt?: string | Date | null;
 };
 
 export type AfterSaleSummary = {
@@ -258,6 +275,14 @@ export type AfterSaleSummary = {
   description: string;
   status: AfterSaleStatus;
   responsibility: AfterSaleResponsibility;
+  evidenceNote?: string | null;
+  events?: AfterSaleAuditEvent[];
+  capabilities?: {
+    canAssign: boolean;
+    canSubmitEvidence: boolean;
+    canJudgeResponsibility: boolean;
+    canClose: boolean;
+  };
   issuePhotoUrls?: string[];
   constructionPhotoUrls?: string[];
   photos?: Array<{
@@ -309,6 +334,16 @@ export type AfterSaleSummary = {
   closedAt?: string | Date | null;
   createdAt?: string | Date | null;
   updatedAt?: string | Date | null;
+};
+
+export type AfterSaleAuditEvent = {
+  id: string;
+  action: string;
+  actorId?: string | null;
+  targetType: string;
+  targetId?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt?: string | Date | null;
 };
 
 export type SalesCommissionRuleSummary = {

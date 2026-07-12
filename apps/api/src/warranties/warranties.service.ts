@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { OrderStatus, StorePosition, WarrantyStatus } from "@prisma/client";
+import { OrderStatus, Prisma, StorePosition, WarrantyStatus } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import type { CreateWarrantyDto, ListWarrantiesDto } from "./dto/warranty.dto";
@@ -64,6 +64,13 @@ export class WarrantiesService {
         },
         include: { photos: true }
       });
+      await recordWarrantyAuditEvent(tx, {
+        action: "WARRANTY_CREATED",
+        actorId: actor.id,
+        storeId: order.storeId,
+        targetId: warranty.id,
+        metadata: { orderId: order.id, warrantyNo: warranty.warrantyNo }
+      });
       await tx.order.update({
         where: { id: order.id },
         data: { status: OrderStatus.WARRANTIED }
@@ -89,13 +96,30 @@ export class WarrantiesService {
     const actor = await this.withStoreMember(user);
     const warranty = await this.prisma.warranty.findUnique({
       where: { id },
-      include: { photos: true, order: warrantyOrderSummaryInclude }
+      include: {
+        photos: true,
+        order: warrantyOrderSummaryInclude,
+        afterSales: { select: { id: true, status: true, description: true, createdAt: true } }
+      }
     });
     if (!warranty) throw new NotFoundException("质保记录不存在");
     if (!canViewWarrantyRecord(actor, warranty.storeId, warranty.order.salesPersonId)) {
       throw new ForbiddenException("无权限");
     }
-    return warranty;
+    const afterSaleIds = (warranty.afterSales ?? []).map((afterSale) => afterSale.id);
+    const events = this.prisma.auditEvent
+      ? await this.prisma.auditEvent.findMany({
+          where: {
+            OR: [
+              { targetType: "warranty", targetId: id },
+              ...(afterSaleIds.length ? [{ targetType: "after_sale", targetId: { in: afterSaleIds } }] : [])
+            ]
+          },
+          orderBy: { createdAt: "desc" },
+          take: 50
+        })
+      : [];
+    return { ...warranty, events };
   }
 
   async lookup(warrantyNo: string) {
@@ -155,3 +179,30 @@ const warrantyOrderSummaryInclude = {
     vehicle: { select: { carPlate: true, carModel: true, carColor: true } }
   }
 };
+
+async function recordWarrantyAuditEvent(
+  prisma: {
+    auditEvent?: {
+      create(args: { data: Prisma.AuditEventUncheckedCreateInput }): Promise<unknown>;
+    };
+  },
+  event: {
+    action: string;
+    actorId: string;
+    storeId: string;
+    targetId: string;
+    metadata: Record<string, unknown>;
+  }
+) {
+  if (!prisma.auditEvent) return;
+  await prisma.auditEvent.create({
+    data: {
+      action: event.action,
+      actorId: event.actorId,
+      storeId: event.storeId,
+      targetType: "warranty",
+      targetId: event.targetId,
+      metadata: event.metadata as Prisma.InputJsonObject
+    }
+  });
+}

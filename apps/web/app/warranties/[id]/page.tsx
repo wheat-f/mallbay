@@ -191,13 +191,23 @@ export default function WarrantyDetailPage() {
                     <FileProtectOutlined />
                     <div>
                       <strong>电子质保单系统自动生成</strong>
-                      <span>订单完成审核后质保单已正式生效，有效期至 {formatDate(warranty.endDate)}。</span>
+                      <span>质保卡已生效，有效期至 {formatDate(warranty.endDate)}。</span>
                     </div>
                   </div>
-                  <div className="warranty-after-sales-empty">
-                    <strong>暂无售后记录</strong>
-                    <span>该客户尚未提交售后、维修或复核申请。</span>
-                  </div>
+                  {warranty.afterSales?.length ? warranty.afterSales.map((afterSale) => (
+                    <div key={afterSale.id} className="warranty-after-sales-event">
+                      <FileProtectOutlined />
+                      <div>
+                        <strong>售后工单：{getAfterSaleStatusLabel(afterSale.status)}</strong>
+                        <span>{afterSale.description || "售后问题已关联到该质保卡。"}</span>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="warranty-after-sales-empty">
+                      <strong>暂无售后记录</strong>
+                      <span>该客户尚未提交售后、维修或复核申请。</span>
+                    </div>
+                  )}
                 </div>
               </Card>
 
@@ -225,13 +235,13 @@ export default function WarrantyDetailPage() {
                 <Tag color={reminder.color}>{getWarrantyStatusLabel(warranty.status)}</Tag>
               </div>
               <div className="warranty-log-list">
-                {warrantyLogEntries.map((entry) => (
+                {warrantyLogEntries.length > 0 ? warrantyLogEntries.map((entry) => (
                   <article key={entry.key} className="warranty-log-entry">
                     <span>{entry.time}</span>
                     <strong>{entry.title}</strong>
                     <p>{entry.description}</p>
                   </article>
-                ))}
+                )) : <div className="warranty-log-empty">暂无已记录的质保日志</div>}
               </div>
             </div>
           </Drawer>
@@ -241,8 +251,8 @@ export default function WarrantyDetailPage() {
   );
 }
 
-function formatDate(value?: string | null) {
-  return value ? value.slice(0, 10) : "-";
+function formatDate(value?: string | Date | null) {
+  return value ? new Date(value).toISOString().slice(0, 10) : "-";
 }
 
 function splitWarrantyScope(scope?: string | null) {
@@ -269,33 +279,55 @@ function getWarrantyLogEntries(
     status?: string | null;
     startDate?: string | null;
     endDate?: string | null;
+    events?: Array<{
+      id: string;
+      action: string;
+      metadata?: Record<string, unknown> | null;
+      createdAt?: string | Date | null;
+    }>;
   },
   reminder: { label: string }
 ) {
-  return [
-    {
-      key: "created",
-      title: "质保创建",
-      time: formatDate(warranty.startDate),
-      description: `电子质保 ${warranty.warrantyNo ?? "-"} 已生效，关联 ${getWarrantyOrderLabel(warranty)}。`
-    },
-    {
-      key: "scope",
-      title: "质保范围确认",
-      time: formatDate(warranty.startDate),
-      description: warranty.scope ? `质保范围：${warranty.scope}` : "暂未设置具体质保范围。"
-    },
-    {
-      key: "expiry",
-      title: "质保到期提醒",
-      time: formatDate(warranty.endDate),
-      description: `当前提醒：${reminder.label}，状态为 ${getWarrantyStatusLabel(warranty.status)}。`
-    },
-    {
-      key: "trace",
-      title: "材料与施工追溯",
-      time: formatDate(warranty.startDate),
-      description: "售后核验时可继续查看关联订单、库存批次、施工影像和售后记录。"
-    }
-  ];
+  void reminder;
+  return (warranty.events ?? []).map((event) => ({
+    key: event.id,
+    title: getWarrantyAuditActionLabel(event.action),
+    time: formatDate(event.createdAt),
+    description: getWarrantyAuditDescription(event.action, event.metadata)
+  }));
+}
+
+function getWarrantyAuditActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    WARRANTY_CREATED: "质保创建",
+    WARRANTY_STATUS_CHANGED: "质保状态变更",
+    WARRANTY_VOIDED: "质保卡作废",
+    WARRANTY_REOPENED: "质保卡重开",
+    AFTER_SALE_CREATED: "关联售后发起",
+    AFTER_SALE_ASSIGNED: "关联售后派单",
+    AFTER_SALE_EVIDENCE_SUBMITTED: "关联售后补充证据",
+    AFTER_SALE_RESPONSIBILITY_JUDGED: "关联售后责任判定",
+    AFTER_SALE_CLOSED: "关联售后关闭"
+  };
+  return labels[action] ?? "质保记录变更";
+}
+
+function getWarrantyAuditDescription(action: string, metadata?: Record<string, unknown> | null) {
+  if (action === "WARRANTY_CREATED") {
+    return `质保卡已生成，材料与施工追溯已关联订单 ${typeof metadata?.orderId === "string" ? metadata.orderId : "待确认"}。`;
+  }
+  if (action.startsWith("AFTER_SALE_")) {
+    return "关联售后流程已记录，可在售后详情查看完整处理证据。";
+  }
+  return "质保状态与处理记录已保存。";
+}
+
+function getAfterSaleStatusLabel(status?: string | null) {
+  const labels: Record<string, string> = {
+    OPEN: "待处理",
+    ASSIGNED: "已派单",
+    RESOLVED: "已解决",
+    CLOSED: "已关闭"
+  };
+  return status ? labels[status] ?? "处理中" : "处理中";
 }

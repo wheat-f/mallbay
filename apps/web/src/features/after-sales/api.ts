@@ -25,6 +25,7 @@ export type JudgeAfterSalePayload = {
 export type SubmitAfterSaleEvidencePayload = {
   constructionPhotos?: AfterSalePhotoInputPayload[];
   supplementPhotos?: AfterSalePhotoInputPayload[];
+  evidenceNote?: string;
 };
 
 export const afterSalesApi = {

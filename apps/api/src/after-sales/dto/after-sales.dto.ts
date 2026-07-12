@@ -115,4 +115,9 @@ export class SubmitAfterSaleEvidenceDto {
   @ValidateNested({ each: true })
   @Type(() => AfterSalePhotoInputDto)
   supplementPhotos?: AfterSalePhotoInputDto[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  evidenceNote?: string;
 }

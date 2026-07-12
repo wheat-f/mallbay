@@ -1192,6 +1192,7 @@ model AfterSale {
   issuePhotoUrls String[]                @default([])
   constructionPhotoUrls String[]         @default([])
   constructionIssueCategory String?
+  evidenceNote     String?
   resolutionNote String?
   closedAt       DateTime?
   createdById    String

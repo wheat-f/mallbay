@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { AfterSalePhotoStage, AfterSaleStatus, StorePosition } from "@prisma/client";
+import { AfterSalePhotoStage, AfterSaleStatus, Prisma, StorePosition } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, SubmitAfterSaleEvidenceDto } from "./dto/after-sales.dto";
@@ -40,6 +40,13 @@ export class AfterSalesService {
       afterSale.id,
       buildAfterSalePhotoRows(AfterSalePhotoStage.ISSUE, issuePhotos, actor.id)
     );
+    await this.recordAuditEvent({
+      action: "AFTER_SALE_CREATED",
+      actorId: actor.id,
+      storeId: order.storeId,
+      targetId: afterSale.id,
+      metadata: { orderId: order.id }
+    });
     return afterSale;
   }
 
@@ -66,7 +73,13 @@ export class AfterSalesService {
     if (!PermissionPolicy.canViewStoreData(actor, afterSale.storeId)) {
       throw new ForbiddenException("无权限");
     }
-    return afterSale;
+    const events = this.prisma.auditEvent
+      ? await this.prisma.auditEvent.findMany({
+          where: { targetType: "after_sale", targetId: id },
+          orderBy: { createdAt: "asc" }
+        })
+      : [];
+    return { ...afterSale, events, capabilities: buildAfterSaleCapabilities(actor, afterSale) };
   }
 
   async assign(user: AuthenticatedAfterSalesUser, id: string, dto: AssignAfterSaleDto) {
@@ -75,6 +88,9 @@ export class AfterSalesService {
     if (!afterSale) throw new NotFoundException("售后单不存在");
     if (!PermissionPolicy.canManageAfterSales(actor, afterSale.storeId)) {
       throw new ForbiddenException("无权限");
+    }
+    if (afterSale.status !== AfterSaleStatus.OPEN && afterSale.status !== AfterSaleStatus.ASSIGNED) {
+      throw new BadRequestException("售后已进入处理完成阶段，不能再次派单");
     }
     const workerIds = [...new Set(dto.workerUserIds)];
     const members = await this.prisma.storeMember.findMany({
@@ -95,6 +111,13 @@ export class AfterSalesService {
       })),
       skipDuplicates: true
     });
+    await this.recordAuditEvent({
+      action: "AFTER_SALE_ASSIGNED",
+      actorId: actor.id,
+      storeId: afterSale.storeId,
+      targetId: id,
+      metadata: { workerUserIds: workerIds }
+    });
     return this.prisma.afterSale.update({
       where: { id },
       data: { status: AfterSaleStatus.ASSIGNED }
@@ -108,8 +131,17 @@ export class AfterSalesService {
     if (!PermissionPolicy.canManageAfterSales(actor, afterSale.storeId)) {
       throw new ForbiddenException("无权限");
     }
+    if (afterSale.status !== AfterSaleStatus.ASSIGNED) {
+      throw new BadRequestException("售后必须在派单处理中完成责任判定");
+    }
     const constructionPhotos = sanitizePhotoEvidence(dto.constructionPhotos, dto.constructionPhotoUrls, "施工后照片");
     const supplementPhotos = sanitizePhotoEvidence(dto.supplementPhotos, dto.supplementPhotoUrls, "补充证据");
+    const existingConstructionPhoto = await this.prisma.afterSalePhoto?.findFirst?.({
+      where: { afterSaleId: id, stage: AfterSalePhotoStage.CONSTRUCTION_AFTER }
+    });
+    if (constructionPhotos.length === 0 && !existingConstructionPhoto) {
+      throw new BadRequestException("责任判定前必须有施工后照片证据");
+    }
     const constructionPhotoUrls = constructionPhotos.map((photo) => photo.url);
     const updated = await this.prisma.afterSale.update({
       where: { id },
@@ -136,6 +168,13 @@ export class AfterSalesService {
         }
       });
     }
+    await this.recordAuditEvent({
+      action: "AFTER_SALE_RESPONSIBILITY_JUDGED",
+      actorId: actor.id,
+      storeId: afterSale.storeId,
+      targetId: id,
+      metadata: { responsibility: dto.responsibility, constructionIssueCategory: dto.constructionIssueCategory }
+    });
     return updated;
   }
 
@@ -143,23 +182,40 @@ export class AfterSalesService {
     const actor = await this.withStoreMember(user);
     const afterSale = await this.prisma.afterSale.findFirst({
       where: buildAfterSalesDetailScope(actor, id),
-      select: { id: true, storeId: true }
+      select: { id: true, storeId: true, status: true }
     });
     if (!afterSale) throw new NotFoundException("售后单不存在");
     const isAssignedWorker =
       actor.storeMember?.position === StorePosition.CONSTRUCTION || actor.storeMember?.position === StorePosition.APPRENTICE;
-    if (!PermissionPolicy.canManageAfterSales(actor, afterSale.storeId) && !isAssignedWorker) {
+    if (!isAssignedWorker) {
       throw new ForbiddenException("无权限");
+    }
+    if (afterSale.status !== AfterSaleStatus.ASSIGNED) {
+      throw new BadRequestException("当前售后阶段不能提交处理证据");
     }
     const constructionPhotos = sanitizePhotoEvidence(dto.constructionPhotos, undefined, "施工后照片");
     const supplementPhotos = sanitizePhotoEvidence(dto.supplementPhotos, undefined, "补充证据");
-    if (constructionPhotos.length === 0 && supplementPhotos.length === 0) {
-      throw new BadRequestException("请至少提交一张售后处理证据照片");
+    const evidenceNote = dto.evidenceNote?.trim();
+    if (constructionPhotos.length === 0) {
+      throw new BadRequestException("请至少提交一张施工后照片");
     }
     await this.createPhotoEvidence(afterSale.id, [
       ...buildAfterSalePhotoRows(AfterSalePhotoStage.CONSTRUCTION_AFTER, constructionPhotos, actor.id),
       ...buildAfterSalePhotoRows(AfterSalePhotoStage.SUPPLEMENT, supplementPhotos, actor.id)
     ]);
+    if (this.prisma.afterSale.update) {
+      await this.prisma.afterSale.update({
+        where: { id },
+        data: { evidenceNote: evidenceNote || undefined }
+      });
+    }
+    await this.recordAuditEvent({
+      action: "AFTER_SALE_EVIDENCE_SUBMITTED",
+      actorId: actor.id,
+      storeId: afterSale.storeId,
+      targetId: id,
+      metadata: { constructionPhotoCount: constructionPhotos.length, supplementPhotoCount: supplementPhotos.length, hasNote: Boolean(evidenceNote) }
+    });
     return this.detail(user, id);
   }
 
@@ -170,14 +226,45 @@ export class AfterSalesService {
     if (!PermissionPolicy.canManageAfterSales(actor, afterSale.storeId)) {
       throw new ForbiddenException("无权限");
     }
-    if (afterSale.status !== AfterSaleStatus.RESOLVED && afterSale.status !== AfterSaleStatus.CLOSED) {
+    if (afterSale.status === AfterSaleStatus.CLOSED) {
+      return afterSale;
+    }
+    if (afterSale.status !== AfterSaleStatus.RESOLVED) {
       throw new BadRequestException("售后单需先完成判责处理后才能归档");
     }
-    return this.prisma.afterSale.update({
+    const closed = await this.prisma.afterSale.update({
       where: { id },
       data: {
         status: AfterSaleStatus.CLOSED,
         closedAt: new Date()
+      }
+    });
+    await this.recordAuditEvent({
+      action: "AFTER_SALE_CLOSED",
+      actorId: actor.id,
+      storeId: afterSale.storeId,
+      targetId: id,
+      metadata: {}
+    });
+    return closed;
+  }
+
+  private async recordAuditEvent(event: {
+    action: string;
+    actorId: string;
+    storeId: string;
+    targetId: string;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.prisma.auditEvent) return;
+    await this.prisma.auditEvent.create({
+      data: {
+        action: event.action,
+        actorId: event.actorId,
+        storeId: event.storeId,
+        targetType: "after_sale",
+        targetId: event.targetId,
+          metadata: event.metadata as Prisma.InputJsonValue
       }
     });
   }
@@ -295,6 +382,7 @@ const afterSaleSummarySelect = {
   issuePhotoUrls: true,
   constructionPhotoUrls: true,
   constructionIssueCategory: true,
+  evidenceNote: true,
   resolutionNote: true,
   closedAt: true,
   createdAt: true,
@@ -356,3 +444,17 @@ const afterSaleSummarySelect = {
     }
   }
 } as const;
+
+function buildAfterSaleCapabilities(
+  actor: UserWithStoreMember,
+  afterSale: { storeId: string; status: AfterSaleStatus; assignments?: Array<{ workerUserId: string }> }
+) {
+  const isManager = PermissionPolicy.canManageAfterSales(actor, afterSale.storeId);
+  const isAssignedWorker = Boolean(afterSale.assignments?.some((assignment) => assignment.workerUserId === actor.id));
+  return {
+    canAssign: isManager && (afterSale.status === AfterSaleStatus.OPEN || afterSale.status === AfterSaleStatus.ASSIGNED),
+    canSubmitEvidence: isAssignedWorker && afterSale.status === AfterSaleStatus.ASSIGNED,
+    canJudgeResponsibility: isManager && afterSale.status === AfterSaleStatus.ASSIGNED,
+    canClose: isManager && afterSale.status === AfterSaleStatus.RESOLVED
+  };
+}

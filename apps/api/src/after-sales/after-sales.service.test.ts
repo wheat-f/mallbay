@@ -53,7 +53,7 @@ test("AfterSalesService assigns workers and records responsibility category phot
   const writes: unknown[] = [];
   const prisma = {
     afterSale: {
-      findUnique: async () => ({ id: "after-sale-1", storeId: "store-1", status: AfterSaleStatus.OPEN }),
+      findUnique: async () => ({ id: "after-sale-1", storeId: "store-1", status: AfterSaleStatus.ASSIGNED }),
       update: async (args: unknown) => writes.push(args)
     },
     storeMember: {
@@ -122,7 +122,7 @@ test("AfterSalesService lets assigned workers submit after-sale evidence only", 
     afterSale: {
       findFirst: async (args: { where: { assignments?: { some?: { workerUserId?: string } } } }) => {
         if (args.where.assignments?.some?.workerUserId === "worker-1") {
-          return { id: "after-sale-1", storeId: "store-1" };
+          return { id: "after-sale-1", storeId: "store-1", status: AfterSaleStatus.ASSIGNED };
         }
         return null;
       }
@@ -210,7 +210,7 @@ test("AfterSalesService returns after-sale detail with assigned workers and pena
     afterSale: {
       findFirst: async (args: unknown) => {
         calls.push(args);
-        return { id: "after-sale-1", storeId: "store-1" };
+        return { id: "after-sale-1", storeId: "store-1", status: AfterSaleStatus.ASSIGNED, assignments: [] };
       }
     }
   };

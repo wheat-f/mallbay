@@ -235,7 +235,7 @@ jobs:
             echo "AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}" >> .env
 
             docker compose -f docker-compose.prod.yml pull api web
-            docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate api web
+            docker compose -f docker-compose.prod.yml up -d --wait --no-deps --force-recreate api web
             docker image prune -f
 
             echo "✅ Test deployed — ${{ github.sha }}"
@@ -279,7 +279,7 @@ jobs:
             echo "AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}" >> .env
 
             docker compose -f docker-compose.prod.yml pull api web
-            docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate api web
+            docker compose -f docker-compose.prod.yml up -d --wait --no-deps --force-recreate api web
             docker image prune -f
 
             echo "✅ Production deployed — ${{ github.sha }}"

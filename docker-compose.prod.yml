@@ -34,6 +34,12 @@ services:
     restart: always
     ports:
       - "3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3001/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     environment:
       NODE_ENV:               production
       PORT:                   3001
@@ -62,6 +68,12 @@ services:
     restart: always
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     environment:
       NODE_ENV:              production
       NEXT_PUBLIC_API_URL:   ${NEXT_PUBLIC_API_URL}

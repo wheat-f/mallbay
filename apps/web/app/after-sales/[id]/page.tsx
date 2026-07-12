@@ -96,6 +96,7 @@ export default function AfterSaleDetailPage() {
   const afterSale = afterSaleQuery.data;
   const photoGroups = afterSale ? getAfterSalePhotoGroups(afterSale.photos) : getAfterSalePhotoGroups([]);
   const constructionPhotos = afterSale ? getConstructionPhotoEvidence(afterSale) : [];
+  const hasPersistedConstructionPhoto = Boolean(afterSale?.photos?.some((photo) => photo.stage === "CONSTRUCTION_AFTER"));
   const timeline = getAfterSaleDetailTimeline(afterSale);
   const workersQuery = useQuery({
     queryKey: ["after-sales", "workers", storeId],
@@ -172,7 +173,7 @@ export default function AfterSaleDetailPage() {
   const evidenceMutation = useMutation({
     mutationFn: async (values: EvidenceFormValues) => {
       if (!afterSale) throw new Error("售后工单未加载");
-      if ((values.constructionPhotos ?? []).length === 0) {
+      if ((values.constructionPhotos ?? []).length === 0 && !hasPersistedConstructionPhoto) {
         throw new Error("请至少上传一张施工后照片");
       }
       return afterSalesApi.submitEvidence(afterSale.id, {

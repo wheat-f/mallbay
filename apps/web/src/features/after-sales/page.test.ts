@@ -164,6 +164,13 @@ test("after-sales page uses mobile ticket cards instead of squeezing the desktop
   assert.match(cssSource, /@media \(max-width: 900px\) \{[\s\S]*\.after-sales-ticket-mobile-cards \{\r?\n\s{4}display: grid;/);
 });
 
+test("after-sales evidence submission accepts photos already persisted before refresh", () => {
+  const pageSource = readFileSync("app/after-sales/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /hasPersistedConstructionPhoto/);
+  assert.match(pageSource, /\(values\.constructionPhotos \?\? \[\]\)\.length === 0 && !hasPersistedConstructionPhoto/);
+});
+
 test("after-sales detail separates manager judgment from worker evidence submission", () => {
   const pageSource = readFileSync("app/after-sales/[id]/page.tsx", "utf8");
 

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException
 } from "@nestjs/common";
@@ -20,14 +21,14 @@ import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review
 @Injectable()
 export class StoresService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly reviewStoreSubmission: ReviewStoreSubmissionUseCase,
-    private readonly submitStoreForReview: SubmitStoreForReviewUseCase,
-    private readonly changeStoreManager: ChangeStoreManagerUseCase,
-    private readonly setStoreFrozen: SetStoreFrozenUseCase
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ReviewStoreSubmissionUseCase) private readonly reviewStoreSubmission: ReviewStoreSubmissionUseCase,
+    @Inject(SubmitStoreForReviewUseCase) private readonly submitStoreForReview: SubmitStoreForReviewUseCase,
+    @Inject(ChangeStoreManagerUseCase) private readonly changeStoreManager: ChangeStoreManagerUseCase,
+    @Inject(SetStoreFrozenUseCase) private readonly setStoreFrozen: SetStoreFrozenUseCase
   ) {}
 
-  // ─── 审核员：创建门店并指派店长 ────────────────────────────────────────────
+  // ─── 管理员：创建门店并指派店长 ────────────────────────────────────────────
 
   async createStore(auditorId: string, isAuditor: boolean, dto: CreateStoreDto) {
     if (!isAuditor) throw new ForbiddenException("无权限");
@@ -70,7 +71,7 @@ export class StoresService {
     return this.submitStoreForReview.execute(userId, storeId, dto);
   }
 
-  // ─── 审核员：审核门店提交 ──────────────────────────────────────────────────
+  // ─── 管理员：审核门店提交 ──────────────────────────────────────────────────
 
   async reviewSubmission(
     auditorId: string,
@@ -125,7 +126,7 @@ export class StoresService {
     };
   }
 
-  // ─── 审核员：全量门店列表（含所有状态）────────────────────────────────────
+  // ─── 管理员：全量门店列表（含所有状态）────────────────────────────────────
 
   async listAllStores(isAuditor: boolean, dto: ListStoresDto) {
     if (!isAuditor) throw new ForbiddenException("无权限");
@@ -174,7 +175,7 @@ export class StoresService {
     };
   }
 
-  // ─── 审核员：待审核提交列表 ────────────────────────────────────────────────
+  // ─── 管理员：待审核提交列表 ────────────────────────────────────────────────
 
   async listPendingSubmissions(isAuditor: boolean) {
     if (!isAuditor) throw new ForbiddenException("无权限");
@@ -243,7 +244,7 @@ export class StoresService {
     };
   }
 
-  // ─── 审核员：门店详情（含待审核提交）────────────────────────────────────────
+  // ─── 管理员：门店详情（含待审核提交）────────────────────────────────────────
 
   async getAdminStoreDetail(isAuditor: boolean, storeId: string) {
     if (!isAuditor) throw new ForbiddenException("无权限");
@@ -283,13 +284,13 @@ export class StoresService {
     };
   }
 
-  // ─── 审核员：冻结 / 解冻门店 ──────────────────────────────────────────────
+  // ─── 管理员：冻结 / 解冻门店 ──────────────────────────────────────────────
 
   async setFrozen(isAuditor: boolean, storeId: string, frozen: boolean) {
     return this.setStoreFrozen.execute(isAuditor, storeId, frozen);
   }
 
-  // ─── 审核员：变更店长 ──────────────────────────────────────────────────────
+  // ─── 管理员：变更店长 ──────────────────────────────────────────────────────
 
   async changeManager(isAuditor: boolean, storeId: string, dto: ChangeManagerDto) {
     return this.changeStoreManager.execute(isAuditor, storeId, dto);

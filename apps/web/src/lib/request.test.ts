@@ -118,6 +118,62 @@ test("request refreshes session and retries once after an authenticated 401 resp
   assert.equal(useAuthStore.getState().accessToken, "fresh-token");
 });
 
+test("request restores the access token before the first authenticated request after reload", async () => {
+  useAuthStore.setState({
+    user: {
+      id: "user-1",
+      username: "alice",
+      nickname: null,
+      avatarUrl: null,
+      email: null,
+      phone: null,
+      wechatOpenId: null,
+      alipayUserId: null,
+      isAuditor: false
+    },
+    accessToken: null
+  });
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push(`${init?.method ?? "GET"} ${String(input)} ${String((init?.headers as Record<string, string>)?.Authorization ?? "")}`);
+    if (String(input).endsWith("/auth/refresh")) {
+      return {
+        ok: true,
+        json: async () => ({
+          accessToken: "fresh-token",
+          refreshToken: "legacy-refresh-token",
+          user: {
+            id: "user-1",
+            username: "alice",
+            nickname: null,
+            avatarUrl: null,
+            email: null,
+            phone: null,
+            wechatOpenId: null,
+            alipayUserId: null,
+            isAuditor: false
+          }
+        })
+      } as Response;
+    }
+    if (String(input).endsWith("/test")) {
+      return {
+        ok: true,
+        json: async () => ({ success: true })
+      } as Response;
+    }
+    throw new Error(`Unexpected request: ${String(input)}`);
+  }) as typeof fetch;
+
+  const result = await request<{ success: boolean }>("/test");
+
+  assert.deepEqual(result, { success: true });
+  assert.deepEqual(calls, [
+    "POST http://localhost:3001/auth/refresh ",
+    "GET http://localhost:3001/test Bearer fresh-token"
+  ]);
+});
+
 test("request clears session and redirects to auth when refresh after 401 fails", async () => {
   useAuthStore.setState({
     user: {

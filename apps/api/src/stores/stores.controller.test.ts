@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Test } from "@nestjs/testing";
 import { StoresController } from "./stores.controller";
+import { MetricsService } from "../observability/metrics.service";
+import { OssService } from "../users/oss.service";
+import { StoresService } from "./stores.service";
 import type { MulterFile } from "../users/multer-file.type";
 
 const imageFile = {
@@ -67,4 +71,26 @@ test("uploadStorePhoto increments upload failure metric when OSS upload fails", 
       labels: { target: "store_photo" }
     }
   ]);
+});
+
+test("StoresController receives StoresService through Nest injection", async () => {
+  const storesService = {
+    getWorkbenchStore: async (userId: string, storeId: string) => ({ userId, storeId })
+  };
+  const moduleRef = await Test.createTestingModule({
+    controllers: [StoresController],
+    providers: [
+      { provide: StoresService, useValue: storesService },
+      { provide: OssService, useValue: {} },
+      { provide: MetricsService, useValue: { increment: () => undefined } }
+    ]
+  }).compile();
+
+  const controller = moduleRef.get(StoresController);
+  const result = await controller.getWorkbenchStore(
+    { user: { id: "user-1", username: "manager", isAuditor: false } } as never,
+    "store-1"
+  );
+
+  assert.deepEqual(result, { userId: "user-1", storeId: "store-1" });
 });

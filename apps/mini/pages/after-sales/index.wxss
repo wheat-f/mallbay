@@ -1,0 +1,75 @@
+.page {
+  min-height: 100vh;
+  padding: 32rpx;
+  background: #f8fafc;
+  box-sizing: border-box;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.title {
+  color: #111827;
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.primary {
+  margin: 0;
+  border-radius: 14rpx;
+  background: #0f3a5f;
+  color: #ffffff;
+  font-size: 26rpx;
+}
+
+.empty,
+.task {
+  padding: 28rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 18rpx;
+  background: #ffffff;
+}
+
+.empty {
+  color: #64748b;
+  text-align: center;
+}
+
+.task {
+  display: grid;
+  gap: 12rpx;
+  margin-bottom: 18rpx;
+}
+
+.task-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+}
+
+.task-title {
+  min-width: 0;
+  color: #0f172a;
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.badge {
+  flex: 0 0 auto;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 24rpx;
+}
+
+.meta {
+  color: #64748b;
+  font-size: 26rpx;
+}

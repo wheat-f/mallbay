@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Test } from "@nestjs/testing";
 import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
+import { PrismaService } from "../prisma/prisma.service";
 import { StoresService } from "./stores.service";
 import { ReviewAction } from "./dto/review-store.dto";
 import { ChangeStoreManagerUseCase } from "./use-cases/change-store-manager.use-case";
@@ -22,6 +24,34 @@ test("listPublishedStores caps pageSize at 100", async () => {
   };
   const service = createStoresService(prisma, {});
 
+  await service.listPublishedStores({ page: 1, pageSize: 500 });
+
+  assert.equal(capturedTake, 100);
+});
+
+test("StoresService receives PrismaService through Nest injection", async () => {
+  let capturedTake = 0;
+  const prisma = {
+    store: {
+      count: async () => 0,
+      findMany: async (args: { take: number }) => {
+        capturedTake = args.take;
+        return [];
+      }
+    }
+  };
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      StoresService,
+      { provide: PrismaService, useValue: prisma },
+      { provide: ReviewStoreSubmissionUseCase, useValue: {} },
+      { provide: SubmitStoreForReviewUseCase, useValue: {} },
+      { provide: ChangeStoreManagerUseCase, useValue: {} },
+      { provide: SetStoreFrozenUseCase, useValue: {} }
+    ]
+  }).compile();
+
+  const service = moduleRef.get(StoresService);
   await service.listPublishedStores({ page: 1, pageSize: 500 });
 
   assert.equal(capturedTake, 100);

@@ -1,0 +1,41 @@
+<view class="page">
+  <view wx:if="{{!task}}" class="section">
+    <text class="value">{{missingText}}</text>
+  </view>
+  <view wx:if="{{task}}" class="section">
+    <text class="label">施工状态</text>
+    <text class="value">{{task.statusLabel}}</text>
+  </view>
+  <view wx:if="{{task}}" class="section">
+    <text class="label">客户与车辆</text>
+    <text class="value">{{task.customerVehicle}}</text>
+  </view>
+  <view wx:if="{{task}}" class="section">
+    <text class="label">施工信息</text>
+    <text class="value">{{task.construction}}</text>
+    <text class="sub-value">{{task.schedule}}</text>
+    <text class="sub-value">{{task.address}}</text>
+  </view>
+  <view wx:if="{{task}}" class="actions">
+    <button
+      wx:for="{{task.statusActions}}"
+      wx:key="status"
+      type="primary"
+      disabled="{{item.disabled}}"
+      data-status="{{item.status}}"
+      bindtap="queueStatusChange"
+    >
+      {{item.label}}
+    </button>
+    <button
+      wx:for="{{task.photoStages}}"
+      wx:key="stage"
+      type="{{item.uploaded ? 'default' : 'primary'}}"
+      data-stage="{{item.stage}}"
+      bindtap="queuePhoto"
+    >
+      {{item.label}}{{item.uploaded ? "已拍" : "拍照"}}
+    </button>
+    <button bindtap="openOfflineQueue">查看离线队列</button>
+  </view>
+</view>

@@ -1,10 +1,18 @@
 "use client";
 
 import type { LoginPayload, RegisterPayload } from "@mallbay/shared";
-import { Button, Card, Form, Input, Segmented, Typography, App } from "antd";
+import { Button, Checkbox, Form, Input, Segmented, Typography, App } from "antd";
+import {
+  InfoCircleOutlined,
+  LockOutlined,
+  SafetyCertificateOutlined,
+  ToolOutlined,
+  UserOutlined
+} from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { isCredentialEncryptionEnabled } from "../../src/features/auth/credential-encryption-config";
 import { authApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 
@@ -22,13 +30,18 @@ export default function AuthPage() {
   const router = useRouter();
   const { message } = App.useApp();
   const [form] = Form.useForm<AuthFormValues>();
+  const credentialEncryptionEnabled = isCredentialEncryptionEnabled();
 
   const authMutation = useMutation({
     mutationFn: (values: AuthFormValues) => {
       if (mode === "login") {
-        return authApi.loginEncrypted({ identifier: values.identifier, password: values.password });
+        return credentialEncryptionEnabled
+          ? authApi.loginEncrypted({ identifier: values.identifier, password: values.password })
+          : authApi.login({ identifier: values.identifier, password: values.password });
       }
-      return authApi.registerEncrypted({ username: values.username, password: values.password });
+      return credentialEncryptionEnabled
+        ? authApi.registerEncrypted({ username: values.username, password: values.password })
+        : authApi.register({ username: values.username, password: values.password });
     },
     onSuccess: (session) => {
       setSession(session);
@@ -56,59 +69,60 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="auth-shell">
-      <section className="auth-grid">
-        <div className="auth-intro">
-          <div className="auth-intro-inner">
-            <div className="auth-kicker">
-              <span className="auth-kicker-dot" />
-              个人账号体系
+    <main className="auth-shell auth-prototype-shell">
+      <section className="auth-hero-panel" aria-label="mallbay 平台介绍">
+        <div className="auth-hero-media" aria-hidden="true" />
+        <div className="auth-hero-overlay" aria-hidden="true" />
+        <div className="auth-hero-content">
+          <div className="auth-brand-mark">
+            <span className="auth-brand-icon"><ToolOutlined /></span>
+            <span>mallbay</span>
+          </div>
+          <Typography.Title className="auth-hero-title">
+            隐形车衣施工与门店数字化管理平台
+          </Typography.Title>
+          <Typography.Paragraph className="auth-hero-subtitle">
+            统一客户、订单、施工、库存、质保和财务数据，让门店运营从预约到交付都可追踪。
+          </Typography.Paragraph>
+          <div className="auth-hero-stats">
+            <div>
+              <strong>1,200+</strong>
+              <span>合规门店</span>
             </div>
-            <Typography.Title className="auth-title">
-              MallBay 门店运营台
-            </Typography.Title>
-            <Typography.Paragraph className="auth-subtitle">
-              一个账号可以在不同门店拥有不同身份。你可以作为客户消费，也可以被店长邀请成为工作人员，后续再管理门店、员工、会员和订单。
-            </Typography.Paragraph>
-
-            <div className="auth-feature-grid">
-              {[
-                ["账号独立", "注册不绑定门店"],
-                ["身份灵活", "客户 / 工作人员"],
-                ["门店协作", "邀请与移除员工"]
-              ].map(([title, text]) => (
-                <div key={title} className="auth-feature-card">
-                  <div className="auth-feature-title">{title}</div>
-                  <div className="auth-feature-text">{text}</div>
-                </div>
-              ))}
+            <div className="auth-hero-divider" />
+            <div>
+              <strong>500k+</strong>
+              <span>交付车辆</span>
             </div>
           </div>
         </div>
+      </section>
 
-        <Card
-          className="auth-card"
-          styles={{ body: { padding: 0 } }}
-        >
-          <div className="auth-card-head">
-            <div className="auth-card-head-row">
-              <div>
-                <Typography.Title level={3} className="!mb-1 !text-2xl">
-                  {mode === "login" ? "登录" : "创建账号"}
-                </Typography.Title>
-                <Typography.Text type="secondary">使用个人账号继续</Typography.Text>
-              </div>
-              <Segmented
-                value={mode}
-                onChange={(value) => onModeChange(value as Mode)}
-                block
-                className="auth-segmented"
-                options={[
-                  { label: "登录", value: "login" },
-                  { label: "注册", value: "register" }
-                ]}
-              />
-            </div>
+      <section className="auth-form-panel" aria-label="账号登录与注册">
+        <div className="auth-form-card">
+          <div className="auth-mobile-brand">
+            <span className="auth-brand-icon"><ToolOutlined /></span>
+            <span>mallbay</span>
+          </div>
+
+          <Segmented
+            value={mode}
+            onChange={(value) => onModeChange(value as Mode)}
+            block
+            className="auth-mode-switch"
+            options={[
+              { label: "登录", value: "login" },
+              { label: "注册", value: "register" }
+            ]}
+          />
+
+          <div className="auth-form-heading">
+            <Typography.Title level={2} className="auth-form-title">
+              {mode === "login" ? "欢迎回来" : "即刻加入"}
+            </Typography.Title>
+            <Typography.Paragraph className="auth-form-subtitle">
+              {mode === "login" ? "请输入您的凭据以访问管理后台。" : "创建个人账号，登录后可被邀请加入门店。"}
+            </Typography.Paragraph>
           </div>
 
           <Form
@@ -139,6 +153,7 @@ export default function AuthPage() {
                 <Input
                   size="large"
                   placeholder="2-30 位，支持字母 / 数字 / 中文"
+                  prefix={<UserOutlined />}
                   autoComplete="username"
                 />
               </Form.Item>
@@ -151,6 +166,7 @@ export default function AuthPage() {
                 <Input
                   size="large"
                   placeholder="请输入账号"
+                  prefix={<UserOutlined />}
                   autoComplete="username"
                 />
               </Form.Item>
@@ -167,9 +183,22 @@ export default function AuthPage() {
               <Input.Password
                 size="large"
                 placeholder="至少 8 位"
+                prefix={<LockOutlined />}
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
               />
             </Form.Item>
+
+            {mode === "login" ? (
+              <div className="auth-login-options">
+                <Checkbox>记住登录状态</Checkbox>
+                <a href="mailto:support@mallbay.com?subject=Password%20Reset%20Request">忘记密码？</a>
+              </div>
+            ) : (
+              <div className="auth-register-hint">
+                <SafetyCertificateOutlined />
+                新账号默认是客户身份，加入门店后由店长分配角色。
+              </div>
+            )}
 
             <Button
               type="primary"
@@ -178,10 +207,24 @@ export default function AuthPage() {
               block
               loading={authMutation.isPending}
             >
-              {mode === "login" ? "登录" : "注册并登录"}
+              {mode === "login" ? "进入系统" : "注册并开始使用"}
             </Button>
           </Form>
-        </Card>
+
+          <div className="auth-disclaimer">
+            <InfoCircleOutlined />
+            <p>
+              <strong>重要提示：</strong>
+              每位新注册的用户最初都将获得“Customer (客户)”权限。如需开启高级施工管理或门店财务功能，请在登录后联系系统管理员。
+            </p>
+          </div>
+
+          <div className="auth-footer-links">
+            <a href="#">隐私政策</a>
+            <a href="#">服务条款</a>
+            <a href="mailto:support@mallbay.com">联系支持</a>
+          </div>
+        </div>
       </section>
     </main>
   );

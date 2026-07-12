@@ -1,21 +1,28 @@
 "use client";
 
+import { Button, Image, Skeleton, Tag, Typography } from "antd";
 import {
-  App, Button, Divider, Image, Layout, Skeleton, Tag, Typography
-} from "antd";
-import {
-  ArrowLeftOutlined, EnvironmentOutlined, ShopOutlined
+  ArrowLeftOutlined,
+  EnvironmentOutlined,
+  PictureOutlined,
+  SafetyCertificateOutlined,
+  ShopOutlined
 } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { storeApi } from "../../../src/lib/api";
 
-// ─── 主页面 ───────────────────────────────────────────────────────
+const STORE_STATUS_LABEL: Record<string, string> = {
+  DRAFTED: "筹办中",
+  PENDING_REVIEW: "审核中",
+  PUBLISHED: "公开状态",
+  FROZEN: "暂停访问"
+};
+
 export default function StoreDetailPage() {
   const params = useParams<{ id: string }>();
   const storeId = params.id;
   const router = useRouter();
-  const { message } = App.useApp();
 
   const storeQuery = useQuery({
     queryKey: ["store-detail", storeId],
@@ -25,125 +32,123 @@ export default function StoreDetailPage() {
   });
 
   const store = storeQuery.data;
-
-  // 封面图（isCover 优先，否则第一张）
-  const coverPhoto =
-    store?.photos.find((p) => p.isCover) ?? store?.photos[0] ?? null;
+  const coverPhoto = store?.photos.find((photo) => photo.isCover) ?? store?.photos[0] ?? null;
+  const galleryPhotos = store?.photos ?? [];
 
   return (
-    <Layout style={{ minHeight: "100vh", background: "var(--background)" }}>
-      {/* Header */}
-      <header className="dashboard-header">
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => router.back()}
-        />
-        <Typography.Title level={5} className="!mb-0 !text-slate-950"
-          style={{ position: "absolute", left: "50%", transform: "translateX(-50%)" }}>
-          {store?.name ?? "门店详情"}
-        </Typography.Title>
-        <div style={{ width: 32 }} />
+    <main className="store-public-shell">
+      <header className="store-public-topbar">
+        <button className="store-public-brand" type="button" onClick={() => router.push("/")}>
+          <span>mallbay</span>
+          <small>门店运营系统</small>
+        </button>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/")}>
+          返回门店大厅
+        </Button>
       </header>
 
-      <Layout.Content style={{ maxWidth: 760, margin: "0 auto", width: "100%", padding: "28px 20px 64px" }}>
-        {/* ── 加载骨架 ── */}
-        {storeQuery.isLoading && (
-          <div className="section-card" style={{ overflow: "hidden" }}>
-            <Skeleton.Image active style={{ width: "100%", height: 260 }} />
-            <div style={{ padding: "20px 24px" }}>
-              <Skeleton active paragraph={{ rows: 3 }} />
-            </div>
-          </div>
-        )}
+      {storeQuery.isLoading && (
+        <section className="store-public-skeleton">
+          <Skeleton.Image active className="store-public-skeleton-cover" />
+          <Skeleton active paragraph={{ rows: 4 }} />
+        </section>
+      )}
 
-        {/* ── 404 ── */}
-        {storeQuery.isError && (
-          <div style={{ textAlign: "center", paddingTop: 80 }}>
-            <ShopOutlined style={{ fontSize: 48, color: "#cbd5e1" }} />
-            <div style={{ marginTop: 16, fontSize: 15, color: "#64748b" }}>
-              门店不存在或尚未公开
-            </div>
-            <Button type="link" onClick={() => router.push("/")}>返回首页</Button>
-          </div>
-        )}
+      {storeQuery.isError && (
+        <section className="store-public-empty">
+          <ShopOutlined />
+          <Typography.Title level={3}>门店不存在或尚未公开</Typography.Title>
+          <Typography.Text>请返回门店大厅重新选择公开门店。</Typography.Text>
+          <Button type="primary" onClick={() => router.push("/")}>
+            返回门店大厅
+          </Button>
+        </section>
+      )}
 
-        {store && (
-          <>
-            {/* ── 封面 ── */}
-            {coverPhoto && (
-              <div style={{
-                width: "100%", aspectRatio: "16/9", borderRadius: "var(--radius)",
-                overflow: "hidden", marginBottom: 16, background: "#f1f5f9"
-              }}>
-                <img
-                  src={coverPhoto.url}
-                  alt={store.name}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
+      {store && (
+        <>
+          <section className="store-public-hero">
+            <div className="store-public-copy">
+              <div className="store-public-kicker">
+                <Tag>{STORE_STATUS_LABEL[store.status] ?? store.status}</Tag>
+                <span>认证服务门店</span>
               </div>
-            )}
-
-            {/* ── 基本信息 ── */}
-            <div className="section-card mb-4" style={{ marginBottom: 16 }}>
-              <div style={{ padding: "20px 24px 16px" }}>
-                <Typography.Title level={3} style={{ margin: "0 0 8px" }}>
-                  {store.name}
-                </Typography.Title>
-
-                {store.address && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#64748b", fontSize: 14, marginBottom: 8 }}>
-                    <EnvironmentOutlined />
-                    <span>{store.address}</span>
-                  </div>
-                )}
-
-                {store.description && (
-                  <>
-                    <Divider style={{ margin: "12px 0" }} />
-                    <Typography.Paragraph
-                      style={{ margin: 0, color: "#475569", fontSize: 14, lineHeight: 1.8 }}
-                    >
-                      {store.description}
-                    </Typography.Paragraph>
-                  </>
-                )}
+              <Typography.Title className="store-public-title">{store.name}</Typography.Title>
+              <Typography.Paragraph className="store-public-subtitle">
+                {store.description ?? "该门店暂未填写简介。您可以查看门店位置、照片，并返回大厅浏览更多公开门店。"}
+              </Typography.Paragraph>
+              <div className="store-public-meta">
+                <span>认证技师: 已认证团队</span>
+                <span>工位: 以门店详情为准</span>
+              </div>
+              <div className="store-public-actions">
+                <Button type="primary" icon={<ShopOutlined />} onClick={() => router.push("/")}>
+                  浏览更多门店
+                </Button>
+                <Button icon={<PictureOutlined />} disabled={galleryPhotos.length === 0}>
+                  {galleryPhotos.length > 0 ? `${galleryPhotos.length} 张门店照片` : "暂无门店照片"}
+                </Button>
               </div>
             </div>
 
-            {/* ── 门店照片 ── */}
-            {store.photos.length > 1 && (
-              <div className="section-card">
-                <div className="section-card-header">
-                  <div className="section-card-title">门店照片</div>
+            <div className="store-public-cover">
+              {coverPhoto ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={coverPhoto.url} alt={store.name} />
+              ) : (
+                <div className="store-public-cover-placeholder">
+                  <ShopOutlined />
+                  <span>暂无封面</span>
                 </div>
-                <div style={{ padding: "14px 20px 20px" }}>
-                  <Image.PreviewGroup>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
-                      {store.photos.map((p) => (
-                        <div key={p.id} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 8, overflow: "hidden", background: "#f1f5f9" }}>
-                          <Image
-                            src={p.url}
-                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                            preview={{ mask: false }}
-                          />
-                          {p.isCover && (
-                            <span style={{
-                              position: "absolute", bottom: 4, left: 4,
-                              background: "rgba(0,0,0,0.52)", color: "#fff",
-                              fontSize: 10, lineHeight: "16px", padding: "0 5px", borderRadius: 4
-                            }}>封面</span>
-                          )}
-                        </div>
-                      ))}
+              )}
+            </div>
+          </section>
+
+          <section className="store-public-grid">
+            <article className="store-public-info-card">
+              <div className="store-public-card-icon">
+                <EnvironmentOutlined />
+              </div>
+              <div>
+                <h2>门店位置</h2>
+                <p>{store.address ?? "该门店暂未填写详细地址。"}</p>
+              </div>
+            </article>
+
+            <article className="store-public-info-card">
+              <div className="store-public-card-icon">
+                <SafetyCertificateOutlined />
+              </div>
+              <div>
+                <h2>服务状态</h2>
+                <p>{STORE_STATUS_LABEL[store.status] ?? store.status} · 创建于 {new Date(store.createdAt).toLocaleDateString("zh-CN")}</p>
+              </div>
+            </article>
+          </section>
+
+          {galleryPhotos.length > 0 && (
+            <section className="store-public-gallery">
+              <div className="store-public-section-head">
+                <div>
+                  <span>门店影像</span>
+                  <h2>门店照片</h2>
+                </div>
+                <Typography.Text>{galleryPhotos.length} 张</Typography.Text>
+              </div>
+              <Image.PreviewGroup>
+                <div className="store-public-photo-grid">
+                  {galleryPhotos.map((photo) => (
+                    <div key={photo.id} className="store-public-photo">
+                      <Image src={photo.url} alt={store.name} preview={{ mask: false }} />
+                      {photo.isCover && <span>封面</span>}
                     </div>
-                  </Image.PreviewGroup>
+                  ))}
                 </div>
-              </div>
-            )}
-          </>
-        )}
-      </Layout.Content>
-    </Layout>
+              </Image.PreviewGroup>
+            </section>
+          )}
+        </>
+      )}
+    </main>
   );
 }

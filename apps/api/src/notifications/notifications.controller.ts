@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { IsArray, IsString } from "class-validator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -15,7 +15,7 @@ type AuthRequest = Request & { user: { id: string } };
 @UseGuards(JwtAuthGuard)
 @Controller("notifications")
 export class NotificationsController {
-  constructor(private readonly notificationsService: NotificationsService) {}
+  constructor(@Inject(NotificationsService) private readonly notificationsService: NotificationsService) {}
 
   @Get()
   list(

@@ -4,16 +4,19 @@
   "private": true,
   "dependencies": {
     "@ant-design/icons": "^6.2.3",
-    "@mallbay/shared": "workspace:*"
+    "@mallbay/shared": "workspace:*",
+    "dayjs": "^1.11.21",
+    "xlsx": "^0.18.5"
   },
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "test": "tsx --tsconfig tsconfig.json --test \"src/**/*.test.ts\"",
+    "test": "tsx --tsconfig tsconfig.json --test --test-concurrency=8 \"src/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^24.12.3",
     "tsx": "^4.19.2"
   }
 }

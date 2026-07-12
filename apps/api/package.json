@@ -6,7 +6,8 @@
     "dev": "nest start --watch -p tsconfig.app.json",
     "build": "nest build -p tsconfig.app.json",
     "start": "node dist/main.js",
-    "test": "tsx --tsconfig tsconfig.app.json --test \"src/**/*.test.ts\"",
+    "test": "tsx --tsconfig tsconfig.app.json --test --test-concurrency=1 \"src/**/*.test.ts\"",
+    "test:flow": "tsx --tsconfig tsconfig.app.json --test src/flows/store-flow.e2e.test.ts",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "db:preflight": "tsx --tsconfig tsconfig.app.json src/prisma/preflight-db-invariants.ts",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
@@ -14,9 +15,13 @@
     "prisma:seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
+    "@nestjs/cli": "^11.0.21",
+    "@types/bcryptjs": "2.4.6",
+    "@types/node": "24.12.3",
     "tsx": "^4.19.2"
   },
   "dependencies": {
-    "ali-oss": "^6.23.0"
+    "ali-oss": "^6.23.0",
+    "bcryptjs": "2.4.3"
   }
 }

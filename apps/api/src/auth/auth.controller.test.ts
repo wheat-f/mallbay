@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Request, Response } from "express";
-import { AuthController, REFRESH_TOKEN_COOKIE_NAME } from "./auth.controller";
+import { AuthController, REFRESH_TOKEN_COOKIE_NAME, getRefreshTokenCookieSecure } from "./auth.controller";
 
 const authResponse = {
   user: {
@@ -58,6 +58,18 @@ test("register returns the legacy token response and sets refresh token cookie",
   });
 });
 
+test("refresh token cookie remains secure by default in production", () => {
+  withAuthCookieEnv({ nodeEnv: "production" }, () => {
+    assert.equal(getRefreshTokenCookieSecure(), true);
+  });
+});
+
+test("refresh token cookie can be explicitly allowed over http in test deployments", () => {
+  withAuthCookieEnv({ nodeEnv: "production", authCookieSecure: "false" }, () => {
+    assert.equal(getRefreshTokenCookieSecure(), false);
+  });
+});
+
 test("refresh reads refresh token from cookie when request body is empty", async () => {
   let capturedRefreshToken: string | undefined;
   const service = {
@@ -78,6 +90,69 @@ test("refresh reads refresh token from cookie when request body is empty", async
 
   assert.equal(capturedRefreshToken, "cookie-refresh-token");
   assert.equal((cookies[REFRESH_TOKEN_COOKIE_NAME] as { value: string }).value, "refresh-token");
+});
+
+function withAuthCookieEnv(
+  env: { nodeEnv?: string; authCookieSecure?: string },
+  callback: () => void
+) {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalAuthCookieSecure = process.env.AUTH_COOKIE_SECURE;
+
+  if (env.nodeEnv === undefined) {
+    delete process.env.NODE_ENV;
+  } else {
+    process.env.NODE_ENV = env.nodeEnv;
+  }
+
+  if (env.authCookieSecure === undefined) {
+    delete process.env.AUTH_COOKIE_SECURE;
+  } else {
+    process.env.AUTH_COOKIE_SECURE = env.authCookieSecure;
+  }
+
+  try {
+    callback();
+  } finally {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+
+    if (originalAuthCookieSecure === undefined) {
+      delete process.env.AUTH_COOKIE_SECURE;
+    } else {
+      process.env.AUTH_COOKIE_SECURE = originalAuthCookieSecure;
+    }
+  }
+}
+
+test("wechat mini login returns token response and sets refresh token cookie", async () => {
+  let capturedCode: string | undefined;
+  const service = {
+    loginWithWechatCode: async (dto: { code: string }) => {
+      capturedCode = dto.code;
+      return authResponse;
+    }
+  };
+  const controller = new AuthController(service as never);
+  const { response, cookies } = createResponse();
+
+  const result = await controller.wechatLogin({ code: "wx-code" }, response);
+
+  assert.equal(capturedCode, "wx-code");
+  assert.equal(result.accessToken, "access-token");
+  assert.deepEqual(cookies[REFRESH_TOKEN_COOKIE_NAME], {
+    value: "refresh-token",
+    options: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: false,
+      path: "/auth",
+      maxAge: 604_800_000
+    }
+  });
 });
 
 test("logout clears refresh token cookie after invalidating the server token", async () => {

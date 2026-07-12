@@ -1,0 +1,17 @@
+<view class="page">
+  <view class="toolbar">
+    <text class="title">售后任务</text>
+    <button class="primary" loading="{{syncing}}" bindtap="syncAfterSales">同步任务</button>
+  </view>
+
+  <view wx:if="{{tasks.length === 0}}" class="empty">{{emptyText}}</view>
+
+  <view wx:for="{{tasks}}" wx:key="id" class="task" data-id="{{item.id}}" bindtap="openAfterSale">
+    <view class="task-head">
+      <text class="task-title">{{item.title}}</text>
+      <text class="badge">{{item.statusLabel}}</text>
+    </view>
+    <text class="meta">{{item.orderLabel}}</text>
+    <text class="meta">{{item.warrantyLabel}}</text>
+  </view>
+</view>

@@ -99,6 +99,40 @@ export class OssService {
     );
   }
 
+  async uploadVehiclePhoto(userId: string, file: MulterFile): Promise<string> {
+    return this.traceUpload(
+      { component: "oss", target: "vehicle_photo", userId, bytes: file.buffer.length },
+      async () => {
+        const ext = path.extname(file.originalname) || ".jpg";
+        const key = `vehicles/${userId}/${crypto.randomUUID()}${ext}`;
+        if (this.isLocalProvider()) {
+          await this.putLocalObject(key, file.buffer);
+          return this.buildLocalUrl(key);
+        }
+        const { client, bucket, region } = this.getClient();
+        await client.put(key, file.buffer);
+        return this.buildUrl(key, bucket, region);
+      }
+    );
+  }
+
+  async uploadConstructionPhoto(storeId: string, orderId: string, file: MulterFile): Promise<string> {
+    return this.traceUpload(
+      { component: "oss", target: "construction_photo", storeId, orderId, bytes: file.buffer.length },
+      async () => {
+        const ext = path.extname(file.originalname) || ".jpg";
+        const key = `construction/${storeId}/${orderId}/${crypto.randomUUID()}${ext}`;
+        if (this.isLocalProvider()) {
+          await this.putLocalObject(key, file.buffer);
+          return this.buildLocalUrl(key);
+        }
+        const { client, bucket, region } = this.getClient();
+        await client.put(key, file.buffer);
+        return this.buildUrl(key, bucket, region);
+      }
+    );
+  }
+
   private traceUpload(fields: Record<string, unknown>, callback: () => Promise<string>) {
     return this.trace?.traceOperation("oss.upload", fields, callback) ?? callback();
   }

@@ -19,6 +19,7 @@ docs/
   DOCUMENTATION_GUIDELINES.md     文档规范
   deploy-setup.md                 当前部署配置说明
   governance/                     工程治理、架构和协作规范
+  features/                       业务功能方案、实施计划和验收说明
 ```
 
 RECOMMENDED 预留目录：
@@ -43,22 +44,32 @@ RECOMMENDED：
 
 - ADR 使用 `YYYY-MM-DD-short-title.md`。
 - Runbook 使用 `<system>-<operation>-runbook.md`。
+- 功能建设方案使用 `<feature>-system-plan.md` 或 `<feature>-plan.md`。
+- 功能实施计划使用 `<phase-or-feature>-implementation-plan.md`；如果已有同类文件使用短名，可沿用 `<phase-or-feature>-plan.md`，但文档标题必须明确“实施计划”。
 
 ## 文档内容规范
 
 MUST：
 
 - 开头用一级标题说明文档主题。
+- 一级标题下方必须说明文档类型、状态、适用范围和来源依据。
 - 明确标注规则强度：`MUST`、`MUST NOT`、`RECOMMENDED`。
 - 对规范类文档给出推荐和禁止示例。
 - 涉及当前项目现状时，必须指向真实目录、模块或文件。
 - 涉及改造计划时，必须说明优先级、风险和回滚原则。
+- 实施计划必须拆分为可提交、可验证、可回滚的任务，并给出验证命令或验收路径。
 
 MUST NOT：
 
 - 写与当前项目无关的教科书式规范。
 - 在文档中承诺尚未存在的能力为“已完成”。
 - 用文档替代必要的测试、约束或代码校验。
+
+功能方案和实施计划 MUST 区分：
+
+- 功能方案说明“为什么做、做什么、边界是什么”，放在 `docs/features/`。
+- 实施计划说明“按什么顺序改、改哪些文件、如何验证和回滚”，放在 `docs/features/`。
+- 已交付功能说明必须避免写成未来计划，文件名不应包含 `plan`。
 
 ## 链接规范
 
@@ -103,4 +114,3 @@ RECOMMENDED：
 - 链接是否仍然有效。
 - 是否清楚区分 `MUST`、`MUST NOT`、`RECOMMENDED`。
 - 是否包含与 MallBay 当前代码库相关的具体内容。
-

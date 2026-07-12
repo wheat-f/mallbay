@@ -1,0 +1,32 @@
+<view class="page">
+  <view class="toolbar">
+    <text class="title">施工任务</text>
+    <view class="toolbar-actions">
+      <button class="queue-button" loading="{{syncing}}" bindtap="syncTasks">同步任务</button>
+      <button class="queue-button" bindtap="openOfflineQueue">离线 {{offlineCount}}</button>
+      <button class="queue-button" bindtap="openLeaveRequest">请假</button>
+      <button class="queue-button" bindtap="openSchedule">排班</button>
+      <button class="queue-button" bindtap="openMaterials">物料</button>
+      <button class="queue-button" bindtap="openAfterSales">售后</button>
+      <button class="queue-button" bindtap="openSettings">配置</button>
+    </view>
+  </view>
+  <view wx:if="{{tasks.length === 0}}" class="empty">
+    <text>{{emptyText}}</text>
+  </view>
+  <view
+    wx:for="{{tasks}}"
+    wx:key="id"
+    class="task"
+    data-id="{{item.id}}"
+    bindtap="openTask"
+  >
+    <view class="task-head">
+      <text class="task-title">{{item.title}}</text>
+      <text class="badge">{{item.statusLabel}}</text>
+    </view>
+    <text class="task-meta">{{item.meta}}</text>
+    <text class="task-meta">{{item.schedule}}</text>
+    <text class="task-progress">{{item.photoProgress}}</text>
+  </view>
+</view>

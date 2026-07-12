@@ -1,0 +1,64 @@
+.page {
+  min-height: 100vh;
+  padding: 32rpx;
+  background: #f8fafc;
+}
+
+.notice {
+  padding: 28rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 12rpx;
+  background: #ffffff;
+}
+
+.title {
+  display: block;
+  margin-bottom: 12rpx;
+  color: #111827;
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.desc {
+  display: block;
+  margin-top: 8rpx;
+  color: #475569;
+  font-size: 26rpx;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12rpx;
+  margin-top: 20rpx;
+  color: #111827;
+  font-size: 24rpx;
+}
+
+.sync-button {
+  margin: 20rpx 0 0;
+  background: #111827;
+  color: #ffffff;
+}
+
+.queue-item {
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 12rpx;
+  background: #ffffff;
+}
+
+.item-title {
+  display: block;
+  color: #111827;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.error {
+  display: block;
+  margin-top: 8rpx;
+  color: #dc2626;
+  font-size: 24rpx;
+}

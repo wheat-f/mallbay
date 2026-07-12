@@ -100,13 +100,13 @@ export class UsersController {
     return this.usersService.bindAlipay(req.user.id, dto);
   }
 
-  // 审核员专用：搜索用户
+  // 管理员专用：搜索用户
   @Get("search")
   searchUsers(@Req() req: AuthRequest, @Query("q") keyword: string) {
     return this.usersService.searchUsers(req.user.id, req.user.isAuditor, keyword ?? "");
   }
 
-  // 审核员专用：重置用户密码
+  // 管理员专用：重置用户密码
   @Post("reset-password")
   resetPassword(@Req() req: AuthRequest, @Body() dto: ResetPasswordDto) {
     return this.usersService.resetPassword(req.user.isAuditor, dto);

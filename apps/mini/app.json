@@ -1,0 +1,20 @@
+{
+  "pages": [
+    "pages/tasks/index",
+    "pages/task-detail/index",
+    "pages/schedule/index",
+    "pages/materials/index",
+    "pages/after-sales/index",
+    "pages/after-sales-detail/index",
+    "pages/offline/index",
+    "pages/leave/index",
+    "pages/settings/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "MallBay 施工",
+    "navigationBarBackgroundColor": "#111827",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f8fafc"
+  },
+  "style": "v2"
+}

@@ -117,10 +117,12 @@ JWT_ACCESS_SECRET=test-access-secret-xxxx
 JWT_REFRESH_SECRET=test-refresh-secret-xxxx
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
+AUTH_CREDENTIAL_ENCRYPTION_ENABLED=false
 
 # 域名
 WEB_ORIGIN=https://test.yourdomain.com
 NEXT_PUBLIC_API_URL=https://api-test.yourdomain.com
+NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED=false
 
 # OSS（测试环境可用独立 bucket 隔离数据）
 OSS_REGION=oss-cn-hangzhou
@@ -140,6 +142,8 @@ DATABASE_URL=postgresql://postgres:PROD_STRONG_PWD@postgres:5432/mallbay?schema=
 POSTGRES_PASSWORD=PROD_STRONG_PWD
 WEB_ORIGIN=https://yourdomain.com
 NEXT_PUBLIC_API_URL=https://api.yourdomain.com
+AUTH_CREDENTIAL_ENCRYPTION_ENABLED=true
+NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED=true
 OSS_BUCKET=mallbay-prod
 # ... 其余同上，值换成生产配置
 ```

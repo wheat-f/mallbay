@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -8,14 +9,16 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
-import * as bcrypt from "bcrypt";
+import * as bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { MetricsService } from "../observability/metrics.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthCryptoService } from "./auth-crypto.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { WechatLoginDto } from "./dto/wechat-login.dto";
 import { TokenPayload } from "./token-payload";
+import { WechatMiniProgramService } from "./wechat-mini-program.service";
 
 @Injectable()
 export class AuthService {
@@ -24,7 +27,8 @@ export class AuthService {
     @Inject(JwtService) private readonly jwt: JwtService,
     @Inject(ConfigService) private readonly config: ConfigService,
     @Optional() @Inject(MetricsService) private readonly metrics?: MetricsService,
-    @Optional() @Inject(AuthCryptoService) private readonly authCrypto?: AuthCryptoService
+    @Optional() @Inject(AuthCryptoService) private readonly authCrypto?: AuthCryptoService,
+    @Optional() @Inject(WechatMiniProgramService) private readonly wechatMiniProgram?: WechatMiniProgramService
   ) {}
 
   async register(dto: RegisterDto) {
@@ -75,6 +79,23 @@ export class AuthService {
     return this.issueAndPersistTokens(user.id);
   }
 
+  async loginWithWechatCode(dto: WechatLoginDto) {
+    if (!this.wechatMiniProgram) {
+      throw new InternalServerErrorException("微信小程序登录服务未配置");
+    }
+
+    const openId = await this.wechatMiniProgram.resolveOpenId(dto.code);
+    const user = await this.prisma.user.findUnique({
+      where: { wechatOpenId: openId }
+    });
+
+    if (!user) {
+      throw new UnauthorizedException("微信未绑定账号");
+    }
+
+    return this.issueAndPersistTokens(user.id);
+  }
+
   private recordLoginFailure(reason: string) {
     this.metrics?.increment("auth_login_failures_total", { reason });
   }
@@ -92,10 +113,18 @@ export class AuthService {
     }
 
     if (dto.password) {
+      if (this.credentialEncryptionEnabled) {
+        throw new BadRequestException("当前环境要求加密登录凭据");
+      }
       return dto.password;
     }
 
     throw new UnauthorizedException("账号或密码不正确");
+  }
+
+  private get credentialEncryptionEnabled() {
+    const value = this.config.get<string>("AUTH_CREDENTIAL_ENCRYPTION_ENABLED");
+    return !["false", "0", "off", "disabled"].includes((value ?? "").trim().toLowerCase());
   }
 
   async refresh(refreshToken: string) {
@@ -155,8 +184,14 @@ export class AuthService {
 
   private async issueAndPersistTokens(userId: string) {
     const user = await this.prisma.user.findUniqueOrThrow({
-      where: { id: userId }
+      where: { id: userId },
+      include: {
+        storeMembers: {
+          include: { store: { select: { id: true, name: true, status: true } } }
+        }
+      }
     });
+    const member = user.storeMembers?.[0] ?? null;
 
     const payload: TokenPayload = {
       sub: user.id,
@@ -186,7 +221,12 @@ export class AuthService {
     });
 
     return {
-      user: this.toAuthUser(user),
+      user: {
+        ...this.toAuthUser(user),
+        storeMember: member
+          ? { position: member.position, store: member.store }
+          : null
+      },
       accessToken,
       refreshToken
     };

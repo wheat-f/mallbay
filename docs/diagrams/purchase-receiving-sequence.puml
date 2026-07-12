@@ -1,0 +1,63 @@
+@startuml
+title 采购到货验收与仓库入库时序
+
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Microsoft YaHei
+skinparam sequence {
+  ArrowColor #0F3A5F
+  LifeLineBorderColor #0F3A5F
+  ParticipantBorderColor #0F3A5F
+  ParticipantBackgroundColor #F7FAFC
+}
+
+actor "采购人员" as User
+participant "采购订单详情页\n/purchases/orders/[id]" as Page
+participant "purchaseApi" as PurchaseApi
+participant "PurchasesController" as PurchasesController
+participant "InventoryService" as InventoryService
+database "PostgreSQL" as Db
+
+User -> Page : 打开采购订单详情
+Page -> PurchaseApi : order(id)
+PurchaseApi -> PurchasesController : GET /purchases/orders/:id
+PurchasesController -> InventoryService : getPurchaseOrder(user, id)
+InventoryService -> Db : 查询采购单、明细、产品、批次
+Db --> InventoryService : PurchaseOrder
+InventoryService --> Page : 订单详情
+
+Page -> PurchaseApi : warehouses(storeId)
+PurchaseApi -> PurchasesController : GET /purchases/warehouses?storeId=...
+PurchasesController -> InventoryService : listWarehouses(user, storeId)
+InventoryService -> Db : 查询启用/停用仓库配置
+Db --> InventoryService : Warehouse[]
+InventoryService --> Page : 仓库选项
+
+alt 验收入库
+  User -> Page : 选择物料、仓库、批次和数量
+  Page -> PurchaseApi : receiveOrderItemBatches(itemId, batches)
+  PurchaseApi -> PurchasesController : POST /purchases/orders/items/:id/receive-batches
+  PurchasesController -> InventoryService : receivePurchaseItemBatches(user, id, dto)
+
+  loop 每个批次
+    InventoryService -> Db : 校验采购单状态、剩余数量
+    InventoryService -> Db : 校验 warehouseId 属于当前门店且启用
+    InventoryService -> Db : upsert InventoryBatch\n保存 warehouseId / warehouseName
+    InventoryService -> Db : create InventoryMovement(PURCHASE_IN)\n保存 warehouseId / warehouseName
+    InventoryService -> Db : 更新 PurchaseOrderItem.receivedQuantity
+    InventoryService -> Db : 更新 PurchaseOrder / PurchaseRequirement 状态
+  end
+
+  InventoryService --> Page : received / failed 明细
+  Page -> Page : 刷新订单、批次、流水缓存
+else 拒收订单
+  User -> Page : 切换到拒收订单并填写原因
+  Page -> PurchaseApi : cancelOrder(id, reason)
+  PurchaseApi -> PurchasesController : POST /purchases/orders/:id/cancel
+  PurchasesController -> InventoryService : cancelPurchaseOrder(user, id, dto)
+  InventoryService -> Db : 更新 PurchaseOrder.status = CANCELLED
+  InventoryService -> Db : 写入 AuditEvent(reason)
+  InventoryService --> Page : 拒收/取消结果
+end
+
+@enduml

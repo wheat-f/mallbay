@@ -1,0 +1,422 @@
+"use client";
+
+import { useState } from "react";
+import { App, Button, Card, Descriptions, Empty, Image, Modal, Table, Tag, Upload } from "antd";
+import {
+  ArrowLeftOutlined,
+  CheckOutlined,
+  ClockCircleOutlined,
+  FileImageOutlined,
+  InboxOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined,
+  UploadOutlined
+} from "@ant-design/icons";
+import { getWorkerPhotoStageLabel, getWorkerTaskStatusLabel } from "@mallbay/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useParams, useRouter } from "next/navigation";
+import type { ConstructionMaterialItem, ConstructionOrderMaterials } from "../../../../src/features/construction/api";
+import { constructionApi } from "../../../../src/lib/api";
+import { useAuthStore } from "../../../../src/stores/auth-store";
+import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
+
+type PhotoStage = "BEFORE" | "DURING" | "AFTER";
+
+type TaskRecord = {
+  id: string;
+  orderId: string;
+  status: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  actualMinutes?: number | null;
+  overtimeMinutes?: number | null;
+  order?: {
+    orderNo?: string | null;
+    appointmentDate?: string | null;
+    appointmentTimeSlot?: string | null;
+    constructionLocation?: string | null;
+    outsideAddress?: string | null;
+  } | null;
+  photos?: { id: string; stage: string; url: string; uploadedById: string }[];
+};
+
+type TaskPhoto = NonNullable<TaskRecord["photos"]>[number];
+
+const photoRequirements: { stage: PhotoStage; title: string; description: string; required: boolean }[] = [
+  { stage: "BEFORE", title: "验车照片", description: "车头、车尾、漆面瑕疵和交车前状态", required: true },
+  { stage: "BEFORE", title: "膜箱照片", description: "膜箱标签、防伪码和批次信息", required: true },
+  { stage: "DURING", title: "施工过程照片", description: "裁膜、贴膜、收边等关键节点", required: false },
+  { stage: "AFTER", title: "施工后照片", description: "完工外观、边角细节和交付状态", required: true }
+];
+
+export default function ConstructionTaskDetailPage() {
+  const { message } = App.useApp();
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const user = useAuthStore((state) => state.user);
+  const storeId = user?.storeMember?.store.id;
+  const [previewPhoto, setPreviewPhoto] = useState<TaskPhoto | null>(null);
+
+  const taskQuery = useQuery({
+    queryKey: ["construction-task-detail", storeId, params.id],
+    queryFn: () => constructionApi.assignments({ storeId: storeId! }),
+    enabled: Boolean(storeId)
+  });
+
+  const record = ((taskQuery.data ?? []) as TaskRecord[]).find((item) => item.orderId === params.id);
+  const photos = record?.photos ?? [];
+  const pendingUploads = photoRequirements.filter((item) => item.required && !photos.some((photo) => photo.stage === item.stage)).length;
+
+  const materialsQuery = useQuery({
+    queryKey: ["construction-order-materials", params.id],
+    queryFn: () => constructionApi.orderMaterials(params.id),
+    enabled: Boolean(record)
+  });
+
+  const materialData = materialsQuery.data;
+  const pendingAllocationIds = (materialData?.materials ?? []).flatMap((item) =>
+    item.batches.filter((batch) => !batch.pickedUp).map((batch) => batch.allocationId)
+  );
+  const hasLockedMaterials = (materialData?.summary.allocatedBatches ?? 0) > 0;
+  const materialPickupState = getMaterialPickupState(materialData, materialsQuery.isLoading, pendingAllocationIds.length);
+  const completeBlockReason = getCompleteBlockReason(record?.status, pendingUploads, materialPickupState);
+
+  const invalidateTask = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["construction-task-detail", storeId, params.id] }),
+      queryClient.invalidateQueries({ queryKey: ["construction-tasks", storeId] }),
+      queryClient.invalidateQueries({ queryKey: ["construction-order-materials", params.id] })
+    ]);
+  };
+
+  const startMutation = useMutation({
+    mutationFn: () => constructionApi.startOrder(params.id),
+    onSuccess: async () => {
+      message.success("已开工");
+      await invalidateTask();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
+  const completeMutation = useMutation({
+    mutationFn: () => constructionApi.completeOrder(params.id, new Date().toISOString()),
+    onSuccess: async () => {
+      message.success("已完工");
+      await invalidateTask();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
+  const pickupMutation = useMutation({
+    mutationFn: (allocationIds: string[]) =>
+      constructionApi.pickupMaterials(params.id, {
+        allocationIds,
+        note: "施工任务详情领取订单物料"
+      }),
+    onSuccess: async () => {
+      message.success("物料领取已记录");
+      await invalidateTask();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
+  const uploadStagePhoto = async (stage: PhotoStage, file: File, title: string) => {
+    if (!record) {
+      throw new Error("未找到该施工任务");
+    }
+    await constructionApi.uploadPhoto(record.id, { stage, file });
+    message.success(`${title}已上传`);
+    await invalidateTask();
+  };
+
+  return (
+    <div className="management-page worker-task-detail-page">
+      <StorePageHeader title="施工任务详情" description="在 Web 后台处理开工、照片凭证和完工提交">
+        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/construction/tasks")}>
+          返回任务列表
+        </Button>
+      </StorePageHeader>
+
+      {taskQuery.isLoading ? (
+        <Card>
+          <div className="construction-mobile-loading">任务详情加载中...</div>
+        </Card>
+      ) : !record ? (
+        <Card>
+          <Empty description="未找到该施工任务" />
+        </Card>
+      ) : (
+        <>
+          <section className="worker-task-detail-hero">
+            <div>
+              <span>订单号</span>
+              <h2>{record.order?.orderNo ?? "订单信息待确认"}</h2>
+              <p><ClockCircleOutlined /> {formatSchedule(record)}</p>
+            </div>
+            <Tag color={getStatusColor(record.status)}>{getWorkerTaskStatusLabel(record.status)}</Tag>
+          </section>
+
+          <section className="worker-task-progress" aria-label="施工阶段进度">
+            {getTaskSteps(record.status, pendingUploads, materialPickupState).map((step) => (
+              <div key={step.label} className={step.state === "done" ? "is-done" : step.state === "active" ? "is-active" : undefined}>
+                <i>{step.state === "done" ? <CheckOutlined /> : step.index}</i>
+                <span>{step.label}</span>
+              </div>
+            ))}
+          </section>
+
+          <section className="worker-task-detail-actions" aria-label="施工执行操作">
+            {canStartTask(record.status) ? (
+              <Button icon={<PlayCircleOutlined />} loading={startMutation.isPending} onClick={() => startMutation.mutate()}>
+                开始验车
+              </Button>
+            ) : null}
+            <Button
+              icon={<InboxOutlined />}
+              disabled={!pendingAllocationIds.length}
+              loading={pickupMutation.isPending}
+              onClick={() => pickupMutation.mutate(pendingAllocationIds)}
+            >
+              {pendingAllocationIds.length ? "领取物料" : hasLockedMaterials ? "物料已领取" : "无需领料"}
+            </Button>
+            {canCompleteTask(record.status) ? (
+              <Button
+                type="primary"
+                icon={<CheckOutlined />}
+                disabled={Boolean(completeBlockReason)}
+                loading={completeMutation.isPending}
+                onClick={() => completeMutation.mutate()}
+              >
+                提交完工
+              </Button>
+            ) : null}
+            <Button icon={<ReloadOutlined />} loading={taskQuery.isFetching} onClick={() => taskQuery.refetch()}>
+              刷新详情
+            </Button>
+          </section>
+
+          <section className="worker-task-detail-grid">
+            <div className="worker-task-detail-main">
+              <Card className="worker-task-info-card" title="施工任务信息">
+                <Descriptions column={2} bordered size="small">
+                  <Descriptions.Item label="订单号">{record.order?.orderNo ?? "订单信息待确认"}</Descriptions.Item>
+                  <Descriptions.Item label="任务状态">{getWorkerTaskStatusLabel(record.status)}</Descriptions.Item>
+                  <Descriptions.Item label="预约时间">{formatSchedule(record)}</Descriptions.Item>
+                  <Descriptions.Item label="施工地点">{formatLocation(record)}</Descriptions.Item>
+                  <Descriptions.Item label="开工时间">{formatNullableDate(record.startedAt)}</Descriptions.Item>
+                  <Descriptions.Item label="完工时间">{formatNullableDate(record.completedAt)}</Descriptions.Item>
+                </Descriptions>
+              </Card>
+
+              <Card
+                className="worker-task-material-card"
+                title="物料领取"
+                extra={<Tag color={materialPickupState.color}>{materialPickupState.label}</Tag>}
+              >
+                <div className="worker-task-material-summary">
+                  <article>
+                    <strong>{materialData?.summary.allocatedBatches ?? 0}</strong>
+                    <span>锁定批次</span>
+                  </article>
+                  <article>
+                    <strong>{materialData?.summary.pickedBatches ?? 0}</strong>
+                    <span>已领取</span>
+                  </article>
+                  <article>
+                    <strong>{pendingAllocationIds.length}</strong>
+                    <span>待领取</span>
+                  </article>
+                </div>
+                {completeBlockReason ? <p className="worker-task-complete-warning">{completeBlockReason}</p> : null}
+                <Table<ConstructionMaterialItem>
+                  rowKey="orderItemId"
+                  size="small"
+                  loading={materialsQuery.isLoading}
+                  dataSource={materialData?.materials ?? []}
+                  pagination={false}
+                  locale={{ emptyText: <Empty description="当前订单暂无锁定物料" /> }}
+                  columns={[
+                    {
+                      title: "产品",
+                      render: (_, row) => (
+                        <div className="worker-task-material-product">
+                          <strong>{row.productLabel}</strong>
+                          <span>
+                            需求 {row.requiredQuantity} {row.unit} · 锁定 {row.allocatedQuantity} {row.unit}
+                          </span>
+                        </div>
+                      )
+                    },
+                    {
+                      title: "批次状态",
+                      render: (_, row) => `${row.pickedQuantity}/${row.allocatedQuantity} ${row.unit}`
+                    },
+                    {
+                      title: "待领取",
+                      render: (_, row) => row.batches.filter((batch) => !batch.pickedUp).length
+                    }
+                  ]}
+                />
+                <Button
+                  type="primary"
+                  icon={<InboxOutlined />}
+                  disabled={!pendingAllocationIds.length}
+                  loading={pickupMutation.isPending}
+                  onClick={() => pickupMutation.mutate(pendingAllocationIds)}
+                >
+                  {pendingAllocationIds.length ? "确认领取物料" : hasLockedMaterials ? "物料已全部领取" : "无需领取物料"}
+                </Button>
+              </Card>
+
+              <Card id="task-photo-upload" className="worker-task-photo-card" title="照片凭证">
+                <div className="worker-task-photo-checklist">
+                  {photoRequirements.map((item) => {
+                    const stagePhotos = photos.filter((photo) => photo.stage === item.stage);
+                    const isComplete = stagePhotos.length > 0;
+                    return (
+                      <article key={item.title} className={`worker-task-photo-item${isComplete ? " is-complete" : ""}`}>
+                        <div className="worker-task-photo-icon">
+                          {isComplete ? <CheckOutlined /> : <FileImageOutlined />}
+                        </div>
+                        <div>
+                          <div className="worker-task-photo-title">
+                            <strong>{item.title}</strong>
+                            <Tag color={isComplete ? "success" : item.required ? "error" : "default"}>
+                              {isComplete ? "已上传" : item.required ? "必传" : "可选"}
+                            </Tag>
+                          </div>
+                          <p>{item.description}</p>
+                          <span>{getWorkerPhotoStageLabel(item.stage)} · {stagePhotos.length} 张</span>
+                          {stagePhotos.length ? (
+                            <div className="worker-task-photo-preview-list">
+                              {stagePhotos.map((photo, index) => (
+                                <button key={photo.id} type="button" onClick={() => setPreviewPhoto(photo)}>
+                                  {item.title} {index + 1}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                        <Upload
+                          showUploadList={false}
+                          customRequest={async ({ file, onError, onSuccess }) => {
+                            try {
+                              await uploadStagePhoto(item.stage, file as File, item.title);
+                              onSuccess?.("ok");
+                            } catch (error) {
+                              onError?.(error as Error);
+                              message.error((error as Error).message);
+                            }
+                          }}
+                        >
+                          <Button icon={<UploadOutlined />}>上传文件</Button>
+                        </Upload>
+                      </article>
+                    );
+                  })}
+                </div>
+              </Card>
+            </div>
+
+          </section>
+        </>
+      )}
+      <Modal
+        title={previewPhoto ? getWorkerPhotoStageLabel(previewPhoto.stage) : "施工照片"}
+        open={Boolean(previewPhoto)}
+        onCancel={() => setPreviewPhoto(null)}
+        footer={null}
+        width={760}
+        centered
+      >
+        {previewPhoto ? (
+          <div className="worker-task-photo-preview-modal">
+            <Image src={previewPhoto.url} alt={getWorkerPhotoStageLabel(previewPhoto.stage)} />
+            <a href={previewPhoto.url} target="_blank" rel="noreferrer">
+              在新窗口打开原图
+            </a>
+          </div>
+        ) : null}
+      </Modal>
+    </div>
+  );
+}
+
+function formatSchedule(record: TaskRecord) {
+  const date = record.order?.appointmentDate ? record.order.appointmentDate.slice(0, 10) : "日期待定";
+  return `${date} ${record.order?.appointmentTimeSlot ?? "时段待定"}`;
+}
+
+function formatLocation(record: TaskRecord) {
+  if (record.order?.constructionLocation === "OUTSIDE") return record.order.outsideAddress ?? "外出地址待补充";
+  return "到店施工";
+}
+
+function formatNullableDate(value?: string | null) {
+  return value ? value.slice(0, 16).replace("T", " ") : "暂未记录";
+}
+
+function getTaskSteps(status: string, pendingUploads: number, materialPickupState: MaterialPickupState) {
+  return [
+    { index: 1, label: "接单", state: "done" },
+    {
+      index: 2,
+      label: "领取物料",
+      state: materialPickupState.state === "done" ? "done" : status === "IN_CONSTRUCTION" ? "active" : "pending"
+    },
+    {
+      index: 3,
+      label: "照片凭证",
+      state: status === "COMPLETED" || pendingUploads === 0 ? "done" : status === "IN_CONSTRUCTION" ? "active" : "pending"
+    },
+    { index: 4, label: "已完成", state: status === "COMPLETED" && pendingUploads === 0 ? "done" : "pending" }
+  ];
+}
+
+type MaterialPickupState = {
+  state: "loading" | "none" | "pending" | "done";
+  label: string;
+  color: string;
+};
+
+function getMaterialPickupState(
+  materialData: ConstructionOrderMaterials | undefined,
+  isLoading: boolean,
+  pendingCount: number
+): MaterialPickupState {
+  if (isLoading) return { state: "loading", label: "加载中", color: "processing" };
+  if (!materialData || materialData.summary.allocatedBatches === 0) {
+    return { state: "none", label: "无需领料", color: "default" };
+  }
+  if (pendingCount > 0) {
+    return { state: "pending", label: "待领料", color: "warning" };
+  }
+  return { state: "done", label: "已领料", color: "success" };
+}
+
+function getCompleteBlockReason(
+  status: string | undefined,
+  pendingUploads: number,
+  materialPickupState: MaterialPickupState
+) {
+  if (status !== "IN_CONSTRUCTION") return "";
+  if (materialPickupState.state === "pending") return "请先领取已锁定的施工物料";
+  if (materialPickupState.state === "loading") return "物料状态加载中，请稍后提交完工";
+  if (pendingUploads > 0) return "请先补齐必传施工照片后再提交完工";
+  return "";
+}
+
+function getStatusColor(status: string) {
+  if (status === "COMPLETED") return "success";
+  if (status === "IN_CONSTRUCTION") return "processing";
+  return "default";
+}
+
+function canStartTask(status: string) {
+  return status === "DISPATCHED" || status === "PENDING_DISPATCH";
+}
+
+function canCompleteTask(status: string) {
+  return status === "IN_CONSTRUCTION";
+}

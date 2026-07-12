@@ -91,6 +91,22 @@ test("inviteMember cancels stale invitations, creates a new invitation, and noti
   ]);
 });
 
+test("inviteMember tells managers to contact an administrator when assigning store manager", async () => {
+  const service = new MembersService({
+    storeMember: {
+      findUnique: async () => ({ storeId: "store-1", position: StorePosition.MANAGER })
+    }
+  } as never, { send: async () => undefined } as never);
+
+  await assert.rejects(
+    () => service.inviteMember("manager-1", "store-1", {
+      userId: "user-2",
+      position: StorePosition.MANAGER
+    }),
+    /请联系管理员变更/
+  );
+});
+
 test("acceptInvitation replaces frozen-store membership, accepts invitation, and notifies inviter", async () => {
   const transactionCalls: string[] = [];
   const notifications: unknown[] = [];
@@ -225,4 +241,22 @@ test("rejectInvitation rejects pending invitation and notifies inviter", async (
       }
     }
   ]);
+});
+
+test("removeMember tells managers to contact an administrator when removing store manager", async () => {
+  const service = new MembersService({
+    storeMember: {
+      findUnique: async (args: { where: { userId: string } }) => {
+        if (args.where.userId === "manager-1") {
+          return { storeId: "store-1", position: StorePosition.MANAGER };
+        }
+        return { id: "member-2", storeId: "store-1", position: StorePosition.MANAGER };
+      }
+    }
+  } as never, { send: async () => undefined } as never);
+
+  await assert.rejects(
+    () => service.removeMember("manager-1", "store-1", "user-2"),
+    /请联系管理员变更/
+  );
 });

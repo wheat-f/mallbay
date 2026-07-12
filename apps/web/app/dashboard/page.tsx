@@ -1,7 +1,15 @@
 "use client";
 
-import { App, Avatar, Button, Dropdown, Input, Layout, Modal, Form, Typography, Tag, Spin } from "antd";
-import { PlusOutlined, ShopOutlined, TeamOutlined, UserOutlined, SearchOutlined } from "@ant-design/icons";
+import { App, Avatar, Button, Card, Drawer, Input, Form, Typography, Tag, Spin } from "antd";
+import {
+  ArrowRightOutlined,
+  AuditOutlined,
+  PlusOutlined,
+  SearchOutlined,
+  ShopOutlined,
+  TeamOutlined,
+  UserOutlined
+} from "@ant-design/icons";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -25,8 +33,8 @@ const STATUS_CONFIG: Record<string, { text: string; color: string }> = {
   FROZEN: { text: "已冻结", color: "warning" }
 };
 
-// ─── 审核员：创建门店 Modal ───────────────────────────────────────
-function CreateStoreModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+// ─── 管理员：创建门店 Drawer ───────────────────────────────────────
+function CreateStoreDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { message } = App.useApp();
   const [keyword, setKeyword] = useState("");
   const [selectedUser, setSelectedUser] = useState<{ id: string; username: string; nickname: string | null } | null>(null);
@@ -39,7 +47,10 @@ function CreateStoreModal({ open, onClose }: { open: boolean; onClose: () => voi
   });
 
   const createMutation = useMutation({
-    mutationFn: () => storeApi.create({ name: storeName, managerId: selectedUser!.id }),
+    mutationFn: () => {
+      if (!selectedUser?.id) throw new Error("请先选择店长");
+      return storeApi.create({ name: storeName, managerId: selectedUser.id });
+    },
     onSuccess: () => {
       message.success("门店创建成功");
       setStoreName("");
@@ -58,18 +69,26 @@ function CreateStoreModal({ open, onClose }: { open: boolean; onClose: () => voi
   };
 
   return (
-    <Modal
+    <Drawer
       open={open}
       title="创建门店"
-      onCancel={handleClose}
-      onOk={() => createMutation.mutate()}
-      okText="创建"
-      cancelText="取消"
-      okButtonProps={{
-        disabled: !storeName.trim() || !selectedUser,
-        loading: createMutation.isPending
-      }}
+      onClose={handleClose}
+      placement="right"
+      rootClassName="dashboard-create-store-drawer"
       destroyOnHidden
+      footer={(
+        <div className="dashboard-create-store-drawer-footer">
+          <Button onClick={handleClose}>取消</Button>
+          <Button
+            type="primary"
+            disabled={!storeName.trim() || !selectedUser}
+            loading={createMutation.isPending}
+            onClick={() => createMutation.mutate()}
+          >
+            创建
+          </Button>
+        </div>
+      )}
     >
       <Form layout="vertical" className="mt-4">
         <Form.Item label="门店名称" required>
@@ -84,7 +103,7 @@ function CreateStoreModal({ open, onClose }: { open: boolean; onClose: () => voi
 
         <Form.Item label="指派店长" required>
           <Input
-            prefix={<SearchOutlined className="text-slate-400" />}
+            prefix={<SearchOutlined />}
             value={keyword}
             onChange={(e) => { setKeyword(e.target.value); setSelectedUser(null); }}
             placeholder="搜索用户名"
@@ -92,25 +111,25 @@ function CreateStoreModal({ open, onClose }: { open: boolean; onClose: () => voi
           />
           {searchQuery.isFetching && <Spin size="small" className="mt-2 block" />}
           {searchQuery.data && searchQuery.data.length > 0 && !selectedUser && (
-            <div className="mt-1 rounded border border-slate-200 bg-white shadow-sm">
+            <div className="dashboard-user-search-results">
               {searchQuery.data.map((u) => (
                 <div
                   key={u.id}
-                  className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-slate-50"
+                  className="dashboard-user-search-row"
                   onClick={() => { setSelectedUser(u); setKeyword(u.username); }}
                 >
-                  <Avatar size={24} style={{ background: "#1677ff", fontSize: 12 }}>
+                  <Avatar size={24} style={{ background: "var(--mb-primary)", fontSize: 12 }}>
                     {(u.nickname ?? u.username).charAt(0).toUpperCase()}
                   </Avatar>
                   <span className="font-mono text-sm">{u.username}</span>
-                  {u.nickname && <span className="text-slate-400 text-sm">{u.nickname}</span>}
+                  {u.nickname && <span className="management-kpi-desc">{u.nickname}</span>}
                 </div>
               ))}
             </div>
           )}
           {selectedUser && (
-            <div className="mt-2 flex items-center gap-2 rounded bg-blue-50 px-3 py-2 text-sm">
-              <Avatar size={20} style={{ background: "#1677ff", fontSize: 10 }}>
+            <div className="management-filter-card mt-2 flex items-center gap-2 !p-3 text-sm">
+              <Avatar size={20} style={{ background: "var(--mb-primary)", fontSize: 10 }}>
                 {(selectedUser.nickname ?? selectedUser.username).charAt(0).toUpperCase()}
               </Avatar>
               <span>已选择：<span className="font-mono">{selectedUser.username}</span></span>
@@ -121,7 +140,7 @@ function CreateStoreModal({ open, onClose }: { open: boolean; onClose: () => voi
           )}
         </Form.Item>
       </Form>
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -130,18 +149,9 @@ export default function DashboardPage() {
   const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const user = useAuthStore((state) => state.user);
   const setSession = useAuthStore((state) => state.setSession);
-  const clearSession = useAuthStore((state) => state.clearSession);
   const router = useRouter();
 
   const [createStoreOpen, setCreateStoreOpen] = useState(false);
-
-  const logoutMutation = useMutation({
-    mutationFn: authApi.logout,
-    onSettled: () => {
-      clearSession();
-      router.push("/auth");
-    }
-  });
 
   // 拉取最新用户信息（含 storeMember）
   const meQuery = useQuery({
@@ -169,133 +179,157 @@ export default function DashboardPage() {
   if (!hasHydrated || !user || !user.username) return null;
 
   const displayName = user.nickname ?? user.username;
-  const avatarLabel = displayName.charAt(0).toUpperCase();
   const storeMember = user.storeMember;
+  const roleLabel = storeMember
+    ? POSITION_LABEL[storeMember.position] ?? storeMember.position
+    : user.isAuditor
+      ? "管理员"
+      : "访客";
+  const storeStatus = storeMember ? STATUS_CONFIG[storeMember.store.status] : undefined;
+  const metrics = [
+    {
+      label: "当前门店",
+      value: storeMember?.store.name ?? "暂无门店",
+      description: storeMember ? roleLabel : "等待店长邀请"
+    },
+    {
+      label: "门店状态",
+      value: storeMember ? storeStatus?.text ?? storeMember.store.status : "-",
+      description: "运营访问状态"
+    },
+    {
+      label: "系统权限",
+      value: user.isAuditor ? "管理员" : storeMember ? "门店成员" : "访客",
+      description: "按角色展示菜单"
+    }
+  ];
 
   return (
-    <Layout className="dashboard-shell">
-      <header className="dashboard-header">
-        <div className="dashboard-brand">
-          <Typography.Title level={4} className="!mb-0 truncate !text-slate-950">
-            MallBay
-          </Typography.Title>
-        </div>
-
-        <Dropdown
-          menu={{
-            items: [
-              { key: "profile", label: "个人设置", onClick: () => router.push("/profile") },
-              { type: "divider" },
-              { key: "logout", label: "退出登录", danger: true, onClick: () => logoutMutation.mutate() }
-            ]
-          }}
-          placement="bottomRight"
-          trigger={["click"]}
-        >
-          <button className="dashboard-avatar-btn" aria-label="个人设置">
-            {user.avatarUrl ? (
-              <Avatar src={user.avatarUrl} size={36} />
-            ) : (
-              <Avatar size={36} style={{ background: "#1677ff", cursor: "pointer" }}>
-                {avatarLabel}
-              </Avatar>
-            )}
-          </button>
-        </Dropdown>
-      </header>
-
-      <Layout.Content className="dashboard-content">
-        <div className="mb-6">
-          <Typography.Title level={3} className="!mb-1">
+    <div className="management-page dashboard-entry-workspace">
+      <section className="dashboard-entry-hero">
+        <div className="dashboard-entry-hero-copy">
+          <Tag className="dashboard-entry-kicker">账号入口</Tag>
+          <Typography.Title level={2} className="management-page-title">
             你好，{displayName}
           </Typography.Title>
-          <Typography.Text className="text-slate-500 text-sm font-mono">{user.username}</Typography.Text>
-        </div>
-
-        <div className="dashboard-card-grid">
-          {/* 审核员模块 */}
-          {user.isAuditor && (
-            <div className="dashboard-section-card">
-              <div className="dashboard-section-header">
-                <div className="dashboard-section-icon">
-                  <ShopOutlined />
-                </div>
-                <div>
-                  <div className="dashboard-section-title">运营管理</div>
-                  <div className="dashboard-section-desc">审核员工作台</div>
-                </div>
-              </div>
-              <div className="dashboard-section-actions">
+          <Typography.Paragraph className="management-page-description">
+            选择门店运营、客户浏览或系统审核入口。当前账号会按角色自动展示可用功能。
+          </Typography.Paragraph>
+          <div className="dashboard-entry-actions">
+            {storeMember ? (
+              <>
                 <Button
                   type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => setCreateStoreOpen(true)}
-                  block
+                  icon={<ArrowRightOutlined />}
+                  onClick={() => router.push(`/workbench/${storeMember.store.id}`)}
                 >
-                  创建门店
+                  进入工作台
                 </Button>
-                <Button block onClick={() => router.push("/admin/stores")}>
-                  门店管理
+                <Button icon={<TeamOutlined />} onClick={() => router.push("/customers")}>
+                  客户管理
                 </Button>
-              </div>
-            </div>
-          )}
-
-          {/* 门店员工模块 */}
-          {storeMember ? (
-            <div className="dashboard-section-card">
-              <div className="dashboard-section-header">
-                <div className="dashboard-section-icon">
-                  <TeamOutlined />
-                </div>
-                <div>
-                  <div className="dashboard-section-title">{storeMember.store.name}</div>
-                  <div className="dashboard-section-desc flex items-center gap-2">
-                    <span>{POSITION_LABEL[storeMember.position] ?? storeMember.position}</span>
-                    <Tag color={STATUS_CONFIG[storeMember.store.status]?.color} className="!text-xs">
-                      {STATUS_CONFIG[storeMember.store.status]?.text}
-                    </Tag>
-                  </div>
-                </div>
-              </div>
-              <Button type="primary" block onClick={() => router.push(`/workbench/${storeMember.store.id}`)}>
-                进入工作台
-              </Button>
-            </div>
-          ) : (
-            <div className="dashboard-section-card">
-              <div className="dashboard-section-header">
-                <div className="dashboard-section-icon">
-                  <TeamOutlined />
-                </div>
-                <div>
-                  <div className="dashboard-section-title" style={{ color: "#94a3b8" }}>暂无门店</div>
-                  <div className="dashboard-section-desc">等待店长邀请后即可加入</div>
-                </div>
-              </div>
-              <Button block disabled>工作台</Button>
-            </div>
-          )}
-
-          {/* 客户模块 */}
-          <div className="dashboard-section-card">
-            <div className="dashboard-section-header">
-              <div className="dashboard-section-icon">
-                <UserOutlined />
-              </div>
-              <div>
-                <div className="dashboard-section-title">客户中心</div>
-                <div className="dashboard-section-desc">门店、消费记录、会员权益</div>
-              </div>
-            </div>
-            <Button block onClick={() => router.push("/stores")}>
-              浏览门店
-            </Button>
+              </>
+            ) : (
+              <Button disabled>等待门店邀请</Button>
+            )}
           </div>
         </div>
-      </Layout.Content>
 
-      <CreateStoreModal open={createStoreOpen} onClose={() => setCreateStoreOpen(false)} />
-    </Layout>
+        <Card className="dashboard-account-card">
+          <div className="dashboard-account-main">
+            <Avatar size={58} icon={<UserOutlined />} style={{ background: "var(--mb-primary)" }}>
+              {displayName.charAt(0).toUpperCase()}
+            </Avatar>
+            <div>
+              <Typography.Title level={4}>{displayName}</Typography.Title>
+              <Typography.Text>{user.username}</Typography.Text>
+            </div>
+          </div>
+          <div className="dashboard-account-tags">
+            <Tag color={user.isAuditor ? "processing" : undefined}>{roleLabel}</Tag>
+            {storeMember ? (
+              <Tag color={storeStatus?.color}>{storeStatus?.text ?? storeMember.store.status}</Tag>
+            ) : (
+              <Tag>未加入门店</Tag>
+            )}
+          </div>
+        </Card>
+      </section>
+
+      <section className="dashboard-entry-metrics">
+        {metrics.map((item) => (
+          <Card key={item.label} className="management-kpi-card dashboard-entry-metric-card">
+            <div className="management-kpi-label">{item.label}</div>
+            <div className="management-kpi-value">{item.value}</div>
+            <div className="management-kpi-desc">{item.description}</div>
+          </Card>
+        ))}
+      </section>
+
+      <section className="dashboard-entry-grid">
+        <Card className="dashboard-action-card dashboard-store-card">
+          <div className="dashboard-action-card-head">
+            <span className="dashboard-action-icon"><TeamOutlined /></span>
+            <div>
+              <Typography.Title level={4}>{storeMember ? storeMember.store.name : "门店工作台"}</Typography.Title>
+              <Typography.Text>客户、订单、施工、库存和报表统一入口</Typography.Text>
+            </div>
+          </div>
+          <div className="dashboard-action-card-body">
+            {storeMember ? (
+              <div className="detail-status-strip">
+                <Tag>{roleLabel}</Tag>
+                <Tag color={storeStatus?.color}>{storeStatus?.text}</Tag>
+              </div>
+            ) : (
+              <Typography.Paragraph type="secondary">
+                当前账号还没有加入门店，等待店长邀请后即可使用门店业务功能。
+              </Typography.Paragraph>
+            )}
+            <Button
+              type="primary"
+              block
+              disabled={!storeMember}
+              onClick={() => storeMember && router.push(`/workbench/${storeMember.store.id}`)}
+            >
+              {storeMember ? "进入工作台" : "等待门店邀请"}
+            </Button>
+          </div>
+        </Card>
+
+        {user.isAuditor ? (
+          <Card className="dashboard-action-card dashboard-auditor-panel">
+            <div className="dashboard-action-card-head">
+              <span className="dashboard-action-icon"><AuditOutlined /></span>
+              <div>
+                <Typography.Title level={4}>总部审核</Typography.Title>
+                <Typography.Text>创建门店、审核门店资料并处理运营权限</Typography.Text>
+              </div>
+            </div>
+            <div className="dashboard-action-button-row">
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateStoreOpen(true)}>
+                创建门店
+              </Button>
+              <Button onClick={() => router.push("/admin")}>门店审核</Button>
+            </div>
+          </Card>
+        ) : null}
+
+        <Card className="dashboard-action-card dashboard-quick-links">
+          <div className="dashboard-action-card-head">
+            <span className="dashboard-action-icon"><ShopOutlined /></span>
+            <div>
+              <Typography.Title level={4}>客户入口</Typography.Title>
+              <Typography.Text>浏览公开门店、消费记录和会员权益入口</Typography.Text>
+            </div>
+          </div>
+          <div className="dashboard-action-button-row">
+            <Button block onClick={() => router.push("/")}>浏览门店</Button>
+          </div>
+        </Card>
+      </section>
+
+      <CreateStoreDrawer open={createStoreOpen} onClose={() => setCreateStoreOpen(false)} />
+    </div>
   );
 }

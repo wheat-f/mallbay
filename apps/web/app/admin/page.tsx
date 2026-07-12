@@ -1,18 +1,24 @@
 "use client";
 
 import {
-  App, Avatar, Button, Dropdown, Input, Layout,
-  Modal, Form, Spin, Table, Tag, Tooltip, Typography
+  App, Avatar, Button, Card, Drawer, Form, Input,
+  Spin, Table, Tag
 } from "antd";
 import type { ColumnType } from "antd/es/table";
 import {
-  ArrowLeftOutlined, PlusOutlined, SearchOutlined, UserOutlined
+  CheckCircleOutlined,
+  ExclamationCircleOutlined,
+  FileSearchOutlined,
+  InfoCircleOutlined,
+  PlusOutlined,
+  SearchOutlined,
+  ShopOutlined,
+  StopOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { authApi, storeApi, userApi } from "../../src/lib/api";
-import { useAuthStore } from "../../src/stores/auth-store";
+import { storeApi, userApi } from "../../src/lib/api";
 
 const STATUS_CONFIG: Record<string, { text: string; color: string }> = {
   DRAFTED: { text: "筹办中", color: "default" },
@@ -31,8 +37,8 @@ type StoreRow = {
   createdAt: string;
 };
 
-// ─── 创建门店 Modal ───────────────────────────────────────────────
-function CreateStoreModal({ open, onClose, onCreated }: {
+// ─── 创建门店抽屉 ───────────────────────────────────────────────
+function CreateStoreDrawer({ open, onClose, onCreated }: {
   open: boolean; onClose: () => void; onCreated: () => void;
 }) {
   const { message } = App.useApp();
@@ -49,7 +55,10 @@ function CreateStoreModal({ open, onClose, onCreated }: {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => storeApi.create({ name: storeName, managerId: selectedUser!.id }),
+    mutationFn: () => {
+      if (!selectedUser?.id) throw new Error("请先选择店长");
+      return storeApi.create({ name: storeName, managerId: selectedUser.id });
+    },
     onSuccess: () => {
       message.success("门店创建成功");
       setStoreName(""); setKeyword(""); setSelectedUser(null);
@@ -64,10 +73,24 @@ function CreateStoreModal({ open, onClose, onCreated }: {
   };
 
   return (
-    <Modal
-      open={open} title="创建门店" onCancel={handleClose}
-      onOk={() => createMutation.mutate()} okText="创建" cancelText="取消"
-      okButtonProps={{ disabled: !storeName.trim() || !selectedUser, loading: createMutation.isPending }}
+    <Drawer
+      open={open}
+      title="创建门店"
+      onClose={handleClose}
+      rootClassName="admin-store-create-drawer"
+      footer={(
+        <div className="admin-store-drawer-footer">
+          <Button onClick={handleClose}>取消</Button>
+          <Button
+            type="primary"
+            disabled={!storeName.trim() || !selectedUser}
+            loading={createMutation.isPending}
+            onClick={() => createMutation.mutate()}
+          >
+            创建
+          </Button>
+        </div>
+      )}
       destroyOnHidden
     >
       <Form layout="vertical" className="mt-4">
@@ -77,7 +100,7 @@ function CreateStoreModal({ open, onClose, onCreated }: {
         </Form.Item>
         <Form.Item label="指派店长" required>
           <Input
-            prefix={<SearchOutlined className="text-slate-400" />}
+            prefix={<SearchOutlined className="text-[var(--mb-text-muted)]" />}
             value={keyword}
             onChange={(e) => { setKeyword(e.target.value); setSelectedUser(null); }}
             placeholder="搜索用户名" allowClear
@@ -89,27 +112,27 @@ function CreateStoreModal({ open, onClose, onCreated }: {
             </div>
           )}
           {searchQuery.data && searchQuery.data.length === 0 && !searchQuery.isFetching && !selectedUser && (
-            <div className="mt-1 text-xs text-slate-400">未找到匹配用户</div>
+            <div className="mt-1 text-xs text-[var(--mb-text-muted)]">未找到匹配用户</div>
           )}
           {searchQuery.data && searchQuery.data.length > 0 && !selectedUser && (
-            <div className="mt-1 rounded border border-slate-200 bg-white shadow-sm">
+            <div className="dashboard-user-search-results">
               {searchQuery.data.map((u) => (
                 <div key={u.id}
-                  className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-slate-50"
+                  className="dashboard-user-search-row"
                   onClick={() => { setSelectedUser(u); setKeyword(u.username); }}
                 >
-                  <Avatar size={24} style={{ background: "#1677ff", fontSize: 12 }}>
+                  <Avatar size={24} style={{ background: "var(--mb-primary)", fontSize: 12 }}>
                     {(u.nickname ?? u.username).charAt(0).toUpperCase()}
                   </Avatar>
                   <span className="font-mono text-sm">{u.username}</span>
-                  {u.nickname && <span className="text-slate-400 text-sm">{u.nickname}</span>}
+                  {u.nickname && <span className="text-[var(--mb-text-muted)] text-sm">{u.nickname}</span>}
                 </div>
               ))}
             </div>
           )}
           {selectedUser && (
-            <div className="mt-2 flex items-center gap-2 rounded bg-blue-50 px-3 py-2 text-sm">
-              <Avatar size={20} style={{ background: "#1677ff", fontSize: 10 }}>
+            <div className="mt-2 flex items-center gap-2 rounded bg-[var(--mb-primary-container)] px-3 py-2 text-sm">
+              <Avatar size={20} style={{ background: "var(--mb-primary)", fontSize: 10 }}>
                 {(selectedUser.nickname ?? selectedUser.username).charAt(0).toUpperCase()}
               </Avatar>
               <span>已选：<span className="font-mono">{selectedUser.username}</span></span>
@@ -121,13 +144,13 @@ function CreateStoreModal({ open, onClose, onCreated }: {
           )}
         </Form.Item>
       </Form>
-    </Modal>
+    </Drawer>
   );
 }
 
 // ─── 列文字搜索 hook ──────────────────────────────────────────────
 function useColumnSearch(dataIndex: keyof StoreRow): ColumnType<StoreRow> {
-  const [searchText, setSearchText] = useState("");
+  const [, setSearchText] = useState("");
   const inputRef = useRef<Parameters<typeof Input>[0] & { focus?: () => void }>(null);
 
   return {
@@ -154,7 +177,7 @@ function useColumnSearch(dataIndex: keyof StoreRow): ColumnType<StoreRow> {
       </div>
     ),
     filterIcon: (filtered: boolean) => (
-      <SearchOutlined style={{ color: filtered ? "#1677ff" : undefined }} />
+      <SearchOutlined style={{ color: filtered ? "var(--mb-primary)" : undefined }} />
     ),
     onFilter: (value, record) => {
       const cell = record[dataIndex];
@@ -170,17 +193,10 @@ function useColumnSearch(dataIndex: keyof StoreRow): ColumnType<StoreRow> {
 
 // ─── 主页面 ───────────────────────────────────────────────────────
 export default function AdminPage() {
-  const user = useAuthStore((state) => state.user);
-  const clearSession = useAuthStore((state) => state.clearSession);
   const router = useRouter();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [page, setPage] = useState(1);
-
-  const logoutMutation = useMutation({
-    mutationFn: authApi.logout,
-    onSettled: () => { clearSession(); router.push("/auth"); }
-  });
 
   // 一次拉取足够多，客户端做列过滤（admin 场景门店数量可控）
   const storesQuery = useQuery({
@@ -191,23 +207,19 @@ export default function AdminPage() {
 
   const nameSearch = useColumnSearch("name");
   const addressSearch = useColumnSearch("address");
-
-  const displayName = user ? (user.nickname ?? user.username ?? "") : "";
-
-  const dropdownItems = [
-    { key: "home", label: "返回首页", icon: <ArrowLeftOutlined />, onClick: () => router.push("/") },
-    { type: "divider" as const },
-    { key: "profile", label: "个人设置", icon: <UserOutlined />, onClick: () => router.push("/profile") },
-    { type: "divider" as const },
-    { key: "logout", label: "退出登录", danger: true, onClick: () => logoutMutation.mutate() }
-  ];
+  const stores = storesQuery.data?.items ?? [];
+  const pendingCount = stores.filter((row) => row.status === "PENDING_REVIEW").length;
+  const publishedCount = stores.filter((row) => row.status === "PUBLISHED").length;
+  const frozenCount = stores.filter((row) => row.status === "FROZEN").length;
+  const draftedCount = stores.filter((row) => row.status === "DRAFTED").length;
+  const pendingStores = stores.filter((row) => row.status === "PENDING_REVIEW").slice(0, 3);
 
   const columns: ColumnType<StoreRow>[] = [
     {
       title: "门店名称", dataIndex: "name", key: "name",
       ...nameSearch,
       render: (name: string, row: StoreRow) => (
-        <span className="cursor-pointer font-medium text-blue-600 hover:underline"
+        <span className="cursor-pointer font-medium text-[var(--mb-primary)] hover:underline"
           onClick={() => router.push(`/admin/stores/${row.id}`)}>
           {name}
         </span>
@@ -225,14 +237,14 @@ export default function AdminPage() {
     {
       title: "地址", dataIndex: "address", key: "address",
       ...addressSearch,
-      render: (v: string | null) => v ?? <span className="text-slate-400">—</span>
+      render: (v: string | null) => v ?? <span className="text-[var(--mb-text-muted)]">—</span>
     },
     {
       title: "店长", dataIndex: "manager", key: "manager", width: 140,
       render: (m: StoreRow["manager"]) =>
         m
           ? <span className="font-mono text-sm">{m.nickname ?? m.username}</span>
-          : <span className="text-slate-400">未指派</span>
+          : <span className="text-[var(--mb-text-muted)]">未指派</span>
     },
     {
       title: "操作", key: "action", width: 140,
@@ -253,38 +265,191 @@ export default function AdminPage() {
   ];
 
   return (
-    <Layout className="dashboard-shell">
-      {/* Header：左返回，中标题，右头像 */}
-      <header className="dashboard-header" style={{ position: "relative" }}>
-        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => router.push("/")} />
+    <>
+      <div className="management-page admin-review-command-page">
+        <div className="management-page-header admin-review-hero">
+          <div>
+            <h1 className="management-page-title">
+              mallbay 门店审核与管理
+            </h1>
+            <p className="management-page-description">
+              管理平台所有加盟店的生命周期与信息变更审核
+            </p>
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+            创建门店并分配经理
+          </Button>
+        </div>
 
-        <Typography.Title
-          level={5}
-          className="!mb-0 !text-slate-950"
-          style={{ position: "absolute", left: "50%", transform: "translateX(-50%)" }}
+        <section className="admin-review-dashboard-grid">
+          <Card className="admin-review-queue">
+            <div className="admin-review-card-head">
+              <div>
+                <span className="admin-review-eyebrow">审核队列</span>
+                <h2>待处理信息变更 ({pendingCount})</h2>
+              </div>
+              <Button type="link" onClick={() => setPage(1)}>
+                查看全部队列
+              </Button>
+            </div>
+
+            <div className="admin-review-queue-list">
+              {pendingStores.length > 0 ? (
+                pendingStores.map((store) => (
+                  <article key={store.id} className="admin-review-queue-item">
+                    <div className="admin-review-queue-item-head">
+                      <div>
+                        <span>申请时间：{new Date(store.createdAt).toLocaleString("zh-CN")}</span>
+                        <h3>{store.name}</h3>
+                      </div>
+                      <div className="admin-review-queue-actions">
+                        <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => router.push(`/admin/stores/${store.id}`)}>
+                          批准
+                        </Button>
+                        <Button size="small" danger icon={<StopOutlined />} onClick={() => router.push(`/admin/stores/${store.id}`)}>
+                          驳回
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="admin-review-diff-grid">
+                      <div>
+                        <b>字段核对</b>
+                        <p>
+                          <span>门店名称：</span>
+                          {store.name}
+                        </p>
+                        <p>
+                          <span>门店地址：</span>
+                          {store.address ?? "待补充"}
+                        </p>
+                      </div>
+                      <div>
+                        <b>资料状态</b>
+                        <p>
+                          <span>店长：</span>
+                          {store.manager?.nickname ?? store.manager?.username ?? "未指派"}
+                        </p>
+                        <p>
+                          <span>封面：</span>
+                          {store.coverUrl ? "已上传" : "待上传"}
+                        </p>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="admin-review-empty">
+                  <FileSearchOutlined />
+                  <strong>暂无待处理门店</strong>
+                  <span>新的门店提交后会出现在这里，管理员可进入详情完成审核。</span>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          <aside className="admin-review-side">
+            <Card className="admin-status-distribution">
+              <div className="admin-review-eyebrow">门店状态</div>
+              <h2>门店状态分布</h2>
+              {[
+                ["公开经营", publishedCount, "is-success"],
+                ["筹办中", draftedCount, "is-info"],
+                ["待审核", pendingCount, "is-warning"],
+                ["已冻结", frozenCount, "is-danger"]
+              ].map(([label, value, tone]) => (
+                <div key={label} className="admin-status-row">
+                  <span className={String(tone)} />
+                  <p>{label}</p>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+              <div className="admin-weekly-review">
+                <span>本周处理审核量</span>
+                <strong>{pendingCount + publishedCount}</strong>
+              </div>
+            </Card>
+
+            <Card className="admin-operation-guide">
+              <h2>操作指引</h2>
+              <div className="admin-guide-item">
+                <InfoCircleOutlined />
+                <span>创建门店后，店长需要完成资料和照片提交。</span>
+              </div>
+              <div className="admin-guide-item">
+                <ExclamationCircleOutlined />
+                <span>冻结门店会停止该门店公开访问和运营入口。</span>
+              </div>
+            </Card>
+          </aside>
+        </section>
+
+        <Card
+          className="admin-store-table-card management-table-card"
+          title={
+            <div className="admin-store-table-title">
+              <ShopOutlined />
+              <span>所有门店列表</span>
+            </div>
+          }
+          extra={<Tag color="processing">共 {storesQuery.data?.total ?? stores.length} 家</Tag>}
         >
-          运营管理
-        </Typography.Title>
+          <div className="admin-store-mobile-cards">
+            {stores.length > 0 ? (
+              stores.map((store) => {
+                const statusConfig = STATUS_CONFIG[store.status] ?? { text: store.status, color: "default" };
+                const managerName = store.manager?.nickname ?? store.manager?.username ?? "未指派";
 
-        <Dropdown menu={{ items: dropdownItems }} placement="bottomRight" trigger={["click"]}>
-          <button className="dashboard-avatar-btn">
-            {user?.avatarUrl ? (
-              <Avatar src={user.avatarUrl} size={36} />
+                return (
+                  <article className="admin-store-mobile-card" key={store.id}>
+                    <div className="admin-store-mobile-card-head">
+                      <div>
+                        <strong>{store.name}</strong>
+                        <span>{store.address ?? "地址待补充"}</span>
+                      </div>
+                      <Tag color={statusConfig.color}>{statusConfig.text}</Tag>
+                    </div>
+                    <dl className="admin-store-mobile-fields">
+                      <div>
+                        <dt>店长</dt>
+                        <dd>{managerName}</dd>
+                      </div>
+                      <div>
+                        <dt>创建时间</dt>
+                        <dd>{new Date(store.createdAt).toLocaleDateString("zh-CN")}</dd>
+                      </div>
+                      <div>
+                        <dt>封面</dt>
+                        <dd>{store.coverUrl ? "已上传" : "待上传"}</dd>
+                      </div>
+                    </dl>
+                    <div className="admin-store-mobile-actions">
+                      {store.status === "PENDING_REVIEW" && (
+                        <Button
+                          size="small"
+                          type="primary"
+                          onClick={() => router.push(`/admin/stores/${store.id}`)}
+                        >
+                          审核
+                        </Button>
+                      )}
+                      <Button size="small" onClick={() => router.push(`/admin/stores/${store.id}`)}>
+                        详情
+                      </Button>
+                    </div>
+                  </article>
+                );
+              })
             ) : (
-              <Avatar size={36} style={{ background: "#1677ff", cursor: "pointer" }}>
-                {displayName.charAt(0).toUpperCase()}
-              </Avatar>
+              <div className="admin-store-mobile-empty">
+                {storesQuery.isLoading ? "门店加载中" : "暂无门店"}
+              </div>
             )}
-          </button>
-        </Dropdown>
-      </header>
-
-      <Layout.Content className="home-content">
-        <div className="section-card" style={{ overflow: "hidden" }}>
+          </div>
           <Table
+            className="admin-store-desktop-table"
             rowKey="id"
             columns={columns}
-            dataSource={storesQuery.data?.items ?? []}
+            dataSource={stores}
             loading={storesQuery.isLoading}
             pagination={{
               current: page,
@@ -295,21 +460,14 @@ export default function AdminPage() {
             }}
             style={{ borderRadius: 0 }}
           />
-        </div>
-      </Layout.Content>
+        </Card>
+      </div>
 
-      {/* 悬浮创建按钮 */}
-      <Tooltip title="创建门店" placement="left">
-        <button className="admin-fab" onClick={() => setCreateOpen(true)}>
-          <PlusOutlined />
-        </button>
-      </Tooltip>
-
-      <CreateStoreModal
+      <CreateStoreDrawer
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={() => queryClient.invalidateQueries({ queryKey: ["admin-stores"] })}
       />
-    </Layout>
+    </>
   );
 }

@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Inject,
   Param,
   Patch,
   Post,
@@ -34,12 +35,12 @@ type AuthRequest = Request & {
 @Controller("stores")
 export class StoresController {
   constructor(
-    private readonly storesService: StoresService,
-    private readonly ossService: OssService,
-    private readonly metrics: MetricsService
+    @Inject(StoresService) private readonly storesService: StoresService,
+    @Inject(OssService) private readonly ossService: OssService,
+    @Inject(MetricsService) private readonly metrics: MetricsService
   ) {}
 
-  // 审核员：创建门店并指派店长
+  // 管理员：创建门店并指派店长
   @Post()
   createStore(@Req() req: AuthRequest, @Body() dto: CreateStoreDto) {
     return this.storesService.createStore(req.user.id, req.user.isAuditor, dto);
@@ -58,19 +59,19 @@ export class StoresController {
     return this.storesService.getWorkbenchStore(req.user.id, id);
   }
 
-  // 审核员：全量门店列表（含所有状态）
+  // 管理员：全量门店列表（含所有状态）
   @Get("admin/all")
   listAllStores(@Req() req: AuthRequest, @Query() query: ListStoresDto) {
     return this.storesService.listAllStores(req.user.isAuditor, query);
   }
 
-  // 审核员：待审核提交列表
+  // 管理员：待审核提交列表
   @Get("admin/pending-submissions")
   listPendingSubmissions(@Req() req: AuthRequest) {
     return this.storesService.listPendingSubmissions(req.user.isAuditor);
   }
 
-  // 审核员：门店详情（含待审核提交）
+  // 管理员：门店详情（含待审核提交）
   @Get("admin/:id")
   getAdminStore(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.storesService.getAdminStoreDetail(req.user.isAuditor, id);
@@ -119,7 +120,7 @@ export class StoresController {
     return this.storesService.submitStore(req.user.id, id, dto);
   }
 
-  // 审核员：审核门店提交
+  // 管理员：审核门店提交
   @Post("submissions/:submissionId/review")
   reviewSubmission(
     @Req() req: AuthRequest,
@@ -129,19 +130,19 @@ export class StoresController {
     return this.storesService.reviewSubmission(req.user.id, req.user.isAuditor, submissionId, dto);
   }
 
-  // 审核员：冻结门店
+  // 管理员：冻结门店
   @Patch(":id/freeze")
   freezeStore(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.storesService.setFrozen(req.user.isAuditor, id, true);
   }
 
-  // 审核员：解冻门店
+  // 管理员：解冻门店
   @Patch(":id/unfreeze")
   unfreezeStore(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.storesService.setFrozen(req.user.isAuditor, id, false);
   }
 
-  // 审核员：变更店长
+  // 管理员：变更店长
   @Patch(":id/manager")
   changeManager(
     @Req() req: AuthRequest,

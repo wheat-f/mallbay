@@ -9,6 +9,25 @@ const imageFile = {
   buffer: Buffer.from("image")
 } as MulterFile;
 
+test("searchUsers delegates auditor user search to UsersService", async () => {
+  const calls: unknown[] = [];
+  const usersService = {
+    searchUsers: async (userId: string, isAuditor: boolean, keyword: string) => {
+      calls.push({ userId, isAuditor, keyword });
+      return [{ id: "user-2", username: "xiaoming" }];
+    }
+  };
+  const controller = new UsersController(usersService as never, {} as never, {} as never);
+
+  const result = await controller.searchUsers(
+    { user: { id: "auditor-1", username: "admin", isAuditor: true } } as never,
+    "xiao"
+  );
+
+  assert.deepEqual(calls, [{ userId: "auditor-1", isAuditor: true, keyword: "xiao" }]);
+  assert.deepEqual(result, [{ id: "user-2", username: "xiaoming" }]);
+});
+
 test("uploadAvatar uploads through injected OSS service before updating profile avatar", async () => {
   const calls: string[] = [];
   const usersService = {

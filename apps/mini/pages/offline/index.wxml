@@ -1,0 +1,17 @@
+<view class="page">
+  <view class="notice">
+    <text class="title">离线队列</text>
+    <text class="desc">{{summary.description}}</text>
+    <button class="sync-button" loading="{{syncing}}" bindtap="syncQueue">同步队列</button>
+    <view class="stats">
+      <text>总数 {{summary.total}}</text>
+      <text>待同步 {{summary.pending}}</text>
+      <text>失败 {{summary.failed}}</text>
+    </view>
+  </view>
+  <view wx:for="{{items}}" wx:key="id" class="queue-item">
+    <text class="item-title">{{item.typeLabel}} · {{item.statusLabel}}</text>
+    <text class="desc">已尝试 {{item.attempts}} 次</text>
+    <text wx:if="{{item.lastError}}" class="error">{{item.lastError}}</text>
+  </view>
+</view>

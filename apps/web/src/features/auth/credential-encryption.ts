@@ -1,6 +1,10 @@
 import type { AuthPublicKeyResponse } from "@mallbay/shared";
 
 export async function encryptPassword(password: string, publicKey: AuthPublicKeyResponse) {
+  if (!window.crypto?.subtle) {
+    throw new Error("当前访问环境不支持加密登录，请使用 HTTPS 或联系管理员配置测试环境登录策略");
+  }
+
   const key = await window.crypto.subtle.importKey(
     "spki",
     pemToArrayBuffer(publicKey.publicKey),

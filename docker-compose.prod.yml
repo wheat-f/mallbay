@@ -34,6 +34,8 @@ services:
     restart: always
     ports:
       - "3001:3001"
+    volumes:
+      - oss-data:/app/apps/api/.local/oss
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3001/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 10s
@@ -56,6 +58,10 @@ services:
       OSS_ACCESS_KEY_ID:      ${OSS_ACCESS_KEY_ID}
       OSS_ACCESS_KEY_SECRET:  ${OSS_ACCESS_KEY_SECRET}
       OSS_BUCKET:             ${OSS_BUCKET}
+      OSS_PROVIDER:           ${OSS_PROVIDER:-oss}
+      OSS_LOCAL_DIR:          ${OSS_LOCAL_DIR:-.local/oss}
+      OSS_PUBLIC_BASE_URL:    ${OSS_PUBLIC_BASE_URL:-http://localhost:3001/local-oss}
+      OSS_CDN_HOST:           ${OSS_CDN_HOST:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,3 +90,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  oss-data:

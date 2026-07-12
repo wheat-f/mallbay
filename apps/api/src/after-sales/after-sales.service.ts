@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { AfterSalePhotoStage, AfterSaleStatus, Prisma, StorePosition } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
-import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, SubmitAfterSaleEvidenceDto } from "./dto/after-sales.dto";
+import type { MulterFile } from "../users/multer-file.type";
+import { OssService } from "../users/oss.service";
+import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, SubmitAfterSaleEvidenceDto, UploadAfterSalePhotoDto } from "./dto/after-sales.dto";
 
 export type AuthenticatedAfterSalesUser = UserWithStoreMember & {
   username?: string;
@@ -11,7 +13,10 @@ export type AuthenticatedAfterSalesUser = UserWithStoreMember & {
 
 @Injectable()
 export class AfterSalesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(OssService) private readonly oss?: OssService
+  ) {}
 
   async create(user: AuthenticatedAfterSalesUser, dto: CreateAfterSaleDto) {
     const actor = await this.withStoreMember(user);
@@ -193,10 +198,11 @@ export class AfterSalesService {
     if (afterSale.status !== AfterSaleStatus.ASSIGNED) {
       throw new BadRequestException("当前售后阶段不能提交处理证据");
     }
+    const existingConstructionPhoto = await this.prisma.afterSalePhoto.findFirst({ where: { afterSaleId: id, stage: AfterSalePhotoStage.CONSTRUCTION_AFTER } });
     const constructionPhotos = sanitizePhotoEvidence(dto.constructionPhotos, undefined, "施工后照片");
     const supplementPhotos = sanitizePhotoEvidence(dto.supplementPhotos, undefined, "补充证据");
     const evidenceNote = dto.evidenceNote?.trim();
-    if (constructionPhotos.length === 0) {
+    if (constructionPhotos.length === 0 && !existingConstructionPhoto) {
       throw new BadRequestException("请至少提交一张施工后照片");
     }
     await this.createPhotoEvidence(afterSale.id, [
@@ -217,6 +223,61 @@ export class AfterSalesService {
       metadata: { constructionPhotoCount: constructionPhotos.length, supplementPhotoCount: supplementPhotos.length, hasNote: Boolean(evidenceNote) }
     });
     return this.detail(user, id);
+  }
+
+  async uploadPhoto(
+    user: AuthenticatedAfterSalesUser,
+    id: string,
+    dto: UploadAfterSalePhotoDto,
+    file?: MulterFile
+  ) {
+    if (!file || !file.mimetype.startsWith("image/")) {
+      throw new BadRequestException("请上传图片文件");
+    }
+    if (dto.stage !== AfterSalePhotoStage.CONSTRUCTION_AFTER && dto.stage !== AfterSalePhotoStage.SUPPLEMENT) {
+      throw new BadRequestException("售后证据照片阶段无效");
+    }
+    const actor = await this.withStoreMember(user);
+    const afterSale = await this.prisma.afterSale.findFirst({
+      where: buildAfterSalesDetailScope(actor, id),
+      select: {
+        id: true,
+        storeId: true,
+        status: true,
+        assignments: { select: { workerUserId: true } }
+      }
+    });
+    if (!afterSale) throw new NotFoundException("售后单不存在");
+    const isAssignedWorker = afterSale.assignments.some((assignment) => assignment.workerUserId === actor.id);
+    if (!isAssignedWorker) throw new ForbiddenException("只有已派单施工人员可以上传售后证据");
+    if (afterSale.status !== AfterSaleStatus.ASSIGNED) {
+      throw new BadRequestException("当前售后阶段不能上传处理证据");
+    }
+    if (!this.oss) throw new BadRequestException("图片存储服务未配置");
+    const url = await this.oss.uploadAfterSalePhoto(afterSale.storeId, afterSale.id, file);
+    const photo = await this.prisma.afterSalePhoto.create({
+      data: {
+        afterSaleId: afterSale.id,
+        stage: dto.stage,
+        url,
+        note: dto.note?.trim() || undefined,
+        uploadedById: actor.id
+      }
+    });
+    if (dto.stage === AfterSalePhotoStage.CONSTRUCTION_AFTER && this.prisma.afterSale.update) {
+      await this.prisma.afterSale.update({
+        where: { id: afterSale.id },
+        data: { constructionPhotoUrls: { push: url } }
+      });
+    }
+    await this.recordAuditEvent({
+      action: "AFTER_SALE_PHOTO_UPLOADED",
+      actorId: actor.id,
+      storeId: afterSale.storeId,
+      targetId: afterSale.id,
+      metadata: { stage: dto.stage, url }
+    });
+    return photo;
   }
 
   async close(user: AuthenticatedAfterSalesUser, id: string) {

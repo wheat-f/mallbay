@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
-import { AfterSaleResponsibility } from "@prisma/client";
+import { AfterSalePhotoStage, AfterSaleResponsibility } from "@prisma/client";
 
 export class AfterSalePhotoInputDto {
   @IsString()
@@ -99,6 +99,16 @@ export class JudgeAfterSaleDto {
   @IsString()
   @MaxLength(1000)
   resolutionNote?: string;
+}
+
+export class UploadAfterSalePhotoDto {
+  @IsEnum(AfterSalePhotoStage)
+  stage!: AfterSalePhotoStage;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string;
 }
 
 export class SubmitAfterSaleEvidenceDto {

@@ -101,3 +101,28 @@ test("OssService stores uploads locally when OSS_PROVIDER is local", async () =>
     await fs.rm(localDir, { recursive: true, force: true });
   }
 });
+
+test("OssService stores after-sale photos under the after-sale namespace", async () => {
+  const previousProvider = process.env.OSS_PROVIDER;
+  const previousLocalDir = process.env.OSS_LOCAL_DIR;
+  const previousPublicBaseUrl = process.env.OSS_PUBLIC_BASE_URL;
+  const localDir = await fs.mkdtemp(path.join(os.tmpdir(), "mallbay-oss-after-sale-"));
+  process.env.OSS_PROVIDER = "local";
+  process.env.OSS_LOCAL_DIR = localDir;
+  process.env.OSS_PUBLIC_BASE_URL = "http://localhost:3001/local-oss";
+
+  try {
+    const service = new OssService();
+    const url = await service.uploadAfterSalePhoto("store-1", "after-sale-1", imageFile);
+    const key = new URL(url).pathname.replace(/^\/local-oss\//, "");
+    const stored = await fs.readFile(path.join(localDir, key));
+
+    assert.match(url, /^http:\/\/localhost:3001\/local-oss\/after-sales\/store-1\/after-sale-1\//);
+    assert.deepEqual(stored, imageFile.buffer);
+  } finally {
+    process.env.OSS_PROVIDER = previousProvider;
+    process.env.OSS_LOCAL_DIR = previousLocalDir;
+    process.env.OSS_PUBLIC_BASE_URL = previousPublicBaseUrl;
+    await fs.rm(localDir, { recursive: true, force: true });
+  }
+});

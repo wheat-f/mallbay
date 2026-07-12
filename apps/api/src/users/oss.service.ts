@@ -133,6 +133,23 @@ export class OssService {
     );
   }
 
+  async uploadAfterSalePhoto(storeId: string, afterSaleId: string, file: MulterFile): Promise<string> {
+    return this.traceUpload(
+      { component: "oss", target: "after_sale_photo", storeId, afterSaleId, bytes: file.buffer.length },
+      async () => {
+        const ext = path.extname(file.originalname) || ".jpg";
+        const key = `after-sales/${storeId}/${afterSaleId}/${crypto.randomUUID()}${ext}`;
+        if (this.isLocalProvider()) {
+          await this.putLocalObject(key, file.buffer);
+          return this.buildLocalUrl(key);
+        }
+        const { client, bucket, region } = this.getClient();
+        await client.put(key, file.buffer);
+        return this.buildUrl(key, bucket, region);
+      }
+    );
+  }
+
   private traceUpload(fields: Record<string, unknown>, callback: () => Promise<string>) {
     return this.trace?.traceOperation("oss.upload", fields, callback) ?? callback();
   }

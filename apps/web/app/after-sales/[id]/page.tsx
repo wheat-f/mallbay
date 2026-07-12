@@ -172,14 +172,10 @@ export default function AfterSaleDetailPage() {
   const evidenceMutation = useMutation({
     mutationFn: async (values: EvidenceFormValues) => {
       if (!afterSale) throw new Error("售后工单未加载");
-      const constructionPhotos = await buildAfterSalePhotoInputs(values.constructionPhotos, "施工后照片", values.evidenceNote);
-      const supplementPhotos = await buildAfterSalePhotoInputs(values.supplementPhotos, "补充证据图片", values.evidenceNote);
-      if (constructionPhotos.length === 0) {
+      if ((values.constructionPhotos ?? []).length === 0) {
         throw new Error("请至少上传一张施工后照片");
       }
       return afterSalesApi.submitEvidence(afterSale.id, {
-        constructionPhotos,
-        supplementPhotos,
         evidenceNote: values.evidenceNote
       });
     },
@@ -543,7 +539,7 @@ function AfterSaleActionPanel({
               getValueFromEvent={normalizeUploadFileList}
               rules={[{ validator: validateRequiredUpload("请上传至少一张施工后照片") }]}
             >
-              <AfterSaleEvidenceUploader disabled={!canSubmitEvidence || hasJudgedResponsibility} emptyText="上传施工后照片" />
+              <AfterSaleEvidenceUploader afterSaleId={afterSale.id} stage="CONSTRUCTION_AFTER" disabled={!canSubmitEvidence || hasJudgedResponsibility} emptyText="上传施工后照片" />
             </Form.Item>
             <Form.Item
               name="supplementPhotos"
@@ -551,7 +547,7 @@ function AfterSaleActionPanel({
               valuePropName="fileList"
               getValueFromEvent={normalizeUploadFileList}
             >
-              <AfterSaleEvidenceUploader disabled={!canSubmitEvidence || hasJudgedResponsibility} emptyText="上传沟通截图、供应商反馈或补充证据" />
+              <AfterSaleEvidenceUploader afterSaleId={afterSale.id} stage="SUPPLEMENT" disabled={!canSubmitEvidence || hasJudgedResponsibility} emptyText="上传沟通截图、供应商反馈或补充证据" />
             </Form.Item>
           </div>
           <Form.Item name="evidenceNote" label="补充说明">
@@ -635,9 +631,27 @@ function AfterSaleActionPanel({
   );
 }
 
-function AfterSaleEvidenceUploader({ disabled, emptyText }: { disabled?: boolean; emptyText: string }) {
+function AfterSaleEvidenceUploader({ afterSaleId, stage, disabled, emptyText }: {
+  afterSaleId: string;
+  stage: "CONSTRUCTION_AFTER" | "SUPPLEMENT";
+  disabled?: boolean;
+  emptyText: string;
+}) {
   return (
-    <Upload accept="image/*" beforeUpload={() => false} disabled={disabled} listType="picture-card" multiple>
+    <Upload
+      accept="image/*"
+      customRequest={async ({ file, onSuccess, onError }) => {
+        try {
+          const result = await afterSalesApi.uploadPhoto(afterSaleId, { stage, file: file as File });
+          onSuccess?.(result);
+        } catch (error) {
+          onError?.(error as Error);
+        }
+      }}
+      disabled={disabled}
+      listType="picture-card"
+      multiple
+    >
       <div className="after-sale-evidence-uploader-trigger">
         <InboxOutlined />
         <span>{emptyText}</span>
@@ -822,35 +836,6 @@ function validateRequiredUpload(message: string) {
     if ((fileList ?? []).length > 0) return;
     throw new Error(message);
   };
-}
-
-async function buildAfterSalePhotoInputs(files?: UploadFile[], defaultNote = "售后证据", fallbackNote?: string) {
-  const result: Array<{ url: string; note: string }> = [];
-  for (const file of files ?? []) {
-    const url =
-      typeof file.url === "string" && file.url
-        ? file.url
-        : typeof file.thumbUrl === "string" && file.thumbUrl
-          ? file.thumbUrl
-          : file.originFileObj
-            ? await fileToDataUrl(file.originFileObj as File)
-            : "";
-    if (!url) continue;
-    result.push({
-      url,
-      note: [file.name, fallbackNote || defaultNote].filter(Boolean).join(" / ")
-    });
-  }
-  return result.slice(0, 12);
-}
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(new Error("照片读取失败"));
-    reader.readAsDataURL(file);
-  });
 }
 
 export function getAfterSaleDetailTimeline(afterSale?: AfterSaleSummary): AfterSaleTimelineItem[] {

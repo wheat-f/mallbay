@@ -128,6 +128,7 @@ test("AfterSalesService lets assigned workers submit after-sale evidence only", 
       }
     },
     afterSalePhoto: {
+      findFirst: async () => undefined,
       createMany: async (args: unknown) => writes.push(args)
     }
   };
@@ -325,4 +326,50 @@ test("AfterSalesService limits sales after-sales list to their own orders", asyn
     storeId: "store-1",
     order: { salesPersonId: "sales-1" }
   });
+});
+
+test("AfterSalesService uploads after-sale evidence through object storage and persists the photo", async () => {
+  const writes: unknown[] = [];
+  const prisma = {
+    afterSale: {
+      findFirst: async () => ({ id: "after-sale-1", storeId: "store-1", status: AfterSaleStatus.ASSIGNED, assignments: [{ workerUserId: "worker-1" }] }),
+      update: async (args: unknown) => writes.push(args)
+    },
+    afterSalePhoto: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "photo-1", stage: "CONSTRUCTION_AFTER", url: "https://cdn.example/after.jpg" };
+      }
+    },
+    auditEvent: {
+      create: async (args: unknown) => writes.push(args)
+    }
+  };
+  const oss = {
+    uploadAfterSalePhoto: async (storeId: string, afterSaleId: string, file: { originalname: string }) => {
+      assert.equal(storeId, "store-1");
+      assert.equal(afterSaleId, "after-sale-1");
+      assert.equal(file.originalname, "after.jpg");
+      return "https://cdn.example/after.jpg";
+    }
+  };
+  const service = new AfterSalesService(prisma as never, oss as never);
+
+  const result = await service.uploadPhoto(
+    {
+      id: "worker-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION }
+    },
+    "after-sale-1",
+    { stage: "CONSTRUCTION_AFTER", note: "返工后复查" },
+    { originalname: "after.jpg", mimetype: "image/jpeg", buffer: Buffer.from("jpg") }
+  );
+
+  assert.equal(result.url, "https://cdn.example/after.jpg");
+  const serialized = JSON.stringify(writes);
+  assert.match(serialized, /CONSTRUCTION_AFTER/);
+  assert.equal(serialized.includes("https://cdn.example/after.jpg"), true);
+  assert.match(serialized, /返工后复查/);
+  assert.match(serialized, /AFTER_SALE_PHOTO_UPLOADED/);
 });

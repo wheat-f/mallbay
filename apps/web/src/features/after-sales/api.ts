@@ -1,5 +1,5 @@
 import type { AfterSaleResponsibility, AfterSaleSummary } from "@mallbay/shared";
-import { request } from "../../lib/request";
+import { request, requestMultipart } from "../../lib/request";
 
 export type CreateAfterSalePayload = {
   orderId: string;
@@ -51,6 +51,14 @@ export const afterSalesApi = {
       method: "POST",
       body: JSON.stringify(payload)
     }),
+
+  uploadPhoto: (id: string, payload: { stage: "CONSTRUCTION_AFTER" | "SUPPLEMENT"; file: File; note?: string }) => {
+    const formData = new FormData();
+    formData.set("file", payload.file);
+    formData.set("stage", payload.stage);
+    if (payload.note) formData.set("note", payload.note);
+    return requestMultipart<AfterSalePhotoInputPayload>(`/after-sales/${id}/photos`, formData);
+  },
 
   submitEvidence: (id: string, payload: SubmitAfterSaleEvidencePayload) =>
     request<AfterSaleSummary>(`/after-sales/${id}/evidence`, {

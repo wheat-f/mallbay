@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { MulterFile } from "../users/multer-file.type";
 import { AfterSalesService, type AuthenticatedAfterSalesUser } from "./after-sales.service";
-import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, SubmitAfterSaleEvidenceDto } from "./dto/after-sales.dto";
+import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, SubmitAfterSaleEvidenceDto, UploadAfterSalePhotoDto } from "./dto/after-sales.dto";
 
 type AuthRequest = Request & {
   user: AuthenticatedAfterSalesUser;
@@ -42,6 +44,25 @@ export class AfterSalesController {
   @Post(":id/evidence")
   submitEvidence(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: SubmitAfterSaleEvidenceDto) {
     return this.afterSales.submitEvidence(req.user, id, dto);
+  }
+
+  @Post(":id/photos")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: 10 * 1024 * 1024 },
+      fileFilter(_req, file, cb) {
+        if (!file.mimetype.startsWith("image/")) return cb(new BadRequestException("只允许上传图片"), false);
+        cb(null, true);
+      }
+    })
+  )
+  uploadPhoto(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Body() dto: UploadAfterSalePhotoDto,
+    @UploadedFile() file?: MulterFile
+  ) {
+    return this.afterSales.uploadPhoto(req.user, id, dto, file);
   }
 
   @Post(":id/close")

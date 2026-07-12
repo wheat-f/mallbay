@@ -76,3 +76,33 @@ test("partial outbound keeps six meters from an eighteen-meter roll available", 
   assert.equal(scenario.state.inventoryLockedBaseQuantity, 6);
   assert.throws(() => scenario.dispatchConstruction(), /库存出库完成后/);
 });
+
+test("shortage procurement split across suppliers restores inventory matching", () => {
+  const scenario = createStoreFlowScenario({ initialInventoryBaseQuantity: 0 });
+
+  scenario.lockInventory();
+  assert.equal(scenario.state.purchaseRequirementStatus, "OPEN");
+  scenario.createPurchaseOrders([
+    { supplierName: "供应商A", quantity: 10, expectedAt: "2026-07-20" },
+    { supplierName: "供应商B", quantity: 8, expectedAt: "2026-07-22" }
+  ]);
+
+  assert.equal(scenario.state.purchaseRequirementStatus, "ORDERED");
+  assert.deepEqual(scenario.state.purchaseOrders, [
+    { supplierName: "供应商A", quantity: 10, expectedAt: "2026-07-20", receivedQuantity: 0 },
+    { supplierName: "供应商B", quantity: 8, expectedAt: "2026-07-22", receivedQuantity: 0 }
+  ]);
+
+  scenario.receivePurchaseOrder("供应商A");
+  assert.equal(scenario.state.purchaseRequirementStatus, "PARTIAL_RECEIVED");
+  assert.equal(scenario.state.inventoryAvailableBaseQuantity, 10);
+
+  scenario.receivePurchaseOrder("供应商B");
+  assert.equal(scenario.state.purchaseRequirementStatus, "FULFILLED");
+  assert.equal(scenario.state.inventoryAvailableBaseQuantity, 18);
+
+  scenario.lockInventory();
+  assert.equal(scenario.state.inventoryLockedBaseQuantity, 18);
+  scenario.outboundInventory(18);
+  assert.equal(scenario.state.inventoryAvailableBaseQuantity, 0);
+});

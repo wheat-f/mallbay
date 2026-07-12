@@ -18,7 +18,20 @@ export type StoreFlowState = {
   afterSaleStatus: "NOT_CREATED" | "OPEN" | "ASSIGNED" | "RESOLVED" | "CLOSED";
   afterSaleEvidenceCount: number;
   afterSaleEvidenceNote?: string;
+  purchaseRequirementStatus: "OPEN" | "PARTIAL_ORDERED" | "ORDERED" | "PARTIAL_RECEIVED" | "FULFILLED";
+  purchaseOrders: Array<{
+    supplierName: string;
+    quantity: number;
+    expectedAt: string;
+    receivedQuantity: number;
+  }>;
   auditEvents: string[];
+};
+
+export type StoreFlowPurchaseOrderInput = {
+  supplierName: string;
+  quantity: number;
+  expectedAt: string;
 };
 
 export type StoreFlowScenario = StoreFlowFixture & {
@@ -36,6 +49,8 @@ export type StoreFlowScenario = StoreFlowFixture & {
   submitAfterSaleEvidence(photoCount: number, note: string): void;
   judgeAfterSale(): void;
   closeAfterSale(): void;
+  createPurchaseOrders(orders: StoreFlowPurchaseOrderInput[]): void;
+  receivePurchaseOrder(supplierName: string): void;
 };
 
 export function createStoreFlowFixture(): StoreFlowFixture {
@@ -50,17 +65,20 @@ export function createStoreFlowFixture(): StoreFlowFixture {
   };
 }
 
-export function createStoreFlowScenario(): StoreFlowScenario {
+export function createStoreFlowScenario(options: { initialInventoryBaseQuantity?: number } = {}): StoreFlowScenario {
   const fixture = createStoreFlowFixture();
+  const initialInventoryBaseQuantity = options.initialInventoryBaseQuantity ?? 18;
   const state: StoreFlowState = {
     orderStatus: "PENDING_DISPATCH",
-    inventoryAvailableBaseQuantity: 18,
+    inventoryAvailableBaseQuantity: initialInventoryBaseQuantity,
     inventoryLockedBaseQuantity: 0,
     constructionStatus: "NOT_ASSIGNED",
     materialsPicked: false,
     warrantyStatus: "NOT_CREATED",
     afterSaleStatus: "NOT_CREATED",
     afterSaleEvidenceCount: 0,
+    purchaseRequirementStatus: initialInventoryBaseQuantity >= 18 ? "FULFILLED" : "OPEN",
+    purchaseOrders: [],
     auditEvents: []
   };
   const record = (event: string) => {
@@ -73,9 +91,39 @@ export function createStoreFlowScenario(): StoreFlowScenario {
     lockInventory() {
       if (state.inventoryLockedBaseQuantity === 18 || (state.orderStatus !== "PENDING_DISPATCH" && state.inventoryLockedBaseQuantity === 0)) return;
       if (state.orderStatus !== "PENDING_DISPATCH") throw new Error("订单当前不可锁定库存");
+      if (state.inventoryAvailableBaseQuantity < 18) {
+        record("PURCHASE_REQUIREMENT_CREATED");
+        state.purchaseRequirementStatus = "OPEN";
+        return;
+      }
       state.inventoryLockedBaseQuantity = 18;
       state.orderStatus = "DISPATCHED";
       record("INVENTORY_LOCKED");
+    },
+    createPurchaseOrders(orders) {
+      if (state.purchaseRequirementStatus !== "OPEN" && state.purchaseRequirementStatus !== "PARTIAL_ORDERED") {
+        throw new Error("当前采购需求不可创建采购单");
+      }
+      if (orders.length === 0 || orders.some((order) => order.quantity <= 0 || !order.supplierName || !order.expectedAt)) {
+        throw new Error("采购单必须包含供应商、数量和预计到货日期");
+      }
+      const alreadyOrdered = state.purchaseOrders.reduce((sum, order) => sum + order.quantity, 0);
+      const requested = orders.reduce((sum, order) => sum + order.quantity, 0);
+      if (alreadyOrdered + requested > 18) throw new Error("采购总量超过剩余需求");
+      state.purchaseOrders.push(...orders.map((order) => ({ ...order, receivedQuantity: 0 })));
+      state.purchaseRequirementStatus = alreadyOrdered + requested === 18 ? "ORDERED" : "PARTIAL_ORDERED";
+      record("PURCHASE_ORDERS_CREATED");
+    },
+    receivePurchaseOrder(supplierName) {
+      const order = state.purchaseOrders.find((item) => item.supplierName === supplierName);
+      if (!order) throw new Error("供应商采购单不存在");
+      if (order.receivedQuantity === order.quantity) return;
+      order.receivedQuantity = order.quantity;
+      state.inventoryAvailableBaseQuantity += order.quantity;
+      const received = state.purchaseOrders.reduce((sum, item) => sum + item.receivedQuantity, 0);
+      const ordered = state.purchaseOrders.reduce((sum, item) => sum + item.quantity, 0);
+      state.purchaseRequirementStatus = received === ordered ? "FULFILLED" : "PARTIAL_RECEIVED";
+      record(`PURCHASE_RECEIVED_${supplierName}`);
     },
     outboundInventory(quantityInBaseUnit) {
       if (state.inventoryLockedBaseQuantity === 0) return;

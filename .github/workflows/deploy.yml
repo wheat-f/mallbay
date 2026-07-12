@@ -112,7 +112,7 @@ jobs:
     name: Build & Push Web (Test)
     runs-on: ubuntu-latest
     needs: verify
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref_name != 'main')
     environment: test
 
     steps:
@@ -158,7 +158,7 @@ jobs:
     name: Build & Push Web (Production)
     runs-on: ubuntu-latest
     needs: verify
-    if: github.event_name == 'push' && github.ref_name == 'main'
+    if: github.event_name == 'push' && github.ref_name == 'main' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
     environment: production
 
     steps:
@@ -203,7 +203,7 @@ jobs:
     name: Deploy → Test
     runs-on: ubuntu-latest
     needs: [build-api, build-web-test]
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref_name != 'main')
     environment: test
 
     steps:
@@ -247,7 +247,7 @@ jobs:
     name: Deploy → Production
     runs-on: ubuntu-latest
     needs: [build-api, build-web-prod]
-    if: github.event_name == 'push' && github.ref_name == 'main'
+    if: github.event_name == 'push' && github.ref_name == 'main' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
     environment: production
 
     steps:

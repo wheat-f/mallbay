@@ -31,7 +31,12 @@ export class WarrantiesService {
         throw new BadRequestException("只有已完工订单可以生成质保");
       }
       if (order.status === OrderStatus.WARRANTIED) {
-        throw new BadRequestException("订单已生成质保");
+        const existing = await tx.warranty.findUnique({
+          where: { orderId: order.id },
+          include: { photos: true }
+        });
+        if (existing) return existing;
+        throw new BadRequestException("订单状态已是质保中，但质保卡不存在，请先修复订单数据");
       }
 
       const startDate = normalizeDate(dto.startDate ?? new Date().toISOString());

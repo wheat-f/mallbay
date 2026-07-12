@@ -73,6 +73,50 @@ test("WarrantiesService looks up active warranty by warranty number for customer
   assert.equal(result?.status, WarrantyStatus.ACTIVE);
 });
 
+test("WarrantiesService returns the existing warranty for an idempotent retry", async () => {
+  const existing = {
+    id: "warranty-1",
+    orderId: "order-1",
+    warrantyNo: "WAR202606010001",
+    status: WarrantyStatus.ACTIVE,
+    photos: []
+  };
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({
+      order: {
+        findUnique: async () => ({
+          id: "order-1",
+          storeId: "store-1",
+          customerId: "customer-1",
+          vehicleId: "vehicle-1",
+          status: OrderStatus.WARRANTIED,
+          items: [],
+          constructionRecord: { photos: [] }
+        })
+      },
+      warranty: {
+        findUnique: async () => existing,
+        create: async () => {
+          throw new Error("不应重复创建质保卡");
+        }
+      }
+    })
+  };
+  const service = new WarrantiesService(prisma as never);
+
+  const result = await service.createFromOrder(
+    {
+      id: "scheduler-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
+    },
+    { orderId: "order-1", scope: "整车漆面保护膜", startDate: "2026-06-01" }
+  );
+
+  assert.deepEqual(result, existing);
+});
+
 test("WarrantiesService lists warranties with order customer and vehicle summary", async () => {
   const calls: unknown[] = [];
   const prisma = {

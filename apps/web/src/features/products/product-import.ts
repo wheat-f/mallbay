@@ -9,9 +9,20 @@ export type ProductImportError = {
   message: string;
 };
 
+export type ProductImportPreviewRow = {
+  rowNumber: number;
+  product: CreateProductPayload;
+};
+
 export type ProductImportResult = {
   products: CreateProductPayload[];
+  validRows: ProductImportPreviewRow[];
   errors: ProductImportError[];
+};
+
+export type ProductImportExecutionResult = {
+  succeeded: number;
+  failures: ProductImportError[];
 };
 
 const HEADER_ALIASES = {
@@ -36,51 +47,120 @@ export async function parseProductWorkbook(file: File, storeId: string): Promise
   const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
   const firstSheetName = workbook.SheetNames[0];
   if (!firstSheetName) {
-    return { products: [], errors: [{ rowNumber: 0, message: "Excel 文件没有工作表" }] };
+    return { products: [], validRows: [], errors: [{ rowNumber: 0, message: "Excel 文件没有工作表" }] };
   }
-  const rows = XLSX.utils.sheet_to_json<ProductImportRow>(workbook.Sheets[firstSheetName], { defval: "" });
-  return parseProductRows(rows, storeId);
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheetName], {
+    header: 1,
+    defval: "",
+    blankrows: true
+  });
+  return parseProductMatrix(matrix, storeId);
 }
 
-export function parseProductRows(rows: ProductImportRow[], storeId: string): ProductImportResult {
+export function parseProductMatrix(matrix: unknown[][], storeId: string): ProductImportResult {
+  const headerIndex = matrix.findIndex(isProductHeaderRow);
+  if (headerIndex < 0) {
+    return {
+      products: [],
+      validRows: [],
+      errors: [{ rowNumber: 0, message: "未找到产品表头，请确认文件包含品牌、产品名称、型号、单位和基础价列" }]
+    };
+  }
+
+  const headers = matrix[headerIndex].map((cell) => String(cell ?? "").trim());
+  const rows = matrix.slice(headerIndex + 1).map((cells) =>
+    Object.fromEntries(headers.map((header, index) => [header, cells[index] ?? ""]))
+  );
+  return parseProductRows(rows, storeId, headerIndex + 2);
+}
+
+export function parseProductRows(
+  rows: ProductImportRow[],
+  storeId: string,
+  firstDataRowNumber = 2
+): ProductImportResult {
   const errors: ProductImportError[] = [];
-  const products: CreateProductPayload[] = [];
+  const validRows: ProductImportPreviewRow[] = [];
 
   rows.forEach((row, index) => {
-    const rowNumber = index + 2;
+    if (isEmptyRow(row)) return;
+    const rowNumber = index + firstDataRowNumber;
     const brand = getText(row, HEADER_ALIASES.brand);
     const name = getText(row, HEADER_ALIASES.name);
     const model = getText(row, HEADER_ALIASES.model);
     const basePriceCents = getBasePriceCents(row);
+    const unitText = getText(row, HEADER_ALIASES.unit);
+    const inventoryUnitText = getText(row, HEADER_ALIASES.inventoryUnit);
+    const salesUnitText = getText(row, HEADER_ALIASES.salesUnit);
+    const unit = parseUnit(unitText);
+    const inventoryUnit = parseUnit(inventoryUnitText);
+    const salesUnit = parseUnit(salesUnitText);
 
-    if (!brand || !name || !model || basePriceCents === undefined) {
+    if (!brand || !name || !model || basePriceCents === undefined || !unit) {
       errors.push({
         rowNumber,
-        message: "品牌、产品名称、型号、基础价均为必填"
+        message: "品牌、产品名称、型号、单位、基础价均为必填，单位支持卷、米、件"
       });
       return;
     }
+    if ((inventoryUnitText && !inventoryUnit) || (salesUnitText && !salesUnit)) {
+      errors.push({ rowNumber, message: "库存单位或销售单位无效，仅支持卷、米、件" });
+      return;
+    }
+    if (basePriceCents < 0) {
+      errors.push({ rowNumber, message: "基础价不能小于 0" });
+      return;
+    }
 
-    products.push(removeUndefined({
+    const quantityPrecision = getNumber(row, HEADER_ALIASES.quantityPrecision);
+    if (quantityPrecision !== undefined && (!Number.isInteger(quantityPrecision) || quantityPrecision < 0 || quantityPrecision > 6)) {
+      errors.push({ rowNumber, message: "数量精度必须是 0 到 6 的整数" });
+      return;
+    }
+
+    const product = removeUndefined({
       storeId,
       brand,
       name,
       model,
       category: parseCategory(getText(row, HEADER_ALIASES.category)),
       specification: getText(row, HEADER_ALIASES.specification),
-      unit: parseUnit(getText(row, HEADER_ALIASES.unit)) ?? "ROLL",
-      inventoryUnit: parseUnit(getText(row, HEADER_ALIASES.inventoryUnit)),
-      salesUnit: parseUnit(getText(row, HEADER_ALIASES.salesUnit)),
+      unit,
+      inventoryUnit,
+      salesUnit,
       rollWidthMeters: getNumber(row, HEADER_ALIASES.rollWidthMeters),
       rollLengthMeters: getNumber(row, HEADER_ALIASES.rollLengthMeters),
       metersPerRoll: getNumber(row, HEADER_ALIASES.metersPerRoll),
-      quantityPrecision: getNumber(row, HEADER_ALIASES.quantityPrecision),
+      quantityPrecision,
       warrantyYears: getNumber(row, HEADER_ALIASES.warrantyYears),
       basePriceCents
-    }));
+    });
+    validRows.push({ rowNumber, product });
   });
 
-  return { products, errors };
+  return { products: validRows.map((row) => row.product), validRows, errors };
+}
+
+export async function executeProductImport(
+  rows: ProductImportPreviewRow[],
+  createProduct: (product: CreateProductPayload) => Promise<unknown>
+): Promise<ProductImportExecutionResult> {
+  const failures: ProductImportError[] = [];
+  let succeeded = 0;
+
+  for (const row of rows) {
+    try {
+      await createProduct(row.product);
+      succeeded += 1;
+    } catch (error) {
+      failures.push({
+        rowNumber: row.rowNumber,
+        message: error instanceof Error ? error.message : "产品创建失败"
+      });
+    }
+  }
+
+  return { succeeded, failures };
 }
 
 function getBasePriceCents(row: ProductImportRow) {
@@ -114,6 +194,20 @@ function getValue(row: ProductImportRow, aliases: readonly string[]) {
 
 function normalizeHeader(value: string) {
   return value.trim().replace(/\s+/g, "").toLowerCase();
+}
+
+function isProductHeaderRow(cells: unknown[]) {
+  const headers = new Set(cells.map((cell) => normalizeHeader(String(cell ?? ""))));
+  const hasAlias = (aliases: readonly string[]) => aliases.some((alias) => headers.has(normalizeHeader(alias)));
+  return hasAlias(HEADER_ALIASES.brand)
+    && hasAlias(HEADER_ALIASES.name)
+    && hasAlias(HEADER_ALIASES.model)
+    && hasAlias(HEADER_ALIASES.unit)
+    && (hasAlias(HEADER_ALIASES.basePriceYuan) || hasAlias(HEADER_ALIASES.basePriceCents));
+}
+
+function isEmptyRow(row: ProductImportRow) {
+  return Object.values(row).every((value) => value === undefined || value === null || String(value).trim() === "");
 }
 
 function parseCategory(value: string): ProductCategory {

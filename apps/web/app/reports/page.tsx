@@ -11,7 +11,7 @@ import {
   ToolOutlined,
   WarningOutlined
 } from "@ant-design/icons";
-import { Button, Card, Empty, Input, Select, Statistic, Table, Tag, Typography } from "antd";
+import { App, Button, Card, Empty, Input, Select, Statistic, Table, Tag, Typography } from "antd";
 import type { ColumnType } from "antd/es/table";
 import { useQuery } from "@tanstack/react-query";
 import type { ReportSummary } from "@mallbay/shared";
@@ -45,6 +45,7 @@ import {
   type ReportInsightRow,
   type SalesTrendDisplayRow
 } from "../../src/features/reports/display";
+import { exportWorkbookToExcel, type ExcelExportSheet } from "../../src/lib/export-excel";
 
 type ReportTab = {
   key: string;
@@ -264,6 +265,7 @@ function readReportCellValue<T extends object>(dataIndex: ColumnType<T>["dataInd
 }
 
 export default function ReportsPage() {
+  const { message } = App.useApp();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const isSalesReport = user?.storeMember?.position === "SALES";
@@ -309,6 +311,136 @@ export default function ReportsPage() {
   const rebateTrendRows = buildRebateTrendRows(summary);
   const financeTrendRows = buildFinanceTrendRows(summary);
   const bars = trendBars(summary);
+  const exportReportData = async () => {
+    if (!summary) {
+      message.warning("报表数据尚未加载完成");
+      return;
+    }
+    const reportSheets: ExcelExportSheet[] = [
+      {
+        sheetName: "核心指标",
+        title: isSalesReport ? "我的销售业绩指标" : "门店经营核心指标",
+        rows: rows.map((row) => {
+          const metric = normalizeReportMetric(row.value);
+          return { "指标": row.label, "数值": metric.value, "单位": metric.unit };
+        })
+      },
+      {
+        sheetName: "经营分析",
+        title: isSalesReport ? "销售业绩分析" : "门店经营分析",
+        rows: insightRows.map((row) => {
+          const metric = normalizeReportMetric(row.value);
+          return {
+            "分析指标": row.label,
+            "数值": metric.value,
+            "单位": metric.unit,
+            "计算口径": row.description
+          };
+        })
+      },
+      {
+        sheetName: "销售趋势",
+        rows: salesTrendRows.map((row) => ({
+          "月份": row.month,
+          "订单数": row.orders,
+          "订单金额": normalizeReportExportValue(row.totalAmount),
+          "已收金额": normalizeReportExportValue(row.paidAmount),
+          "回款率": normalizeReportExportValue(row.collectionRate)
+        }))
+      },
+      {
+        sheetName: "提成趋势",
+        rows: commissionTrendRows.map((row) => ({
+          "月份": row.month,
+          "销售提成单": row.salesLogs,
+          "师傅提成单": row.workerCommissions,
+          "销售提成": normalizeReportExportValue(row.salesCommission),
+          "师傅提成": normalizeReportExportValue(row.workerCommission),
+          "调整金额": normalizeReportExportValue(row.workerAdjustment),
+          "提成合计": normalizeReportExportValue(row.totalCommission)
+        }))
+      },
+      {
+        sheetName: "发票趋势",
+        rows: invoiceTrendRows.map((row) => ({
+          "月份": row.month,
+          "发票数": row.invoices,
+          "已开票": row.issued,
+          "已作废": row.voided,
+          "重新开票": row.reissued,
+          "发票金额": normalizeReportExportValue(row.amount),
+          "开票率": normalizeReportExportValue(row.issueRate)
+        }))
+      },
+      {
+        sheetName: "返利趋势",
+        rows: rebateTrendRows.map((row) => ({
+          "月份": row.month,
+          "返利数": row.rebates,
+          "已审批": row.approved,
+          "已发放": row.paid,
+          "已驳回": row.rejected,
+          "返利金额": normalizeReportExportValue(row.amount),
+          "发放率": normalizeReportExportValue(row.payRate)
+        }))
+      }
+    ];
+    if (!isSalesReport) {
+      reportSheets.splice(4, 0,
+        {
+          sheetName: "施工趋势",
+          rows: constructionTrendRows.map((row) => ({
+            "月份": row.month,
+            "施工记录": row.records,
+            "已完工": row.completed,
+            "质检通过": row.qualityPassed,
+            "返工": row.reworkRequired,
+            "完工率": normalizeReportExportValue(row.completionRate)
+          }))
+        },
+        {
+          sheetName: "售后趋势",
+          rows: afterSaleTrendRows.map((row) => ({
+            "月份": row.month,
+            "售后单": row.cases,
+            "已完成": row.resolved,
+            "施工责任": row.constructionResponsibility,
+            "完成率": normalizeReportExportValue(row.resolveRate),
+            "售后率": normalizeReportExportValue(row.afterSalesRate)
+          }))
+        },
+        {
+          sheetName: "库存趋势",
+          rows: inventoryTrendRows.map((row) => ({
+            "月份": row.month,
+            "流水数": row.movements,
+            "入库数量": row.inbound,
+            "出库数量": row.outbound,
+            "锁定数量": row.locked,
+            "释放数量": row.released,
+            "调整数量": row.adjustments
+          }))
+        }
+      );
+      reportSheets.push({
+        sheetName: "财务趋势",
+        rows: financeTrendRows.map((row) => ({
+          "月份": row.month,
+          "收款金额": normalizeReportExportValue(row.income),
+          "费用金额": normalizeReportExportValue(row.expense),
+          "报销金额": normalizeReportExportValue(row.reimbursement),
+          "返利金额": normalizeReportExportValue(row.rebate),
+          "净现金流": normalizeReportExportValue(row.netCashflow)
+        }))
+      });
+    }
+    try {
+      await exportWorkbookToExcel(isSalesReport ? "sales-performance-report.xlsx" : "store-operation-report.xlsx", reportSheets);
+      message.success("报表数据已导出");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "报表数据导出失败");
+    }
+  };
   const scrollReportSectionIntoView = useCallback(
     (tabKey: string) => {
       setActiveReportTabKey(tabKey);
@@ -467,7 +599,7 @@ export default function ReportsPage() {
           className="reports-detail-card"
           title={isSalesReport ? "我的业绩指标明细" : "销售订单明细"}
           extra={
-            <Button icon={<DownloadOutlined />} type="default">
+            <Button icon={<DownloadOutlined />} type="default" onClick={() => void exportReportData()}>
               导出数据
             </Button>
           }
@@ -668,4 +800,32 @@ export default function ReportsPage() {
       </section>
     </div>
   );
+}
+
+function normalizeReportExportValue(value: unknown) {
+  if (typeof value !== "string") return typeof value === "number" ? value : String(value ?? "");
+  const trimmed = value.trim();
+  if (trimmed.endsWith("%")) {
+    const percent = Number(trimmed.slice(0, -1).replace(/,/g, ""));
+    return Number.isFinite(percent) ? percent / 100 : value;
+  }
+  if (/^[¥￥]/.test(trimmed)) {
+    const amount = Number(trimmed.replace(/[¥￥,\s]/g, ""));
+    return Number.isFinite(amount) ? amount : value;
+  }
+  return value;
+}
+
+function normalizeReportMetric(value: unknown) {
+  if (typeof value === "number") return { value, unit: null };
+  if (typeof value !== "string") return { value: String(value ?? ""), unit: null };
+  const trimmed = value.trim();
+  if (trimmed.endsWith("%")) {
+    return { value: normalizeReportExportValue(trimmed), unit: "%" };
+  }
+  if (/^[¥￥]/.test(trimmed)) {
+    return { value: normalizeReportExportValue(trimmed), unit: "元" };
+  }
+  const numeric = Number(trimmed.replace(/,/g, ""));
+  return Number.isFinite(numeric) ? { value: numeric, unit: null } : { value, unit: null };
 }

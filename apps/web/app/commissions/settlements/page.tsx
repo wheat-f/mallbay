@@ -19,6 +19,7 @@ import { formatCentsAsYuan } from "../../../src/features/finance/display";
 import { getConstructionStatusLabel } from "../../../src/features/construction/display";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { exportRowsToExcel } from "../../../src/lib/export-excel";
 
 type CommissionOrderSource = {
   id: string;
@@ -73,6 +74,43 @@ function getSettlementDisplayNo(row: SettlementSourceRow) {
   return row.displayNo;
 }
 
+function buildSettlementRows(
+  orders: CommissionOrderSource[],
+  constructionRecords: ConstructionRecordSource[],
+  settlementMonth: string
+): SettlementSourceRow[] {
+  return [
+    ...orders.map((order, index) => ({
+      id: `sales-${order.id}`,
+      displayNo: `SALE-${settlementMonth.replace("-", "")}-${index + 1}`,
+      source: "销售提成",
+      role: "销售顾问",
+      period: settlementMonth,
+      relatedCount: 1,
+      baseAmount: "-",
+      rewardAmount: "按规则生成",
+      penaltyAmount: "-",
+      payableAmount: "待生成",
+      status: "待结算",
+      note: getOrderLabel(order)
+    })),
+    ...constructionRecords.map((record, index) => ({
+      id: `worker-${record.id}`,
+      displayNo: `WORK-${settlementMonth.replace("-", "")}-${index + 1}`,
+      source: "师傅提成",
+      role: "施工师傅",
+      period: settlementMonth,
+      relatedCount: 1,
+      baseAmount: "需录入",
+      rewardAmount: "按施工记录生成",
+      penaltyAmount: "售后扣减待确认",
+      payableAmount: "待生成",
+      status: "待结算",
+      note: [record.order?.orderNo ?? "订单信息待确认", getConstructionStatusLabel(record.status)].filter(Boolean).join(" / ")
+    }))
+  ];
+}
+
 export default function CommissionSettlementsPage() {
   const { message } = App.useApp();
   const user = useAuthStore((state) => state.user);
@@ -100,38 +138,10 @@ export default function CommissionSettlementsPage() {
     enabled: Boolean(storeId)
   });
 
-  const orderRows = ((ordersQuery.data?.items ?? []) as CommissionOrderSource[]).slice(0, 3);
-  const constructionRecordRows = ((constructionRecordsQuery.data ?? []) as ConstructionRecordSource[]).slice(0, 3);
-  const settlementRows: SettlementSourceRow[] = [
-    ...orderRows.map((order, index) => ({
-      id: `sales-${order.id}`,
-      displayNo: `SALE-${settlementMonth.replace("-", "")}-${index + 1}`,
-      source: "销售提成",
-      role: "销售顾问",
-      period: settlementMonth,
-      relatedCount: 1,
-      baseAmount: "-",
-      rewardAmount: "按规则生成",
-      penaltyAmount: "-",
-      payableAmount: "待生成",
-      status: "待结算",
-      note: getOrderLabel(order)
-    })),
-    ...constructionRecordRows.map((record, index) => ({
-      id: `worker-${record.id}`,
-      displayNo: `WORK-${settlementMonth.replace("-", "")}-${index + 1}`,
-      source: "师傅提成",
-      role: "施工师傅",
-      period: settlementMonth,
-      relatedCount: 1,
-      baseAmount: "需录入",
-      rewardAmount: "按施工记录生成",
-      penaltyAmount: "售后扣减待确认",
-      payableAmount: "待生成",
-      status: "待结算",
-      note: [record.order?.orderNo ?? "订单信息待确认", getConstructionStatusLabel(record.status)].filter(Boolean).join(" / ")
-    }))
-  ];
+  const allOrderRows = (ordersQuery.data?.items ?? []) as CommissionOrderSource[];
+  const allConstructionRecordRows = (constructionRecordsQuery.data ?? []) as ConstructionRecordSource[];
+  const settlementRows = buildSettlementRows(allOrderRows.slice(0, 3), allConstructionRecordRows.slice(0, 3), settlementMonth);
+  const exportSettlementRows = buildSettlementRows(allOrderRows, allConstructionRecordRows, settlementMonth);
   const availableSourceCount = (ordersQuery.data?.items?.length ?? 0) + (constructionRecordsQuery.data?.length ?? 0);
   const totalCommissionCents =
     (summaryQuery.data?.salesCommissionAmountCents ?? 0) + (summaryQuery.data?.workerCommissionAmountCents ?? 0);
@@ -155,6 +165,35 @@ export default function CommissionSettlementsPage() {
     },
     [commissionSettlementSectionRefs]
   );
+  const exportSettlementReport = async () => {
+    if (exportSettlementRows.length === 0) {
+      message.warning("当前没有可导出的提成结算来源");
+      return;
+    }
+    try {
+      await exportRowsToExcel(
+        `commission-settlement-${settlementMonth}.xlsx`,
+        "提成结算",
+        exportSettlementRows.map((row) => ({
+          "结算单号": getSettlementDisplayNo(row),
+          "结算来源": row.source,
+          "姓名岗位": row.role,
+          "结算周期": row.period,
+          "关联订单": row.relatedCount,
+          "提成底薪": row.baseAmount,
+          "绩效奖励": row.rewardAmount,
+          "售后罚款": row.penaltyAmount,
+          "实发金额": row.payableAmount,
+          "状态": row.status,
+          "来源说明": row.note
+        })),
+        { title: `${settlementMonth} 提成结算明细`, subtitle: "包含全部已完工订单和施工记录来源" }
+      );
+      message.success("提成结算报表已导出");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "提成结算报表导出失败");
+    }
+  };
 
   return (
     <div className="management-page commission-settlement-page">
@@ -256,7 +295,7 @@ export default function CommissionSettlementsPage() {
             <p>按生成记录核对结算周期、岗位和实发金额</p>
           </div>
           <div>
-            <Button icon={<DownloadOutlined />} onClick={() => message.info("请先确认结算明细后再导出报表")}>
+            <Button icon={<DownloadOutlined />} onClick={() => void exportSettlementReport()}>
               导出报表
             </Button>
             <Button type="primary" icon={<CalculatorOutlined />} onClick={() => message.info("请先在佣金规则配置页按订单或施工记录生成提成")}>

@@ -99,8 +99,8 @@ export default function InventorySuppliersPage() {
       }),
     [categoryFilter, keyword, statusFilter, suppliers]
   );
-  const exportSuppliers = () => {
-    exportRowsToExcel(
+  const exportSuppliers = async () => {
+    await exportRowsToExcel(
       "purchase-suppliers.xlsx",
       "供应商",
       filteredSuppliers.map((supplier) => ({
@@ -111,8 +111,10 @@ export default function InventorySuppliersPage() {
         评级: supplier.rating ?? "",
         状态: supplier.isActive === false ? "已暂停" : "合作中",
         备注: supplier.note ?? ""
-      }))
+      })),
+      { title: "供应商名录", subtitle: "按当前筛选条件导出" }
     );
+    message.success("供应商名录已导出");
   };
   const activeSupplierId = getVisibleSupplierId(selectedSupplierId, filteredSuppliers);
   const selectedSupplier = filteredSuppliers.find((supplier) => supplier.id === activeSupplierId);
@@ -198,7 +200,7 @@ export default function InventorySuppliersPage() {
             >
               新增供应商
             </Button>
-            <Button icon={<DownloadOutlined />} disabled={filteredSuppliers.length === 0} onClick={exportSuppliers}>
+            <Button icon={<DownloadOutlined />} disabled={filteredSuppliers.length === 0} onClick={() => void exportSuppliers()}>
               导出 Excel
             </Button>
           </div>

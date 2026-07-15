@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Drawer, Skeleton, Tag } from "antd";
+import { Alert, App, Button, Card, Drawer, Skeleton, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
@@ -22,8 +22,10 @@ import {
   getWarrantyOrderLabel,
   getWarrantyStatusLabel
 } from "../../../src/features/warranties/display";
+import { exportWorkbookToExcel } from "../../../src/lib/export-excel";
 
 export default function WarrantyDetailPage() {
+  const { message } = App.useApp();
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const warrantyId = params.id;
@@ -41,6 +43,45 @@ export default function WarrantyDetailPage() {
   const summaryItems = warranty ? getWarrantySummaryItems(warranty) : [];
   const scopeItems = splitWarrantyScope(warranty?.scope);
   const warrantyLogEntries = warranty ? getWarrantyLogEntries(warranty, reminder) : [];
+  const downloadWarrantyCard = async () => {
+    if (!warranty) return;
+    try {
+      await exportWorkbookToExcel(
+        `warranty-card-${warranty.warrantyNo}.xlsx`,
+        [
+          {
+            sheetName: "电子质保卡",
+            title: `电子质保卡 ${warranty.warrantyNo}`,
+            subtitle: "用于客户交付、到期核验和售后追溯",
+            rows: [{
+              "质保编号": warranty.warrantyNo,
+              "关联订单": getWarrantyOrderLabel(warranty),
+              "客户": summaryItems.find((item) => item.label === "客户姓名")?.value ?? "-",
+              "车牌": summaryItems.find((item) => item.label === "车牌号码")?.value ?? "-",
+              "车型": summaryItems.find((item) => item.label === "车辆型号")?.value ?? "-",
+              "质保范围": warranty.scope || "-",
+              "开始日期": warranty.startDate,
+              "结束日期": warranty.endDate,
+              "当前状态": getWarrantyStatusLabel(warranty.status),
+              "到期提醒": reminder.label
+            }]
+          },
+          {
+            sheetName: "质保日志",
+            title: "质保生命周期日志",
+            rows: warrantyLogEntries.map((entry) => ({
+              "时间": entry.time,
+              "操作": entry.title,
+              "说明": entry.description
+            }))
+          }
+        ]
+      );
+      message.success("电子质保卡已下载");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "电子质保卡下载失败");
+    }
+  };
 
   return (
     <div className="management-page">
@@ -77,7 +118,7 @@ export default function WarrantyDetailPage() {
               <Button danger icon={<StopOutlined />}>
                 作废/重开质保
               </Button>
-              <Button type="primary" icon={<DownloadOutlined />}>
+              <Button type="primary" icon={<DownloadOutlined />} onClick={() => void downloadWarrantyCard()}>
                 下载电子质保卡
               </Button>
             </div>

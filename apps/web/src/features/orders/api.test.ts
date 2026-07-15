@@ -123,6 +123,35 @@ test("orderApi.updateCommercials patches order items amount and change reason", 
   });
 });
 
+test("orderApi.exportDetails requests the full filtered product detail endpoint", async () => {
+  let capturedInput: RequestInfo | URL | undefined;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    capturedInput = input;
+    return {
+      ok: true,
+      json: async () => []
+    } as Response;
+  }) as typeof fetch;
+
+  await orderApi.exportDetails({
+    storeId: "store-1",
+    q: "张三",
+    createdFrom: "2026-07-01",
+    createdTo: "2026-07-31",
+    exportDimension: "product"
+  });
+
+  const url = new URL(String(capturedInput));
+  assert.equal(url.pathname, "/orders/export-details");
+  assert.equal(url.searchParams.get("storeId"), "store-1");
+  assert.equal(url.searchParams.get("q"), "张三");
+  assert.equal(url.searchParams.get("createdFrom"), "2026-07-01");
+  assert.equal(url.searchParams.get("createdTo"), "2026-07-31");
+  assert.equal(url.searchParams.get("exportDimension"), "product");
+  assert.equal(url.searchParams.has("page"), false);
+  assert.equal(url.searchParams.has("pageSize"), false);
+});
+
 test("orderApi.returnToPendingDispatch posts return reason", async () => {
   let capturedInput: RequestInfo | URL | undefined;
   let capturedInit: RequestInit | undefined;

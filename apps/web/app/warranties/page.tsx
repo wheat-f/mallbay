@@ -1,7 +1,7 @@
 "use client";
 
 import type { OrderStatus, WarrantyStatus, WarrantySummary } from "@mallbay/shared";
-import { Button, Card, Input, Select, Table, Tag } from "antd";
+import { App, Button, Card, Input, Select, Table, Tag } from "antd";
 import {
   DownloadOutlined,
   FileProtectOutlined,
@@ -20,6 +20,7 @@ import {
   getWarrantyOrderLabel,
   getWarrantyStatusLabel
 } from "../../src/features/warranties/display";
+import { exportRowsToExcel } from "../../src/lib/export-excel";
 
 type OrderWorkRow = {
   id: string;
@@ -53,6 +54,7 @@ const WARRANTY_STATUS_OPTIONS: Array<{ value: WarrantyStatusFilter; label: strin
 ];
 
 export default function WarrantiesPage() {
+  const { message } = App.useApp();
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
@@ -107,6 +109,32 @@ export default function WarrantiesPage() {
 
   const activeWarranties = warrantyRows.filter((row) => row.status === "ACTIVE").length;
   const expiringWarranties = warrantyRows.filter((row) => getWarrantyExpiryReminder(row).color === "warning").length;
+  const exportWarrantyRecords = async () => {
+    if (filteredWarrantyRows.length === 0) {
+      message.warning("当前筛选条件下没有可导出的质保记录");
+      return;
+    }
+    try {
+      await exportRowsToExcel(
+        "warranty-records.xlsx",
+        "质保记录",
+        filteredWarrantyRows.map((row) => ({
+          "质保编号": row.warrantyNo,
+          "关联订单": getWarrantyOrderLabel(row),
+          "质保范围": row.scope || "-",
+          "开始日期": row.startDate,
+          "结束日期": row.endDate,
+          "质保状态": getWarrantyStatusLabel(row.status),
+          "到期提醒": getWarrantyExpiryReminder(row).label,
+          "售后记录数": row.afterSales?.length ?? 0
+        })),
+        { title: "电子质保记录", subtitle: `导出当前筛选结果（${filteredWarrantyRows.length} 条）` }
+      );
+      message.success("质保记录已导出");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "质保记录导出失败");
+    }
+  };
 
   return (
     <div className="management-page">
@@ -122,7 +150,7 @@ export default function WarrantiesPage() {
         </div>
         <div className="warranty-command-actions">
           <Button icon={<PrinterOutlined />}>批量打印</Button>
-          <Button icon={<DownloadOutlined />}>导出记录</Button>
+          <Button icon={<DownloadOutlined />} onClick={() => void exportWarrantyRecords()}>导出记录</Button>
           <Button type="primary" icon={<FileProtectOutlined />} onClick={() => router.push("/warranties/create")}>
             生成电子质保
           </Button>

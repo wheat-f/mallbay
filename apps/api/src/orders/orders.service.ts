@@ -13,7 +13,7 @@ import { OrderPolicy } from "./domain/order-policy";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
 import { CreatePaymentAccountDto } from "./dto/create-payment-account.dto";
-import { ListOrdersDto } from "./dto/list-orders.dto";
+import { ExportOrderDetailsDto, ListOrdersDto } from "./dto/list-orders.dto";
 import { ReturnOrderDto } from "./dto/return-order.dto";
 import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
@@ -72,6 +72,53 @@ export class OrdersService {
         status: getEffectiveOrderStatus(item.status, item.constructionRecord?.status)
       }))
     };
+  }
+
+  async exportDetails(user: AuthenticatedOrderUser, dto: ExportOrderDetailsDto) {
+    const actor = await this.withStoreMember(user);
+    if (!OrderPolicy.canViewStoreOrders(actor, dto.storeId)) {
+      throw new ForbiddenException("无权限");
+    }
+
+    const orders = await this.prisma.order.findMany({
+      where: this.buildOrderWhere(actor, dto),
+      orderBy: { createdAt: "desc" },
+      include: {
+        customer: { select: { name: true, companyName: true, contactPerson: true } },
+        vehicle: { select: { carPlate: true, carModel: true, carColor: true } },
+        constructionRecord: { select: { status: true } },
+        amount: true,
+        items: { include: { product: true } }
+      }
+    });
+
+    const rows = orders.flatMap((order) => order.items.map((item) => ({
+      orderId: order.id,
+      orderNo: order.orderNo,
+      customerName: order.customer.companyName ?? order.customer.name ?? order.customer.contactPerson ?? "",
+      vehicle: [order.vehicle?.carPlate, order.vehicle?.carModel, order.vehicle?.carColor].filter(Boolean).join(" / "),
+      status: getEffectiveOrderStatus(order.status, order.constructionRecord?.status),
+      constructionType: order.constructionType,
+      appointmentDate: order.appointmentDate,
+      appointmentTimeSlot: order.appointmentTimeSlot,
+      createdAt: order.createdAt,
+      productId: item.productId,
+      productBrand: item.product.brand,
+      productName: item.product.name,
+      productModel: item.product.model,
+      productSpecification: item.product.specification,
+      quantity: item.quantity,
+      salesUnit: item.salesUnit ?? item.product.salesUnit,
+      unitPriceCents: item.unitPriceCents,
+      itemAmountCents: item.amountCents,
+      productAmountCents: order.amount?.productAmountCents ?? 0,
+      laborCostCents: order.amount?.laborCostCents ?? 0,
+      orderTotalCents: order.amount?.totalAmountCents ?? 0,
+      paidAmountCents: order.amount?.paidAmountCents ?? 0,
+      outstandingCents: order.amount?.outstandingCents ?? 0
+    })));
+
+    return rows.sort((left, right) => compareSalesExportRows(left, right, dto.exportDimension ?? "customer"));
   }
 
   async detail(user: AuthenticatedOrderUser, id: string) {
@@ -574,6 +621,40 @@ function canManageOrderCommercials(user: UserWithStoreMember, storeId: string, s
   return PermissionPolicy.isStoreMember(user, storeId) &&
     user.storeMember?.position === StorePosition.SALES &&
     user.id === salesPersonId;
+}
+
+function compareSalesExportRows(
+  left: {
+    orderNo: string;
+    customerName: string;
+    appointmentDate: Date | null;
+    createdAt: Date;
+    productBrand: string;
+    productName: string;
+    productModel: string;
+  },
+  right: {
+    orderNo: string;
+    customerName: string;
+    appointmentDate: Date | null;
+    createdAt: Date;
+    productBrand: string;
+    productName: string;
+    productModel: string;
+  },
+  dimension: "customer" | "date" | "product"
+) {
+  const leftKey = dimension === "date"
+    ? (left.appointmentDate ?? left.createdAt).toISOString()
+    : dimension === "product"
+      ? `${left.productBrand}\u0000${left.productName}\u0000${left.productModel}`
+      : left.customerName;
+  const rightKey = dimension === "date"
+    ? (right.appointmentDate ?? right.createdAt).toISOString()
+    : dimension === "product"
+      ? `${right.productBrand}\u0000${right.productName}\u0000${right.productModel}`
+      : right.customerName;
+  return leftKey.localeCompare(rightKey, "zh-CN") || left.orderNo.localeCompare(right.orderNo, "zh-CN");
 }
 
 function isOrderCommercialsEditableStatus(status: OrderStatus) {

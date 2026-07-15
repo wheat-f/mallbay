@@ -136,17 +136,84 @@ export function formatBatchStockLabel(batch: {
   packageUnit?: ProductUnit | string | null;
   baseQuantityPerPackage?: number | string | null;
 }) {
-  const availableQuantity = toNumber(batch.availableQuantity);
+  return formatBatchQuantityLabel(batch, toNumber(batch.availableQuantity), "可用");
+}
+
+type InventoryBatchStockLike = {
+  totalQuantity?: number | string | null;
+  availableQuantity?: number | string | null;
+  lockedQuantity?: number | string | null;
+  outboundQuantity?: number | string | null;
+  unit?: ProductUnit | string | null;
+  packageUnit?: ProductUnit | string | null;
+  baseQuantityPerPackage?: number | string | null;
+};
+
+export function getInventoryBatchStockSnapshot(batch: InventoryBatchStockLike) {
+  const totalQuantity = toFiniteNumber(batch.totalQuantity);
+  const availableQuantity = toFiniteNumber(batch.availableQuantity);
+  const lockedQuantity = toFiniteNumber(batch.lockedQuantity);
+  const outboundQuantity = toFiniteNumber(batch.outboundQuantity);
+  const physicalRemainingQuantity = Math.max(0, availableQuantity + lockedQuantity);
+  const balanceDifference = totalQuantity - (availableQuantity + lockedQuantity + outboundQuantity);
+  const isBalanceAbnormal = [totalQuantity, availableQuantity, lockedQuantity, outboundQuantity]
+    .some((quantity) => quantity < 0) || Math.abs(balanceDifference) > 0.001;
+  const isDepleted = totalQuantity > 0 && physicalRemainingQuantity <= 0;
+  const isLowStock = physicalRemainingQuantity > 0 && (
+    physicalRemainingQuantity <= 1 || (totalQuantity > 0 && physicalRemainingQuantity / totalQuantity <= 0.2)
+  );
+  const isPartiallyOutbound = outboundQuantity > 0 && physicalRemainingQuantity > 0;
+
+  return {
+    totalQuantity,
+    availableQuantity,
+    lockedQuantity,
+    outboundQuantity,
+    physicalRemainingQuantity,
+    balanceDifference,
+    isBalanceAbnormal,
+    isDepleted,
+    isLowStock,
+    isPartiallyOutbound,
+    needsAttention: isBalanceAbnormal || isDepleted || isLowStock || isPartiallyOutbound
+  };
+}
+
+export function formatBatchPhysicalStockLabel(batch: InventoryBatchStockLike) {
+  const snapshot = getInventoryBatchStockSnapshot(batch);
+  return formatBatchQuantityLabel(batch, snapshot.physicalRemainingQuantity, "实物");
+}
+
+export function formatBatchLockedStockLabel(batch: InventoryBatchStockLike) {
+  const snapshot = getInventoryBatchStockSnapshot(batch);
+  return formatBatchQuantityLabel(batch, snapshot.lockedQuantity, "锁定");
+}
+
+export function getInventoryBatchAttentionLabels(batch: InventoryBatchStockLike) {
+  const snapshot = getInventoryBatchStockSnapshot(batch);
+  const labels: string[] = [];
+  if (snapshot.isBalanceAbnormal) labels.push("数据异常");
+  if (snapshot.isDepleted) labels.push("已耗尽");
+  if (snapshot.isLowStock) labels.push("低库存");
+  if (snapshot.isPartiallyOutbound) labels.push("部分出库");
+  return labels.length > 0 ? labels : ["正常"];
+}
+
+function formatBatchQuantityLabel(
+  batch: Pick<InventoryBatchStockLike, "unit" | "packageUnit" | "baseQuantityPerPackage">,
+  quantity: number,
+  prefix: string
+) {
   const baseLabel = batch.unit
-    ? `可用 ${formatQuantity(availableQuantity, 3)} ${getProductUnitLabel(batch.unit)}`
-    : `可用 ${formatQuantity(availableQuantity, 3)}`;
+    ? `${prefix} ${formatQuantity(quantity, 3)} ${getProductUnitLabel(batch.unit)}`
+    : `${prefix} ${formatQuantity(quantity, 3)}`;
   const conversionRate = toNumber(batch.baseQuantityPerPackage);
 
   if (!batch.packageUnit || !batch.unit || batch.packageUnit === batch.unit || conversionRate <= 0) {
     return baseLabel;
   }
 
-  const packageQuantity = availableQuantity / conversionRate;
+  const packageQuantity = quantity / conversionRate;
   return `${baseLabel} / 折合 ${formatQuantity(packageQuantity, 3)} ${getProductUnitLabel(batch.packageUnit)}`;
 }
 
@@ -404,6 +471,11 @@ export function getPurchaseOrderArrivalReminder(
 function toNumber(value?: number | string | null) {
   if (value === undefined || value === null || value === "") return 0;
   return Number(value);
+}
+
+function toFiniteNumber(value?: number | string | null) {
+  const number = toNumber(value);
+  return Number.isFinite(number) ? number : 0;
 }
 
 function toOptionalNumber(value?: number | string | null) {

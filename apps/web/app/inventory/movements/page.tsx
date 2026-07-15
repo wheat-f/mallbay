@@ -10,7 +10,7 @@ import {
   DownloadOutlined,
   SearchOutlined
 } from "@ant-design/icons";
-import { Button, Card, DatePicker, Form, Select, Table, Typography } from "antd";
+import { App, Button, Card, DatePicker, Form, Select, Table, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -29,6 +29,7 @@ import {
 import { getProductDisplayName, getProductUnitLabel } from "../../../src/features/products/display";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
+import { exportRowsToExcel } from "../../../src/lib/export-excel";
 
 const { RangePicker } = DatePicker;
 
@@ -104,6 +105,7 @@ type MovementFilterValues = {
 };
 
 export default function InventoryMovementsPage() {
+  const { message } = App.useApp();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const currentStoreName = user?.storeMember?.store.name ?? "当前门店";
@@ -175,6 +177,39 @@ export default function InventoryMovementsPage() {
     const { createdFrom, createdTo } = formatMovementDateRange(dateRange);
     setMovementFilters(removeEmptyFilters({ ...values, createdFrom, createdTo }));
   };
+  const exportMovementReport = async () => {
+    if (movementRows.length === 0) {
+      message.warning("当前筛选条件下没有可导出的库存流水");
+      return;
+    }
+    try {
+      await exportRowsToExcel(
+        "inventory-movement-report.xlsx",
+        "库存流水",
+        movementRows.map((row) => {
+          const direction = getMovementDirection(row.movementType);
+          const quantity = Number(row.quantity ?? 0);
+          return {
+            "变动时间": row.createdAt ? new Date(row.createdAt) : "-",
+            "产品": getMovementProductLabel(row, productMap),
+            "产品规格": getMovementProductSpec(row, productMap),
+            "批次号": getMovementBatchNo(row, batchMap),
+            "变动类型": getInventoryMovementTypeLabel(row.movementType),
+            "变动数量": direction === "outbound" ? -Math.abs(quantity) : direction === "inbound" ? Math.abs(quantity) : quantity,
+            "单位": getMovementUnitLabel(row, batchMap, productMap),
+            "结存数量": Number(row.balanceQuantity ?? 0),
+            "关联单号": getMovementSourceLabel(row),
+            "操作人": getMovementOperatorLabel(row),
+            "备注": row.note || "无备注"
+          };
+        }),
+        { title: "库存流水报表", subtitle: "按当前查询条件导出完整批次变动明细" }
+      );
+      message.success("库存流水报表已导出");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "库存流水报表导出失败");
+    }
+  };
 
   return (
     <div className="management-page movement-ledger-page">
@@ -187,7 +222,7 @@ export default function InventoryMovementsPage() {
         <Button href="/inventory" aria-label="返回库存总览" icon={<ArrowLeftOutlined />}>
           返回库存总览
         </Button>
-        <Button icon={<DownloadOutlined />}>导出报表</Button>
+        <Button icon={<DownloadOutlined />} onClick={() => void exportMovementReport()}>导出报表</Button>
       </StorePageHeader>
 
       <section className="movement-kpi-grid">

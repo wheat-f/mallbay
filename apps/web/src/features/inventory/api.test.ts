@@ -263,6 +263,28 @@ test("inventoryApi manages supplier master data", async () => {
   }
 });
 
+test("purchaseApi requests full purchase product details by dimension", async () => {
+  const calls: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    calls.push({ input });
+    return new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  try {
+    await purchaseApi.exportOrderDetails("store-1", "supplier");
+
+    assert.equal(
+      (calls[0] as { input: string }).input,
+      "http://localhost:3001/purchases/orders/export-details?storeId=store-1&exportDimension=supplier"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("inventoryApi manages warehouse master data", async () => {
   const calls: unknown[] = [];
   const originalFetch = globalThis.fetch;

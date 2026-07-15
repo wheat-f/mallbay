@@ -11,6 +11,7 @@ import {
   CreateSupplierDto,
   CreateSupplierRatingHistoryDto,
   ListWarehousesDto,
+  ListPurchaseOrderExportDetailsDto,
   ReceivePurchaseItemBatchesDto,
   ReceivePurchaseItemDto,
   UpdateSupplierDto
@@ -53,6 +54,11 @@ export class PurchasesController {
   @Get("orders")
   listOrders(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
     return this.inventory.listPurchaseOrders(req.user, storeId);
+  }
+
+  @Get("orders/export-details")
+  exportOrderDetails(@Req() req: AuthRequest, @Query() query: ListPurchaseOrderExportDetailsDto) {
+    return this.inventory.exportPurchaseOrderDetails(req.user, query);
   }
 
   @Post("orders")

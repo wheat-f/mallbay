@@ -1,7 +1,7 @@
 "use client";
 
 import type { ConstructionType, OrderStatus } from "@mallbay/shared";
-import { Button, Card, DatePicker, Input, Progress, Select, Space, Table, Tag, Typography } from "antd";
+import { App, Button, Card, DatePicker, Input, Popconfirm, Progress, Select, Space, Table, Tag, Typography } from "antd";
 import {
   CreditCardOutlined,
   DownloadOutlined,
@@ -11,7 +11,7 @@ import {
   ReloadOutlined,
   SearchOutlined
 } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
@@ -24,10 +24,16 @@ import {
   getOrderStatusLabel,
   yuanCurrency
 } from "../../src/features/orders/order-display";
+import { getProductUnitLabel } from "../../src/features/products/display";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { exportRowsToExcel } from "../../src/lib/export-excel";
 import { OrderPaymentDrawer } from "../../src/features/orders/order-payment-drawer";
+import {
+  type CreateOrderDraft,
+  loadCreateOrderDraft,
+  removeCreateOrderDraft
+} from "../../src/features/orders/create-order-draft";
 
 type OrderRow = {
   id: string;
@@ -41,7 +47,6 @@ type OrderRow = {
   appointmentDate?: string | null;
   appointmentTimeSlot?: string | null;
   createdAt: string;
-  items?: Array<{ product?: { brand?: string | null; name?: string | null; model?: string | null } | null }>;
 };
 
 type SalesExportDimension = "customer" | "date" | "product";
@@ -80,10 +85,12 @@ type OrderListFilterState = {
 };
 
 function OrdersContent() {
+  const { message } = App.useApp();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const user = useAuthStore((state) => state.user);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const storeId = user?.storeMember?.store.id;
   const [q, setQ] = useState(() => searchParams.get("q") ?? "");
   const [status, setStatus] = useState<OrderStatus | undefined>(() =>
@@ -101,6 +108,16 @@ function OrdersContent() {
   const [pageSize, setPageSize] = useState(() => toPositiveNumber(searchParams.get("pageSize"), 20));
   const [paymentOrder, setPaymentOrder] = useState<OrderRow | null>(null);
   const [exportDimension, setExportDimension] = useState<SalesExportDimension>("customer");
+  const [deletedDraftStoreId, setDeletedDraftStoreId] = useState<string | null>(null);
+  const localDraft = useMemo<CreateOrderDraft | null>(() => {
+    if (
+      !hasHydrated ||
+      !storeId ||
+      deletedDraftStoreId === storeId ||
+      typeof window === "undefined"
+    ) return null;
+    return loadCreateOrderDraft(window.localStorage, storeId);
+  }, [deletedDraftStoreId, hasHydrated, storeId]);
 
   const updateOrderListUrl = (next: Partial<OrderListFilterState>) => {
     const filters: OrderListFilterState = {
@@ -167,33 +184,54 @@ function OrdersContent() {
   const openOrderInvoiceEntry = (orderId: string) => {
     router.push(`/invoices?action=create-invoice&orderId=${orderId}`);
   };
-  const exportOrders = () => {
-    const exportRows = [...rows].sort((left, right) => {
-      if (exportDimension === "date") {
-        return String(left.appointmentDate ?? left.createdAt).localeCompare(String(right.appointmentDate ?? right.createdAt));
+  const exportMutation = useMutation({
+    mutationFn: () => orderApi.exportDetails({
+      storeId: storeId!,
+      q,
+      status,
+      constructionType,
+      paymentStatus,
+      createdFrom,
+      createdTo,
+      exportDimension
+    }),
+    onSuccess: async (exportRows) => {
+      if (exportRows.length === 0) {
+        message.warning("当前筛选条件下没有可导出的产品明细");
+        return;
       }
-      if (exportDimension === "product") return getOrderProductSummary(left).localeCompare(getOrderProductSummary(right));
-      return getOrderCustomerName(left).localeCompare(getOrderCustomerName(right));
-    });
-    exportRowsToExcel(
-      `sales-orders-by-${exportDimension}.xlsx`,
-      "销售订单",
-      exportRows.map((row) => ({
-        订单号: row.orderNo,
-        客户: getOrderCustomerName(row),
-        车辆: getOrderVehicleSummary(row),
-        产品: getOrderProductSummary(row),
-        状态: getOrderStatusLabel(row.status),
-        施工类型: getConstructionTypeLabel(row.constructionType),
-        订单金额: (row.amount?.totalAmountCents ?? 0) / 100,
-        已收金额: (row.amount?.paidAmountCents ?? 0) / 100,
-        待收金额: (row.amount?.outstandingCents ?? 0) / 100,
-        预约日期: formatOrderListDate(row.appointmentDate),
-        预约时段: row.appointmentTimeSlot ?? "",
-        创建时间: formatOrderListDate(row.createdAt)
-      }))
-    );
-  };
+      await exportRowsToExcel(
+        `sales-order-product-details-by-${exportDimension}.xlsx`,
+        "销售订单产品明细",
+        exportRows.map((row) => ({
+          订单号: row.orderNo,
+          客户: row.customerName,
+          车辆: row.vehicle,
+          产品品牌: row.productBrand,
+          产品名称: row.productName,
+          产品型号: row.productModel,
+          产品规格: row.productSpecification ?? "",
+          数量: row.quantity,
+          单位: row.salesUnit ? getProductUnitLabel(row.salesUnit) : "",
+          单价: row.unitPriceCents / 100,
+          产品行金额: row.itemAmountCents / 100,
+          商品小计: row.productAmountCents / 100,
+          人工费: row.laborCostCents / 100,
+          整单金额_每行重复: row.orderTotalCents / 100,
+          已收金额_每行重复: row.paidAmountCents / 100,
+          待收金额_每行重复: row.outstandingCents / 100,
+          状态: getOrderStatusLabel(row.status),
+          施工类型: getConstructionTypeLabel(row.constructionType),
+          预约日期: formatOrderListDate(row.appointmentDate),
+          预约时段: row.appointmentTimeSlot ?? "",
+          创建时间: formatOrderListDate(row.createdAt)
+        })),
+        { title: "销售订单产品明细", subtitle: `按${exportDimension === "customer" ? "客户" : exportDimension === "date" ? "日期" : "产品"}维度导出，逐产品行展示` }
+      );
+      message.success(`已导出 ${exportRows.length} 条销售产品明细`);
+    },
+    onError: () => message.error("销售订单明细导出失败，请稍后重试")
+  });
   const orderSummary = useMemo(() => {
     const totalAmount = rows.reduce((sum, row) => sum + (row.amount?.totalAmountCents ?? 0), 0);
     const outstanding = rows.reduce((sum, row) => sum + (row.amount?.outstandingCents ?? 0), 0);
@@ -220,13 +258,55 @@ function OrdersContent() {
               options={[{ label: "按客户导出", value: "customer" }, { label: "按日期导出", value: "date" }, { label: "按产品导出", value: "product" }]}
               style={{ width: 140 }}
             />
-            <Button icon={<DownloadOutlined />} disabled={rows.length === 0} onClick={exportOrders}>
-              导出 Excel
+            <Button
+              icon={<DownloadOutlined />}
+              disabled={!storeId || (ordersQuery.data?.total ?? 0) === 0}
+              loading={exportMutation.isPending}
+              onClick={() => exportMutation.mutate()}
+            >
+              导出产品明细
             </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/orders/create")}>
               新建订单
             </Button>
           </StorePageHeader>
+
+          {localDraft ? (
+            <Card className="orders-local-draft-card">
+              <div className="orders-local-draft-content">
+                <div className="orders-local-draft-summary">
+                  <Space wrap>
+                    <Tag color="gold">本机草稿</Tag>
+                    <Typography.Text strong>{localDraft.summary.customerName}</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {localDraft.summary.productCount} 项产品 · ¥{localDraft.summary.totalAmountYuan.toFixed(2)}
+                    </Typography.Text>
+                  </Space>
+                  <Typography.Text type="secondary">
+                    保存于 {dayjs(localDraft.savedAt).format("YYYY-MM-DD HH:mm")}
+                  </Typography.Text>
+                </div>
+                <Space>
+                  <Button type="primary" onClick={() => router.push("/orders/create?draft=local")}>
+                    继续编辑
+                  </Button>
+                  <Popconfirm
+                    title="删除本机订单草稿？"
+                    description="删除后无法恢复。"
+                    okText="删除"
+                    cancelText="取消"
+                    onConfirm={() => {
+                      removeCreateOrderDraft(localStorage);
+                      setDeletedDraftStoreId(storeId ?? null);
+                      message.success("订单草稿已删除");
+                    }}
+                  >
+                    <Button danger>删除草稿</Button>
+                  </Popconfirm>
+                </Space>
+              </div>
+            </Card>
+          ) : null}
 
           <div className="management-kpi-grid management-kpi-grid-five">
             {[
@@ -594,14 +674,6 @@ function getOrderCustomerName(row: OrderRow) {
 function getOrderVehicleSummary(row: OrderRow) {
   const plateAndColor = [row.vehicle?.carPlate, row.vehicle?.carColor].filter(Boolean).join(" / ");
   return [row.vehicle?.carModel, plateAndColor].filter(Boolean).join(" · ") || "-";
-}
-
-function getOrderProductSummary(row: OrderRow) {
-  const products = (row.items ?? []).map((item) => {
-    const product = item.product;
-    return [product?.brand, product?.name, product?.model].filter(Boolean).join(" / ");
-  }).filter(Boolean);
-  return products.join("；") || "-";
 }
 
 function getPaymentStatus(row: OrderRow) {

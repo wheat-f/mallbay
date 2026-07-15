@@ -5,7 +5,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
 import { CreatePaymentAccountDto } from "./dto/create-payment-account.dto";
-import { ListOrdersDto } from "./dto/list-orders.dto";
+import { ExportOrderDetailsDto, ListOrdersDto } from "./dto/list-orders.dto";
 import { ReturnOrderDto } from "./dto/return-order.dto";
 import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
@@ -28,6 +28,11 @@ export class OrdersController {
   @Get()
   list(@Req() req: AuthRequest, @Query() query: ListOrdersDto) {
     return this.orders.list(req.user, query);
+  }
+
+  @Get("export-details")
+  exportDetails(@Req() req: AuthRequest, @Query() query: ExportOrderDetailsDto) {
+    return this.orders.exportDetails(req.user, query);
   }
 
   @Get(":id/audit-events")

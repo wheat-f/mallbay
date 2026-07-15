@@ -1,12 +1,12 @@
 "use client";
 
-import type { DailyCapacitySummary } from "@mallbay/shared";
+import type { DailyCapacitySummary, ProductUnit } from "@mallbay/shared";
 import { Alert, App, Button, Card, DatePicker, Drawer, Form, Input, InputNumber, Select, Space, Switch, Tag, TimePicker, Typography } from "antd";
 import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { constructionApi, customerApi, orderApi, productApi } from "../../../src/lib/api";
 import type { CreateCustomerFormValues } from "../../../src/features/customers/create-customer-form";
 import { toCreateCustomerPayload } from "../../../src/features/customers/create-customer-form";
@@ -35,6 +35,12 @@ import {
   CONSTRUCTION_LOCATION_OPTIONS,
   CONSTRUCTION_TYPE_OPTIONS
 } from "../../../src/features/orders/order-display";
+import { getProductUnitLabel } from "../../../src/features/products/display";
+import {
+  loadCreateOrderDraft,
+  removeCreateOrderDraft,
+  saveCreateOrderDraft
+} from "../../../src/features/orders/create-order-draft";
 
 type ProductOption = {
   id: string;
@@ -42,9 +48,9 @@ type ProductOption = {
   name: string;
   model: string;
   basePriceCents: number;
-  unit?: string | null;
-  salesUnit?: string | null;
-  inventoryUnit?: string | null;
+  unit?: ProductUnit | null;
+  salesUnit?: ProductUnit | null;
+  inventoryUnit?: ProductUnit | null;
 };
 
 type NewOrderCustomerFormValues = CreateCustomerFormValues & {
@@ -56,6 +62,12 @@ type NewOrderCustomerFormValues = CreateCustomerFormValues & {
 };
 
 type NewPaymentAccountFormValues = Omit<PaymentAccountPayload, "storeId">;
+
+type ProductSelectOption = {
+  label: string;
+  value: string;
+  product: ProductOption;
+};
 
 export default function CreateOrderPage() {
   return (
@@ -77,7 +89,9 @@ function CreateOrderContent() {
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newPaymentAccountOpen, setNewPaymentAccountOpen] = useState(false);
   const [newOrderCustomerType, setNewOrderCustomerType] = useState("PERSONAL");
-  const [laborCostTouched, setLaborCostTouched] = useState(false);
+  const laborCostTouchedRef = useRef(false);
+  const suggestedLaborCostTouchedRef = useRef(false);
+  const draftRestoredRef = useRef(false);
   const [form] = Form.useForm<CreateOrderFormValues>();
   const [newCustomerForm] = Form.useForm<NewOrderCustomerFormValues>();
   const [newPaymentAccountForm] = Form.useForm<NewPaymentAccountFormValues>();
@@ -89,6 +103,7 @@ function CreateOrderContent() {
   const selectedConstructionType = Form.useWatch("constructionType", form) ?? "PPF";
   const selectedItems = Form.useWatch("items", form);
   const selectedLaborCostYuan = Form.useWatch("laborCostYuan", form);
+  const selectedSuggestedLaborCostYuan = Form.useWatch("suggestedLaborCostYuan", form);
   const selectedDeposit = Form.useWatch("deposit", form);
   const shouldRecordDeposit = Form.useWatch("shouldRecordDeposit", form);
   const selectedAppointmentDateValue = formatOrderDateValue(selectedAppointmentDate);
@@ -145,7 +160,7 @@ function CreateOrderContent() {
   }));
   const vehicleOptions = buildOrderVehicleOptions(selectedCustomer);
   const productOptions = ((productsQuery.data?.items ?? []) as ProductOption[]).map((product) => ({
-    label: `${getOrderProductLabel(product)}（销售单位：${product.salesUnit ?? product.unit ?? "件"}）`,
+    label: `${getOrderProductLabel(product)}（销售单位：${getProductUnitLabel(resolveProductSalesUnit(product))}）`,
     value: product.id,
     product
   }));
@@ -165,11 +180,12 @@ function CreateOrderContent() {
   });
   const customerHistory = selectedCustomer ? getOrderCustomerHistorySummary(selectedCustomer) : undefined;
   const selectedVehicle = selectedCustomer?.vehicles?.find((vehicle) => vehicle.id === selectedVehicleId);
-  const suggestedLaborCostYuan = getSuggestedLaborCostYuan(
+  const systemSuggestedLaborCostYuan = getSuggestedLaborCostYuan(
     selectedConstructionType,
     selectedConstructionLocation,
     selectedVehicle?.carModel
   );
+  const suggestedLaborCostYuan = selectedSuggestedLaborCostYuan ?? systemSuggestedLaborCostYuan;
   const hasLaborCostAdjustment = selectedLaborCostYuan !== undefined && selectedLaborCostYuan !== suggestedLaborCostYuan;
 
   const createMutation = useMutation({
@@ -178,6 +194,7 @@ function CreateOrderContent() {
       return orderApi.create(toCreateOrderPayload(values, storeId));
     },
     onSuccess: (order) => {
+      removeCreateOrderDraft(localStorage);
       message.success("订单已创建");
       router.push(`/orders/${order.id}`);
     },
@@ -243,11 +260,22 @@ function CreateOrderContent() {
   });
 
   const saveDraft = () => {
-    localStorage.setItem("mallbay-create-order-draft", JSON.stringify({
+    if (!storeId) {
+      message.error("当前账号尚未加入门店，无法保存草稿");
+      return;
+    }
+    const values = form.getFieldsValue(true) as CreateOrderFormValues;
+    saveCreateOrderDraft(localStorage, {
+      storeId,
       savedAt: new Date().toISOString(),
-      values: form.getFieldsValue(true)
-    }));
-    message.success("订单草稿已保存在本机");
+      values,
+      summary: {
+        customerName: selectedCustomer?.companyName ?? selectedCustomer?.name ?? "客户待选择",
+        productCount: values.items?.filter((item) => item?.productId).length ?? 0,
+        totalAmountYuan: getOrderAmountSummary(values).totalAmountYuan
+      }
+    });
+    message.success("草稿已保存，可在销售订单列表的“本机草稿”中继续编辑");
   };
 
   const defaultItems = useMemo(() => [{ quantity: 1 }], []);
@@ -267,6 +295,23 @@ function CreateOrderContent() {
   };
 
   useEffect(() => {
+    if (!storeId || params.get("draft") !== "local" || draftRestoredRef.current) return;
+    draftRestoredRef.current = true;
+    const draft = loadCreateOrderDraft(localStorage, storeId);
+    if (!draft) {
+      message.warning("未找到可恢复的订单草稿");
+      return;
+    }
+    form.setFieldsValue({
+      ...draft.values,
+      suggestedLaborCostYuan: draft.values.suggestedLaborCostYuan ?? systemSuggestedLaborCostYuan
+    });
+    laborCostTouchedRef.current = true;
+    suggestedLaborCostTouchedRef.current = draft.values.suggestedLaborCostYuan !== undefined;
+    message.success("已恢复订单草稿");
+  }, [form, message, params, storeId, systemSuggestedLaborCostYuan]);
+
+  useEffect(() => {
     if (!selectedCustomer) return;
 
     if (form.getFieldValue("customerId") !== selectedCustomer.id) {
@@ -283,9 +328,16 @@ function CreateOrderContent() {
   }, [form, selectedCustomer]);
 
   useEffect(() => {
-    if (laborCostTouched) return;
-    form.setFieldValue("laborCostYuan", suggestedLaborCostYuan);
-  }, [form, laborCostTouched, suggestedLaborCostYuan]);
+    const nextSuggestedLaborCostYuan = suggestedLaborCostTouchedRef.current
+      ? form.getFieldValue("suggestedLaborCostYuan") ?? systemSuggestedLaborCostYuan
+      : systemSuggestedLaborCostYuan;
+    if (!suggestedLaborCostTouchedRef.current) {
+      form.setFieldValue("suggestedLaborCostYuan", systemSuggestedLaborCostYuan);
+    }
+    if (!laborCostTouchedRef.current) {
+      form.setFieldValue("laborCostYuan", nextSuggestedLaborCostYuan);
+    }
+  }, [form, systemSuggestedLaborCostYuan]);
 
   return (
     <>
@@ -320,7 +372,7 @@ function CreateOrderContent() {
             shouldRecordDeposit: false,
             items: defaultItems
           }}
-          onFinish={(values) => createMutation.mutate({ ...values, suggestedLaborCostYuan })}
+          onFinish={(values) => createMutation.mutate(values)}
         >
           <div className="create-order-layout">
             <div className="create-order-main">
@@ -438,6 +490,15 @@ function CreateOrderContent() {
                           <Form.Item {...field} name={[field.name, "quantity"]} label="数量">
                             <InputNumber min={1} placeholder="数量" className="w-full" />
                           </Form.Item>
+                          <Form.Item label="单位">
+                            <Input
+                              readOnly
+                              value={getSelectedProductUnitLabel(
+                                selectedItems?.[field.name]?.productId,
+                                productOptions
+                              )}
+                            />
+                          </Form.Item>
                           <Form.Item {...field} name={[field.name, "unitPriceYuan"]} label="单价（元）">
                             <InputNumber min={0} precision={2} placeholder="单价（元）" className="w-full" />
                           </Form.Item>
@@ -453,27 +514,62 @@ function CreateOrderContent() {
                   )}
                 </Form.List>
 
-                <Form.Item label="施工人工费（元）" className="mt-4">
-                  <Space.Compact className="w-full">
-                    <Form.Item name="laborCostYuan" noStyle>
-                      <InputNumber
-                        className="!w-full"
-                        min={0}
-                        precision={2}
-                        onChange={() => setLaborCostTouched(true)}
-                      />
-                    </Form.Item>
-                    <Button
-                      onClick={() => {
-                        form.setFieldValue("laborCostYuan", suggestedLaborCostYuan);
-                        form.setFieldValue("laborCostAdjustmentReason", undefined);
-                        setLaborCostTouched(false);
-                      }}
-                    >
-                      使用建议 ¥{suggestedLaborCostYuan.toFixed(2)}
-                    </Button>
-                  </Space.Compact>
-                </Form.Item>
+                <div className="create-order-labor-grid mt-4">
+                  <Form.Item
+                    label="建议人工费（元）"
+                    extra={`系统初始建议 ¥${systemSuggestedLaborCostYuan.toFixed(2)}，可按本单实际情况调整`}
+                  >
+                    <Space.Compact className="w-full">
+                      <Form.Item name="suggestedLaborCostYuan" noStyle>
+                        <InputNumber
+                          className="!w-full"
+                          min={0}
+                          precision={2}
+                          onChange={(value) => {
+                            suggestedLaborCostTouchedRef.current = true;
+                            if (!laborCostTouchedRef.current) {
+                              form.setFieldValue("laborCostYuan", value ?? 0);
+                            }
+                          }}
+                        />
+                      </Form.Item>
+                      <Button
+                        onClick={() => {
+                          suggestedLaborCostTouchedRef.current = false;
+                          form.setFieldValue("suggestedLaborCostYuan", systemSuggestedLaborCostYuan);
+                          if (!laborCostTouchedRef.current) {
+                            form.setFieldValue("laborCostYuan", systemSuggestedLaborCostYuan);
+                          }
+                        }}
+                      >
+                        恢复系统建议
+                      </Button>
+                    </Space.Compact>
+                  </Form.Item>
+                  <Form.Item label="成交人工费（元）">
+                    <Space.Compact className="w-full">
+                      <Form.Item name="laborCostYuan" noStyle>
+                        <InputNumber
+                          className="!w-full"
+                          min={0}
+                          precision={2}
+                          onChange={() => {
+                            laborCostTouchedRef.current = true;
+                          }}
+                        />
+                      </Form.Item>
+                      <Button
+                        onClick={() => {
+                          form.setFieldValue("laborCostYuan", suggestedLaborCostYuan);
+                          form.setFieldValue("laborCostAdjustmentReason", undefined);
+                          laborCostTouchedRef.current = false;
+                        }}
+                      >
+                        采用建议价
+                      </Button>
+                    </Space.Compact>
+                  </Form.Item>
+                </div>
                 {hasLaborCostAdjustment ? (
                   <Form.Item
                     name="laborCostAdjustmentReason"
@@ -817,6 +913,19 @@ function OrderStepTitle({ step, title }: { step: number; title: string }) {
       <span>{title}</span>
     </div>
   );
+}
+
+function resolveProductSalesUnit(product: ProductOption): ProductUnit {
+  return product.salesUnit ?? product.unit ?? "PIECE";
+}
+
+function getSelectedProductUnitLabel(
+  productId: string | undefined,
+  productOptions: ProductSelectOption[]
+) {
+  if (!productId) return "-";
+  const product = productOptions.find((option) => option.value === productId)?.product;
+  return product ? getProductUnitLabel(resolveProductSalesUnit(product)) : "单位待确认";
 }
 
 function CustomerHistoryPanel({

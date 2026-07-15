@@ -3,7 +3,8 @@ import type {
   ConstructionType,
   OrderStatus,
   PaymentAccountType,
-  PaymentType
+  PaymentType,
+  ProductUnit
 } from "@mallbay/shared";
 import { request } from "../../lib/request";
 
@@ -72,6 +73,38 @@ export type PaymentAccountOption = PaymentAccountPayload & {
   isActive?: boolean;
 };
 
+export type SalesOrderExportDimension = "customer" | "date" | "product";
+
+export type SalesOrderExportDetail = {
+  orderId: string;
+  orderNo: string;
+  customerName: string;
+  vehicle: string;
+  status: OrderStatus;
+  constructionType: ConstructionType;
+  appointmentDate?: string | null;
+  appointmentTimeSlot?: string | null;
+  createdAt: string;
+  productId: string;
+  productBrand: string;
+  productName: string;
+  productModel: string;
+  productSpecification?: string | null;
+  quantity: number;
+  salesUnit?: ProductUnit | null;
+  unitPriceCents: number;
+  itemAmountCents: number;
+  productAmountCents: number;
+  laborCostCents: number;
+  orderTotalCents: number;
+  paidAmountCents: number;
+  outstandingCents: number;
+};
+
+export type SalesOrderExportQuery = Omit<OrderListQuery, "page" | "pageSize"> & {
+  exportDimension: SalesOrderExportDimension;
+};
+
 export type OrderPaymentPayload = {
   accountId: string;
   paymentType: PaymentType;
@@ -101,6 +134,9 @@ export const orderApi = {
     request<{ items: unknown[]; total: number; page: number; pageSize: number }>(
       `/orders${toQueryString(query)}`
     ),
+
+  exportDetails: (query: SalesOrderExportQuery) =>
+    request<SalesOrderExportDetail[]>(`/orders/export-details${toQueryString(query)}`),
 
   detail: (id: string) => request<unknown>(`/orders/${id}`),
 

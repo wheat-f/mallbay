@@ -7,7 +7,15 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { inventoryApi } from "../../src/lib/api";
-import { formatBatchStockLabel, getInventoryMovementSummary, getInventoryMovementTypeLabel } from "../../src/features/inventory/display";
+import {
+  formatBatchLockedStockLabel,
+  formatBatchPhysicalStockLabel,
+  formatBatchStockLabel,
+  getInventoryBatchAttentionLabels,
+  getInventoryBatchStockSnapshot,
+  getInventoryMovementSummary,
+  getInventoryMovementTypeLabel
+} from "../../src/features/inventory/display";
 import { getProductDisplayName } from "../../src/features/products/display";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../src/stores/auth-store";
@@ -75,13 +83,16 @@ export default function InventoryOverviewPage() {
   }, [pendingOrdersQuery.data]);
   const movementRows = useMemo(() => (movementsQuery.data ?? []) as MovementRow[], [movementsQuery.data]);
   const movementSummary = getInventoryMovementSummary(movementRows);
-  const lowStockRows = batchRows.filter((batch) => {
-    const available = Number(batch.availableQuantity ?? 0);
-    const total = Number(batch.totalQuantity ?? 0);
-    if (available <= 0) return false;
-    return available <= 1 || (total > 0 && available / total <= 0.2);
-  }).slice(0, 5);
-  const lockedRows = batchRows.filter((batch) => Number(batch.lockedQuantity ?? 0) > 0).slice(0, 5);
+  const attentionRows = useMemo(
+    () => batchRows.filter((batch) => getInventoryBatchStockSnapshot(batch).needsAttention),
+    [batchRows]
+  );
+  const lowStockRows = attentionRows.slice(0, 5);
+  const lockedBatchRows = useMemo(
+    () => batchRows.filter((batch) => getInventoryBatchStockSnapshot(batch).lockedQuantity > 0),
+    [batchRows]
+  );
+  const lockedRows = lockedBatchRows.slice(0, 5);
   return (
     <div className="management-page inventory-overview-shell">
       <StorePageHeader title="库存运营总览" description="查看库存健康、订单匹配、锁库出库和库存流水，采购事项已拆到采购管理。">
@@ -109,8 +120,8 @@ export default function InventoryOverviewPage() {
         {[
           ["库存健康", batchRows.length, "当前可追踪批次数"],
           ["待匹配订单", pendingRows.length, "等待库存匹配或确认"],
-          ["低库存与异常批次", lowStockRows.length, "按基础单位统计，含部分出库批次"],
-          ["锁库待出库", lockedRows.length, "已锁定但未完成出库"]
+          ["低库存与异常批次", attentionRows.length, "按实物剩余统计，含部分出库批次"],
+          ["锁库待出库", lockedBatchRows.length, "已锁定但未完成出库"]
         ].map(([label, value, description]) => (
           <Card key={label} className="management-kpi-card inventory-summary-tile">
             <div className="management-kpi-label">{label}</div>
@@ -165,6 +176,7 @@ export default function InventoryOverviewPage() {
               loading={batchesQuery.isLoading}
               dataSource={lowStockRows}
               pagination={false}
+              scroll={{ x: 1000 }}
               columns={[
                 { title: "批次号", dataIndex: "batchNo" },
                 { title: "产品", render: (_, row) => row.product ? getProductDisplayName({
@@ -172,7 +184,17 @@ export default function InventoryOverviewPage() {
                   name: row.product.name ?? undefined,
                   model: row.product.model ?? undefined
                 }) : "产品信息待确认" },
-                { title: "可用", render: (_, row) => <Tag color="warning">{formatBatchStockLabel(row)}</Tag> }
+                { title: "实物剩余", render: (_, row) => <Tag color="blue">{formatBatchPhysicalStockLabel(row)}</Tag> },
+                { title: "可用", render: (_, row) => <Tag>{formatBatchStockLabel(row)}</Tag> },
+                { title: "锁定", render: (_, row) => <Tag color="gold">{formatBatchLockedStockLabel(row)}</Tag> },
+                {
+                  title: "状态",
+                  render: (_, row) => getInventoryBatchAttentionLabels(row).map((label) => (
+                    <Tag key={label} color={label === "数据异常" ? "red" : label === "已耗尽" ? "default" : "warning"}>
+                      {label}
+                    </Tag>
+                  ))
+                }
               ]}
             />
           </Card>
@@ -198,7 +220,7 @@ export default function InventoryOverviewPage() {
               {lockedRows.length > 0 ? lockedRows.map((row) => (
                 <div key={row.id} className="inventory-overview-lock-row">
                   <span>{row.batchNo}</span>
-                  <strong>{formatBatchStockLabel({ ...row, availableQuantity: row.lockedQuantity })}</strong>
+                  <strong>{formatBatchLockedStockLabel(row)}</strong>
                 </div>
               )) : <Typography.Text type="secondary">暂无锁库待出库批次</Typography.Text>}
             </div>

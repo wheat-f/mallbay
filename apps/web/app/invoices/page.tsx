@@ -26,6 +26,7 @@ import {
   getInvoiceOrderLabel,
   getInvoiceStatusLabel
 } from "../../src/features/invoices/display";
+import { exportRowsToExcel } from "../../src/lib/export-excel";
 
 type ApplyInvoiceFormValues = Omit<ApplyInvoicePayload, "amountCents"> & {
   amountYuan: number;
@@ -132,6 +133,35 @@ function InvoicesContent() {
       .filter((invoice) => invoice.status === "ISSUED" || invoice.status === "REISSUED")
       .reduce((total, invoice) => total + invoice.amountCents, 0)
   };
+  const exportInvoiceReport = async () => {
+    if (filteredInvoiceRows.length === 0) {
+      message.warning("当前筛选条件下没有可导出的发票记录");
+      return;
+    }
+    try {
+      await exportRowsToExcel(
+        "invoice-report.xlsx",
+        "发票明细",
+        filteredInvoiceRows.map((invoice) => ({
+          "发票业务编号": getInvoiceBusinessLabel(invoice),
+          "关联订单": getInvoiceOrderLabel(invoice),
+          "发票抬头": invoice.title,
+          "税号": invoice.taxNo ?? "-",
+          "开票金额": invoice.amountCents / 100,
+          "发票号码": invoice.invoiceNo ?? "-",
+          "开票状态": getInvoiceStatusLabel(invoice.status),
+          "订单状态": invoice.order?.status ?? "-",
+          "支付状态": getInvoiceOrderPaymentStatus(invoice),
+          "电子文件": invoice.fileUrl ?? "-",
+          "申请时间": invoice.createdAt ? new Date(invoice.createdAt) : "-"
+        })),
+        { title: "发票管理报表", subtitle: `导出当前筛选结果（${filteredInvoiceRows.length} 条）` }
+      );
+      message.success("发票报表已导出");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "发票报表导出失败");
+    }
+  };
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["invoices", storeId] });
 
   useEffect(() => {
@@ -226,7 +256,7 @@ function InvoicesContent() {
   return (
     <div className="management-page">
       <StorePageHeader title="发票管理" description="管理客户发票申请，处理开票、发送、作废和重开流程">
-        <Button icon={<DownloadOutlined />}>导出报表</Button>
+        <Button icon={<DownloadOutlined />} onClick={() => void exportInvoiceReport()}>导出报表</Button>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setApplicationDrawerOpen(true)}>
           新增开票申请
         </Button>

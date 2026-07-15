@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { ConstructionType, OrderStatus, PaymentAccountType, PaymentType, StorePosition } from "@prisma/client";
+import { ConstructionType, OrderStatus, PaymentAccountType, PaymentType, ProductUnit, StorePosition } from "@prisma/client";
 import { OrdersService } from "./orders.service";
 
 test("OrdersService detail includes item inventory allocations for fulfillment preview", async () => {
@@ -199,6 +199,75 @@ test("OrdersService list includes vehicle amount and sales person summaries for 
     constructionRecord: { select: { status: true } },
     amount: true
   });
+});
+
+test("OrdersService exports every matching sales order as product detail rows", async () => {
+  let findManyArgs: Record<string, unknown> | undefined;
+  const service = new OrdersService({
+    storeMember: { findUnique: async () => null },
+    order: {
+      findMany: async (args: Record<string, unknown>) => {
+        findManyArgs = args;
+        return [
+          {
+            id: "order-1",
+            orderNo: "SO-001",
+            status: OrderStatus.PENDING_DISPATCH,
+            constructionType: ConstructionType.PPF,
+            appointmentDate: new Date("2026-07-20T00:00:00.000Z"),
+            appointmentTimeSlot: "09:00-10:00",
+            createdAt: new Date("2026-07-15T00:00:00.000Z"),
+            customer: { name: "张三", companyName: null, contactPerson: null },
+            vehicle: { carPlate: "湘A10001", carModel: "宝马5系", carColor: "黑色" },
+            constructionRecord: null,
+            amount: {
+              productAmountCents: 30000,
+              laborCostCents: 5000,
+              totalAmountCents: 35000,
+              paidAmountCents: 10000,
+              outstandingCents: 25000
+            },
+            items: [
+              {
+                productId: "product-b",
+                quantity: 2,
+                salesUnit: null,
+                unitPriceCents: 10000,
+                amountCents: 20000,
+                product: { brand: "3M", name: "B膜", model: "B", specification: "B规格", salesUnit: ProductUnit.METER }
+              },
+              {
+                productId: "product-a",
+                quantity: 1,
+                salesUnit: ProductUnit.ROLL,
+                unitPriceCents: 10000,
+                amountCents: 10000,
+                product: { brand: "3M", name: "A膜", model: "A", specification: "A规格", salesUnit: ProductUnit.METER }
+              }
+            ]
+          }
+        ];
+      }
+    }
+  } as never, {} as never, { record: () => undefined } as never);
+
+  const result = await service.exportDetails(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    { storeId: "store-1", exportDimension: "product" }
+  );
+
+  assert.equal("skip" in (findManyArgs ?? {}), false);
+  assert.equal("take" in (findManyArgs ?? {}), false);
+  assert.equal(result.length, 2);
+  assert.deepEqual(result.map((row) => row.productName), ["A膜", "B膜"]);
+  assert.equal(result[0].salesUnit, ProductUnit.ROLL);
+  assert.equal(result[1].salesUnit, ProductUnit.METER);
+  assert.equal(result[0].customerName, "张三");
+  assert.equal(result[0].itemAmountCents, 10000);
 });
 
 test("OrdersService list includes VIN hash condition for 17 character vehicle searches", async () => {

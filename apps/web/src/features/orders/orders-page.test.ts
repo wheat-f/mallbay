@@ -45,8 +45,30 @@ test("orders page follows the prototype operations-list structure", () => {
   assert.match(pageSource, /销售员/);
   assert.match(pageSource, /scroll=\{\{ x: 1200 \}\}/);
   assert.match(pageSource, /exportRowsToExcel/);
-  assert.match(pageSource, /sales-orders-by-\$\{exportDimension\}\.xlsx/);
-  assert.match(pageSource, /导出 Excel/);
+  assert.match(pageSource, /sales-order-product-details-by-\$\{exportDimension\}\.xlsx/);
+  assert.match(pageSource, /导出产品明细/);
+});
+
+test("orders page exports all filtered sales product rows through the server", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+
+  assert.match(pageSource, /orderApi\.exportDetails\(\{/);
+  assert.match(pageSource, /q,\s*status,\s*constructionType,\s*paymentStatus,\s*createdFrom,\s*createdTo,/);
+  assert.match(pageSource, /exportDimension/);
+  assert.match(pageSource, /产品行金额/);
+  assert.match(pageSource, /整单金额_每行重复/);
+  assert.doesNotMatch(pageSource, /const exportRows = \[\.\.\.rows\]/);
+});
+
+test("orders page exposes saved local drafts with continue and delete actions", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+
+  assert.match(pageSource, /loadCreateOrderDraft\(window\.localStorage, storeId\)/);
+  assert.match(pageSource, /本机草稿/);
+  assert.match(pageSource, /\/orders\/create\?draft=local/);
+  assert.match(pageSource, /继续编辑/);
+  assert.match(pageSource, /removeCreateOrderDraft\(localStorage\)/);
+  assert.match(pageSource, /删除草稿/);
 });
 
 test("orders page exposes compact icon actions like the prototype", () => {

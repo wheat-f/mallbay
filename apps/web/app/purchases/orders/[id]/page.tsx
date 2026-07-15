@@ -354,9 +354,9 @@ export default function PurchaseOrderDetailPage() {
     resetScanImport();
     message.success(`已导入 ${importedBatches.length} 行批次明细`);
   };
-  const exportPurchaseOrder = () => {
+  const exportPurchaseOrder = async () => {
     if (!purchaseOrder) return;
-    exportRowsToExcel(
+    await exportRowsToExcel(
       `purchase-order-${purchaseOrder.orderNo}.xlsx`,
       "采购订单",
       items.map((item) => {
@@ -372,8 +372,10 @@ export default function PurchaseOrderDetailPage() {
           待入库数量: Math.max(0, toNumber(item.quantity) - toNumber(item.receivedQuantity)),
           批次: details.batches
         };
-      })
+      }),
+      { title: `采购订单 ${purchaseOrder.orderNo}`, subtitle: "采购、到货与批次摘要" }
     );
+    message.success("采购订单已导出");
   };
 
   return (
@@ -411,7 +413,7 @@ export default function PurchaseOrderDetailPage() {
                   审批通过
                 </Button>
               ) : null}
-              <Button icon={<FileTextOutlined />} disabled={items.length === 0} onClick={exportPurchaseOrder}>
+              <Button icon={<FileTextOutlined />} disabled={items.length === 0} onClick={() => void exportPurchaseOrder()}>
                 导出 Excel
               </Button>
               <Button icon={<PrinterOutlined />}>打印入库单</Button>

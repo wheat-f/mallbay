@@ -40,6 +40,7 @@ import {
 } from "../../../src/features/after-sales/display";
 import { getConstructionWorkerLabel } from "../../../src/features/construction/display";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { exportRowsToExcel } from "../../../src/lib/export-excel";
 
 type AfterSaleTimelineItem = {
   key: string;
@@ -198,6 +199,37 @@ export default function AfterSaleDetailPage() {
     },
     onError: (error: Error) => message.error(error.message)
   });
+  const exportAfterSaleReport = async () => {
+    if (!afterSale) return;
+    try {
+      await exportRowsToExcel(
+        `after-sale-${afterSale.id}.xlsx`,
+        "售后工单报告",
+        [{
+          "售后工单编号": afterSale.id,
+          "原订单": getAfterSaleOrderLabel(afterSale),
+          "客户": getOrderCustomerLabel(afterSale),
+          "车辆": getOrderVehicleLabel(afterSale),
+          "质保编号": afterSale.warranty?.warrantyNo ?? "-",
+          "工单状态": getAfterSaleStatusLabel(afterSale.status),
+          "责任判定": getAfterSaleResponsibilityLabel(afterSale.responsibility),
+          "问题描述": afterSale.description,
+          "处理分类": afterSale.constructionIssueCategory ?? "未填写",
+          "处理方案": afterSale.resolutionNote ?? "未填写",
+          "处理人员": getAfterSaleAssignmentLabels(afterSale).join("、") || "未派单",
+          "处罚金额": (afterSale.penalties ?? []).reduce((sum, item) => sum + Number(item.amountCents ?? 0), 0) / 100,
+          "证据说明": afterSale.evidenceNote ?? "-",
+          "照片数量": afterSale.photos?.length ?? 0,
+          "创建时间": afterSale.createdAt ? new Date(afterSale.createdAt) : "-",
+          "归档时间": afterSale.closedAt ? new Date(afterSale.closedAt) : "-"
+        }],
+        { title: "售后工单处理报告", subtitle: "包含原订单、问题、判责、处理方案与处罚摘要" }
+      );
+      message.success("售后报告已导出");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "售后报告导出失败");
+    }
+  };
 
   return (
     <div className="management-page after-sale-detail-page">
@@ -215,7 +247,7 @@ export default function AfterSaleDetailPage() {
           <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/after-sales")}>
             返回售后列表
           </Button>
-          <Button icon={<ExportOutlined />} disabled={!afterSale}>
+          <Button icon={<ExportOutlined />} disabled={!afterSale} onClick={() => void exportAfterSaleReport()}>
             导出报告
           </Button>
           <Button

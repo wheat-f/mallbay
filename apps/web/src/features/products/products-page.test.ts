@@ -37,8 +37,13 @@ test("products page follows the prototype product catalog layout", () => {
 
 test("products page avoids implementation-phase import copy", () => {
   assert.match(pageSource, /parseProductWorkbook/);
+  assert.match(pageSource, /executeProductImport/);
   assert.match(pageSource, /type="file"/);
   assert.match(pageSource, /accept="\.xlsx,\.xls"/);
+  assert.match(pageSource, /批量导入产品/);
+  assert.match(pageSource, /校验通过/);
+  assert.match(pageSource, /需修正的数据/);
+  assert.match(pageSource, /重试失败项/);
   assert.doesNotMatch(pageSource, /批量导入将在产品模板校验完成后接入/);
   assert.doesNotMatch(pageSource, /请按产品模板整理品牌、型号、价格和单位换算后再导入/);
 });

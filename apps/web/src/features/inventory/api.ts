@@ -173,6 +173,28 @@ export type ReceivePurchaseItemBatchesResult = {
   failed: Array<{ index: number; batchNo?: string; message: string }>;
 };
 
+export type PurchaseOrderExportDimension = "supplier" | "product" | "date";
+
+export type PurchaseOrderExportDetail = {
+  purchaseOrderId: string;
+  orderNo: string;
+  supplierName: string;
+  status: string;
+  expectedAt?: string | null;
+  createdAt: string;
+  productId: string;
+  productBrand: string;
+  productName: string;
+  productModel: string;
+  productSpecification?: string | null;
+  inventoryUnit?: ProductUnit | null;
+  quantity: number;
+  receivedQuantity: number;
+  pendingQuantity: number;
+  unitCostCents: number;
+  itemAmountCents: number;
+};
+
 export const inventoryApi = {
   batches: (query: InventoryListQuery) =>
     request<InventoryBatchSummary[]>(`/inventory/batches${toQueryString(query)}`),
@@ -337,6 +359,11 @@ export const purchaseApi = {
 
   orders: (storeId: string) =>
     request<unknown[]>(`/purchases/orders${toQueryString({ storeId })}`),
+
+  exportOrderDetails: (storeId: string, exportDimension: PurchaseOrderExportDimension) =>
+    request<PurchaseOrderExportDetail[]>(
+      `/purchases/orders/export-details${toQueryString({ storeId, exportDimension })}`
+    ),
 
   order: (id: string) =>
     request<unknown>(`/purchases/orders/${id}`),

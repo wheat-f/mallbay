@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Card, Empty, Input, Skeleton, Tag } from "antd";
+import { App, Button, Card, Empty, Input, Skeleton, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   AuditOutlined,
@@ -23,6 +23,7 @@ import {
   getPaymentRecordTypeLabel,
 } from "../../../../src/features/finance/display";
 import { useAuthStore } from "../../../../src/stores/auth-store";
+import { exportRowsToExcel } from "../../../../src/lib/export-excel";
 
 type PaymentRecordDetail = {
   id: string;
@@ -52,6 +53,7 @@ type FinanceRecordTimelineItem = {
 };
 
 export default function PaymentRecordDetailPage() {
+  const { message } = App.useApp();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const recordId = params.id;
@@ -74,6 +76,34 @@ export default function PaymentRecordDetailPage() {
     [recordId, recordsQuery.data],
   );
   const timeline = getPaymentRecordDetailTimeline(record);
+  const exportPaymentVoucher = async () => {
+    if (!record) return;
+    try {
+      await exportRowsToExcel(
+        `payment-voucher-${record.id}.xlsx`,
+        "财务流水凭证",
+        [{
+          "凭证编号": record.id,
+          "门店": storeName ?? "当前门店",
+          "交易方向": getDirectionLabel(record),
+          "交易类型": getPaymentRecordTypeLabel(record.type),
+          "交易金额": Number(record.amountCents ?? 0) / 100,
+          "收付款账户": record.account?.name ?? "未指定账户",
+          "账户类型": getPaymentAccountTypeLabel(record.account?.type),
+          "账户尾号": maskAccountNo(record.account?.accountNo),
+          "来源单据类型": record.referenceType ?? "-",
+          "来源单据编号": record.sourceId ?? record.referenceId ?? "-",
+          "摘要": record.note || getPaymentRecordSummaryLabel(record),
+          "经办人编号": record.createdById ?? "-",
+          "交易时间": record.createdAt ? new Date(record.createdAt) : "-"
+        }],
+        { title: "财务流水凭证", subtitle: "交易摘要、账户信息和来源单据留档" }
+      );
+      message.success("财务流水凭证已导出");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "财务流水凭证导出失败");
+    }
+  };
 
   return (
     <div className="management-page finance-record-detail-page">
@@ -107,7 +137,7 @@ export default function PaymentRecordDetailPage() {
           >
             返回收支流水
           </Button>
-          <Button icon={<DownloadOutlined />} disabled={!record}>
+          <Button icon={<DownloadOutlined />} disabled={!record} onClick={() => void exportPaymentVoucher()}>
             导出凭证
           </Button>
         </div>

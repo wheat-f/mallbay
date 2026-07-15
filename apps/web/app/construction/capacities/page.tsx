@@ -15,6 +15,7 @@ import {
   toCapacityDatePickerValue,
   type CapacityFormValues
 } from "../../../src/features/construction/capacity-form";
+import { exportRowsToExcel } from "../../../src/lib/export-excel";
 
 export default function ConstructionCapacitiesPage() {
   const { message } = App.useApp();
@@ -60,6 +61,42 @@ export default function ConstructionCapacitiesPage() {
     },
     onError: (error: Error) => message.error(error.message)
   });
+  const exportCapacityReport = async () => {
+    const visibleRows = capacityRows.filter((row) => dayjs(row.date).isSame(visibleMonth, "month"));
+    if (visibleRows.length === 0) {
+      message.warning(`${visibleMonth.format("YYYY年MM月")}暂无可导出的产能设置`);
+      return;
+    }
+    try {
+      await exportRowsToExcel(
+        `construction-capacity-${visibleMonth.format("YYYY-MM")}.xlsx`,
+        "施工产能",
+        visibleRows.map((row) => ({
+          "日期": formatDate(row.date),
+          "店内容量": row.inStoreCapacity,
+          "店内已预约": row.inStoreReserved,
+          "店内剩余": row.inStoreCapacity - row.inStoreReserved,
+          "店内使用率": safeCapacityRate(row.inStoreReserved, row.inStoreCapacity),
+          "外出容量": row.outsideCapacity,
+          "外出已预约": row.outsideReserved,
+          "外出剩余": row.outsideCapacity - row.outsideReserved,
+          "外出使用率": safeCapacityRate(row.outsideReserved, row.outsideCapacity),
+          "玻璃膜容量": row.heatFilmCapacity,
+          "玻璃膜已预约": row.heatFilmReserved,
+          "玻璃膜剩余": row.heatFilmCapacity - row.heatFilmReserved,
+          "玻璃膜使用率": safeCapacityRate(row.heatFilmReserved, row.heatFilmCapacity),
+          "复检容量": row.inspectionCapacity,
+          "复检已预约": row.inspectionReserved,
+          "复检剩余": row.inspectionCapacity - row.inspectionReserved,
+          "复检使用率": safeCapacityRate(row.inspectionReserved, row.inspectionCapacity)
+        })),
+        { title: `${visibleMonth.format("YYYY年MM月")}施工产能报表`, subtitle: "容量、预约、剩余和使用率" }
+      );
+      message.success("施工产能报表已导出");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "施工产能报表导出失败");
+    }
+  };
 
   return (
     <div className="management-page">
@@ -76,7 +113,7 @@ export default function ConstructionCapacitiesPage() {
                   返回订单
                 </Button>
               ) : null}
-              <Button icon={<DownloadOutlined />}>导出报表</Button>
+              <Button icon={<DownloadOutlined />} onClick={() => void exportCapacityReport()}>导出报表</Button>
               <Button onClick={() => setVisibleMonth((current) => current.subtract(1, "month"))}>上月</Button>
               <Typography.Title level={4} className="!mb-0">
                 {visibleMonth.format("YYYY年 MM月")}
@@ -207,6 +244,10 @@ function CapacityNumberInput({ placeholder, value, onChange }: {
 
 function formatDate(value: string) {
   return value.slice(0, 10);
+}
+
+function safeCapacityRate(reserved: number, capacity: number) {
+  return capacity > 0 ? reserved / capacity : 0;
 }
 
 function getSafeReturnTo(value: string | null) {

@@ -2,7 +2,7 @@
 
 import type { CreateProductPayload } from "../../src/lib/api";
 import type { ProductCategory, ProductStatus, ProductUnit } from "@mallbay/shared";
-import { App, Button, Card, Drawer, Form, Input, InputNumber, Select, Space, Table, Tag, Tooltip } from "antd";
+import { Alert, App, Button, Card, Drawer, Form, Input, InputNumber, Select, Space, Table, Tag, Tooltip } from "antd";
 import { EditOutlined, PlusOutlined, SearchOutlined, StopOutlined, UploadOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChangeEvent } from "react";
@@ -23,7 +23,12 @@ import {
   toProductPayload,
   type ProductFormValues
 } from "../../src/features/products/product-form";
-import { parseProductWorkbook } from "../../src/features/products/product-import";
+import {
+  executeProductImport,
+  parseProductWorkbook,
+  type ProductImportExecutionResult,
+  type ProductImportResult
+} from "../../src/features/products/product-import";
 
 type ProductRow = CreateProductPayload & {
   id: string;
@@ -43,6 +48,10 @@ export default function ProductsPage() {
   const [inventoryUnitFilter, setInventoryUnitFilter] = useState<ProductUnit>();
   const [form] = Form.useForm<ProductFormValues>();
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFileName, setImportFileName] = useState("");
+  const [importPreview, setImportPreview] = useState<ProductImportResult | null>(null);
+  const [importExecution, setImportExecution] = useState<ProductImportExecutionResult | null>(null);
 
   const productsQuery = useQuery({
     queryKey: ["products", storeId, search, categoryFilter, statusFilter],
@@ -83,23 +92,46 @@ export default function ProductsPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
-  const importMutation = useMutation({
+  const parseImportMutation = useMutation({
     mutationFn: async (file: File) => {
       if (!storeId) throw new Error("当前账号未加入门店");
-      const result = await parseProductWorkbook(file, storeId);
-      if (result.errors.length > 0) {
-        const firstError = result.errors[0];
-        throw new Error(`第 ${firstError.rowNumber} 行：${firstError.message}`);
-      }
-      if (result.products.length === 0) {
-        throw new Error("Excel 中没有可导入的产品数据");
-      }
-      await Promise.all(result.products.map((product) => productApi.create(product)));
-      return result.products.length;
+      return parseProductWorkbook(file, storeId);
     },
-    onSuccess: async (count) => {
-      message.success(`已导入 ${count} 条产品档案`);
+    onSuccess: (result, file) => {
+      setImportFileName(file.name);
+      setImportPreview(result);
+      setImportExecution(null);
+      setImportOpen(true);
+      if (result.products.length === 0 && result.errors.length === 0) {
+        message.warning("Excel 中没有可导入的产品数据");
+      }
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      if (!importPreview) throw new Error("请先选择并解析产品文件");
+      return executeProductImport(importPreview.validRows, (product) => productApi.create(product));
+    },
+    onSuccess: async (result) => {
+      setImportExecution(result);
+      const failedRows = new Set(result.failures.map((failure) => failure.rowNumber));
+      setImportPreview((current) => {
+        if (!current) return current;
+        const validRows = current.validRows.filter((row) => failedRows.has(row.rowNumber));
+        return { ...current, validRows, products: validRows.map((row) => row.product) };
+      });
       await queryClient.invalidateQueries({ queryKey: ["products", storeId] });
+
+      if (result.failures.length > 0) {
+        message.warning(`已导入 ${result.succeeded} 条，${result.failures.length} 条失败，可查看原因后重试`);
+      } else if ((importPreview?.errors.length ?? 0) > 0) {
+        message.warning(`已导入 ${result.succeeded} 条，校验失败的行未导入`);
+      } else {
+        message.success(`已导入 ${result.succeeded} 条产品档案`);
+        closeImportDrawer();
+      }
     },
     onError: (error: Error) => message.error(error.message)
   });
@@ -107,7 +139,14 @@ export default function ProductsPage() {
   const handleImportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (file) importMutation.mutate(file);
+    if (file) parseImportMutation.mutate(file);
+  };
+
+  const closeImportDrawer = () => {
+    setImportOpen(false);
+    setImportFileName("");
+    setImportPreview(null);
+    setImportExecution(null);
   };
 
   const rows = useMemo(
@@ -135,8 +174,8 @@ export default function ProductsPage() {
         <StorePageHeader title="产品档案管理" description="管理并维护车膜产品的核心参数、规格及换算规则。">
           <Button
             icon={<UploadOutlined />}
-            disabled={!storeId || importMutation.isPending}
-            loading={importMutation.isPending}
+            disabled={!storeId || parseImportMutation.isPending || importMutation.isPending}
+            loading={parseImportMutation.isPending}
             onClick={() => importInputRef.current?.click()}
           >
             批量导入
@@ -145,7 +184,7 @@ export default function ProductsPage() {
             ref={importInputRef}
             type="file"
             accept=".xlsx,.xls"
-            className="sr-only"
+            className="products-import-file-input"
             onChange={handleImportFileChange}
           />
           <Button
@@ -449,6 +488,95 @@ export default function ProductsPage() {
               <InputNumber className="w-full" min={0} precision={2} />
             </Form.Item>
           </Form>
+        </Drawer>
+
+        <Drawer
+          className="products-import-drawer"
+          size="large"
+          open={importOpen}
+          title="批量导入产品"
+          onClose={closeImportDrawer}
+          closable={!importMutation.isPending}
+          maskClosable={!importMutation.isPending}
+          destroyOnHidden
+          footer={
+            <div className="products-form-drawer-footer">
+              <Button disabled={importMutation.isPending} onClick={closeImportDrawer}>关闭</Button>
+              <Button
+                type="primary"
+                loading={importMutation.isPending}
+                disabled={!importPreview?.validRows.length}
+                onClick={() => importMutation.mutate()}
+              >
+                {importExecution?.failures.length ? "重试失败项" : "确认导入"}
+              </Button>
+            </div>
+          }
+        >
+          <Space orientation="vertical" size="large" className="w-full">
+            <Alert
+              showIcon
+              type={importPreview?.errors.length || importExecution?.failures.length ? "warning" : "success"}
+              title={importFileName || "产品导入文件"}
+              description={
+                importExecution
+                  ? `本次成功 ${importExecution.succeeded} 条，失败 ${importExecution.failures.length} 条。`
+                  : `校验通过 ${importPreview?.validRows.length ?? 0} 条，需修正 ${importPreview?.errors.length ?? 0} 条。确认后仅导入校验通过的数据。`
+              }
+            />
+
+            <section>
+              <h3 className="products-import-section-title">待导入产品</h3>
+              <Table
+                size="small"
+                pagination={false}
+                rowKey="rowNumber"
+                dataSource={importPreview?.validRows ?? []}
+                locale={{ emptyText: importExecution ? "没有待重试的产品" : "没有校验通过的产品" }}
+                scroll={{ x: 620 }}
+                columns={[
+                  { title: "Excel 行", dataIndex: "rowNumber", width: 82 },
+                  {
+                    title: "产品",
+                    width: 220,
+                    render: (_, row) => getProductDisplayName(row.product)
+                  },
+                  {
+                    title: "类别",
+                    width: 110,
+                    render: (_, row) => getProductCategoryLabel(row.product.category)
+                  },
+                  {
+                    title: "单位",
+                    width: 90,
+                    render: (_, row) => getProductUnitLabel(row.product.unit)
+                  },
+                  {
+                    title: "基础价",
+                    align: "right",
+                    width: 110,
+                    render: (_, row) => formatProductPrice(row.product.basePriceCents)
+                  }
+                ]}
+              />
+            </section>
+
+            {(importPreview?.errors.length || importExecution?.failures.length) ? (
+              <section>
+                <h3 className="products-import-section-title">需修正的数据</h3>
+                <Table
+                  size="small"
+                  pagination={false}
+                  rowKey={(row) => `${row.rowNumber}-${row.message}`}
+                  dataSource={[...(importPreview?.errors ?? []), ...(importExecution?.failures ?? [])]}
+                  columns={[
+                    { title: "Excel 行", dataIndex: "rowNumber", width: 90 },
+                    { title: "原因", dataIndex: "message" }
+                  ]}
+                />
+              </section>
+            ) : null}
+          </Space>
         </Drawer>
     </>
   );

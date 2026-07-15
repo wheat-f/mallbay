@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   getInventoryBatchLabel,
+  formatBatchLockedStockLabel,
+  formatBatchPhysicalStockLabel,
   formatBatchStockLabel,
   formatPackageSnapshotLabel,
   getInventoryBatchSplitSummary,
   getInventoryAllocationStatusLabel,
+  getInventoryBatchAttentionLabels,
+  getInventoryBatchStockSnapshot,
   getInventoryMovementTypeLabel,
   getInventoryOrderCustomerLabel,
   getInventoryOrderItemsSummary,
@@ -125,6 +129,48 @@ test("formatBatchStockLabel shows base and package equivalent quantities", () =>
       baseQuantityPerPackage: 18
     }),
     "可用 6 米 / 折合 0.333 卷"
+  );
+});
+
+test("inventory batch stock snapshot keeps available, locked and physical remaining distinct", () => {
+  const batch = {
+    totalQuantity: 18,
+    availableQuantity: 0,
+    lockedQuantity: 6,
+    outboundQuantity: 12,
+    unit: "METER",
+    packageUnit: "ROLL",
+    baseQuantityPerPackage: 18
+  } as const;
+
+  assert.deepEqual(getInventoryBatchStockSnapshot(batch), {
+    totalQuantity: 18,
+    availableQuantity: 0,
+    lockedQuantity: 6,
+    outboundQuantity: 12,
+    physicalRemainingQuantity: 6,
+    balanceDifference: 0,
+    isBalanceAbnormal: false,
+    isDepleted: false,
+    isLowStock: false,
+    isPartiallyOutbound: true,
+    needsAttention: true
+  });
+  assert.equal(formatBatchPhysicalStockLabel(batch), "实物 6 米 / 折合 0.333 卷");
+  assert.equal(formatBatchStockLabel(batch), "可用 0 米 / 折合 0 卷");
+  assert.equal(formatBatchLockedStockLabel(batch), "锁定 6 米 / 折合 0.333 卷");
+  assert.deepEqual(getInventoryBatchAttentionLabels(batch), ["部分出库"]);
+});
+
+test("inventory batch stock snapshot detects depleted and unbalanced batches", () => {
+  assert.deepEqual(
+    getInventoryBatchAttentionLabels({
+      totalQuantity: 18,
+      availableQuantity: 0,
+      lockedQuantity: 0,
+      outboundQuantity: 12
+    }),
+    ["数据异常", "已耗尽"]
   );
 });
 

@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -14,6 +15,18 @@ import {
   ValidateNested
 } from "class-validator";
 import { InventoryMovementType, ProductUnit } from "@prisma/client";
+
+export const PURCHASE_ORDER_EXPORT_DIMENSIONS = ["supplier", "product", "date"] as const;
+export type PurchaseOrderExportDimension = typeof PURCHASE_ORDER_EXPORT_DIMENSIONS[number];
+
+export class ListPurchaseOrderExportDetailsDto {
+  @IsString()
+  storeId!: string;
+
+  @IsOptional()
+  @IsIn(PURCHASE_ORDER_EXPORT_DIMENSIONS)
+  exportDimension?: PurchaseOrderExportDimension = "supplier";
+}
 
 export class ListInventoryDto {
   @IsString()

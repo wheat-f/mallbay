@@ -52,6 +52,19 @@ test("inventory matching page disables write actions for read-only inventory use
   assert.match(matchingPageSource, /disabled=\{!canManageInventory \|\| !activeSelectedOrderId \|\| !hasPendingProducts \|\| shortageRows\.length === 0 \|\| isCreatingRequirement\}/);
 });
 
+test("inventory overview reports physical remaining stock before slicing preview rows", () => {
+  assert.match(pageSource, /const attentionRows = useMemo/);
+  assert.match(pageSource, /attentionRows\.length/);
+  assert.match(pageSource, /const lowStockRows = attentionRows\.slice\(0, 5\)/);
+  assert.match(pageSource, /lockedBatchRows\.length/);
+  assert.match(pageSource, /const lockedRows = lockedBatchRows\.slice\(0, 5\)/);
+  assert.match(pageSource, /formatBatchPhysicalStockLabel\(row\)/);
+  assert.match(pageSource, /formatBatchStockLabel\(row\)/);
+  assert.match(pageSource, /formatBatchLockedStockLabel\(row\)/);
+  assert.match(pageSource, /实物剩余/);
+  assert.doesNotMatch(pageSource, /if \(available <= 0\) return false/);
+});
+
 test("inventory matching page uses current Ant Design component props", () => {
   assert.doesNotMatch(matchingPageSource, /<Alert[\s\S]*message=/);
   assert.match(matchingPageSource, /<Alert[\s\S]*title="只读模式"/);

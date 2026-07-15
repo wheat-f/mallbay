@@ -20,6 +20,7 @@ import type {
   CreateSupplierRatingHistoryDto,
   CreateSupplierDto,
   ListInventoryDto,
+  ListPurchaseOrderExportDetailsDto,
   OutboundOrderInventoryDto,
   ReceivePurchaseItemBatchesDto,
   ReceivePurchaseItemDto,
@@ -581,6 +582,60 @@ export class InventoryService {
         receivedBatches: receivedBatchesByItem.get(item.id) ?? []
       }))
     }));
+  }
+
+  async exportPurchaseOrderDetails(
+    user: AuthenticatedInventoryUser,
+    dto: ListPurchaseOrderExportDetailsDto
+  ) {
+    const actor = await this.withStoreMember(user);
+    if (!PermissionPolicy.canViewPurchase(actor, dto.storeId)) {
+      throw new ForbiddenException("无权限");
+    }
+
+    const orders = await this.prisma.purchaseOrder.findMany({
+      where: { storeId: dto.storeId },
+      orderBy: { createdAt: "desc" },
+      include: { items: { include: { product: true } } }
+    });
+    const rows = orders.flatMap((order) => order.items.map((item) => {
+      const quantity = decimalToNumber(item.quantity);
+      const receivedQuantity = decimalToNumber(item.receivedQuantity);
+      return {
+        purchaseOrderId: order.id,
+        orderNo: order.orderNo,
+        supplierName: order.supplierName ?? "",
+        status: order.status,
+        expectedAt: order.expectedAt,
+        createdAt: order.createdAt,
+        productId: item.productId,
+        productBrand: item.product.brand,
+        productName: item.product.name,
+        productModel: item.product.model,
+        productSpecification: item.product.specification,
+        inventoryUnit: item.product.inventoryUnit,
+        quantity,
+        receivedQuantity,
+        pendingQuantity: Math.max(0, quantity - receivedQuantity),
+        unitCostCents: item.unitCostCents ?? 0,
+        itemAmountCents: (item.unitCostCents ?? 0) * quantity
+      };
+    }));
+
+    return rows.sort((left, right) => {
+      const dimension = dto.exportDimension ?? "supplier";
+      const leftKey = dimension === "date"
+        ? (left.expectedAt ?? left.createdAt).toISOString()
+        : dimension === "product"
+          ? `${left.productBrand}\u0000${left.productName}\u0000${left.productModel}`
+          : left.supplierName;
+      const rightKey = dimension === "date"
+        ? (right.expectedAt ?? right.createdAt).toISOString()
+        : dimension === "product"
+          ? `${right.productBrand}\u0000${right.productName}\u0000${right.productModel}`
+          : right.supplierName;
+      return leftKey.localeCompare(rightKey, "zh-CN") || left.orderNo.localeCompare(right.orderNo, "zh-CN");
+    });
   }
 
   async getPurchaseOverview(user: AuthenticatedInventoryUser, storeId: string) {

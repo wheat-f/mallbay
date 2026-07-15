@@ -102,7 +102,9 @@ test("commissions page explains rate fields without BP abbreviations", () => {
 test("commissions page avoids implementation-phase export copy", () => {
   const pageSource = readFileSync("app/commissions/page.tsx", "utf8");
 
-  assert.match(pageSource, /请先确认结算明细后再导出报表/);
+  assert.match(pageSource, /exportWorkbookToExcel/);
+  assert.match(pageSource, /exportCommissionReport/);
+  assert.match(pageSource, /提成配置报表已导出/);
   assert.doesNotMatch(pageSource, /提成结算导出将在后续财务批次中实现/);
 });
 
@@ -175,7 +177,9 @@ test("commission settlement page follows the prototype settlement layout without
   assert.match(pageSource, /查看详情/);
   assert.match(pageSource, /生成本月结算单/);
   assert.match(pageSource, /导出报表/);
-  assert.match(pageSource, /请先确认结算明细后再导出报表/);
+  assert.match(pageSource, /exportSettlementReport/);
+  assert.match(pageSource, /exportSettlementRows/);
+  assert.match(pageSource, /提成结算报表已导出/);
   assert.doesNotMatch(pageSource, /请先确认结算流水后再导出报表/);
   assert.match(pageSource, /按生成记录核对结算周期、岗位和实发金额/);
   assert.doesNotMatch(pageSource, /当前版本展示可结算来源，不伪造已结算流水/);
@@ -258,7 +262,8 @@ test("commission settlement page avoids backend implementation copy", () => {
   const pageSource = readFileSync("app/commissions/settlements/page.tsx", "utf8");
 
   assert.match(pageSource, /售后扣减待确认/);
-  assert.match(pageSource, /请先确认结算明细后再导出报表/);
+  assert.match(pageSource, /exportSettlementReport/);
+  assert.match(pageSource, /exportRowsToExcel/);
   assert.doesNotMatch(pageSource, /请先确认结算流水后再导出报表/);
   assert.match(pageSource, /待确认/);
   assert.match(pageSource, /正式结算单、审核和发放流水会在结算确认后统一归档。/);

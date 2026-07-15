@@ -139,6 +139,29 @@ test("create order customer history card shows latest order status", () => {
   assert.match(pageSource, /最近订单：/);
 });
 
+test("create order product rows show the selected sales unit as a dedicated column", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.match(pageSource, /label="单位"/);
+  assert.match(pageSource, /getSelectedProductUnitLabel/);
+  assert.match(pageSource, /getProductUnitLabel\(resolveProductSalesUnit\(product\)\)/);
+  assert.match(cssSource, /grid-template-columns: minmax\(280px, 1fr\) 88px 72px 132px auto/);
+});
+
+test("create order page saves and restores the local draft", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /saveCreateOrderDraft\(localStorage/);
+  assert.match(pageSource, /loadCreateOrderDraft\(localStorage, storeId\)/);
+  assert.match(pageSource, /form\.setFieldsValue\(\{\s*\.\.\.draft\.values,/);
+  assert.match(
+    pageSource,
+    /draft\.values\.suggestedLaborCostYuan \?\? systemSuggestedLaborCostYuan/
+  );
+  assert.match(pageSource, /销售订单列表的“本机草稿”中继续编辑/);
+});
+
 test("create order customer history warning avoids deprecated Alert message prop", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
@@ -153,6 +176,20 @@ test("create order page records labor cost adjustment reason when final labor di
   assert.match(pageSource, /laborCostAdjustmentReason/);
   assert.match(pageSource, /调整施工人工费必须填写原因/);
   assert.match(pageSource, /建议人工费/);
+});
+
+test("create order page allows adjusting the suggested labor price before adopting it", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /name="suggestedLaborCostYuan"/);
+  assert.match(pageSource, /label="建议人工费（元）"/);
+  assert.match(pageSource, /系统初始建议/);
+  assert.match(pageSource, /恢复系统建议/);
+  assert.match(pageSource, /label="成交人工费（元）"/);
+  assert.match(pageSource, /采用建议价/);
+  assert.match(pageSource, /suggestedLaborCostTouchedRef/);
+  assert.match(pageSource, /onFinish=\{\(values\) => createMutation\.mutate\(values\)\}/);
+  assert.doesNotMatch(pageSource, /createMutation\.mutate\(\{ \.\.\.values, suggestedLaborCostYuan \}\)/);
 });
 
 test("create order page uses a time range picker for appointment time slot instead of free text input", () => {

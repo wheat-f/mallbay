@@ -22,6 +22,7 @@ import { StorePageHeader } from "../../src/features/workbench/store-page-header"
 import { COMMISSION_RULE_TYPE_OPTIONS, getCommissionRuleTypeLabel } from "../../src/features/commissions/display";
 import { getConstructionStatusLabel, getConstructionWorkerLabel } from "../../src/features/construction/display";
 import { formatCentsAsYuan, yuanToCents } from "../../src/features/finance/display";
+import { exportWorkbookToExcel } from "../../src/lib/export-excel";
 
 type SalesCommissionRuleFormValues = Omit<CreateSalesCommissionRulePayload, "fixedAmountCents"> & {
   fixedAmountYuan?: number;
@@ -191,6 +192,38 @@ export default function CommissionsPage() {
     },
     [commissionRuleSectionRefs]
   );
+  const exportCommissionReport = async () => {
+    try {
+      await exportWorkbookToExcel("commission-rule-report.xlsx", [
+        {
+          sheetName: "提成规则",
+          title: "提成规则配置",
+          subtitle: "规则只影响后续生成，不回写历史提成快照",
+          rows: (rulesQuery.data ?? []).map((rule: SalesCommissionRuleSummary) => ({
+            "规则名称": rule.name,
+            "规则类型": getCommissionRuleTypeLabel(rule.ruleType),
+            "提成比例": rule.rateBasisPoints === null ? "-" : rule.rateBasisPoints / 10_000,
+            "固定金额": rule.fixedAmountCents === null ? "-" : rule.fixedAmountCents / 100,
+            "启用状态": rule.isActive ? "启用" : "停用"
+          }))
+        },
+        {
+          sheetName: "结算来源摘要",
+          title: "提成结算来源摘要",
+          rows: settlementRows.map((row) => ({
+            "结算环节": row.stage,
+            "来源摘要": row.subject,
+            "状态": row.status,
+            "负责人": row.owner,
+            "说明": row.note
+          }))
+        }
+      ]);
+      message.success("提成配置报表已导出");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "提成配置报表导出失败");
+    }
+  };
 
   return (
     <div className="management-page">
@@ -454,7 +487,7 @@ export default function CommissionsPage() {
                 { title: "说明", dataIndex: "note" }
               ]}
             />
-            <Button className="mt-3" icon={<FileSearchOutlined />} onClick={() => message.info("请先确认结算明细后再导出报表")}>
+            <Button className="mt-3" icon={<FileSearchOutlined />} onClick={() => void exportCommissionReport()}>
               导出报表
             </Button>
           </Card>

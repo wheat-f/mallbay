@@ -4,6 +4,8 @@ import { ConstructionType, OrderStatus } from "@prisma/client";
 
 export const ORDER_PAYMENT_STATUSES = ["UNPAID", "PARTIAL", "PAID"] as const;
 export type OrderPaymentStatus = typeof ORDER_PAYMENT_STATUSES[number];
+export const ORDER_EXPORT_DIMENSIONS = ["customer", "date", "product"] as const;
+export type OrderExportDimension = typeof ORDER_EXPORT_DIMENSIONS[number];
 
 export class ListOrdersDto {
   @IsString()
@@ -44,4 +46,10 @@ export class ListOrdersDto {
   @IsInt()
   @Min(1)
   pageSize?: number = 20;
+}
+
+export class ExportOrderDetailsDto extends ListOrdersDto {
+  @IsOptional()
+  @IsIn(ORDER_EXPORT_DIMENSIONS)
+  exportDimension?: OrderExportDimension = "customer";
 }

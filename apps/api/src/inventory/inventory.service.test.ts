@@ -1188,6 +1188,72 @@ test("InventoryService creates and updates supplier master data within the same 
   assert.equal(serialized.includes("\"isActive\":true"), true);
 });
 
+test("InventoryService exports every purchase product row without pagination", async () => {
+  let findManyArgs: Record<string, unknown> | undefined;
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    purchaseOrder: {
+      findMany: async (args: Record<string, unknown>) => {
+        findManyArgs = args;
+        return [
+          {
+            id: "po-1",
+            orderNo: "PO-001",
+            supplierName: "供应商甲",
+            status: "ORDERED",
+            expectedAt: new Date("2026-07-20T00:00:00.000Z"),
+            createdAt: new Date("2026-07-15T00:00:00.000Z"),
+            items: [
+              {
+                productId: "product-b",
+                quantity: 2,
+                receivedQuantity: 0.5,
+                unitCostCents: 12000,
+                product: {
+                  brand: "3M",
+                  name: "B膜",
+                  model: "B",
+                  specification: "B规格",
+                  inventoryUnit: ProductUnit.ROLL
+                }
+              },
+              {
+                productId: "product-a",
+                quantity: 3,
+                receivedQuantity: 1,
+                unitCostCents: 10000,
+                product: {
+                  brand: "3M",
+                  name: "A膜",
+                  model: "A",
+                  specification: "A规格",
+                  inventoryUnit: ProductUnit.METER
+                }
+              }
+            ]
+          }
+        ];
+      }
+    }
+  } as never);
+
+  const result = await service.exportPurchaseOrderDetails(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    { storeId: "store-1", exportDimension: "product" }
+  );
+
+  assert.equal("skip" in (findManyArgs ?? {}), false);
+  assert.equal("take" in (findManyArgs ?? {}), false);
+  assert.equal(result.length, 2);
+  assert.deepEqual(result.map((row) => row.productName), ["A膜", "B膜"]);
+  assert.equal(result[0].pendingQuantity, 2);
+  assert.equal(result[0].itemAmountCents, 30000);
+});
+
 test("InventoryService creates supplier contacts and rating history", async () => {
   const writes: unknown[] = [];
   const service = new InventoryService({

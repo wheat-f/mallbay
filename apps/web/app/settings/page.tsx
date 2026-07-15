@@ -2,12 +2,14 @@
 
 import type { ReactNode, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Card, Drawer, Space, Tag, Typography } from "antd";
+import { App, Button, Card, Drawer, Input, Modal, Space, Tag, Typography } from "antd";
 import {
   AuditOutlined,
   CloudSyncOutlined,
   DatabaseOutlined,
+  DeleteOutlined,
   LockOutlined,
+  PlusOutlined,
   SettingOutlined,
   ShopOutlined,
   TeamOutlined,
@@ -16,6 +18,7 @@ import {
 import { useRouter } from "next/navigation";
 import { canAccessSystemSettings } from "../../src/features/settings/access";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
+import { dictionaryApi, type DictionaryItem, type DictionaryStatus } from "../../src/features/settings/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 
 type RoleCard = {
@@ -238,12 +241,6 @@ const roleTemplatePreview = [
   { name: "库存协作岗", scopes: ["产品只读", "批次出入库", "采购需求"], audit: "批次操作必须保留来源单据" }
 ];
 
-const dictionaryRows = [
-  { name: "施工类型", code: "CONSTRUCTION_TYPE", items: "全车、局部、内饰", status: "启用中" },
-  { name: "线索来源", code: "LEAD_SOURCE", items: "抖音、大众点评、转介绍", status: "启用中" },
-  { name: "质保周期", code: "WARRANTY_PERIOD", items: "3年、5年、10年", status: "待审核" }
-];
-
 const quickSwitches = [
   { label: "施工全过程拍照", description: "开启后质保申请必传照片", enabled: true },
   { label: "短信自动提醒客户", description: "施工完成自动发送提醒", enabled: true },
@@ -276,12 +273,16 @@ function PermissionBadge({ value }: { value: PermissionLevel }) {
 function SettingsConfigurationBoard({
   dictionarySettingsSectionRef,
   serviceSettingsSectionRef,
+  dictionaryRows,
+  dictionaryLoading,
   onDictionaryAction,
   onServiceTest
 }: {
   dictionarySettingsSectionRef: RefObject<HTMLDivElement | null>;
   serviceSettingsSectionRef: RefObject<HTMLDivElement | null>;
-  onDictionaryAction: (action: "export" | "create" | "edit", name?: string) => void;
+  dictionaryRows: DictionaryItem[];
+  dictionaryLoading: boolean;
+  onDictionaryAction: (action: "export" | "create" | "edit", row?: DictionaryItem) => void;
   onServiceTest: () => void;
 }) {
   return (
@@ -293,11 +294,11 @@ function SettingsConfigurationBoard({
               基础字典配置
             </Typography.Title>
             <Typography.Text className="settings-panel-description">
-              统一维护施工、线索、质保等核心枚举，当前以只读清单沉淀配置口径。
+              维护门店业务表单使用的枚举项，修改后即时生效并保留启停状态。
             </Typography.Text>
           </div>
           <Space size={8}>
-            <Button onClick={() => onDictionaryAction("export")}>导出</Button>
+            <Button onClick={() => onDictionaryAction("export")} disabled={dictionaryLoading}>导出</Button>
             <Button type="primary" onClick={() => onDictionaryAction("create")}>新增项</Button>
           </Space>
         </div>
@@ -313,18 +314,22 @@ function SettingsConfigurationBoard({
               </tr>
             </thead>
             <tbody>
-              {dictionaryRows.map((row) => (
-                <tr key={row.code}>
+              {dictionaryLoading ? (
+                <tr><td colSpan={5}>正在加载基础字典...</td></tr>
+              ) : dictionaryRows.length === 0 ? (
+                <tr><td colSpan={5}>暂无基础字典</td></tr>
+              ) : dictionaryRows.map((row) => (
+                <tr key={row.id}>
                   <td>{row.name}</td>
+                  <td><code>{row.code}</code></td>
+                  <td>{row.items.join("、")}</td>
                   <td>
-                    <code>{row.code}</code>
+                    <Tag className={row.status === "ACTIVE" ? "settings-status-success" : "settings-status-warning"}>
+                      {row.status === "ACTIVE" ? "启用中" : "已停用"}
+                    </Tag>
                   </td>
-                  <td>{row.items}</td>
                   <td>
-                    <Tag className={row.status === "启用中" ? "settings-status-success" : "settings-status-warning"}>{row.status}</Tag>
-                  </td>
-                  <td>
-                    <Button type="link" onClick={() => onDictionaryAction("edit", row.name)}>编辑</Button>
+                    <Button type="link" onClick={() => onDictionaryAction("edit", row)}>编辑</Button>
                   </td>
                 </tr>
               ))}
@@ -335,73 +340,32 @@ function SettingsConfigurationBoard({
 
       <div className="settings-configuration-side">
         <Card className="settings-quick-switch-card">
-          <Typography.Title level={3} className="settings-panel-title">
-            快速开关
-          </Typography.Title>
+          <Typography.Title level={3} className="settings-panel-title">快速开关</Typography.Title>
           <div className="settings-switch-list">
             {quickSwitches.map((item) => (
               <div key={item.label} className="settings-switch-row">
-                <div>
-                  <strong>{item.label}</strong>
-                  <span>{item.description}</span>
-                </div>
+                <div><strong>{item.label}</strong><span>{item.description}</span></div>
                 <span className={`settings-switch-pill${item.enabled ? " is-on" : ""}`} aria-label={item.enabled ? "已开启" : "未开启"} />
               </div>
             ))}
           </div>
         </Card>
-
-        <Card className="settings-system-status-card">
-          <span>SYSTEM STATUS</span>
-          <strong>核心引擎运行良好</strong>
-          <p>99.9% Uptime</p>
-        </Card>
+        <Card className="settings-system-status-card"><span>SYSTEM STATUS</span><strong>核心引擎运行良好</strong><p>99.9% Uptime</p></Card>
       </div>
 
       <div ref={serviceSettingsSectionRef}>
         <Card className="settings-service-card">
-          <div className="settings-service-heading">
-            <span>
-              <CloudSyncOutlined />
-            </span>
-            <div>
-              <Typography.Title level={3} className="settings-panel-title">
-                存储与通知服务 (OSS/SMTP)
-              </Typography.Title>
-              <Typography.Text className="settings-panel-description">
-                配置用于附件存储和系统通知的基础设施，敏感值由环境变量托管。
-              </Typography.Text>
-            </div>
-          </div>
+          <div className="settings-service-heading"><span><CloudSyncOutlined /></span><div>
+            <Typography.Title level={3} className="settings-panel-title">存储与通知服务 (OSS/SMTP)</Typography.Title>
+            <Typography.Text className="settings-panel-description">配置用于附件存储和系统通知的基础设施，敏感值由环境变量托管。</Typography.Text>
+          </div></div>
           <div className="settings-service-grid">
-            <label>
-              <span>存储提供商</span>
-              <select defaultValue="阿里云 OSS (推荐)" disabled>
-                <option>阿里云 OSS (推荐)</option>
-                <option>腾讯云 COS</option>
-                <option>七牛云</option>
-              </select>
-            </label>
-            <label>
-              <span>Endpoint</span>
-              <input value="oss-cn-shanghai.aliyuncs.com" disabled readOnly />
-            </label>
-            <label>
-              <span>访问密钥标识</span>
-              <input value="**************" disabled readOnly />
-            </label>
-            <label>
-              <span>访问密钥密文</span>
-              <input value="**************" disabled readOnly />
-            </label>
-            <label>
-              <span>Bucket 名称</span>
-              <input value="mallbay-pro-assets" disabled readOnly />
-            </label>
-            <label>
-              <span>外链 CDN 域名</span>
-              <input value="https://cdn.mallbay.com" disabled readOnly />
-            </label>
+            <label><span>存储提供商</span><select defaultValue="阿里云 OSS (推荐)" disabled><option>阿里云 OSS (推荐)</option><option>腾讯云 COS</option><option>七牛云</option></select></label>
+            <label><span>Endpoint</span><input value="oss-cn-shanghai.aliyuncs.com" disabled readOnly /></label>
+            <label><span>访问密钥标识</span><input value="**************" disabled readOnly /></label>
+            <label><span>访问密钥密文</span><input value="**************" disabled readOnly /></label>
+            <label><span>Bucket 名称</span><input value="mallbay-pro-assets" disabled readOnly /></label>
+            <label><span>外链 CDN 域名</span><input value="https://cdn.mallbay.com" disabled readOnly /></label>
           </div>
           <Button className="settings-service-test-button" onClick={onServiceTest}>测试连接</Button>
         </Card>
@@ -409,7 +373,6 @@ function SettingsConfigurationBoard({
     </section>
   );
 }
-
 function RolePermissionMatrixCard() {
   return (
     <Card className="settings-permission-card">
@@ -487,6 +450,12 @@ export default function SettingsPage() {
     isAuditor: user?.isAuditor
   });
   const [rolePolicyOpen, setRolePolicyOpen] = useState(false);
+  const [dictionaryRows, setDictionaryRows] = useState<DictionaryItem[]>([]);
+  const [dictionaryLoading, setDictionaryLoading] = useState(false);
+  const [dictionarySaving, setDictionarySaving] = useState(false);
+  const [dictionaryModalOpen, setDictionaryModalOpen] = useState(false);
+  const [editingDictionary, setEditingDictionary] = useState<DictionaryItem | null>(null);
+  const [dictionaryDraft, setDictionaryDraft] = useState({ name: "", code: "", items: [""] as string[], status: "ACTIVE" as DictionaryStatus });
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionKey>("role");
   const roleSettingsSectionRef = useRef<HTMLDivElement | null>(null);
   const dictionarySettingsSectionRef = useRef<HTMLDivElement | null>(null);
@@ -533,9 +502,81 @@ export default function SettingsPage() {
     }
     setRolePolicyOpen(true);
   };
-  const handleDictionaryAction = (action: "export" | "create" | "edit", name?: string) => {
-    const actionText = action === "export" ? "字典导出" : action === "create" ? "新增字典项" : `编辑${name ?? "字典项"}`;
-    message.info(`${actionText}入口已确认，配置保存接口接入后可直接提交。`);
+  const storeId = user?.storeMember?.store.id;
+  const loadDictionaries = useCallback(async () => {
+    if (!storeId) return;
+    setDictionaryLoading(true);
+    try {
+      setDictionaryRows(await dictionaryApi.list(storeId));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "基础字典加载失败");
+    } finally {
+      setDictionaryLoading(false);
+    }
+  }, [message, storeId]);
+
+  useEffect(() => {
+    if (hasHydrated && canAccessSettings && storeId) void loadDictionaries();
+  }, [canAccessSettings, hasHydrated, loadDictionaries, storeId]);
+
+  const handleDictionaryAction = (action: "export" | "create" | "edit", row?: DictionaryItem) => {
+    if (action === "export") {
+      const blob = new Blob([JSON.stringify(dictionaryRows, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "mallbay-dictionaries.json";
+      link.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    setEditingDictionary(action === "edit" ? row ?? null : null);
+    setDictionaryDraft({
+      name: row?.name ?? "",
+      code: row?.code ?? "",
+      items: row?.items.length ? [...row.items] : [""],
+      status: row?.status ?? "ACTIVE"
+    });
+    setDictionaryModalOpen(true);
+  };
+
+  const saveDictionary = async () => {
+    if (!storeId) return;
+    const items = dictionaryDraft.items.map((item) => item.trim()).filter(Boolean);
+    if (!dictionaryDraft.name.trim() || !dictionaryDraft.code.trim() || items.length === 0) {
+      message.warning("请填写分类名称、字典代码和至少一个子项");
+      return;
+    }
+    setDictionarySaving(true);
+    try {
+      if (editingDictionary) {
+        await dictionaryApi.update(editingDictionary.id, { name: dictionaryDraft.name.trim(), items, status: dictionaryDraft.status });
+      } else {
+        await dictionaryApi.create({ storeId, name: dictionaryDraft.name.trim(), code: dictionaryDraft.code.trim(), items, status: dictionaryDraft.status });
+      }
+      message.success(editingDictionary ? "基础字典已更新" : "基础字典已新增");
+      setDictionaryModalOpen(false);
+      await loadDictionaries();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "基础字典保存失败");
+    } finally {
+      setDictionarySaving(false);
+    }
+  };
+  const updateDictionaryItem = (index: number, value: string) => {
+    setDictionaryDraft((draft) => ({
+      ...draft,
+      items: draft.items.map((item, itemIndex) => (itemIndex === index ? value : item))
+    }));
+  };
+  const addDictionaryItem = () => {
+    setDictionaryDraft((draft) => ({ ...draft, items: [...draft.items, ""] }));
+  };
+  const removeDictionaryItem = (index: number) => {
+    setDictionaryDraft((draft) => {
+      const items = draft.items.filter((_, itemIndex) => itemIndex !== index);
+      return { ...draft, items: items.length ? items : [""] };
+    });
   };
   const handleServiceTest = () => {
     message.info("测试连接入口已触发，当前环境配置由服务端环境变量托管。");
@@ -599,6 +640,8 @@ export default function SettingsPage() {
           <SettingsConfigurationBoard
             dictionarySettingsSectionRef={dictionarySettingsSectionRef}
             serviceSettingsSectionRef={serviceSettingsSectionRef}
+            dictionaryRows={dictionaryRows}
+            dictionaryLoading={dictionaryLoading}
             onDictionaryAction={handleDictionaryAction}
             onServiceTest={handleServiceTest}
           />
@@ -662,6 +705,53 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      <Modal
+        open={dictionaryModalOpen}
+        title={editingDictionary ? "编辑基础字典" : "新增基础字典"}
+        onCancel={() => setDictionaryModalOpen(false)}
+        onOk={() => void saveDictionary()}
+        confirmLoading={dictionarySaving}
+        okText="保存配置"
+        cancelText="取消"
+      >
+          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Input placeholder="分类名称" value={dictionaryDraft.name} onChange={(event) => setDictionaryDraft((draft) => ({ ...draft, name: event.target.value }))} />
+          <Input placeholder="字典代码，例如 CONSTRUCTION_TYPE" value={dictionaryDraft.code} disabled={Boolean(editingDictionary)} onChange={(event) => setDictionaryDraft((draft) => ({ ...draft, code: event.target.value }))} />
+          <div className="settings-dictionary-items-editor">
+            <div className="settings-dictionary-items-header">
+              <Typography.Text strong>字典值</Typography.Text>
+              <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={addDictionaryItem}>
+                新增字典值
+              </Button>
+            </div>
+            <Typography.Text type="secondary">每个选项单独维护，可新增或删除。</Typography.Text>
+            <Space orientation="vertical" size={8} style={{ width: "100%", marginTop: 8 }}>
+              {dictionaryDraft.items.map((item, index) => (
+                <Space key={`dictionary-item-${index}`} style={{ width: "100%" }}>
+                  <Input
+                    style={{ flex: 1 }}
+                    placeholder={`字典值 ${index + 1}`}
+                    value={item}
+                    onChange={(event) => updateDictionaryItem(index, event.target.value)}
+                  />
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    aria-label={`删除字典值 ${index + 1}`}
+                    onClick={() => removeDictionaryItem(index)}
+                    disabled={dictionaryDraft.items.length === 1}
+                  />
+                </Space>
+              ))}
+            </Space>
+          </div>
+          <select value={dictionaryDraft.status} onChange={(event) => setDictionaryDraft((draft) => ({ ...draft, status: event.target.value as DictionaryStatus }))}>
+            <option value="ACTIVE">启用中</option>
+            <option value="INACTIVE">已停用</option>
+          </select>
+        </Space>
+      </Modal>
       <Drawer
         open={rolePolicyOpen}
         title="岗位策略草案"

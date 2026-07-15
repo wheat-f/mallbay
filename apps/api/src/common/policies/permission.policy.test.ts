@@ -188,3 +188,13 @@ test("PermissionPolicy scopes finance invoice rebate and report operations", () 
   assert.equal(PermissionPolicy.canViewReports(finance, "store-2"), false);
   assert.equal(PermissionPolicy.canViewReports(worker, "store-1"), false);
 });
+
+test("PermissionPolicy separates finance workflow responsibilities", () => {
+  assert.equal(PermissionPolicy.canViewOwnFinanceApplication(purchasing, "store-1", "purchasing-1"), true);
+  assert.equal(PermissionPolicy.canViewAllFinanceApplications(purchasing, "store-1"), false);
+  assert.equal(PermissionPolicy.canReviewExpense(manager, "store-1"), true);
+  assert.equal(PermissionPolicy.canReviewExpense(finance, "store-1"), false);
+  assert.equal(PermissionPolicy.canReviewReimbursement(finance, "store-1"), true);
+  assert.equal(PermissionPolicy.canPayReimbursement(manager, "store-1"), false);
+  assert.equal(PermissionPolicy.canPayReimbursement(finance, "store-1"), true);
+});

@@ -57,6 +57,7 @@ export type InventoryAllocationRow = {
   outboundQuantity: number;
   remainingQuantity: number;
   unit: ProductUnit;
+  salesUnit: ProductUnit;
   status: string;
 };
 
@@ -165,6 +166,7 @@ export function buildInventoryAllocationRows(match: InventoryMatchInput | undefi
       .map((allocation) => {
         const lockedQuantity = toNumber(allocation.lockedQuantity);
         const outboundQuantity = toNumber(allocation.outboundQuantity);
+        const salesUnit = normalizeUnit(item.orderItem.salesUnit ?? item.orderItem.product?.salesUnit ?? item.orderItem.product?.unit);
         return {
           id: allocation.id ?? `${item.orderItem.id}:${allocation.batchId ?? "batch"}`,
           orderItemId: item.orderItem.id,
@@ -174,6 +176,7 @@ export function buildInventoryAllocationRows(match: InventoryMatchInput | undefi
           outboundQuantity,
           remainingQuantity: Math.max(0, lockedQuantity - outboundQuantity),
           unit: normalizeUnit(allocation.batch?.unit ?? item.orderItem.baseUnit ?? item.orderItem.product?.inventoryUnit ?? item.orderItem.product?.unit),
+          salesUnit,
           status: allocation.status ?? "-"
         };
       });

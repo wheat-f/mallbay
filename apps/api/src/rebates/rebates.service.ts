@@ -62,6 +62,7 @@ export class RebatesService {
       data: {
         storeId: rebate.storeId,
         type: PaymentRecordType.REBATE,
+        direction: "EXPENSE",
         amountCents: rebate.amountCents,
         sourceId: rebate.id,
         note: dto.note ?? "返利发放",

@@ -7715,6 +7715,10 @@ body {
   width: 100%;
 }
 
+.purchase-scan-import-modal .purchase-scan-import-source {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .purchase-scan-import-modal .ant-radio-button-wrapper {
   overflow: hidden;
   color: var(--mb-primary);
@@ -7773,8 +7777,88 @@ body {
   padding: 10px 12px;
 }
 
+.purchase-scan-import-section,
+.purchase-scan-import-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.purchase-scan-import-section input[type="file"] {
+  width: 100%;
+  border: 1px dashed var(--mb-border-strong);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-alt);
+  color: var(--mb-text-secondary);
+  cursor: pointer;
+  padding: 10px;
+}
+
+.purchase-scan-import-status,
+.purchase-scan-import-preview > span {
+  color: var(--mb-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.purchase-scan-import-image-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.purchase-scan-import-image-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  padding: 8px;
+}
+
+.purchase-scan-import-image-item img {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.purchase-scan-import-image-item div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.purchase-scan-import-image-item strong,
+.purchase-scan-import-image-item span {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.purchase-scan-import-image-item span {
+  color: var(--mb-text-secondary);
+}
+
+.purchase-scan-import-preview {
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-alt);
+  padding: 10px 12px;
+}
+
+.purchase-scan-import-error {
+  color: var(--mb-danger) !important;
+}
+
 @media (max-width: 760px) {
   .purchase-receive-default-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .purchase-scan-import-image-list {
     grid-template-columns: 1fr;
   }
 }

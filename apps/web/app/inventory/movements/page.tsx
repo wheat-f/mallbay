@@ -61,6 +61,11 @@ type MovementRow = {
   orderId?: string | null;
   sourceOrderNo?: string | null;
   sourceNo?: string | null;
+  relatedDocument?: {
+    type?: "ORDER" | "PURCHASE_ORDER" | string;
+    id?: string | null;
+    number?: string | null;
+  } | null;
   note?: string | null;
   createdAt?: string | null;
   createdById?: string | null;
@@ -82,6 +87,7 @@ type MovementRow = {
     availableQuantity?: number | string | null;
   } | null;
   order?: {
+    id?: string | null;
     orderNo?: string | null;
   } | null;
 };
@@ -305,7 +311,7 @@ export default function InventoryMovementsPage() {
                     </div>
                     <div>
                       <dt>关联单号</dt>
-                      <dd>{getMovementSourceLabel(row)}</dd>
+                      <dd>{renderMovementSource(row)}</dd>
                     </div>
                     <div>
                       <dt>操作人</dt>
@@ -382,7 +388,7 @@ export default function InventoryMovementsPage() {
               {
                 title: "关联单号",
                 width: 170,
-                render: (_, row) => <span className="movement-source-link">{getMovementSourceLabel(row)}</span>
+                render: (_, row) => renderMovementSource(row)
               },
               {
                 title: "操作人",
@@ -524,6 +530,18 @@ function getMovementUnitLabel(
 
 function getMovementSourceLabel(row: MovementRow) {
   return row.order?.orderNo ?? row.sourceOrderNo ?? row.sourceNo ?? (row.orderId ? "关联单据待确认" : "手工调整");
+}
+
+function renderMovementSource(row: MovementRow) {
+  const document = row.relatedDocument;
+  if (!document?.id || !document.number) {
+    return <span>{getMovementSourceLabel(row)}</span>;
+  }
+
+  const href = document.type === "PURCHASE_ORDER"
+    ? `/purchases/orders/${document.id}`
+    : `/orders/${document.id}`;
+  return <Link className="movement-source-link" href={href}>{document.number}</Link>;
 }
 
 function getMovementOperatorLabel(row: MovementRow) {

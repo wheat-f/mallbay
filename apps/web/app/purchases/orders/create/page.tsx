@@ -181,7 +181,7 @@ export default function PurchaseOrderCreatePage() {
                   {
                     title: "需求来源",
                     render: (_, row) => (
-                      <Space direction="vertical" size={2}>
+                      <Space orientation="vertical" size={2}>
                         <span>{getPurchaseRequirementSourceOrderLabel(row)}</span>
                         <small>{row.createdAt ? row.createdAt.slice(0, 10) : "创建时间待确认"}</small>
                       </Space>
@@ -195,7 +195,7 @@ export default function PurchaseOrderCreatePage() {
             </Card>
 
             <Card className="purchase-order-create-panel" title="生成采购订单">
-              <Space className="purchase-order-create-selected" direction="vertical" size={6}>
+              <Space className="purchase-order-create-selected" orientation="vertical" size={6}>
                 <span>已选择需求</span>
                 <strong>{selectedRequirement ? getPurchaseRequirementItemsSummary(selectedRequirement, productLookup) : "尚未选择"}</strong>
                 <small>{selectedRequirement ? getPurchaseRequirementSourceOrderLabel(selectedRequirement) : "请先在左侧列表选择需求"}</small>

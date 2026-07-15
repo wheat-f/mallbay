@@ -63,6 +63,16 @@ type AvailableInventoryPreviewRow = {
   availableQuantity?: number | string | null;
 };
 
+type AvailableInventorySummaryRow = {
+  id: string;
+  productLabel: string;
+  unit?: ProductUnit | string | null;
+  batchCount: number;
+  availableQuantity: number;
+  packageQuantity?: number | string | null;
+  baseQuantityPerPackage?: number | string | null;
+};
+
 type InventoryOrderMatchResponse = InventoryMatchInput & {
   order?: PendingMatchOrderRow;
 };
@@ -179,6 +189,29 @@ function InventoryMatchingContent() {
         packageQuantity: batch.packageQuantity,
         baseQuantityPerPackage: batch.baseQuantityPerPackage
       }));
+
+  const availableInventorySummaryRows = useMemo<AvailableInventorySummaryRow[]>(() => {
+    const grouped = new Map<string, AvailableInventorySummaryRow>();
+    for (const row of availableInventoryRows) {
+      const key = `${row.productLabel}|${row.unit ?? ""}`;
+      const current = grouped.get(key);
+      if (current) {
+        current.batchCount += 1;
+        current.availableQuantity += Number(row.availableQuantity ?? 0);
+        continue;
+      }
+      grouped.set(key, {
+        id: key,
+        productLabel: row.productLabel,
+        unit: row.unit,
+        batchCount: 1,
+        availableQuantity: Number(row.availableQuantity ?? 0),
+        packageQuantity: row.packageQuantity,
+        baseQuantityPerPackage: row.baseQuantityPerPackage
+      });
+    }
+    return [...grouped.values()];
+  }, [availableInventoryRows]);
 
   const createShortagePurchaseRequirement = useMutation({
     mutationFn: () => {
@@ -387,23 +420,24 @@ function InventoryMatchingContent() {
                   </Button>
                 </div>
 
-                <Table<AvailableInventoryPreviewRow>
+                <Table<AvailableInventorySummaryRow>
                   rowKey="id"
                   size="small"
                   pagination={false}
                   loading={activeSelectedOrderId ? orderMatchQuery.isLoading : batchesQuery.isLoading}
-                  dataSource={availableInventoryRows}
+                  dataSource={availableInventorySummaryRows}
                   columns={[
-                    { title: "批次号", dataIndex: "batchNo" },
                     { title: "产品", dataIndex: "productLabel" },
+                    { title: "可用批次", render: (_, row) => `${row.batchCount} 个批次` },
                     {
-                      title: "可用",
+                      title: "可用库存",
                       render: (_, row) => (
-                        <Tag color={Number(row.availableQuantity) > 0 ? "success" : "default"}>
+                        <Tag color={row.availableQuantity > 0 ? "success" : "default"}>
                           {formatBatchStockLabel(row)}
                         </Tag>
                       )
-                    }
+                    },
+                    { title: "操作", render: () => <Typography.Text type="secondary">在下方选择批次</Typography.Text> }
                   ]}
                 />
 
@@ -643,7 +677,7 @@ function InventoryMatchingContent() {
                             >
                               <Select
                                 disabled={!canManageInventory || row.remainingQuantity <= 0}
-                                options={buildUnitOptions(row.unit)}
+                                options={buildUnitOptions(row.unit, row.salesUnit)}
                               />
                             </Form.Item>
                           </div>

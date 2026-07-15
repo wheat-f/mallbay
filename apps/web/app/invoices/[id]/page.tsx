@@ -258,7 +258,7 @@ function InfoItem({
   );
 }
 
-export function formatInvoiceDetailDate(value?: string | Date | null) {
+function formatInvoiceDetailDate(value?: string | Date | null) {
   if (!value) return "开票资料待补充";
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "开票资料待补充";
@@ -280,7 +280,7 @@ function getInvoiceBillingContactDisplay(_invoice: InvoiceSummary) {
   return "开票资料待补充";
 }
 
-export function getInvoiceDetailTimeline(invoice?: InvoiceSummary): InvoiceTimelineItem[] {
+function getInvoiceDetailTimeline(invoice?: InvoiceSummary): InvoiceTimelineItem[] {
   if (!invoice) return [];
 
   const items: InvoiceTimelineItem[] = [

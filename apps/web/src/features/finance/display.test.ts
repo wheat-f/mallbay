@@ -12,7 +12,7 @@ import {
   getAuditReasonText,
   getPaymentRecordSourceLabel,
   getPaymentRecordTypeLabel,
-  yuanToCents
+  yuanToCents,
 } from "./display";
 
 test("finance display helpers format approval statuses", () => {
@@ -27,7 +27,6 @@ test("finance review options use the same labels as status helpers", () => {
   assert.deepEqual(FINANCE_REVIEW_OPTIONS, [
     { value: "APPROVED", label: "已通过" },
     { value: "REJECTED", label: "已驳回" },
-    { value: "PAID", label: "已打款" }
   ]);
 });
 
@@ -41,12 +40,30 @@ test("payment account and audit display helpers format business labels", () => {
   assert.equal(getPaymentAccountTypeLabel("CORPORATE"), "对公账户");
   assert.equal(getPaymentAccountTypeLabel("WECHAT"), "微信");
   assert.equal(getPaymentAccountTypeLabel("UNKNOWN"), "账户类型待确认");
-  assert.equal(getFinanceAuditActionLabel("PAYMENT_ACCOUNT_UPDATED"), "收款账户变更");
+  assert.equal(
+    getFinanceAuditActionLabel("PAYMENT_ACCOUNT_UPDATED"),
+    "收款账户变更",
+  );
   assert.equal(getFinanceAuditActionLabel("UNKNOWN"), "操作记录待确认");
-  assert.equal(getAuditActorLabel({ actor: { username: "zhouqi", nickname: "周琪" }, actorId: "user-1" }), "周琪");
-  assert.equal(getAuditActorLabel({ actor: { username: "zhouqi" }, actorId: "user-1" }), "zhouqi");
-  assert.equal(getAuditActorLabel({ actorId: "cmprn332u0000lpibg4bbog5t" }), "未知用户");
-  assert.equal(getAuditReasonText({ reason: "更换账户名称" }), "原因：更换账户名称");
+  assert.equal(
+    getAuditActorLabel({
+      actor: { username: "zhouqi", nickname: "周琪" },
+      actorId: "user-1",
+    }),
+    "周琪",
+  );
+  assert.equal(
+    getAuditActorLabel({ actor: { username: "zhouqi" }, actorId: "user-1" }),
+    "zhouqi",
+  );
+  assert.equal(
+    getAuditActorLabel({ actorId: "cmprn332u0000lpibg4bbog5t" }),
+    "未知用户",
+  );
+  assert.equal(
+    getAuditReasonText({ reason: "更换账户名称" }),
+    "原因：更换账户名称",
+  );
   assert.equal(getAuditReasonText({}), "-");
 });
 
@@ -63,24 +80,36 @@ test("finance application and payment source helpers use business labels", () =>
     id: "reimbursement-1",
     title: "施工油费报销",
     amountCents: 12345,
-    status: "APPROVED"
+    status: "APPROVED",
   };
 
-  assert.equal(getFinanceApplicationLabel(reimbursement), "施工油费报销 / ¥123.45 / 已通过");
+  assert.equal(
+    getFinanceApplicationLabel(reimbursement),
+    "施工油费报销 / ¥123.45 / 已通过",
+  );
   assert.equal(
     getPaymentRecordSourceLabel(
       { type: "REIMBURSEMENT", sourceId: "reimbursement-1", note: "报销打款" },
-      { reimbursements: [reimbursement] }
+      { reimbursements: [reimbursement] },
     ),
-    "施工油费报销 / ¥123.45 / 已通过"
+    "施工油费报销 / ¥123.45 / 已通过",
   );
-  assert.equal(getPaymentRecordSourceLabel({ type: "OTHER", note: "手工调整" }, {}), "手工调整");
   assert.equal(
-    getPaymentRecordSourceLabel({ type: "EXPENSE", sourceId: "expense-technical-id" }, { expenses: [] }),
-    "关联来源待确认"
+    getPaymentRecordSourceLabel({ type: "OTHER", note: "手工调整" }, {}),
+    "手工调整",
+  );
+  assert.equal(
+    getPaymentRecordSourceLabel(
+      { type: "EXPENSE", sourceId: "expense-technical-id" },
+      { expenses: [] },
+    ),
+    "关联来源待确认",
   );
 });
 
 test("finance application labels do not expose technical ids", () => {
-  assert.equal(getFinanceApplicationLabel({ id: "cm-finance-technical-id" }), "申请信息待确认");
+  assert.equal(
+    getFinanceApplicationLabel({ id: "cm-finance-technical-id" }),
+    "申请信息待确认",
+  );
 });

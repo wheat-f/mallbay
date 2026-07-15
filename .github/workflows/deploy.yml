@@ -234,9 +234,12 @@ jobs:
             sed -i '/^AUTH_CREDENTIAL_ENCRYPTION_ENABLED=/d' .env
             echo "AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}" >> .env
 
+            # Free unreferenced image layers before pulling the next release.
+            # This does not remove images used by running containers or any volumes.
+            docker image prune -af
             docker compose -f docker-compose.prod.yml pull api web
             docker compose -f docker-compose.prod.yml up -d --wait --no-deps --force-recreate api web
-            docker image prune -f
+            docker image prune -af
 
             echo "✅ Test deployed — ${{ github.sha }}"
 
@@ -278,8 +281,11 @@ jobs:
             sed -i '/^AUTH_CREDENTIAL_ENCRYPTION_ENABLED=/d' .env
             echo "AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}" >> .env
 
+            # Free unreferenced image layers before pulling the next release.
+            # This does not remove images used by running containers or any volumes.
+            docker image prune -af
             docker compose -f docker-compose.prod.yml pull api web
             docker compose -f docker-compose.prod.yml up -d --wait --no-deps --force-recreate api web
-            docker image prune -f
+            docker image prune -af
 
             echo "✅ Production deployed — ${{ github.sha }}"

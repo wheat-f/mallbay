@@ -75,7 +75,12 @@ export default function InventoryOverviewPage() {
   }, [pendingOrdersQuery.data]);
   const movementRows = useMemo(() => (movementsQuery.data ?? []) as MovementRow[], [movementsQuery.data]);
   const movementSummary = getInventoryMovementSummary(movementRows);
-  const lowStockRows = batchRows.filter((batch) => Number(batch.availableQuantity ?? 0) <= 1).slice(0, 5);
+  const lowStockRows = batchRows.filter((batch) => {
+    const available = Number(batch.availableQuantity ?? 0);
+    const total = Number(batch.totalQuantity ?? 0);
+    if (available <= 0) return false;
+    return available <= 1 || (total > 0 && available / total <= 0.2);
+  }).slice(0, 5);
   const lockedRows = batchRows.filter((batch) => Number(batch.lockedQuantity ?? 0) > 0).slice(0, 5);
   return (
     <div className="management-page inventory-overview-shell">
@@ -104,7 +109,7 @@ export default function InventoryOverviewPage() {
         {[
           ["库存健康", batchRows.length, "当前可追踪批次数"],
           ["待匹配订单", pendingRows.length, "等待库存匹配或确认"],
-          ["低库存与异常批次", lowStockRows.length, "可用数量低于安全线"],
+          ["低库存与异常批次", lowStockRows.length, "按基础单位统计，含部分出库批次"],
           ["锁库待出库", lockedRows.length, "已锁定但未完成出库"]
         ].map(([label, value, description]) => (
           <Card key={label} className="management-kpi-card inventory-summary-tile">

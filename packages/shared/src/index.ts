@@ -133,6 +133,38 @@ export type FinanceApprovalStatus = "PENDING" | "APPROVED" | "REJECTED" | "PAID"
 
 export type PaymentRecordType = "ORDER_PAYMENT" | "EXPENSE" | "REIMBURSEMENT" | "REBATE" | "OTHER";
 
+export type PaymentDirection = "INCOME" | "EXPENSE";
+
+export type FinanceApplicationType = "EXPENSE" | "REIMBURSEMENT";
+
+export type FinanceApprovalNode = "MANAGER_REVIEW" | "FINANCE_REVIEW" | "PAYMENT";
+
+export type FinanceApprovalAction =
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "WITHDRAWN"
+  | "RESUBMITTED"
+  | "PAID";
+
+export type FinanceAttachmentCategory = "INVOICE" | "CONTRACT" | "PAYMENT_PROOF" | "OTHER";
+
+export type FinanceAllowedAction =
+  | "REVIEW_EXPENSE"
+  | "WITHDRAW"
+  | "RESUBMIT"
+  | "CREATE_REIMBURSEMENT"
+  | "REVIEW_REIMBURSEMENT"
+  | "PAY"
+  | "UPLOAD_ATTACHMENT";
+
+export type PaginatedResult<T> = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
 export type InvoiceStatus = "APPLIED" | "ISSUED" | "VOIDED" | "REISSUED";
 
 export type RebateStatus = "APPLIED" | "REVIEWED" | "APPROVED" | "REJECTED" | "PAID";
@@ -358,11 +390,15 @@ export type SalesCommissionRuleSummary = {
 
 export type ExpenseApplicationSummary = {
   id: string;
+  applicationNo?: string;
   storeId: string;
   title: string;
   amountCents: number;
   reason: string;
   status: FinanceApprovalStatus;
+  currentNode?: FinanceApprovalNode | null;
+  submittedAt?: string | Date | null;
+  allowedActions?: FinanceAllowedAction[];
 };
 
 export type InvoiceSummary = {

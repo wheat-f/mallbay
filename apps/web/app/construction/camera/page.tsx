@@ -136,7 +136,7 @@ export default function ConstructionCameraPage() {
                   </span>
                 </div>
               </div>
-              <Space direction="vertical" size="middle" className="construction-camera-form">
+              <Space orientation="vertical" size="middle" className="construction-camera-form">
                 <Select
                   loading={tasksQuery.isLoading}
                   value={effectiveSelectedRecordId}

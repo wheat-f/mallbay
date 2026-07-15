@@ -10,17 +10,17 @@ import {
   FileSearchOutlined,
   PaperClipOutlined,
   SafetyCertificateOutlined,
-  TransactionOutlined
+  TransactionOutlined,
 } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo } from "react";
-import { financeApi } from "../../../../src/lib/api";
+import { financeApi } from "../../../../src/features/finance/api";
 import {
   formatCentsAsYuan,
   getPaymentAccountTypeLabel,
   getPaymentRecordSourceLabel,
-  getPaymentRecordTypeLabel
+  getPaymentRecordTypeLabel,
 } from "../../../../src/features/finance/display";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 
@@ -30,6 +30,7 @@ type PaymentRecordDetail = {
   accountId?: string | null;
   type?: string | null;
   amountCents?: number | null;
+  direction?: "INCOME" | "EXPENSE";
   sourceId?: string | null;
   referenceId?: string | null;
   referenceType?: string | null;
@@ -60,13 +61,17 @@ export default function PaymentRecordDetailPage() {
 
   const recordsQuery = useQuery({
     queryKey: ["finance-payment-records", storeId],
-    queryFn: () => financeApi.paymentRecords(storeId!),
-    enabled: Boolean(storeId)
+    queryFn: () =>
+      financeApi.paymentRecords({ storeId: storeId!, scope: "all" }),
+    enabled: Boolean(storeId),
   });
 
   const record = useMemo(
-    () => ((recordsQuery.data ?? []) as PaymentRecordDetail[]).find((item) => item.id === recordId),
-    [recordId, recordsQuery.data]
+    () =>
+      ((recordsQuery.data?.items ?? []) as PaymentRecordDetail[]).find(
+        (item) => item.id === recordId,
+      ),
+    [recordId, recordsQuery.data],
   );
   const timeline = getPaymentRecordDetailTimeline(record);
 
@@ -77,16 +82,29 @@ export default function PaymentRecordDetailPage() {
           <div className="finance-record-detail-breadcrumb">
             <span>财务管理</span>
             <span>/</span>
-            <span>{record ? getPaymentRecordTypeLabel(record.type) : "流水详情"}</span>
+            <span>
+              {record ? getPaymentRecordTypeLabel(record.type) : "流水详情"}
+            </span>
           </div>
           <div className="finance-record-detail-title-row">
             <h1>财务流水详情</h1>
-            {record ? <Tag color={record.amountCents && record.amountCents >= 0 ? "success" : "error"}>{getDirectionLabel(record)}</Tag> : null}
+            {record ? (
+              <Tag color={record.direction === "INCOME" ? "success" : "error"}>
+                {getDirectionLabel(record)}
+              </Tag>
+            ) : null}
           </div>
-          <p>{record ? `${getPaymentRecordTypeLabel(record.type)} / ${formatCentsAsYuan(record.amountCents)}` : "查看交易摘要、账户状态、关联单据和审核流轨迹"}</p>
+          <p>
+            {record
+              ? `${getPaymentRecordTypeLabel(record.type)} / ${formatCentsAsYuan(record.amountCents)}`
+              : "查看交易摘要、账户状态、关联单据和审核流轨迹"}
+          </p>
         </div>
         <div className="finance-record-detail-actions">
-          <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/finance")}>
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={() => router.push("/finance/ledger")}
+          >
             返回收支流水
           </Button>
           <Button icon={<DownloadOutlined />} disabled={!record}>
@@ -106,10 +124,23 @@ export default function PaymentRecordDetailPage() {
       ) : (
         <>
           <section className="finance-record-metrics">
-            <RecordMetric label="交易金额" value={formatCentsAsYuan(record.amountCents)} tone={getAmountTone(record)} />
-            <RecordMetric label="交易类型" value={getPaymentRecordTypeLabel(record.type)} />
-            <RecordMetric label="账户/状态" value={getPaymentAccountLabel(record)} />
-            <RecordMetric label="交易时间" value={formatRecordDateTime(record.createdAt)} />
+            <RecordMetric
+              label="交易金额"
+              value={formatCentsAsYuan(record.amountCents)}
+              tone={getAmountTone(record)}
+            />
+            <RecordMetric
+              label="交易类型"
+              value={getPaymentRecordTypeLabel(record.type)}
+            />
+            <RecordMetric
+              label="账户/状态"
+              value={getPaymentAccountLabel(record)}
+            />
+            <RecordMetric
+              label="交易时间"
+              value={formatRecordDateTime(record.createdAt)}
+            />
           </section>
 
           <section className="finance-record-detail-grid">
@@ -118,16 +149,31 @@ export default function PaymentRecordDetailPage() {
                 <div className="finance-record-section-title">
                   <TransactionOutlined />
                   <h2>交易摘要</h2>
-                  <Tag color={record.amountCents && record.amountCents >= 0 ? "success" : "error"}>{getDirectionLabel(record)}</Tag>
+                  <Tag
+                    color={record.direction === "INCOME" ? "success" : "error"}
+                  >
+                    {getDirectionLabel(record)}
+                  </Tag>
                 </div>
                 <div className="finance-record-summary-card">
                   <strong>{formatCentsAsYuan(record.amountCents)}</strong>
-                  <span>{record.note || getPaymentRecordTypeLabel(record.type)}</span>
+                  <span>
+                    {record.note || getPaymentRecordTypeLabel(record.type)}
+                  </span>
                 </div>
                 <div className="finance-record-info-grid">
-                  <InfoItem label="交易类型" value={getPaymentRecordTypeLabel(record.type)} />
-                  <InfoItem label="流水摘要" value={getPaymentRecordSummaryLabel(record)} />
-                  <InfoItem label="经办人" value={record.createdById ? "已记录经办人" : "待确认经办人"} />
+                  <InfoItem
+                    label="交易类型"
+                    value={getPaymentRecordTypeLabel(record.type)}
+                  />
+                  <InfoItem
+                    label="流水摘要"
+                    value={getPaymentRecordSummaryLabel(record)}
+                  />
+                  <InfoItem
+                    label="经办人"
+                    value={record.createdById ? "已记录经办人" : "待确认经办人"}
+                  />
                   <InfoItem label="门店" value={storeName ?? "当前门店"} />
                 </div>
               </Card>
@@ -138,10 +184,24 @@ export default function PaymentRecordDetailPage() {
                   <h2>交易明细</h2>
                 </div>
                 <div className="finance-record-detail-list">
-                  <InfoItem label="摘要" value={record.note || getPaymentRecordTypeLabel(record.type)} />
-                  <InfoItem label="金额方向" value={getDirectionLabel(record)} />
-                  <InfoItem label="账户/状态" value={getPaymentAccountLabel(record)} />
-                  <InfoItem label="创建时间" value={formatRecordDateTime(record.createdAt)} />
+                  <InfoItem
+                    label="摘要"
+                    value={
+                      record.note || getPaymentRecordTypeLabel(record.type)
+                    }
+                  />
+                  <InfoItem
+                    label="金额方向"
+                    value={getDirectionLabel(record)}
+                  />
+                  <InfoItem
+                    label="账户/状态"
+                    value={getPaymentAccountLabel(record)}
+                  />
+                  <InfoItem
+                    label="创建时间"
+                    value={formatRecordDateTime(record.createdAt)}
+                  />
                 </div>
               </Card>
 
@@ -157,7 +217,11 @@ export default function PaymentRecordDetailPage() {
                   </div>
                   <div>
                     <span>关联状态</span>
-                    <strong>{record.sourceId || record.referenceId ? "已关联来源单据" : "未关联来源单据"}</strong>
+                    <strong>
+                      {record.sourceId || record.referenceId
+                        ? "已关联来源单据"
+                        : "未关联来源单据"}
+                    </strong>
                   </div>
                 </div>
               </Card>
@@ -171,11 +235,15 @@ export default function PaymentRecordDetailPage() {
                 </div>
                 <div className="finance-record-account-box">
                   <strong>{getPaymentAccountLabel(record)}</strong>
-                  <span>{getPaymentAccountTypeLabel(record.account?.type)} / {maskAccountNo(record.account?.accountNo)}</span>
+                  <span>
+                    {getPaymentAccountTypeLabel(record.account?.type)} /{" "}
+                    {maskAccountNo(record.account?.accountNo)}
+                  </span>
                 </div>
                 <div className="finance-record-actions">
-                  <Button type="primary">批准拨款</Button>
-                  <Button danger>驳回申请</Button>
+                  <Button onClick={() => router.push("/finance/ledger")}>
+                    返回流水列表
+                  </Button>
                 </div>
               </Card>
 
@@ -186,7 +254,10 @@ export default function PaymentRecordDetailPage() {
                 </div>
                 <div className="finance-record-timeline">
                   {timeline.map((item) => (
-                    <div key={item.key} className={`finance-record-timeline-item is-${item.tone}`}>
+                    <div
+                      key={item.key}
+                      className={`finance-record-timeline-item is-${item.tone}`}
+                    >
                       <span />
                       <div>
                         <strong>{item.title}</strong>
@@ -208,7 +279,13 @@ export default function PaymentRecordDetailPage() {
                       <span>打款详情与凭证</span>
                       <strong>{getPaymentRecordTypeLabel(record.type)}</strong>
                     </div>
-                    <Tag color={(record.amountCents ?? 0) >= 0 ? "success" : "warning"}>{getDirectionLabel(record)}</Tag>
+                    <Tag
+                      color={
+                        record.direction === "INCOME" ? "success" : "warning"
+                      }
+                    >
+                      {getDirectionLabel(record)}
+                    </Tag>
                   </div>
                   <div className="finance-record-voucher-summary">
                     <span>打款金额</span>
@@ -217,14 +294,23 @@ export default function PaymentRecordDetailPage() {
                   <div className="finance-record-upload-box">
                     <PaperClipOutlined />
                     <strong>上传银行凭证</strong>
-                    <span>支持 PNG、JPG 或 PDF 格式，凭证归档后可随流水导出。</span>
+                    <span>
+                      支持 PNG、JPG 或 PDF 格式，凭证归档后可随流水导出。
+                    </span>
                   </div>
                   <label className="finance-record-voucher-note">
                     <span>财务备注</span>
-                    <Input.TextArea rows={3} value={record.note ?? ""} placeholder="输入相关备注信息" readOnly />
+                    <Input.TextArea
+                      rows={3}
+                      value={record.note ?? ""}
+                      placeholder="输入相关备注信息"
+                      readOnly
+                    />
                   </label>
                   <div className="finance-record-voucher-time">
-                    <span>记录时间: {formatRecordDateTime(record.createdAt)}</span>
+                    <span>
+                      记录时间: {formatRecordDateTime(record.createdAt)}
+                    </span>
                   </div>
                   <Button type="primary" block disabled>
                     提交并标记已打款
@@ -234,7 +320,9 @@ export default function PaymentRecordDetailPage() {
                   <SafetyCertificateOutlined />
                   <div>
                     <strong>凭证待补充</strong>
-                    <span>支持上传银行回单、合同、发票或付款截图，归档后可随流水导出。</span>
+                    <span>
+                      支持上传银行回单、合同、发票或付款截图，归档后可随流水导出。
+                    </span>
                   </div>
                 </div>
               </Card>
@@ -246,7 +334,15 @@ export default function PaymentRecordDetailPage() {
   );
 }
 
-function RecordMetric({ label, value, tone }: { label: string; value: string; tone?: "income" | "expense" }) {
+function RecordMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "income" | "expense";
+}) {
   return (
     <Card className={`finance-record-metric ${tone ? `is-${tone}` : ""}`}>
       <span>{label}</span>
@@ -264,7 +360,9 @@ function InfoItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function getPaymentRecordDetailTimeline(record?: PaymentRecordDetail): FinanceRecordTimelineItem[] {
+function getPaymentRecordDetailTimeline(
+  record?: PaymentRecordDetail,
+): FinanceRecordTimelineItem[] {
   if (!record) return [];
 
   return [
@@ -272,26 +370,32 @@ export function getPaymentRecordDetailTimeline(record?: PaymentRecordDetail): Fi
       key: "created",
       title: "创建流水",
       description: `${formatRecordDateTime(record.createdAt)} 记录 ${getPaymentRecordTypeLabel(record.type)}。`,
-      tone: "primary"
+      tone: "primary",
     },
     {
       key: "source",
       title: "关联业务单据",
-      description: record.sourceId || record.referenceId ? "已关联来源单据。" : "当前流水未关联来源单据。",
-      tone: record.sourceId || record.referenceId ? "success" : "muted"
+      description:
+        record.sourceId || record.referenceId
+          ? "已关联来源单据。"
+          : "当前流水未关联来源单据。",
+      tone: record.sourceId || record.referenceId ? "success" : "muted",
     },
     {
       key: "settlement",
-      title: (record.amountCents ?? 0) >= 0 ? "收入入账" : "支出核销",
-      description: (record.amountCents ?? 0) >= 0 ? "收入已进入财务流水，可用于报表分析统计。" : "支出已进入财务流水，需保留审批和付款凭证。",
-      tone: (record.amountCents ?? 0) >= 0 ? "success" : "warning"
+      title: record.direction === "INCOME" ? "收入入账" : "支出核销",
+      description:
+        record.direction === "INCOME"
+          ? "收入已进入财务流水，可用于报表分析统计。"
+          : "支出已进入财务流水，需保留审批和付款凭证。",
+      tone: record.direction === "INCOME" ? "success" : "warning",
     },
     {
       key: "attachment",
       title: "附件归档",
       description: "附件凭证待归档。",
-      tone: "muted"
-    }
+      tone: "muted",
+    },
   ];
 }
 
@@ -302,7 +406,10 @@ function getPaymentAccountLabel(record: PaymentRecordDetail) {
 }
 
 function getPaymentRecordSummaryLabel(record: PaymentRecordDetail) {
-  return record.note || `${getPaymentRecordTypeLabel(record.type)} / ${formatRecordDateTime(record.createdAt)}`;
+  return (
+    record.note ||
+    `${getPaymentRecordTypeLabel(record.type)} / ${formatRecordDateTime(record.createdAt)}`
+  );
 }
 
 function getDirectionLabel(record: PaymentRecordDetail) {

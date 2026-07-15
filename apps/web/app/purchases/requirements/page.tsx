@@ -2,7 +2,7 @@
 
 import type { ProductUnit } from "@mallbay/shared";
 import { Alert, Button, Card, Drawer, Form, InputNumber, Select, Space, Table, Tag, message } from "antd";
-import { ArrowLeftOutlined, FileTextOutlined, PlusOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, DeleteOutlined, FileTextOutlined, PlusOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -79,17 +79,11 @@ export default function PurchaseRequirementsPage() {
     label: getProductDisplayName(product)
   }));
   const createRequirement = useMutation({
-    mutationFn: (values: { productId: string; requiredQuantity: number; requiredUnit: ProductUnit }) => {
+    mutationFn: (values: { items: Array<{ productId: string; requiredQuantity: number; requiredUnit: ProductUnit }> }) => {
       if (!storeId) throw new Error("请先选择门店");
       return purchaseApi.createRequirement({
         storeId,
-        items: [
-          {
-            productId: values.productId,
-            requiredQuantity: values.requiredQuantity,
-            requiredUnit: values.requiredUnit
-          }
-        ]
+        items: values.items
       });
     },
     onSuccess: async () => {
@@ -137,7 +131,7 @@ export default function PurchaseRequirementsPage() {
                 {
                   title: "需求来源",
                   render: (_, row) => (
-                    <Space direction="vertical" size={2}>
+                    <Space orientation="vertical" size={2}>
                       <span>{getPurchaseRequirementSourceOrderLabel(row)}</span>
                       <small>{row.createdAt ? row.createdAt.slice(0, 10) : "创建时间待确认"}</small>
                     </Space>
@@ -148,7 +142,7 @@ export default function PurchaseRequirementsPage() {
                 {
                   title: "已关联采购单",
                   render: (_, row) => (
-                    <Space direction="vertical" size={2}>
+                    <Space orientation="vertical" size={2}>
                       {(row.purchaseOrders ?? []).length > 0 ? row.purchaseOrders?.map((order) => (
                         <Button key={order.id ?? order.orderNo} type="link" size="small" onClick={() => order.id && router.push(`/purchases/orders/${order.id}`)}>
                           {order.orderNo ?? "未编号采购单"}
@@ -185,18 +179,35 @@ export default function PurchaseRequirementsPage() {
           form={createRequirementForm}
           layout="vertical"
           className="purchases-requirement-create-form"
-          initialValues={{ requiredUnit: "ROLL" }}
-          onFinish={(values: { productId: string; requiredQuantity: number; requiredUnit: ProductUnit }) => createRequirement.mutate(values)}
+          initialValues={{ items: [{ requiredUnit: "ROLL" }] }}
+          onFinish={(values: { items: Array<{ productId: string; requiredQuantity: number; requiredUnit: ProductUnit }> }) => createRequirement.mutate(values)}
         >
-          <Form.Item name="productId" label="选择采购产品" rules={[{ required: true, message: "请选择采购产品" }]}>
-            <Select showSearch optionFilterProp="label" loading={productsQuery.isLoading} placeholder="按品牌、名称或型号搜索" options={productOptions} />
-          </Form.Item>
-          <Form.Item name="requiredQuantity" label="需求数量" rules={[{ required: true, message: "请输入需求数量" }]}>
-            <InputNumber className="w-full" min={0.001} placeholder="输入采购数量" />
-          </Form.Item>
-          <Form.Item name="requiredUnit" label="需求单位" rules={[{ required: true, message: "请选择需求单位" }]}>
-            <Select options={PRODUCT_UNIT_OPTIONS} />
-          </Form.Item>
+          <Form.List name="items">
+            {(fields, { add, remove }) => (
+              <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+                {fields.map(({ key, name, ...field }) => (
+                  <Card key={key} size="small" title={`需求明细 ${name + 1}`} extra={fields.length > 1 ? (
+                    <Button type="text" danger icon={<DeleteOutlined />} aria-label={`删除需求明细 ${name + 1}`} onClick={() => remove(name)} />
+                  ) : null}>
+                    <Form.Item {...field} name={[name, "productId"]} label="选择采购产品" rules={[{ required: true, message: "请选择采购产品" }]}>
+                      <Select showSearch optionFilterProp="label" loading={productsQuery.isLoading} placeholder="按品牌、名称或型号搜索" options={productOptions} />
+                    </Form.Item>
+                    <Space.Compact block>
+                      <Form.Item {...field} name={[name, "requiredQuantity"]} label="需求数量" rules={[{ required: true, message: "请输入需求数量" }]} style={{ flex: 1 }}>
+                        <InputNumber className="w-full" min={0.001} placeholder="输入采购数量" />
+                      </Form.Item>
+                      <Form.Item {...field} name={[name, "requiredUnit"]} label="需求单位" rules={[{ required: true, message: "请选择需求单位" }]} style={{ width: 150 }}>
+                        <Select options={PRODUCT_UNIT_OPTIONS} />
+                      </Form.Item>
+                    </Space.Compact>
+                  </Card>
+                ))}
+                <Button icon={<PlusOutlined />} onClick={() => add({ requiredUnit: "ROLL" })}>
+                  添加产品
+                </Button>
+              </Space>
+            )}
+          </Form.List>
           <div className="purchases-requirement-create-actions">
             <Button onClick={() => setIsCreateDrawerOpen(false)}>取消</Button>
             <Button type="primary" htmlType="submit" loading={createRequirement.isPending}>

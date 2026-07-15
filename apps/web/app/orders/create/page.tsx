@@ -42,6 +42,9 @@ type ProductOption = {
   name: string;
   model: string;
   basePriceCents: number;
+  unit?: string | null;
+  salesUnit?: string | null;
+  inventoryUnit?: string | null;
 };
 
 type NewOrderCustomerFormValues = CreateCustomerFormValues & {
@@ -142,7 +145,7 @@ function CreateOrderContent() {
   }));
   const vehicleOptions = buildOrderVehicleOptions(selectedCustomer);
   const productOptions = ((productsQuery.data?.items ?? []) as ProductOption[]).map((product) => ({
-    label: getOrderProductLabel(product),
+    label: `${getOrderProductLabel(product)}（销售单位：${product.salesUnit ?? product.unit ?? "件"}）`,
     value: product.id,
     product
   }));
@@ -873,7 +876,7 @@ function CustomerHistoryPanel({
           {customerHistory.recentConstructionRecords.length > 0 ? (
             <div className="create-order-history-section">
               <Typography.Text strong>最近施工记录</Typography.Text>
-              <Space className="mt-2 w-full" direction="vertical" size={6}>
+              <Space className="mt-2 w-full" orientation="vertical" size={6}>
                 {customerHistory.recentConstructionRecords.map((record) => (
                   <div
                     key={`${record.orderNo}-${record.completedAt ?? "pending"}`}

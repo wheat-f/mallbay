@@ -232,7 +232,7 @@ export class InventoryService {
     if (!PermissionPolicy.canViewInventory(actor, query.storeId)) {
       throw new ForbiddenException("无权限");
     }
-    return this.prisma.inventoryMovement.findMany({
+    const movements = await this.prisma.inventoryMovement.findMany({
       where: {
         storeId: query.storeId,
         productId: query.productId,
@@ -242,7 +242,51 @@ export class InventoryService {
         createdById: query.createdById,
         createdAt: buildDateRangeFilter(query.createdFrom, query.createdTo)
       },
+      include: {
+        product: true,
+        batch: true,
+        order: { select: { id: true, orderNo: true } },
+        createdBy: { select: { id: true, username: true, nickname: true } }
+      },
       orderBy: { createdAt: "desc" }
+    });
+
+    const sourceIds = [...new Set(movements.map((movement) => movement.sourceId).filter((id): id is string => Boolean(id)))];
+    const [allocations, purchaseItems] = await Promise.all([
+      sourceIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.orderInventoryAllocation.findMany({
+            where: { id: { in: sourceIds } },
+            select: { id: true, order: { select: { id: true, orderNo: true } } }
+          }),
+      sourceIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.purchaseOrderItem.findMany({
+            where: { id: { in: sourceIds } },
+            select: { id: true, purchaseOrder: { select: { id: true, orderNo: true } } }
+          })
+    ]);
+
+    const allocationMap = new Map(allocations.map((allocation) => [allocation.id, allocation.order]));
+    const purchaseItemMap = new Map(purchaseItems.map((item) => [item.id, item.purchaseOrder]));
+
+    return movements.map((movement) => {
+      const allocationOrder = movement.sourceId ? allocationMap.get(movement.sourceId) : undefined;
+      const purchaseOrder = movement.sourceId ? purchaseItemMap.get(movement.sourceId) : undefined;
+      const relatedDocument = movement.order
+        ? { type: "ORDER", id: movement.order.id, number: movement.order.orderNo }
+        : allocationOrder
+          ? { type: "ORDER", id: allocationOrder.id, number: allocationOrder.orderNo }
+          : purchaseOrder
+            ? { type: "PURCHASE_ORDER", id: purchaseOrder.id, number: purchaseOrder.orderNo }
+            : null;
+
+      return {
+        ...movement,
+        relatedDocument,
+        sourceOrderNo: relatedDocument?.number ?? null,
+        sourceNo: relatedDocument?.number ?? movement.sourceId ?? null
+      };
     });
   }
 

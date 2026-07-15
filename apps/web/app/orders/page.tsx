@@ -41,7 +41,10 @@ type OrderRow = {
   appointmentDate?: string | null;
   appointmentTimeSlot?: string | null;
   createdAt: string;
+  items?: Array<{ product?: { brand?: string | null; name?: string | null; model?: string | null } | null }>;
 };
+
+type SalesExportDimension = "customer" | "date" | "product";
 
 const PAYMENT_STATUS_LABEL: Record<OrderPaymentStatus, string> = {
   UNPAID: "未收款",
@@ -97,6 +100,7 @@ function OrdersContent() {
   const [page, setPage] = useState(() => toPositiveNumber(searchParams.get("page"), 1));
   const [pageSize, setPageSize] = useState(() => toPositiveNumber(searchParams.get("pageSize"), 20));
   const [paymentOrder, setPaymentOrder] = useState<OrderRow | null>(null);
+  const [exportDimension, setExportDimension] = useState<SalesExportDimension>("customer");
 
   const updateOrderListUrl = (next: Partial<OrderListFilterState>) => {
     const filters: OrderListFilterState = {
@@ -164,13 +168,21 @@ function OrdersContent() {
     router.push(`/invoices?action=create-invoice&orderId=${orderId}`);
   };
   const exportOrders = () => {
+    const exportRows = [...rows].sort((left, right) => {
+      if (exportDimension === "date") {
+        return String(left.appointmentDate ?? left.createdAt).localeCompare(String(right.appointmentDate ?? right.createdAt));
+      }
+      if (exportDimension === "product") return getOrderProductSummary(left).localeCompare(getOrderProductSummary(right));
+      return getOrderCustomerName(left).localeCompare(getOrderCustomerName(right));
+    });
     exportRowsToExcel(
-      "sales-orders.xlsx",
+      `sales-orders-by-${exportDimension}.xlsx`,
       "销售订单",
-      rows.map((row) => ({
+      exportRows.map((row) => ({
         订单号: row.orderNo,
         客户: getOrderCustomerName(row),
         车辆: getOrderVehicleSummary(row),
+        产品: getOrderProductSummary(row),
         状态: getOrderStatusLabel(row.status),
         施工类型: getConstructionTypeLabel(row.constructionType),
         订单金额: (row.amount?.totalAmountCents ?? 0) / 100,
@@ -201,6 +213,13 @@ function OrdersContent() {
     <>
       <div className="management-page">
           <StorePageHeader title="销售订单列表" description="查看销售订单、施工类型和收款进度">
+            <Select
+              aria-label="销售订单导出维度"
+              value={exportDimension}
+              onChange={setExportDimension}
+              options={[{ label: "按客户导出", value: "customer" }, { label: "按日期导出", value: "date" }, { label: "按产品导出", value: "product" }]}
+              style={{ width: 140 }}
+            />
             <Button icon={<DownloadOutlined />} disabled={rows.length === 0} onClick={exportOrders}>
               导出 Excel
             </Button>
@@ -575,6 +594,14 @@ function getOrderCustomerName(row: OrderRow) {
 function getOrderVehicleSummary(row: OrderRow) {
   const plateAndColor = [row.vehicle?.carPlate, row.vehicle?.carColor].filter(Boolean).join(" / ");
   return [row.vehicle?.carModel, plateAndColor].filter(Boolean).join(" · ") || "-";
+}
+
+function getOrderProductSummary(row: OrderRow) {
+  const products = (row.items ?? []).map((item) => {
+    const product = item.product;
+    return [product?.brand, product?.name, product?.model].filter(Boolean).join(" / ");
+  }).filter(Boolean);
+  return products.join("；") || "-";
 }
 
 function getPaymentStatus(row: OrderRow) {

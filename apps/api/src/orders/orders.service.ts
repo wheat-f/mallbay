@@ -57,12 +57,21 @@ export class OrdersService {
           customer: { select: { id: true, name: true, companyName: true, contactPerson: true } },
           vehicle: { select: { id: true, carPlate: true, carModel: true, carColor: true } },
           salesPerson: { select: { id: true, username: true, nickname: true } },
+          constructionRecord: { select: { status: true } },
           amount: true
         }
       })
     ]);
 
-    return { total, page, pageSize, items };
+    return {
+      total,
+      page,
+      pageSize,
+      items: items.map((item) => ({
+        ...item,
+        status: getEffectiveOrderStatus(item.status, item.constructionRecord?.status)
+      }))
+    };
   }
 
   async detail(user: AuthenticatedOrderUser, id: string) {
@@ -575,6 +584,19 @@ function isOrderCommercialsEditableStatus(status: OrderStatus) {
     OrderStatus.COMPLETED
   ];
   return editableStatuses.includes(status);
+}
+
+function getEffectiveOrderStatus(
+  orderStatus: OrderStatus,
+  constructionStatus?: "DISPATCHED" | "IN_CONSTRUCTION" | "COMPLETED" | null
+) {
+  if (orderStatus === OrderStatus.CANCELLED || orderStatus === OrderStatus.WARRANTIED) {
+    return orderStatus;
+  }
+  if (constructionStatus === "COMPLETED") return OrderStatus.COMPLETED;
+  if (constructionStatus === "IN_CONSTRUCTION") return OrderStatus.IN_CONSTRUCTION;
+  if (constructionStatus === "DISPATCHED") return OrderStatus.DISPATCHED;
+  return orderStatus;
 }
 
 type ExistingCommercialOrderItem = {

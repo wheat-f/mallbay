@@ -1,7 +1,7 @@
 "use client";
 
-import { Alert, Button, Card, Space, Table, Tag } from "antd";
-import { ArrowLeftOutlined, PlusOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Select, Space, Table, Tag } from "antd";
+import { ArrowLeftOutlined, DownloadOutlined, PlusOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { purchaseApi } from "../../../src/lib/api";
@@ -9,6 +9,8 @@ import { getPurchaseInboundItemDetails, getPurchaseOrderArrivalReminder, getPurc
 import { PurchaseModuleNav } from "../../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { exportRowsToExcel } from "../../../src/lib/export-excel";
+import { useState } from "react";
 
 type PurchaseOrderRow = {
   id: string;
@@ -18,6 +20,8 @@ type PurchaseOrderRow = {
   expectedAt?: string | null;
   items?: unknown[];
 };
+
+type PurchaseExportDimension = "supplier" | "product" | "date";
 
 export default function PurchasesOrdersPage() {
   const router = useRouter();
@@ -32,11 +36,34 @@ export default function PurchasesOrdersPage() {
     enabled: Boolean(storeId)
   });
   const rows = (ordersQuery.data ?? []) as PurchaseOrderRow[];
+  const [exportDimension, setExportDimension] = useState<PurchaseExportDimension>("supplier");
+  const exportOrders = () => {
+    const exportRows = [...rows].sort((left, right) => {
+      if (exportDimension === "date") return String(left.expectedAt ?? "").localeCompare(String(right.expectedAt ?? ""));
+      if (exportDimension === "product") return getPurchaseProductSummary(left).localeCompare(getPurchaseProductSummary(right));
+      return String(left.supplierName ?? "").localeCompare(String(right.supplierName ?? ""));
+    });
+    exportRowsToExcel(`purchase-orders-by-${exportDimension}.xlsx`, "采购订单", exportRows.map((row) => ({
+      采购单号: row.orderNo ?? "",
+      供应商: row.supplierName ?? "",
+      产品: getPurchaseProductSummary(row),
+      状态: getPurchaseOrderStatusLabel(row.status),
+      预计到货: row.expectedAt ?? ""
+    })));
+  };
 
   return (
     <div className="management-page purchases-orders-page">
       <StorePageHeader title="采购订单" description="查看采购订单、审批状态、预计到货和到货验收进度。">
         <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/purchases")}>返回采购总览</Button>
+        <Select
+          aria-label="采购订单导出维度"
+          value={exportDimension}
+          onChange={setExportDimension}
+          options={[{ label: "按供应商导出", value: "supplier" }, { label: "按产品导出", value: "product" }, { label: "按日期导出", value: "date" }]}
+          style={{ width: 150 }}
+        />
+        <Button icon={<DownloadOutlined />} disabled={rows.length === 0} onClick={exportOrders}>导出明细</Button>
         <Button type="primary" icon={<PlusOutlined />} disabled={!canManagePurchase} onClick={() => router.push("/purchases/orders/create")}>
           从采购需求创建
         </Button>
@@ -92,4 +119,8 @@ export default function PurchasesOrdersPage() {
       </div>
     </div>
   );
+}
+
+function getPurchaseProductSummary(row: PurchaseOrderRow) {
+  return (row.items ?? []).map((item) => getPurchaseInboundItemDetails(item as never).product).filter(Boolean).join("；") || "-";
 }

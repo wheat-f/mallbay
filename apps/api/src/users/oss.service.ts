@@ -150,6 +150,23 @@ export class OssService {
     );
   }
 
+  async uploadFinanceAttachment(storeId: string, applicationId: string, file: MulterFile): Promise<string> {
+    return this.traceUpload(
+      { component: "oss", target: "finance_attachment", storeId, applicationId, bytes: file.buffer.length },
+      async () => {
+        const ext = path.extname(file.originalname) || ".bin";
+        const key = `finance/${storeId}/${applicationId}/${crypto.randomUUID()}${ext}`;
+        if (this.isLocalProvider()) {
+          await this.putLocalObject(key, file.buffer);
+          return this.buildLocalUrl(key);
+        }
+        const { client, bucket, region } = this.getClient();
+        await client.put(key, file.buffer);
+        return this.buildUrl(key, bucket, region);
+      }
+    );
+  }
+
   private traceUpload(fields: Record<string, unknown>, callback: () => Promise<string>) {
     return this.trace?.traceOperation("oss.upload", fields, callback) ?? callback();
   }

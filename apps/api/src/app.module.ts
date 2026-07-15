@@ -17,6 +17,7 @@ import { ProductsModule } from "./products/products.module";
 import { PurchasesModule } from "./purchases/purchases.module";
 import { RebatesModule } from "./rebates/rebates.module";
 import { ReportsModule } from "./reports/reports.module";
+import { SettingsModule } from "./settings/settings.module";
 import { StoresModule } from "./stores/stores.module";
 import { UsersModule } from "./users/users.module";
 import { WarrantiesModule } from "./warranties/warranties.module";
@@ -39,6 +40,7 @@ import { HealthController } from "./health.controller";
     InvoicesModule,
     RebatesModule,
     ReportsModule,
+    SettingsModule,
     ProductsModule,
     PurchasesModule,
     OrdersModule,

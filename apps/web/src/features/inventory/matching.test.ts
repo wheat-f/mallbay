@@ -217,6 +217,7 @@ test("buildInventoryAllocationRows formats locked allocation batch trace", () =>
         outboundQuantity: 0,
         remainingQuantity: 2,
         unit: "ROLL",
+        salesUnit: "ROLL",
         status: "LOCKED"
       }
     ]

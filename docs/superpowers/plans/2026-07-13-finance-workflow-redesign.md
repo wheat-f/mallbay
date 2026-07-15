@@ -1,6 +1,6 @@
 # Finance Workflow Redesign Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Implementation note:** This plan is executed with the repository toolchain and does not require an external plugin. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将财务管理重构为可查询、可审批、可付款、可追溯的费用与报销闭环，并把财务首页恢复为列表和待办驱动的工作台。
 
@@ -1008,3 +1008,18 @@ git commit -m "test: verify finance workflow closure"
 - 店长、财务、申请人和管理员只看到自己的操作。
 - 生产启动执行迁移和数据库不变量预检。
 - API、流程、Web、类型检查和生产构建全部通过。
+
+## Current implementation audit (2026-07-14)
+
+The implementation has been audited against this plan without relying on the previously installed plugin.
+
+| Area | Status | Evidence / remaining action |
+|---|---|---|
+| Finance schema, audit records, attachments, payment direction | Implemented | Prisma schema and migration `20260713120000_finance_workflow_redesign` are present. The migration adds the unique `(type, sourceId)` payment idempotency index. |
+| Role permissions and `mine`/`all` scopes | Implemented | `PermissionPolicy`, controller guards, query service, and permission tests cover manager, finance, purchasing, and applicant visibility. |
+| Expense application workflow | Implemented | Submit, manager review, withdraw, resubmit, detail, approval records, and allowed actions are implemented and tested. |
+| Reimbursement workflow | Implemented | Linked-expense validation now subtracts pending, approved, and paid reimbursements before accepting a new amount. Finance review and payment are separate; payment is represented by one `EXPENSE` ledger row. |
+| Finance attachments and OSS persistence | Implemented | Multipart upload persists the attachment metadata and object URL; detail APIs return attachment records. |
+| Web workspaces | Implemented | Overview, expense list/detail, reimbursement list/detail, account management, ledger and payment detail use separate routes and role-aware actions. |
+| Automated verification | Passed with one runner limitation | API finance regression: 263 passed; flow tests: 6 passed; targeted finance Web tests: 14 passed; all feature-directory Web tests passed except the final `management-shell.test.ts` case, whose process did not exit within the runner timeout and emitted no assertion failure. API/Web typecheck and production builds passed; `git diff --check` passed. |
+| Real database migration and manual role acceptance | Partially verified | With a cleaned local `DATABASE_URL`, Prisma found 24 migrations with no pending changes and `db:preflight` passed against local PostgreSQL. Manual manager/finance/purchasing role-matrix acceptance and deployed-environment payment idempotency checks remain pending. |

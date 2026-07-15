@@ -839,7 +839,7 @@ function validateRequiredUpload(message: string) {
   };
 }
 
-export function getAfterSaleDetailTimeline(afterSale?: AfterSaleSummary): AfterSaleTimelineItem[] {
+function getAfterSaleDetailTimeline(afterSale?: AfterSaleSummary): AfterSaleTimelineItem[] {
   if (!afterSale) return [];
 
   if (afterSale.events?.length) {

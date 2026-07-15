@@ -76,6 +76,8 @@ model User {
   reimbursementApplications  ReimbursementApplication[] @relation("ReimbursementApplicant")
   reviewedReimbursements     ReimbursementApplication[] @relation("ReimbursementReviewedBy")
   paymentRecords             PaymentRecord[]            @relation("PaymentRecordCreatedBy")
+  financeApprovalRecords     FinanceApprovalRecord[]    @relation("FinanceApprovalOperator")
+  financeAttachments         FinanceAttachment[]        @relation("FinanceAttachmentUploader")
   invoicesApplied            Invoice[]                  @relation("InvoiceAppliedBy")
   invoicesHandled            InvoiceLog[]               @relation("InvoiceLogCreatedBy")
   rebatesApplied             CustomerRebate[]           @relation("RebateAppliedBy")
@@ -86,6 +88,11 @@ model User {
 }
 
 // ─── Store ───────────────────────────────────────────────────────────────────
+
+enum DictionaryStatus {
+  ACTIVE
+  INACTIVE
+}
 
 enum StoreStatus {
   DRAFTED // 筹办中：审核员刚创建，店长尚未提交信息
@@ -134,14 +141,33 @@ model Store {
   expenseApplications        ExpenseApplication[]
   reimbursementApplications  ReimbursementApplication[]
   paymentRecords             PaymentRecord[]
+  financeApprovalRecords     FinanceApprovalRecord[]
+  financeAttachments         FinanceAttachment[]
   invoices                   Invoice[]
   customerRebates            CustomerRebate[]
+  dictionaries               Dictionary[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([createdById])
   @@index([status])
+}
+
+model Dictionary {
+  id        String           @id @default(cuid())
+  storeId   String
+  name      String
+  code      String
+  items     Json
+  status    DictionaryStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, code])
+  @@index([storeId, status])
 }
 
 // 当前对外展示的门店照片（审核通过后从 StoreSubmissionPhoto 同步过来）
@@ -436,6 +462,38 @@ enum PaymentRecordType {
   OTHER
 }
 
+enum PaymentDirection {
+  INCOME
+  EXPENSE
+}
+
+enum FinanceApplicationType {
+  EXPENSE
+  REIMBURSEMENT
+}
+
+enum FinanceApprovalNode {
+  MANAGER_REVIEW
+  FINANCE_REVIEW
+  PAYMENT
+}
+
+enum FinanceApprovalAction {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  RESUBMITTED
+  PAID
+}
+
+enum FinanceAttachmentCategory {
+  INVOICE
+  CONTRACT
+  PAYMENT_PROOF
+  OTHER
+}
+
 enum InvoiceStatus {
   APPLIED
   ISSUED
@@ -635,16 +693,16 @@ model Order {
 }
 
 model OrderItem {
-  id             String @id @default(cuid())
-  orderId        String
-  productId      String
-  quantity       Int
-  salesUnit      ProductUnit?
-  baseUnit       ProductUnit?
-  baseQuantityPerSalesUnit Decimal? @db.Decimal(12, 3)
-  requiredBaseQuantity     Decimal? @db.Decimal(12, 3)
-  unitPriceCents Int
-  amountCents    Int
+  id                       String       @id @default(cuid())
+  orderId                  String
+  productId                String
+  quantity                 Int
+  salesUnit                ProductUnit?
+  baseUnit                 ProductUnit?
+  baseQuantityPerSalesUnit Decimal?     @db.Decimal(12, 3)
+  requiredBaseQuantity     Decimal?     @db.Decimal(12, 3)
+  unitPriceCents           Int
+  amountCents              Int
 
   order                    Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product                  Product                    @relation(fields: [productId], references: [id])
@@ -655,18 +713,18 @@ model OrderItem {
 }
 
 model OrderAmount {
-  id                   String @id @default(cuid())
-  orderId              String @unique
-  productAmountCents   Int
-  laborCostCents       Int
-  suggestedLaborCostCents Int?
+  id                        String  @id @default(cuid())
+  orderId                   String  @unique
+  productAmountCents        Int
+  laborCostCents            Int
+  suggestedLaborCostCents   Int?
   laborCostAdjustmentReason String?
-  totalAmountCents     Int
-  paidAmountCents      Int    @default(0)
-  outstandingCents     Int
-  salesCommissionCents Int    @default(0)
-  materialCostCents    Int    @default(0)
-  profitCents          Int    @default(0)
+  totalAmountCents          Int
+  paidAmountCents           Int     @default(0)
+  outstandingCents          Int
+  salesCommissionCents      Int     @default(0)
+  materialCostCents         Int     @default(0)
+  profitCents               Int     @default(0)
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
@@ -683,9 +741,10 @@ model PaymentAccount {
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 
-  store          Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store          Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   payments       OrderPayment[]
   paymentRecords PaymentRecord[]
+  reimbursements ReimbursementApplication[] @relation("ReimbursementPaymentAccount")
 
   @@index([storeId, isActive])
 }
@@ -889,30 +948,30 @@ model Warehouse {
 }
 
 model InventoryBatch {
-  id                String      @id @default(cuid())
-  storeId           String
-  productId         String
-  batchNo           String
-  supplierName      String?
-  unit              ProductUnit @default(ROLL)
-  packageUnit       ProductUnit?
-  packageQuantity   Decimal?    @db.Decimal(12, 3)
-  baseUnit          ProductUnit @default(PIECE)
-  baseQuantityPerPackage Decimal? @db.Decimal(12, 3)
-  totalQuantity     Decimal     @db.Decimal(12, 3)
-  availableQuantity Decimal     @db.Decimal(12, 3)
-  lockedQuantity    Decimal     @default(0) @db.Decimal(12, 3)
-  outboundQuantity  Decimal     @default(0) @db.Decimal(12, 3)
-  unitCostCents     Int?
-  productionDate    DateTime?
-  receivedAt        DateTime?
-  warehouseId       String?
-  warehouseName     String?
-  parentBatchId     String?
-  sourceType        String?
-  sourceId          String?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  id                     String       @id @default(cuid())
+  storeId                String
+  productId              String
+  batchNo                String
+  supplierName           String?
+  unit                   ProductUnit  @default(ROLL)
+  packageUnit            ProductUnit?
+  packageQuantity        Decimal?     @db.Decimal(12, 3)
+  baseUnit               ProductUnit  @default(PIECE)
+  baseQuantityPerPackage Decimal?     @db.Decimal(12, 3)
+  totalQuantity          Decimal      @db.Decimal(12, 3)
+  availableQuantity      Decimal      @db.Decimal(12, 3)
+  lockedQuantity         Decimal      @default(0) @db.Decimal(12, 3)
+  outboundQuantity       Decimal      @default(0) @db.Decimal(12, 3)
+  unitCostCents          Int?
+  productionDate         DateTime?
+  receivedAt             DateTime?
+  warehouseId            String?
+  warehouseName          String?
+  parentBatchId          String?
+  sourceType             String?
+  sourceId               String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
 
   store        Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   product      Product                    @relation(fields: [productId], references: [id])
@@ -1079,18 +1138,18 @@ model PurchaseOrderItem {
 }
 
 model Supplier {
-  id           String   @id @default(cuid())
-  storeId      String
-  name         String
-  contactName  String?
-  contactPhone String?
+  id              String   @id @default(cuid())
+  storeId         String
+  name            String
+  contactName     String?
+  contactPhone    String?
   settlementCycle String?
-  rating       Int?
-  note         String?
-  isActive     Boolean  @default(true)
-  createdById  String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  rating          Int?
+  note            String?
+  isActive        Boolean  @default(true)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   store         Store                   @relation(fields: [storeId], references: [id], onDelete: Cascade)
   createdBy     User                    @relation("SupplierCreatedBy", fields: [createdById], references: [id])
@@ -1181,23 +1240,23 @@ model WarrantyPhoto {
 // ─── Phase 4 After-sales, Penalty, Commission ───────────────────────────────
 
 model AfterSale {
-  id             String                  @id @default(cuid())
-  storeId        String
-  orderId        String
-  warrantyId     String?
-  customerId     String
-  description    String
-  status         AfterSaleStatus         @default(OPEN)
-  responsibility AfterSaleResponsibility @default(PENDING)
-  issuePhotoUrls String[]                @default([])
-  constructionPhotoUrls String[]         @default([])
+  id                        String                  @id @default(cuid())
+  storeId                   String
+  orderId                   String
+  warrantyId                String?
+  customerId                String
+  description               String
+  status                    AfterSaleStatus         @default(OPEN)
+  responsibility            AfterSaleResponsibility @default(PENDING)
+  issuePhotoUrls            String[]                @default([])
+  constructionPhotoUrls     String[]                @default([])
   constructionIssueCategory String?
-  evidenceNote     String?
-  resolutionNote String?
-  closedAt       DateTime?
-  createdById    String
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
+  evidenceNote              String?
+  resolutionNote            String?
+  closedAt                  DateTime?
+  createdById               String
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
 
   store       Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
   order       Order                 @relation(fields: [orderId], references: [id])
@@ -1329,18 +1388,21 @@ model WorkerCommission {
 // ─── Phase 5 Finance, Invoice, Rebate, Reports ──────────────────────────────
 
 model ExpenseApplication {
-  id           String                @id @default(cuid())
-  storeId      String
-  applicantId  String
-  title        String
-  amountCents  Int
-  reason       String
-  status       FinanceApprovalStatus @default(PENDING)
-  reviewNote   String?
-  reviewedById String?
-  reviewedAt   DateTime?
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  id            String                @id @default(cuid())
+  applicationNo String                @unique
+  storeId       String
+  applicantId   String
+  title         String
+  amountCents   Int
+  reason        String
+  status        FinanceApprovalStatus @default(PENDING)
+  currentNode   FinanceApprovalNode?
+  submittedAt   DateTime?
+  reviewNote    String?
+  reviewedById  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
 
   store          Store                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   applicant      User                       @relation("ExpenseApplicant", fields: [applicantId], references: [id])
@@ -1352,24 +1414,35 @@ model ExpenseApplication {
 }
 
 model ReimbursementApplication {
-  id           String                @id @default(cuid())
-  storeId      String
-  applicantId  String
-  expenseId    String?
-  title        String
-  amountCents  Int
-  reason       String
-  status       FinanceApprovalStatus @default(PENDING)
-  reviewNote   String?
-  reviewedById String?
-  reviewedAt   DateTime?
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  id               String                @id @default(cuid())
+  applicationNo    String                @unique
+  storeId          String
+  applicantId      String
+  expenseId        String?
+  title            String
+  amountCents      Int
+  reason           String
+  status           FinanceApprovalStatus @default(PENDING)
+  currentNode      FinanceApprovalNode?
+  submittedAt      DateTime?
+  reviewNote       String?
+  reviewedById     String?
+  reviewedAt       DateTime?
+  payeeName        String?
+  payeeAccount     String?
+  paymentAccountId String?
+  paidAt           DateTime?
+  paymentRecordId  String?               @unique
+  exceptionReason  String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
 
-  store      Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  applicant  User                @relation("ReimbursementApplicant", fields: [applicantId], references: [id])
-  expense    ExpenseApplication? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
-  reviewedBy User?               @relation("ReimbursementReviewedBy", fields: [reviewedById], references: [id])
+  store          Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  applicant      User                @relation("ReimbursementApplicant", fields: [applicantId], references: [id])
+  expense        ExpenseApplication? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  reviewedBy     User?               @relation("ReimbursementReviewedBy", fields: [reviewedById], references: [id])
+  paymentAccount PaymentAccount?     @relation("ReimbursementPaymentAccount", fields: [paymentAccountId], references: [id], onDelete: SetNull)
+  paymentRecord  PaymentRecord?      @relation("ReimbursementPaymentRecord", fields: [paymentRecordId], references: [id], onDelete: SetNull)
 
   @@index([storeId, status])
   @@index([applicantId])
@@ -1381,19 +1454,63 @@ model PaymentRecord {
   storeId     String
   accountId   String?
   type        PaymentRecordType
+  direction   PaymentDirection
   amountCents Int
   sourceId    String?
   note        String?
   createdById String
   createdAt   DateTime          @default(now())
+  occurredAt  DateTime          @default(now())
 
-  store     Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  account   PaymentAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  createdBy User            @relation("PaymentRecordCreatedBy", fields: [createdById], references: [id])
+  store         Store                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  account       PaymentAccount?           @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  createdBy     User                      @relation("PaymentRecordCreatedBy", fields: [createdById], references: [id])
+  reimbursement ReimbursementApplication? @relation("ReimbursementPaymentRecord")
 
+  @@unique([type, sourceId], map: "PaymentRecord_type_sourceId_key")
   @@index([storeId, type])
   @@index([sourceId])
   @@index([createdById])
+}
+
+model FinanceApprovalRecord {
+  id              String                 @id @default(cuid())
+  storeId         String
+  applicationType FinanceApplicationType
+  applicationId   String
+  node            FinanceApprovalNode
+  action          FinanceApprovalAction
+  operatorId      String
+  note            String?
+  createdAt       DateTime               @default(now())
+
+  store    Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  operator User  @relation("FinanceApprovalOperator", fields: [operatorId], references: [id])
+
+  @@index([applicationType, applicationId, createdAt])
+  @@index([storeId, createdAt])
+  @@index([operatorId])
+}
+
+model FinanceAttachment {
+  id              String                    @id @default(cuid())
+  storeId         String
+  applicationType FinanceApplicationType
+  applicationId   String
+  category        FinanceAttachmentCategory
+  fileUrl         String
+  fileName        String
+  contentType     String
+  fileSize        Int
+  uploadedById    String
+  createdAt       DateTime                  @default(now())
+
+  store      Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  uploadedBy User  @relation("FinanceAttachmentUploader", fields: [uploadedById], references: [id])
+
+  @@index([applicationType, applicationId, createdAt])
+  @@index([storeId, createdAt])
+  @@index([uploadedById])
 }
 
 model Invoice {

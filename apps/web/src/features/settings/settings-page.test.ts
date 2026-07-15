@@ -89,7 +89,7 @@ test("system settings role cards use prototype business role titles", () => {
   assert.match(source, /客户档案、订单创建、收款跟进和个人业绩查看。/);
 });
 
-test("system settings page exposes prototype dictionary switches and OSS configuration", () => {
+test("system settings page exposes dictionary persistence controls and OSS configuration", () => {
   const source = readFileSync(pagePath, "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
@@ -100,8 +100,11 @@ test("system settings page exposes prototype dictionary switches and OSS configu
   assert.match(source, /基础字典配置/);
   assert.match(source, /分类名称/);
   assert.match(source, /字典代码/);
-  assert.match(source, /质保周期/);
-  assert.match(source, /WARRANTY_PERIOD/);
+  assert.match(source, /dictionaryApi/);
+  assert.match(source, /dictionaryLoading/);
+  assert.match(source, /loadDictionaries/);
+  assert.match(source, /基础字典已新增/);
+  assert.match(source, /基础字典已更新/);
   assert.match(source, /快速开关/);
   assert.match(source, /施工全过程拍照/);
   assert.match(source, /开启后质保申请必传照片/);
@@ -185,7 +188,7 @@ test("system settings visible action chips and buttons have concrete handlers", 
   assert.match(settingsSource, /onServiceTest=\{handleServiceTest\}/);
   assert.match(settingsSource, /onClick=\{\(\) => onDictionaryAction\("export"\)\}/);
   assert.match(settingsSource, /onClick=\{\(\) => onDictionaryAction\("create"\)\}/);
-  assert.match(settingsSource, /onClick=\{\(\) => onDictionaryAction\("edit", row\.name\)\}/);
+  assert.match(settingsSource, /onClick=\{\(\) => onDictionaryAction\("edit", row\)\}/);
   assert.match(settingsSource, /onClick=\{onServiceTest\}/);
   assert.match(settingsSource, /router\.push\(getSettingsScopeHref\(scope\)\)/);
   assert.doesNotMatch(settingsSource, /<Button>导出<\/Button>/);

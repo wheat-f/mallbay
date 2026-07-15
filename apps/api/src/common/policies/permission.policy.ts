@@ -175,6 +175,28 @@ export class PermissionPolicy {
       this.financeManagers.includes(user.storeMember!.position);
   }
 
+  static canViewOwnFinanceApplication(user: UserWithStoreMember, storeId: string, applicantId: string) {
+    return this.isAdmin(user) || (this.isStoreMember(user, storeId) && user.id === applicantId);
+  }
+
+  static canViewAllFinanceApplications(user: UserWithStoreMember, storeId: string) {
+    return this.canManageFinance(user, storeId);
+  }
+
+  static canReviewExpense(user: UserWithStoreMember, storeId: string) {
+    return this.isAdmin(user) || this.isStoreManager(user, storeId);
+  }
+
+  static canReviewReimbursement(user: UserWithStoreMember, storeId: string) {
+    return this.isAdmin(user) || (
+      this.isStoreMember(user, storeId) && user.storeMember?.position === StorePosition.FINANCE
+    );
+  }
+
+  static canPayReimbursement(user: UserWithStoreMember, storeId: string) {
+    return this.canReviewReimbursement(user, storeId);
+  }
+
   static canSubmitFinanceApplication(user: UserWithStoreMember, storeId: string) {
     if (this.isAdmin(user)) return true;
     return this.isStoreMember(user, storeId) &&

@@ -1,7 +1,7 @@
 "use client";
 
 import type { InventorySupplierSummary, InventoryWarehouseSummary, ProductUnit } from "@mallbay/shared";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Alert, App, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Radio, Select, Table, Tag } from "antd";
 import {
   ArrowLeftOutlined,
@@ -10,12 +10,14 @@ import {
   HistoryOutlined,
   InboxOutlined,
   InfoCircleOutlined,
+  ImportOutlined,
   MinusCircleOutlined,
   PlusOutlined,
   PrinterOutlined,
-  QrcodeOutlined,
   StopOutlined
 } from "@ant-design/icons";
+import { BrowserMultiFormatReader } from "@zxing/browser";
+import * as XLSX from "xlsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { purchaseApi } from "../../../../src/lib/api";
@@ -27,7 +29,12 @@ import {
   type PurchaseInboundItemLike
 } from "../../../../src/features/inventory/display";
 import { PurchaseModuleNav } from "../../../../src/features/purchases/purchase-module-nav";
-import { parseInboundScanLines } from "../../../../src/features/inventory/inbound-scan";
+import {
+  parseInboundFileRows,
+  parseInboundImageCodes,
+  parseInboundScanLines,
+  type InboundScanParseResult
+} from "../../../../src/features/inventory/inbound-scan";
 import { exportRowsToExcel } from "../../../../src/lib/export-excel";
 import { PRODUCT_UNIT_OPTIONS } from "../../../../src/features/products/display";
 
@@ -56,7 +63,15 @@ type ReceiveBatchFormRow = {
 };
 
 type ScanImportMode = "append" | "replace";
+type ScanImportSource = "image" | "manual" | "file";
 type ReceiveActionMode = "receive" | "reject";
+
+type ScanImportImageResult = {
+  fileName: string;
+  previewUrl: string;
+  code?: string;
+  error?: string;
+};
 
 export default function PurchaseOrderDetailPage() {
   const { message } = App.useApp();
@@ -74,6 +89,11 @@ export default function PurchaseOrderDetailPage() {
   const [scanImportOpen, setScanImportOpen] = useState(false);
   const [scanImportText, setScanImportText] = useState("");
   const [scanImportMode, setScanImportMode] = useState<ScanImportMode>("append");
+  const [scanImportSource, setScanImportSource] = useState<ScanImportSource>("manual");
+  const [scanImportParsed, setScanImportParsed] = useState<InboundScanParseResult>({ batches: [], errors: [] });
+  const [scanImportImages, setScanImportImages] = useState<ScanImportImageResult[]>([]);
+  const [scanImportFileName, setScanImportFileName] = useState("");
+  const [scanImportRecognizing, setScanImportRecognizing] = useState(false);
   const [receiveActionMode, setReceiveActionMode] = useState<ReceiveActionMode>("receive");
 
   const purchaseOrderQuery = useQuery({
@@ -243,17 +263,77 @@ export default function PurchaseOrderDetailPage() {
   };
   const handleOpenScanImport = () => {
     if (!ensureReceiveItemSelected()) return;
+    setScanImportSource("manual");
+    setScanImportText("");
+    setScanImportParsed({ batches: [], errors: [] });
+    setScanImportFileName("");
+    setScanImportImages([]);
     setScanImportOpen(true);
   };
+
+  const resetScanImport = () => {
+    scanImportImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    setScanImportOpen(false);
+    setScanImportText("");
+    setScanImportParsed({ batches: [], errors: [] });
+    setScanImportFileName("");
+    setScanImportImages([]);
+    setScanImportRecognizing(false);
+  };
+
+  const handleScanImportImages = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+
+    setScanImportRecognizing(true);
+    const reader = new BrowserMultiFormatReader();
+    const imageResults: ScanImportImageResult[] = [];
+    const codes: string[] = [];
+    for (const file of files) {
+      const previewUrl = URL.createObjectURL(file);
+      try {
+        const result = await reader.decodeFromImageUrl(previewUrl);
+        const code = result.getText().trim();
+        if (!code) throw new Error("图片中没有识别到批次号");
+        codes.push(code);
+        imageResults.push({ fileName: file.name, previewUrl, code });
+      } catch {
+        imageResults.push({ fileName: file.name, previewUrl, error: "未识别到批次号，请更换清晰图片或改用手动输入" });
+      }
+    }
+    setScanImportImages(imageResults);
+    setScanImportParsed(parseInboundImageCodes(codes));
+    setScanImportRecognizing(false);
+  };
+
+  const handleScanImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) throw new Error("文件中没有可读取的工作表");
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetName], { defval: "" });
+      setScanImportFileName(file.name);
+      setScanImportParsed(parseInboundFileRows(rows));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "文件读取失败，请使用 Excel 或 CSV 文件");
+      setScanImportFileName("");
+      setScanImportParsed({ batches: [], errors: [] });
+    }
+  };
+
   const handleImportScannedBatches = () => {
     if (!ensureReceiveItemSelected()) return;
-    const parsed = parseInboundScanLines(scanImportText);
+    const parsed = scanImportSource === "manual" ? parseInboundScanLines(scanImportText) : scanImportParsed;
     if (parsed.errors.length > 0) {
-      message.error(`扫码内容有误：第 ${parsed.errors[0].line} 行 ${parsed.errors[0].message}`);
+      message.error(`导入内容有误：第 ${parsed.errors[0].line} 行 ${parsed.errors[0].message}`);
       return;
     }
     if (parsed.batches.length === 0) {
-      message.error("请粘贴或扫描入库批次");
+      message.error(scanImportSource === "image" ? "请先上传包含批次号的图片" : "请先输入或导入批次明细");
       return;
     }
     const defaultSupplierName = getDefaultSupplierName();
@@ -271,8 +351,7 @@ export default function PurchaseOrderDetailPage() {
       return;
     }
     receiveForm.setFieldsValue({ batches: nextBatches });
-    setScanImportOpen(false);
-    setScanImportText("");
+    resetScanImport();
     message.success(`已导入 ${importedBatches.length} 行批次明细`);
   };
   const exportPurchaseOrder = () => {
@@ -564,11 +643,11 @@ export default function PurchaseOrderDetailPage() {
                       </Button>
                       <Button
                         type="default"
-                        icon={<QrcodeOutlined />}
+                        icon={<ImportOutlined />}
                         disabled={!canManagePurchase || !isPurchaseOrderReceivable}
                         onClick={handleOpenScanImport}
                       >
-                        扫码/粘贴导入
+                        批次导入
                       </Button>
                     </div>
                   </div>
@@ -689,15 +768,27 @@ export default function PurchaseOrderDetailPage() {
             </aside>
           </section>
           <Modal
-            title="扫码/粘贴导入批次明细"
+            title="批次导入"
             open={scanImportOpen}
             okText="导入到批次明细"
             cancelText="取消"
             onOk={handleImportScannedBatches}
-            onCancel={() => setScanImportOpen(false)}
+            onCancel={resetScanImport}
+            okButtonProps={{ disabled: scanImportRecognizing }}
             destroyOnHidden
           >
             <div className="purchase-scan-import-modal">
+              <Radio.Group
+                value={scanImportSource}
+                onChange={(event) => setScanImportSource(event.target.value as ScanImportSource)}
+                optionType="button"
+                buttonStyle="solid"
+                className="purchase-scan-import-source"
+              >
+                <Radio.Button value="image">图片识别</Radio.Button>
+                <Radio.Button value="manual">手动输入</Radio.Button>
+                <Radio.Button value="file">文件导入</Radio.Button>
+              </Radio.Group>
               <Radio.Group
                 value={scanImportMode}
                 onChange={(event) => setScanImportMode(event.target.value as ScanImportMode)}
@@ -707,16 +798,62 @@ export default function PurchaseOrderDetailPage() {
                 <Radio.Button value="append">追加到现有批次</Radio.Button>
                 <Radio.Button value="replace">覆盖当前批次</Radio.Button>
               </Radio.Group>
-              <label>
-                <span>导入方式</span>
-                <Input.TextArea
-                  rows={5}
-                  value={scanImportText}
-                  onChange={(event) => setScanImportText(event.target.value)}
-                  placeholder="每行：批次号 数量 供应商（供应商可选），例如 B001 1 3M"
-                />
-              </label>
-              <p>导入后会回填到批次明细列表，仍需人工核对批次号、数量和供应商后再确认入库。</p>
+              {scanImportSource === "image" ? (
+                <div className="purchase-scan-import-section">
+                  <label>
+                    <span>上传批次标签图片</span>
+                    <input type="file" accept="image/*" multiple onChange={handleScanImportImages} />
+                  </label>
+                  {scanImportRecognizing ? <span className="purchase-scan-import-status">正在识别图片...</span> : null}
+                  {scanImportImages.length > 0 ? (
+                    <div className="purchase-scan-import-image-list">
+                      {scanImportImages.map((image) => (
+                        <div key={`${image.fileName}-${image.previewUrl}`} className="purchase-scan-import-image-item">
+                          <img src={image.previewUrl} alt={image.fileName} />
+                          <div>
+                            <strong>{image.fileName}</strong>
+                            <span>{image.error ?? `识别结果：${image.code}`}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {scanImportSource === "manual" ? (
+                <label>
+                  <span>手动输入</span>
+                  <Input.TextArea
+                    rows={5}
+                    value={scanImportText}
+                    onChange={(event) => setScanImportText(event.target.value)}
+                    placeholder="每行：批次号 数量 供应商（供应商可选），例如 B001 1 3M"
+                  />
+                </label>
+              ) : null}
+              {scanImportSource === "file" ? (
+                <div className="purchase-scan-import-section">
+                  <label>
+                    <span>导入 Excel/CSV 文件</span>
+                    <input type="file" accept=".xlsx,.xls,.csv" onChange={handleScanImportFile} />
+                  </label>
+                  <span className="purchase-scan-import-status">
+                    {scanImportFileName || "表头支持：批次号、数量、供应商；数量为空时按 1 处理"}
+                  </span>
+                </div>
+              ) : null}
+              {scanImportSource !== "manual" && (scanImportParsed.batches.length > 0 || scanImportParsed.errors.length > 0) ? (
+                <div className="purchase-scan-import-preview">
+                  <strong>识别/导入预览</strong>
+                  <span>成功 {scanImportParsed.batches.length} 行，错误 {scanImportParsed.errors.length} 行</span>
+                  {scanImportParsed.errors.slice(0, 3).map((error) => (
+                    <span key={`${error.line}-${error.message}`} className="purchase-scan-import-error">
+                      第 {error.line} 行：{error.message}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              <p>导入后会回填到批次明细列表，仍需人工核对批次号、数量、单位和供应商后再确认入库。</p>
             </div>
           </Modal>
             </>

@@ -30,8 +30,9 @@ test("purchase order detail page keeps arrival review and inbound actions togeth
   assert.match(detailSource, /批次明细/);
   assert.match(detailSource, /手工新增批次/);
   assert.match(detailSource, /按剩余数量生成批次行/);
-  assert.match(detailSource, /扫码\/粘贴导入/);
-  assert.match(detailSource, /导入方式/);
+  assert.match(detailSource, /图片识别/);
+  assert.match(detailSource, /文件导入/);
+  assert.match(detailSource, /批次导入/);
   assert.match(detailSource, /Form\.List name="batches"/);
   assert.match(detailSource, /getRemainingPurchaseQuantity/);
   assert.match(detailSource, /批次号不能重复/);

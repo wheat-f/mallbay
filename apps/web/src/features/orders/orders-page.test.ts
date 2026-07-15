@@ -45,7 +45,7 @@ test("orders page follows the prototype operations-list structure", () => {
   assert.match(pageSource, /销售员/);
   assert.match(pageSource, /scroll=\{\{ x: 1200 \}\}/);
   assert.match(pageSource, /exportRowsToExcel/);
-  assert.match(pageSource, /sales-orders\.xlsx/);
+  assert.match(pageSource, /sales-orders-by-\$\{exportDimension\}\.xlsx/);
   assert.match(pageSource, /导出 Excel/);
 });
 

@@ -1,13 +1,36 @@
 import { request } from "../../lib/request";
 
+export type PricingRule = {
+  id?: string;
+  group: string;
+  target: string;
+  name: string;
+  conditions: Array<{ field: string; operator: string; value: string | number | Array<string | number> }>;
+  actionType: string;
+  actionValue: number;
+  priority: number;
+  sortOrder: number;
+  enabled: boolean;
+};
+
+export type PricingProtectionPolicy = {
+  normalDeviationBps: number;
+  approvalDeviationBps: number;
+  minimumMarginBps: number;
+  blockBelowMarginBps?: number | null;
+  softHoldHours: number;
+  allowSpecialApproval: boolean;
+  internalLaborCostConfig: Record<string, unknown>;
+};
+
 export type PricingRuleSetSummary = {
   id: string;
   version: number;
   status: "DRAFT" | "PUBLISHED" | "RETIRED";
   effectiveFrom: string;
   effectiveTo?: string | null;
-  rules?: unknown[];
-  protectionPolicy?: unknown | null;
+  rules?: PricingRule[];
+  protectionPolicy?: PricingProtectionPolicy | null;
 };
 
 export type PricingRuleSetPayload = {
@@ -101,6 +124,12 @@ export const pricingApi = {
   ruleSets: (storeId: string) =>
     request<PricingRuleSetSummary[]>(`/pricing/rule-sets?storeId=${encodeURIComponent(storeId)}`),
 
+  ruleSet: (id: string, storeId: string) =>
+    request<PricingRuleSetSummary>(`/pricing/rule-sets/${id}?storeId=${encodeURIComponent(storeId)}`),
+
+  updateRuleSet: (id: string, payload: PricingRuleSetPayload) =>
+    request<PricingRuleSetSummary>(`/pricing/rule-sets/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
   calculate: (payload: PricingCalculationPayload) =>
     request<PricingCalculationResponse>("/pricing/calculate", {
       method: "POST",
@@ -142,9 +171,13 @@ export const pricingApi = {
   vehicleClasses: (storeId: string) => request<VehiclePriceClass[]>(`/pricing/vehicle-classes?storeId=${encodeURIComponent(storeId)}`),
   createVehicleClass: (payload: { storeId: string; code: string; name: string; description?: string; sortOrder?: number; isDefault?: boolean }) =>
     request<VehiclePriceClass>("/pricing/vehicle-classes", { method: "POST", body: JSON.stringify(payload) }),
+  updateVehicleClass: (id: string, payload: { storeId: string; code?: string; name?: string; description?: string; sortOrder?: number; isDefault?: boolean; status?: string }) =>
+    request<VehiclePriceClass>(`/pricing/vehicle-classes/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   vehicleMappings: (storeId: string) => request<VehicleModelMapping[]>(`/pricing/vehicle-model-mappings?storeId=${encodeURIComponent(storeId)}`),
   createVehicleMapping: (payload: { storeId: string; brand?: string; modelKeyword: string; yearFrom?: number; yearTo?: number; vehiclePriceClassId: string; priority?: number }) =>
     request<VehicleModelMapping>("/pricing/vehicle-model-mappings", { method: "POST", body: JSON.stringify(payload) }),
+  updateVehicleMapping: (id: string, payload: { storeId: string; brand?: string; modelKeyword?: string; yearFrom?: number; yearTo?: number; vehiclePriceClassId?: string; priority?: number; status?: string }) =>
+    request<VehicleModelMapping>(`/pricing/vehicle-model-mappings/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   unmatchedVehicles: (storeId: string) => request<Array<{ id: string; carModel: string; carPlate?: string | null; customerId: string; suggestedMapping?: { mappingId: string; modelKeyword: string; source: "KEYWORD"; vehiclePriceClass?: VehiclePriceClass } | null }>>(`/pricing/vehicle-model-mappings/unmatched?storeId=${encodeURIComponent(storeId)}`),
   resolveVehicleClass: (payload: { storeId: string; model: string; brand?: string; year?: number }) =>
     request<{ source: "AUTO" | "AUTO_DEFAULT" | "UNMATCHED" | "MANUAL"; vehiclePriceClass: VehiclePriceClass | null; matchedMappingId: string | null }>("/pricing/vehicle-classify", { method: "POST", body: JSON.stringify(payload) }),

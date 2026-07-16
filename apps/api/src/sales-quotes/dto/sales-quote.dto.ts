@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { ArrayMinSize, IsArray, IsDateString, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMinSize, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
 import { ConstructionLocation, ConstructionType } from "@prisma/client";
 
 export class CreateSalesQuoteItemDto {
@@ -78,9 +78,18 @@ export class CreateSalesQuoteDto {
   @IsInt()
   @Min(1)
   validHours?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  submitForApproval?: boolean;
 }
 
 export class ListSalesQuotesDto {
+  @IsString()
+  storeId!: string;
+}
+
+export class SubmitSalesQuoteDto {
   @IsString()
   storeId!: string;
 }

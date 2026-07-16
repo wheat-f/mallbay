@@ -4,7 +4,8 @@ import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/p
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CreatePricingRuleSetDto,
-  ListPricingRuleSetsDto
+  ListPricingRuleSetsDto,
+  UpdatePricingRuleSetDto
 } from "./dto/pricing-rules.dto";
 import type { PricingAuthenticatedUser } from "./pricing.service";
 import { AuditLogService } from "../observability/audit-log.service";
@@ -23,6 +24,84 @@ export class PricingRulesService {
       orderBy: { version: "desc" },
       include: { rules: { orderBy: [{ group: "asc" }, { priority: "desc" }, { sortOrder: "asc" }] }, protectionPolicy: true }
     });
+  }
+
+  async get(user: PricingAuthenticatedUser, storeId: string, id: string) {
+    const actor = await this.withStoreMember(user);
+    this.assertCanView(actor, storeId);
+    const ruleSet = await this.prisma.pricingRuleSet.findFirst({
+      where: { id, storeId },
+      include: {
+        rules: { orderBy: [{ group: "asc" }, { priority: "desc" }, { sortOrder: "asc" }] },
+        protectionPolicy: true
+      }
+    });
+    if (!ruleSet) throw new NotFoundException("价格规则版本不存在");
+    return ruleSet;
+  }
+
+  async updateDraft(user: PricingAuthenticatedUser, id: string, dto: UpdatePricingRuleSetDto) {
+    const actor = await this.withStoreMember(user);
+    this.assertCanManage(actor, dto.storeId);
+    validateProtectionPolicy(dto.protectionPolicy);
+    validateRuleDefinitions(dto.rules);
+    if (dto.effectiveTo && new Date(dto.effectiveTo) <= new Date(dto.effectiveFrom)) {
+      throw new BadRequestException("规则生效结束时间必须晚于开始时间");
+    }
+    const existing = await this.prisma.pricingRuleSet.findFirst({
+      where: { id, storeId: dto.storeId },
+      select: { status: true, version: true }
+    });
+    if (!existing) throw new NotFoundException("价格规则版本不存在");
+    if (existing.status !== PricingRuleSetStatus.DRAFT) {
+      throw new BadRequestException("已发布或已停用的规则版本不可修改，请复制为新草稿");
+    }
+    const updated = await this.prisma.pricingRuleSet.update({
+      where: { id },
+      data: {
+        effectiveFrom: new Date(dto.effectiveFrom),
+        effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : null,
+        rules: {
+          deleteMany: {},
+          create: dto.rules.map((rule) => ({
+            group: rule.group,
+            target: rule.target,
+            name: rule.name.trim(),
+            conditions: rule.conditions as unknown as Prisma.InputJsonValue,
+            actionType: rule.actionType,
+            actionValue: rule.actionValue,
+            priority: rule.priority ?? 0,
+            sortOrder: rule.sortOrder ?? 0,
+            enabled: rule.enabled ?? true
+          }))
+        },
+        protectionPolicy: {
+          upsert: {
+            create: {
+              normalDeviationBps: dto.protectionPolicy.normalDeviationBps,
+              approvalDeviationBps: dto.protectionPolicy.approvalDeviationBps,
+              minimumMarginBps: dto.protectionPolicy.minimumMarginBps,
+              blockBelowMarginBps: dto.protectionPolicy.blockBelowMarginBps,
+              softHoldHours: dto.protectionPolicy.softHoldHours ?? 24,
+              allowSpecialApproval: dto.protectionPolicy.allowSpecialApproval ?? false,
+              internalLaborCostConfig: dto.protectionPolicy.internalLaborCostConfig as Prisma.InputJsonValue
+            },
+            update: {
+              normalDeviationBps: dto.protectionPolicy.normalDeviationBps,
+              approvalDeviationBps: dto.protectionPolicy.approvalDeviationBps,
+              minimumMarginBps: dto.protectionPolicy.minimumMarginBps,
+              blockBelowMarginBps: dto.protectionPolicy.blockBelowMarginBps,
+              softHoldHours: dto.protectionPolicy.softHoldHours ?? 24,
+              allowSpecialApproval: dto.protectionPolicy.allowSpecialApproval ?? false,
+              internalLaborCostConfig: dto.protectionPolicy.internalLaborCostConfig as Prisma.InputJsonValue
+            }
+          }
+        }
+      },
+      include: { rules: true, protectionPolicy: true }
+    });
+    await this.recordAudit({ action: "pricing_rule_draft_updated", actorId: actor.id, targetType: "PricingRuleSet", targetId: id, metadata: { storeId: dto.storeId, version: existing.version } });
+    return updated;
   }
 
   async createDraft(user: PricingAuthenticatedUser, dto: CreatePricingRuleSetDto) {

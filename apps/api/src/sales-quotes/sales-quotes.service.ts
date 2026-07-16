@@ -7,7 +7,7 @@ import { CapacityReservationService } from "../construction/capacity-reservation
 import { ConstructionLocation, ConstructionType } from "@prisma/client";
 import { evaluatePricingGuard, type PricingCalculationResult, type PricingProtectionPolicy } from "../pricing/domain/pricing-engine";
 import type { PricingAuthenticatedUser } from "../pricing/pricing.service";
-import { CreateSalesQuoteDto, ListSalesQuotesDto, RecalculateSalesQuoteDto, ReviewSalesQuoteDto, WithdrawSalesQuoteDto } from "./dto/sales-quote.dto";
+import { CreateSalesQuoteDto, ListSalesQuotesDto, RecalculateSalesQuoteDto, ReviewSalesQuoteDto, SubmitSalesQuoteDto, WithdrawSalesQuoteDto } from "./dto/sales-quote.dto";
 import { CreateOrderUseCase } from "../orders/use-cases/create-order.use-case";
 import { AuditLogService } from "../observability/audit-log.service";
 import type { AuditEvent } from "../observability/audit-log.service";
@@ -76,7 +76,8 @@ export class SalesQuotesService {
       throw new BadRequestException("提交报价审批必须填写改价原因");
     }
 
-    const finalProductAmountCents = dto.items.reduce((sum, item, index) => sum + item.finalUnitPriceCents * output.calculation.lines[index].quantity, 0);
+    const submitForApproval = dto.submitForApproval !== false;
+    const finalProductAmountCents = dto.items.reduce((sum, item, index) => sum + multiplyMoneyCents(item.finalUnitPriceCents, output.calculation.lines[index].quantity), 0);
     const marginCheck = guard.checks.find((check) => check.scope === "MARGIN");
     const approvalType = marginCheck?.decision === "APPROVAL_REQUIRED" ? PricingApprovalType.MARGIN : PricingApprovalType.DEVIATION;
     const validUntil = new Date(Date.now() + (dto.validHours ?? output.protectionPolicy.softHoldHours ?? 24) * 60 * 60 * 1000);
@@ -88,7 +89,7 @@ export class SalesQuotesService {
         vehicleId: dto.vehicleId,
         salesPersonId: actor.id,
         pricingCalculationId: snapshot.id,
-        status: SalesQuoteStatus.PENDING_APPROVAL,
+        status: submitForApproval ? SalesQuoteStatus.PENDING_APPROVAL : SalesQuoteStatus.DRAFT,
         vehicleClassSnapshot: vehicleClassSnapshot as Prisma.InputJsonValue,
         suggestedProductAmountCents: output.calculation.suggestedProductAmountCents,
         suggestedLaborCostCents: output.calculation.suggestedLaborCostCents,
@@ -132,24 +133,26 @@ export class SalesQuotesService {
             };
           })
         },
-        approvals: { create: { approvalType, submittedById: actor.id } }
+        ...(submitForApproval ? { approvals: { create: { approvalType, submittedById: actor.id } } } : {})
       },
       include: { items: true, approvals: true }
     });
-    try {
-      await this.capacityReservations.holdQuote({
-        storeId: dto.storeId,
-        quoteId: quote.id,
-        appointmentDate: dto.appointmentDate,
-        constructionLocation: dto.constructionLocation,
-        constructionType: dto.constructionType,
-        expiresAt: validUntil
-      });
-    } catch (error) {
-      await this.prisma.salesQuote.delete({ where: { id: quote.id } });
-      throw error;
+    if (submitForApproval) {
+      try {
+        await this.capacityReservations.holdQuote({
+          storeId: dto.storeId,
+          quoteId: quote.id,
+          appointmentDate: dto.appointmentDate,
+          constructionLocation: dto.constructionLocation,
+          constructionType: dto.constructionType,
+          expiresAt: validUntil
+        });
+      } catch (error) {
+        await this.prisma.salesQuote.delete({ where: { id: quote.id } });
+        throw error;
+      }
     }
-    await this.recordAudit({ action: "sales_quote_submitted", actorId: actor.id, targetType: "SalesQuote", targetId: quote.id, metadata: { storeId: dto.storeId, quoteNo: quote.quoteNo, approvalType } });
+    await this.recordAudit({ action: submitForApproval ? "sales_quote_submitted" : "sales_quote_draft_created", actorId: actor.id, targetType: "SalesQuote", targetId: quote.id, metadata: { storeId: dto.storeId, quoteNo: quote.quoteNo, approvalType } });
     return quote;
   }
 
@@ -161,6 +164,87 @@ export class SalesQuotesService {
       ...(PermissionPolicy.isStoreManager(actor, dto.storeId) ? {} : { salesPersonId: actor.id })
     };
     return this.prisma.salesQuote.findMany({ where, orderBy: { createdAt: "desc" }, include: { approvals: true, items: true } });
+  }
+
+  async get(user: PricingAuthenticatedUser, id: string, storeId: string) {
+    const actor = await this.withStoreMember(user);
+    if (!PermissionPolicy.canViewStoreData(actor, storeId)) throw new ForbiddenException("无权限");
+    const quote = await this.prisma.salesQuote.findFirst({
+      where: {
+        id,
+        storeId,
+        ...(PermissionPolicy.isStoreManager(actor, storeId) ? {} : { salesPersonId: actor.id })
+      },
+      include: {
+        items: true,
+        approvals: { orderBy: { submittedAt: "desc" } },
+        capacityReservation: true,
+        customer: { select: { id: true, name: true } },
+        vehicle: true,
+        salesPerson: { select: { id: true, username: true, nickname: true } },
+        convertedOrder: { select: { id: true, orderNo: true } },
+        pricingCalculation: { select: { ruleSetVersion: true, inputHash: true, outputSnapshot: true } }
+      }
+    });
+    if (!quote) throw new NotFoundException("报价单不存在");
+    return quote;
+  }
+
+  async submit(user: PricingAuthenticatedUser, id: string, dto: SubmitSalesQuoteDto) {
+    const actor = await this.withStoreMember(user);
+    const quote = await this.prisma.salesQuote.findFirst({
+      where: { id, storeId: dto.storeId },
+      include: {
+        items: true,
+        approvals: { where: { status: PricingApprovalStatus.PENDING } },
+        pricingCalculation: { select: { inputSnapshot: true, outputSnapshot: true } }
+      }
+    });
+    if (!quote) throw new NotFoundException("报价单不存在");
+    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId) || (quote.salesPersonId !== actor.id && !PermissionPolicy.isStoreManager(actor, dto.storeId))) {
+      throw new ForbiddenException("无权限提交该报价");
+    }
+    if (quote.status === SalesQuoteStatus.PENDING_APPROVAL) return this.get(user, id, dto.storeId);
+    if (quote.status !== SalesQuoteStatus.DRAFT) throw new BadRequestException("只有草稿报价可以提交审批");
+    const output = quote.pricingCalculation.outputSnapshot as unknown as { calculation: PricingCalculationResult; protectionPolicy?: PricingProtectionPolicy | null };
+    const input = quote.pricingCalculation.inputSnapshot as unknown as { constructionType: ConstructionType; constructionLocation: ConstructionLocation };
+    if (!output.calculation || !output.protectionPolicy || !input.constructionType || !input.constructionLocation) {
+      throw new BadRequestException("报价单价格或施工快照不完整");
+    }
+    const guard = evaluatePricingGuard(output.calculation, {
+      lines: quote.items.map((item, index) => ({ id: output.calculation.lines[index]?.id ?? item.id, unitPriceCents: item.finalUnitPriceCents })),
+      laborCostCents: quote.finalLaborCostCents,
+      estimatedCostCents: quote.estimatedCostCents ?? undefined
+    }, output.protectionPolicy);
+    if (guard.decision === "BLOCKED") throw new BadRequestException("成交价低于保护范围，不能提交报价");
+    if (guard.decision === "NORMAL") throw new BadRequestException("当前成交价无需报价审批，可直接生成正式订单");
+    const marginCheck = guard.checks.find((check) => check.scope === "MARGIN");
+    const approvalType = marginCheck?.decision === "APPROVAL_REQUIRED" ? PricingApprovalType.MARGIN : PricingApprovalType.DEVIATION;
+    const validUntil = new Date(Date.now() + (output.protectionPolicy.softHoldHours ?? 24) * 60 * 60 * 1000);
+    await this.capacityReservations.holdQuote({
+      storeId: dto.storeId,
+      quoteId: quote.id,
+      appointmentDate: quote.appointmentDate?.toISOString(),
+      constructionLocation: input.constructionLocation,
+      constructionType: input.constructionType,
+      expiresAt: validUntil
+    });
+    try {
+      const submitted = await this.prisma.$transaction(async (tx) => {
+        const claimed = await tx.salesQuote.updateMany({
+          where: { id, storeId: dto.storeId, status: SalesQuoteStatus.DRAFT },
+          data: { status: SalesQuoteStatus.PENDING_APPROVAL, validUntil }
+        });
+        if (claimed.count !== 1) throw new BadRequestException("报价单已被其他操作处理");
+        await tx.pricingApproval.create({ data: { quoteId: id, approvalType, submittedById: actor.id } });
+        return tx.salesQuote.findUnique({ where: { id }, include: { items: true, approvals: true, capacityReservation: true } });
+      });
+      await this.recordAudit({ action: "sales_quote_submitted", actorId: actor.id, targetType: "SalesQuote", targetId: id, metadata: { storeId: dto.storeId, quoteNo: quote.quoteNo, approvalType } });
+      return submitted;
+    } catch (error) {
+      await this.capacityReservations.releaseQuote(id, "SUBMIT_FAILED");
+      throw error;
+    }
   }
 
   async expirePending(now = new Date()) {

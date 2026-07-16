@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
-import { ArrayMinSize, IsArray, IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
+import { DictionaryStatus } from "@prisma/client";
 
 export class CreateVehiclePriceClassDto {
   @IsString()
@@ -27,6 +28,40 @@ export class CreateVehiclePriceClassDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+}
+
+export class UpdateVehiclePriceClassDto {
+  @IsString()
+  storeId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  description?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+
+  @IsOptional()
+  @IsEnum(DictionaryStatus)
+  status?: DictionaryStatus;
 }
 
 export class CreateVehicleModelMappingDto {
@@ -59,6 +94,44 @@ export class CreateVehicleModelMappingDto {
   @Type(() => Number)
   @IsInt()
   priority?: number;
+}
+
+export class UpdateVehicleModelMappingDto {
+  @IsString()
+  storeId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  brand?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  modelKeyword?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  yearFrom?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  yearTo?: number;
+
+  @IsOptional()
+  @IsString()
+  vehiclePriceClassId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  priority?: number;
+
+  @IsOptional()
+  @IsEnum(DictionaryStatus)
+  status?: DictionaryStatus;
 }
 
 export class ResolveVehiclePriceClassDto {

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CalculatePricingDto } from "./dto/calculate-pricing.dto";
@@ -8,10 +8,12 @@ import {
   CreateVehiclePriceClassDto,
   ImportVehicleModelMappingsDto,
   ListVehicleMappingsDto,
-  ResolveVehiclePriceClassDto
+  ResolveVehiclePriceClassDto,
+  UpdateVehicleModelMappingDto,
+  UpdateVehiclePriceClassDto
 } from "./dto/vehicle-pricing.dto";
 import { PricingService, type PricingAuthenticatedUser } from "./pricing.service";
-import { CreatePricingRuleSetDto, ListPricingRuleSetsDto, PublishPricingRuleSetDto, RuleSetStoreDto } from "./dto/pricing-rules.dto";
+import { CreatePricingRuleSetDto, ListPricingRuleSetsDto, PublishPricingRuleSetDto, RuleSetStoreDto, UpdatePricingRuleSetDto } from "./dto/pricing-rules.dto";
 import { PricingRulesService } from "./pricing-rules.service";
 import { VehiclePricingService } from "./vehicle-pricing.service";
 import { CostEstimatorService } from "./cost-estimator.service";
@@ -85,6 +87,16 @@ export class PricingController {
     return this.pricingRules.list(req.user, query);
   }
 
+  @Get("rule-sets/:id")
+  getRuleSet(@Req() req: AuthRequest, @Param("id") id: string, @Query("storeId") storeId: string) {
+    return this.pricingRules.get(req.user, storeId, id);
+  }
+
+  @Patch("rule-sets/:id")
+  updateRuleSet(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdatePricingRuleSetDto) {
+    return this.pricingRules.updateDraft(req.user, id, dto);
+  }
+
   @Post("rule-sets/default-draft")
   createDefaultRuleSet(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
     return this.pricingRules.createDefaultDraft(req.user, storeId);
@@ -130,9 +142,19 @@ export class PricingController {
     return this.vehiclePricing.createClass(req.user, dto);
   }
 
+  @Patch("vehicle-classes/:id")
+  updateVehicleClass(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateVehiclePriceClassDto) {
+    return this.vehiclePricing.updateClass(req.user, id, dto);
+  }
+
   @Post("vehicle-model-mappings")
   createVehicleMapping(@Req() req: AuthRequest, @Body() dto: CreateVehicleModelMappingDto) {
     return this.vehiclePricing.createMapping(req.user, dto);
+  }
+
+  @Patch("vehicle-model-mappings/:id")
+  updateVehicleMapping(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateVehicleModelMappingDto) {
+    return this.vehiclePricing.updateMapping(req.user, id, dto);
   }
 
   @Get("vehicle-model-mappings")

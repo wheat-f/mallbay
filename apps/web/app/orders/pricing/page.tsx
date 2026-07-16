@@ -132,7 +132,7 @@ export default function PricingRulesPage() {
       </Card>
       <Card className="mt-4" title="规则版本" extra={<Button icon={<ReloadOutlined />} onClick={() => rulesQuery.refetch()}>刷新</Button>}>
         <Table<PricingRuleSetSummary> rowKey="id" loading={rulesQuery.isLoading} dataSource={tableRows} pagination={false} columns={[
-          { title: "版本", dataIndex: "version", width: 90 },
+          { title: "版本", dataIndex: "version", width: 110, render: (value: number, row: PricingRuleSetSummary) => <Button type="link" href={`/orders/pricing/rule-sets/${row.id}`}>v{value}</Button> },
           { title: "状态", dataIndex: "status", render: (status: string) => <Tag color={status === "PUBLISHED" ? "green" : status === "DRAFT" ? "blue" : "default"}>{status}</Tag> },
           { title: "生效时间", dataIndex: "effectiveFrom", render: (value: string) => dayjs(value).format("YYYY-MM-DD HH:mm") },
           { title: "规则数", key: "ruleCount", render: (_: unknown, row: PricingRuleSetSummary) => row.rules?.length ?? 0 },

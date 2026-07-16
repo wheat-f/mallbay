@@ -48,6 +48,7 @@ export default function SalesQuotesPage() {
             { title: "预计毛利", dataIndex: "estimatedMarginBps", render: (value: number | null | undefined) => value === null || value === undefined ? "-" : `${(value / 100).toFixed(2)}%` },
             { title: "状态", dataIndex: "status", render: (value: SalesQuoteRow["status"]) => <Tag color={value === "PENDING_APPROVAL" ? "orange" : value === "APPROVED" ? "green" : "default"}>{STATUS_LABEL[value]}</Tag> },
             { title: "操作", key: "actions", render: (_, row) => <Space>
+              <Button size="small" href={`/orders/quotes/${row.id}`}>详情</Button>
               {row.status === "PENDING_APPROVAL" ? <>
                 <Popconfirm title="批准该报价？" onConfirm={() => reviewMutation.mutate({ id: row.id, approve: true })}><Button size="small" icon={<CheckOutlined />} loading={reviewMutation.isPending}>批准</Button></Popconfirm>
                 <Popconfirm title="驳回该报价？" onConfirm={() => reviewMutation.mutate({ id: row.id, approve: false })}><Button size="small" danger icon={<CloseOutlined />} loading={reviewMutation.isPending}>驳回</Button></Popconfirm>

@@ -6,7 +6,9 @@ import {
   CreateVehicleModelMappingDto,
   CreateVehiclePriceClassDto,
   ImportVehicleModelMappingsDto,
-  ResolveVehiclePriceClassDto
+  ResolveVehiclePriceClassDto,
+  UpdateVehicleModelMappingDto,
+  UpdateVehiclePriceClassDto
 } from "./dto/vehicle-pricing.dto";
 import type { PricingAuthenticatedUser } from "./pricing.service";
 
@@ -49,6 +51,34 @@ export class VehiclePricingService {
     });
   }
 
+  async updateClass(user: PricingAuthenticatedUser, id: string, dto: UpdateVehiclePriceClassDto) {
+    const actor = await this.withStoreMember(user);
+    this.assertCanManage(actor, dto.storeId);
+    const existing = await this.prisma.vehiclePriceClass.findFirst({ where: { id, storeId: dto.storeId } });
+    if (!existing) throw new NotFoundException("车辆价格级别不存在");
+    const code = (dto.code ?? existing.code).trim().toUpperCase();
+    const name = (dto.name ?? existing.name).trim();
+    if (!code || !name) throw new BadRequestException("车辆价格级别编码和名称不能为空");
+    const nextDefault = dto.status === DictionaryStatus.INACTIVE ? false : (dto.isDefault ?? existing.isDefault);
+    if (nextDefault) {
+      await this.prisma.vehiclePriceClass.updateMany({
+        where: { storeId: dto.storeId, isDefault: true, id: { not: id } },
+        data: { isDefault: false }
+      });
+    }
+    return this.prisma.vehiclePriceClass.update({
+      where: { id },
+      data: {
+        code,
+        name,
+        description: dto.description === undefined ? existing.description : dto.description.trim() || null,
+        sortOrder: dto.sortOrder ?? existing.sortOrder,
+        isDefault: nextDefault,
+        status: dto.status ?? existing.status
+      }
+    });
+  }
+
   async createMapping(user: PricingAuthenticatedUser, dto: CreateVehicleModelMappingDto) {
     const actor = await this.withStoreMember(user);
     this.assertCanManage(actor, dto.storeId);
@@ -74,6 +104,50 @@ export class VehiclePricingService {
         priority: dto.priority ?? 0,
         status: DictionaryStatus.ACTIVE,
         createdById: actor.id
+      },
+      include: { vehiclePriceClass: true }
+    });
+  }
+
+  async updateMapping(user: PricingAuthenticatedUser, id: string, dto: UpdateVehicleModelMappingDto) {
+    const actor = await this.withStoreMember(user);
+    this.assertCanManage(actor, dto.storeId);
+    const existing = await this.prisma.vehicleModelMapping.findFirst({ where: { id, storeId: dto.storeId } });
+    if (!existing) throw new NotFoundException("车型映射不存在");
+    const candidate = normalizeMapping({
+      storeId: dto.storeId,
+      brand: dto.brand === undefined ? existing.brand ?? undefined : dto.brand,
+      modelKeyword: dto.modelKeyword ?? existing.modelKeyword,
+      yearFrom: dto.yearFrom === undefined ? existing.yearFrom ?? undefined : dto.yearFrom,
+      yearTo: dto.yearTo === undefined ? existing.yearTo ?? undefined : dto.yearTo,
+      vehiclePriceClassId: dto.vehiclePriceClassId ?? existing.vehiclePriceClassId,
+      priority: dto.priority ?? existing.priority
+    });
+    if (!candidate.modelKeyword) throw new BadRequestException("车型关键词不能为空");
+    if (candidate.yearFrom != null && candidate.yearTo != null && candidate.yearFrom > candidate.yearTo) {
+      throw new BadRequestException("车型年份范围无效");
+    }
+    const nextStatus = dto.status ?? existing.status;
+    if (nextStatus === DictionaryStatus.ACTIVE) {
+      const priceClass = await this.prisma.vehiclePriceClass.findFirst({
+        where: { id: candidate.vehiclePriceClassId, storeId: dto.storeId, status: DictionaryStatus.ACTIVE }
+      });
+      if (!priceClass) throw new BadRequestException("车辆价格级别不存在或已停用");
+      const mappings = await this.prisma.vehicleModelMapping.findMany({
+        where: { storeId: dto.storeId, status: DictionaryStatus.ACTIVE, id: { not: id } }
+      });
+      assertNoMappingConflict(mappings, candidate);
+    }
+    return this.prisma.vehicleModelMapping.update({
+      where: { id },
+      data: {
+        brand: candidate.brand || null,
+        modelKeyword: candidate.modelKeyword,
+        yearFrom: candidate.yearFrom,
+        yearTo: candidate.yearTo,
+        vehiclePriceClassId: candidate.vehiclePriceClassId,
+        priority: candidate.priority ?? 0,
+        status: nextStatus
       },
       include: { vehiclePriceClass: true }
     });

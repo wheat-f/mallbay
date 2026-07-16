@@ -108,6 +108,8 @@ export class CreatePricingRuleSetDto {
   protectionPolicy!: PricingProtectionPolicyDto;
 }
 
+export class UpdatePricingRuleSetDto extends CreatePricingRuleSetDto {}
+
 export class ListPricingRuleSetsDto {
   @IsString()
   storeId!: string;

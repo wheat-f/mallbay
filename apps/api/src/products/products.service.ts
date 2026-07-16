@@ -37,6 +37,7 @@ export class ProductsService {
         ...(dto.quantityPrecision !== undefined ? { quantityPrecision: dto.quantityPrecision } : {}),
         warrantyYears: dto.warrantyYears,
         basePriceCents: dto.basePriceCents,
+        ...(dto.standardCostCents !== undefined ? { standardCostCents: dto.standardCostCents } : {}),
         status: ProductStatus.ACTIVE
       }
     });

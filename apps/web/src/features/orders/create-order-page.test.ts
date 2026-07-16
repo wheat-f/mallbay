@@ -178,16 +178,16 @@ test("create order page records labor cost adjustment reason when final labor di
   assert.match(pageSource, /建议人工费/);
 });
 
-test("create order page allows adjusting the suggested labor price before adopting it", () => {
+test("create order page keeps suggested labor price read-only and allows adopting it", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
   assert.match(pageSource, /name="suggestedLaborCostYuan"/);
   assert.match(pageSource, /label="建议人工费（元）"/);
   assert.match(pageSource, /系统初始建议/);
-  assert.match(pageSource, /恢复系统建议/);
+  assert.match(pageSource, /使用系统建议/);
+  assert.match(pageSource, /readOnly/);
   assert.match(pageSource, /label="成交人工费（元）"/);
   assert.match(pageSource, /采用建议价/);
-  assert.match(pageSource, /suggestedLaborCostTouchedRef/);
   assert.match(pageSource, /onFinish=\{\(values\) => createMutation\.mutate\(values\)\}/);
   assert.doesNotMatch(pageSource, /createMutation\.mutate\(\{ \.\.\.values, suggestedLaborCostYuan \}\)/);
 });

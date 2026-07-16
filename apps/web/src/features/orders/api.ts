@@ -23,6 +23,8 @@ export type CreateOrderPayload = {
   laborCostCents: number;
   suggestedLaborCostCents?: number;
   laborCostAdjustmentReason?: string;
+  pricingCalculationId?: string;
+  estimatedCostCents?: number;
   remark?: string;
   deposit?: {
     accountId: string;

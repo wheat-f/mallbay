@@ -7,13 +7,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { constructionApi, customerApi, orderApi, productApi } from "../../../src/lib/api";
+import { constructionApi, customerApi, orderApi, pricingApi, productApi } from "../../../src/lib/api";
 import type { CreateCustomerFormValues } from "../../../src/features/customers/create-customer-form";
 import { toCreateCustomerPayload } from "../../../src/features/customers/create-customer-form";
 import {
   buildOrderCustomerOptions,
   buildOrderVehicleOptions,
   centsToYuan,
+  yuanToCents,
   type CreateOrderFormValues,
   formatOrderDateValue,
   formatOrderTimeSlotValue,
@@ -28,6 +29,8 @@ import {
   type OrderCustomer
 } from "../../../src/features/orders/create-order-form";
 import type { PaymentAccountOption, PaymentAccountPayload } from "../../../src/features/orders/api";
+import type { PricingCalculationResponse } from "../../../src/features/pricing/api";
+import { salesQuoteApi } from "../../../src/features/sales-quotes/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { getStoreWorkbenchHref } from "../../../src/features/workbench/navigation";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
@@ -47,10 +50,12 @@ type ProductOption = {
   brand: string;
   name: string;
   model: string;
+  category: string;
   basePriceCents: number;
   unit?: ProductUnit | null;
   salesUnit?: ProductUnit | null;
   inventoryUnit?: ProductUnit | null;
+  quantityPrecision?: number;
 };
 
 type NewOrderCustomerFormValues = CreateCustomerFormValues & {
@@ -88,16 +93,19 @@ function CreateOrderContent() {
   const [referrerKeyword, setReferrerKeyword] = useState("");
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newPaymentAccountOpen, setNewPaymentAccountOpen] = useState(false);
+  const [serverPricing, setServerPricing] = useState<PricingCalculationResponse | null>(null);
+  const [draftPricingChoiceOpen, setDraftPricingChoiceOpen] = useState(false);
   const [newOrderCustomerType, setNewOrderCustomerType] = useState("PERSONAL");
   const laborCostTouchedRef = useRef(false);
-  const suggestedLaborCostTouchedRef = useRef(false);
   const draftRestoredRef = useRef(false);
+  const draftPricingPendingRef = useRef(false);
   const [form] = Form.useForm<CreateOrderFormValues>();
   const [newCustomerForm] = Form.useForm<NewOrderCustomerFormValues>();
   const [newPaymentAccountForm] = Form.useForm<NewPaymentAccountFormValues>();
   const initialCustomerId = params.get("customerId") ?? undefined;
   const selectedCustomerId = Form.useWatch("customerId", form) ?? initialCustomerId;
   const selectedVehicleId = Form.useWatch("vehicleId", form);
+  const selectedVehicleClassCode = Form.useWatch("vehicleClassCode", form);
   const selectedAppointmentDate = Form.useWatch("appointmentDate", form);
   const selectedConstructionLocation = Form.useWatch("constructionLocation", form) ?? "IN_STORE";
   const selectedConstructionType = Form.useWatch("constructionType", form) ?? "PPF";
@@ -129,6 +137,12 @@ function CreateOrderContent() {
   const productsQuery = useQuery({
     queryKey: ["products-for-order", storeId],
     queryFn: () => productApi.list({ storeId: storeId!, page: 1, pageSize: 100, status: "ACTIVE" }),
+    enabled: Boolean(storeId)
+  });
+
+  const pricingRuleSetsQuery = useQuery({
+    queryKey: ["pricing-rule-sets-for-order", storeId],
+    queryFn: () => pricingApi.ruleSets(storeId!),
     enabled: Boolean(storeId)
   });
 
@@ -164,6 +178,109 @@ function CreateOrderContent() {
     value: product.id,
     product
   }));
+  const selectedVehicle = selectedCustomer?.vehicles?.find((vehicle) => vehicle.id === selectedVehicleId);
+  const vehicleClassesQuery = useQuery({
+    queryKey: ["pricing-vehicle-classes", storeId],
+    queryFn: () => pricingApi.vehicleClasses(storeId!),
+    enabled: Boolean(storeId)
+  });
+  const vehicleClassificationQuery = useQuery({
+    queryKey: ["pricing-vehicle-classify", storeId, selectedVehicle?.carModel],
+    queryFn: () => pricingApi.resolveVehicleClass({ storeId: storeId!, model: selectedVehicle?.carModel ?? "" }),
+    enabled: Boolean(storeId && selectedVehicle?.carModel)
+  });
+  const costLines = useMemo(() => (selectedItems ?? []).filter((item) => item?.productId && item?.quantity).map((item) => ({ productId: item.productId, quantity: Number(item.quantity) })), [selectedItems]);
+  const costEstimateQuery = useQuery({
+    queryKey: ["pricing-cost-estimate", storeId, costLines, selectedLaborCostYuan],
+    queryFn: () => pricingApi.estimateCost({ storeId: storeId!, lines: costLines, laborCostCents: yuanToCents(selectedLaborCostYuan) }),
+    enabled: Boolean(storeId && costLines.length)
+  });
+  const systemSuggestedLaborCostYuan = getSuggestedLaborCostYuan(
+    selectedConstructionType,
+    selectedConstructionLocation,
+    selectedVehicle?.carModel
+  );
+  const now = Date.now();
+  const publishedRuleSet = pricingRuleSetsQuery.data?.find((item) => {
+    const starts = new Date(item.effectiveFrom).getTime() <= now;
+    const ends = !item.effectiveTo || new Date(item.effectiveTo).getTime() > now;
+    return item.status === "PUBLISHED" && starts && ends;
+  });
+  useEffect(() => {
+    if (!selectedVehicleId) {
+      form.setFieldValue("vehicleClassCode", undefined);
+      return;
+    }
+    if (!selectedVehicleClassCode && vehicleClassificationQuery.data?.vehiclePriceClass?.code) {
+      form.setFieldValue("vehicleClassCode", vehicleClassificationQuery.data.vehiclePriceClass.code);
+    }
+  }, [form, selectedVehicleId, selectedVehicleClassCode, vehicleClassificationQuery.data?.vehiclePriceClass?.code]);
+
+  const pricingInput = useMemo(() => {
+    if (!storeId || !publishedRuleSet || !selectedItems?.length) return undefined;
+    const lines = selectedItems.map((item, index) => {
+      const product = productOptions.find((option) => option.value === item?.productId)?.product;
+      if (!product || !item?.quantity) return undefined;
+      return {
+        id: `order-line-${index}`,
+        productId: product.id,
+        category: product.category,
+        brand: product.brand,
+        model: product.model,
+        salesUnit: resolveProductSalesUnit(product),
+        quantity: Number(item.quantity),
+        baseUnitPriceCents: product.basePriceCents
+      };
+    });
+    if (lines.some((line) => !line)) return undefined;
+    return {
+      storeId,
+      ruleSetId: publishedRuleSet.id,
+      input: {
+        ruleSetVersion: publishedRuleSet.version,
+        vehicleId: selectedVehicleId || undefined,
+        vehicleClassCode: selectedVehicleClassCode || undefined,
+        constructionType: selectedConstructionType,
+        constructionLocation: selectedConstructionLocation,
+        effectiveAt: new Date().toISOString(),
+        baseLaborCostCents: yuanToCents(systemSuggestedLaborCostYuan),
+        lines: lines as NonNullable<typeof lines[number]>[]
+      }
+    };
+  }, [productsQuery.data?.items, publishedRuleSet, selectedConstructionLocation, selectedConstructionType, selectedItems, selectedVehicleClassCode, selectedVehicleId, storeId]);
+
+  const pricingCalculationMutation = useMutation({
+    mutationFn: () => {
+      if (!pricingInput) throw new Error("请先选择完整的产品明细");
+      return pricingApi.calculate(pricingInput);
+    },
+    onSuccess: (result) => {
+      setServerPricing(result);
+      form.setFieldValue("pricingCalculationId", result.pricingCalculationId ?? undefined);
+      const suggestedLabor = centsToYuan(result.calculation.suggestedLaborCostCents) ?? 0;
+      form.setFieldValue("suggestedLaborCostYuan", suggestedLabor);
+      if (!laborCostTouchedRef.current) form.setFieldValue("laborCostYuan", suggestedLabor);
+    },
+    onError: (error: Error) => message.error(`价格试算失败：${error.message}`)
+  });
+
+  useEffect(() => {
+    if (params.get("draft") === "local" && !draftRestoredRef.current) return;
+    if (draftPricingPendingRef.current) return;
+    if (!pricingInput) {
+      setServerPricing(null);
+      form.setFieldValue("pricingCalculationId", undefined);
+      return;
+    }
+    const timer = window.setTimeout(() => pricingCalculationMutation.mutate(), 350);
+    return () => window.clearTimeout(timer);
+  }, [form, params, pricingInput]);
+
+  useEffect(() => {
+    if (costEstimateQuery.data) {
+      form.setFieldValue("estimatedCostYuan", costEstimateQuery.data.estimatedCostCents / 100);
+    }
+  }, [costEstimateQuery.data, form]);
   const selectedCapacity = ((capacitiesQuery.data ?? []) as DailyCapacitySummary[])[0];
   const capacityStatus = selectedAppointmentDate
     ? getOrderCapacityStatus(selectedCapacity, selectedConstructionLocation, selectedConstructionType)
@@ -179,15 +296,32 @@ function CreateOrderContent() {
     deposit: shouldRecordDeposit ? selectedDeposit : undefined
   });
   const customerHistory = selectedCustomer ? getOrderCustomerHistorySummary(selectedCustomer) : undefined;
-  const selectedVehicle = selectedCustomer?.vehicles?.find((vehicle) => vehicle.id === selectedVehicleId);
-  const systemSuggestedLaborCostYuan = getSuggestedLaborCostYuan(
-    selectedConstructionType,
-    selectedConstructionLocation,
-    selectedVehicle?.carModel
-  );
   const suggestedLaborCostYuan = selectedSuggestedLaborCostYuan ?? systemSuggestedLaborCostYuan;
   const hasLaborCostAdjustment = selectedLaborCostYuan !== undefined && selectedLaborCostYuan !== suggestedLaborCostYuan;
 
+  const createQuoteMutation = useMutation({
+    mutationFn: (values: CreateOrderFormValues) => {
+      if (!storeId || !values.pricingCalculationId) throw new Error("缺少价格试算快照，请先重新试算");
+      return salesQuoteApi.create({
+        storeId,
+        customerId: values.customerId,
+        vehicleId: values.vehicleId,
+        appointmentDate: formatOrderDateValue(values.appointmentDate),
+        appointmentTimeSlot: formatOrderTimeSlotValue(values.appointmentTimeSlot),
+        constructionAddress: trimOptional(values.constructionAddress),
+        constructionType: values.constructionType,
+        constructionLocation: values.constructionLocation,
+        pricingCalculationId: values.pricingCalculationId,
+        items: values.items.map((item) => ({ productId: item.productId, finalUnitPriceCents: yuanToCents(item.unitPriceYuan) })),
+        finalLaborCostCents: yuanToCents(values.laborCostYuan),
+        estimatedCostCents: values.estimatedCostYuan === undefined ? undefined : yuanToCents(values.estimatedCostYuan),
+        adjustmentReasonCode: "SALES_ADJUSTMENT",
+        adjustmentReasonText: trimOptional(values.pricingAdjustmentReason) ?? trimOptional(values.laborCostAdjustmentReason) ?? "本单成交价偏离建议价，提交审批"
+      });
+    },
+    onSuccess: () => { message.success("已提交报价审批，批准后可转正式订单"); router.push("/orders/quotes"); },
+    onError: (error: Error) => message.error(`报价提交失败：${error.message}`)
+  });
   const createMutation = useMutation({
     mutationFn: (values: CreateOrderFormValues) => {
       if (!storeId) throw new Error("当前账号尚未加入门店");
@@ -198,7 +332,14 @@ function CreateOrderContent() {
       message.success("订单已创建");
       router.push(`/orders/${order.id}`);
     },
-    onError: (error: Error) => message.error(error.message)
+    onError: (error: Error) => {
+      if (error.message.includes("需要先提交报价审批")) {
+        message.info("当前成交价需要审批，正在创建报价单");
+        createQuoteMutation.mutate(form.getFieldsValue(true) as CreateOrderFormValues);
+        return;
+      }
+      message.error(error.message);
+    }
   });
 
   const createCustomerMutation = useMutation({
@@ -269,6 +410,7 @@ function CreateOrderContent() {
       storeId,
       savedAt: new Date().toISOString(),
       values,
+      pricingSnapshot: serverPricing ?? undefined,
       summary: {
         customerName: selectedCustomer?.companyName ?? selectedCustomer?.name ?? "客户待选择",
         productCount: values.items?.filter((item) => item?.productId).length ?? 0,
@@ -306,10 +448,27 @@ function CreateOrderContent() {
       ...draft.values,
       suggestedLaborCostYuan: draft.values.suggestedLaborCostYuan ?? systemSuggestedLaborCostYuan
     });
+    if (draft.pricingSnapshot && draft.values.pricingCalculationId) {
+      setServerPricing(draft.pricingSnapshot);
+      draftPricingPendingRef.current = true;
+      setDraftPricingChoiceOpen(true);
+    }
     laborCostTouchedRef.current = true;
-    suggestedLaborCostTouchedRef.current = draft.values.suggestedLaborCostYuan !== undefined;
     message.success("已恢复订单草稿");
   }, [form, message, params, storeId, systemSuggestedLaborCostYuan]);
+
+  const keepDraftPricing = () => {
+    draftPricingPendingRef.current = false;
+    setDraftPricingChoiceOpen(false);
+  };
+
+  const recalculateDraftPricing = () => {
+    draftPricingPendingRef.current = false;
+    setDraftPricingChoiceOpen(false);
+    setServerPricing(null);
+    form.setFieldValue("pricingCalculationId", undefined);
+    if (pricingInput) pricingCalculationMutation.mutate();
+  };
 
   useEffect(() => {
     if (!selectedCustomer) return;
@@ -328,20 +487,30 @@ function CreateOrderContent() {
   }, [form, selectedCustomer]);
 
   useEffect(() => {
-    const nextSuggestedLaborCostYuan = suggestedLaborCostTouchedRef.current
-      ? form.getFieldValue("suggestedLaborCostYuan") ?? systemSuggestedLaborCostYuan
-      : systemSuggestedLaborCostYuan;
-    if (!suggestedLaborCostTouchedRef.current) {
-      form.setFieldValue("suggestedLaborCostYuan", systemSuggestedLaborCostYuan);
-    }
+    form.setFieldValue("suggestedLaborCostYuan", systemSuggestedLaborCostYuan);
     if (!laborCostTouchedRef.current) {
-      form.setFieldValue("laborCostYuan", nextSuggestedLaborCostYuan);
+      form.setFieldValue("laborCostYuan", systemSuggestedLaborCostYuan);
     }
   }, [form, systemSuggestedLaborCostYuan]);
 
   return (
     <>
       <div className="management-page">
+        {draftPricingChoiceOpen ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="草稿价格处理"
+            description="该草稿保存了服务端建议价快照。可以沿用草稿当时的规则，也可以按当前已发布规则重新试算；正式提交时仍由服务端复核快照有效性。"
+            action={
+              <Space wrap>
+                <Button size="small" onClick={keepDraftPricing}>沿用草稿规则快照</Button>
+                <Button size="small" type="primary" onClick={recalculateDraftPricing}>按最新规则重算</Button>
+              </Space>
+            }
+            className="mb-4"
+          />
+        ) : null}
           <StorePageHeader title="新建订单" description="选择客户、产品、施工方式并录入费用">
             <Space className="create-order-header-actions" wrap>
               <Button disabled={!storeId} onClick={() => storeId && router.push(getStoreWorkbenchHref(storeId))}>
@@ -349,6 +518,13 @@ function CreateOrderContent() {
               </Button>
               <Button onClick={saveDraft}>
                 保存草稿
+              </Button>
+              <Button
+                loading={pricingCalculationMutation.isPending}
+                disabled={!pricingInput}
+                onClick={() => pricingCalculationMutation.mutate()}
+              >
+                重新试算建议价
               </Button>
               <Button
                 type="primary"
@@ -404,10 +580,21 @@ function CreateOrderContent() {
                     disabled={!selectedCustomer}
                     loading={selectedCustomerQuery.isLoading}
                     options={vehicleOptions}
+                    onChange={() => form.setFieldValue("vehicleClassCode", undefined)}
                     placeholder={selectedCustomer ? "选择客户车辆" : "请先选择客户"}
                   />
                 </Form.Item>
-              </Card>
+
+
+                <Form.Item name="vehicleClassCode" label="车辆价格级别" extra={vehicleClassificationQuery.data?.source === "UNMATCHED" ? "未匹配车型，请手动选择级别" : vehicleClassificationQuery.data?.source === "AUTO_DEFAULT" ? "当前使用门店默认级别，可手动修正" : "已根据车型关键词自动匹配，可在本单修正"}>
+                  <Select
+                    allowClear
+                    disabled={!selectedVehicle}
+                    loading={vehicleClassesQuery.isLoading || vehicleClassificationQuery.isLoading}
+                    options={(vehicleClassesQuery.data ?? []).filter((item) => item.status === "ACTIVE").map((item) => ({ label: item.name + "（" + item.code + "）", value: item.code }))}
+                    placeholder={selectedVehicle ? "自动匹配，可手动修正" : "请先选择车辆"}
+                  />
+                </Form.Item>              </Card>
 
               <Card title={<OrderStepTitle step={2} title="施工预约" />} className="create-order-card">
                 <div className="create-order-field-grid">
@@ -478,6 +665,8 @@ function CreateOrderContent() {
                               onChange={(productId) => {
                                 const product = productOptions.find((item) => item.value === productId)?.product;
                                 if (!product) return;
+                                setServerPricing(null);
+                                form.setFieldValue("pricingCalculationId", undefined);
                                 const items = form.getFieldValue("items") as Array<Record<string, unknown>>;
                                 items[field.name] = {
                                   ...items[field.name],
@@ -488,7 +677,13 @@ function CreateOrderContent() {
                             />
                           </Form.Item>
                           <Form.Item {...field} name={[field.name, "quantity"]} label="数量">
-                            <InputNumber min={1} placeholder="数量" className="w-full" />
+                            <InputNumber
+                              min={0.001}
+                              step={0.001}
+                              precision={selectedItems?.[field.name]?.productId ? (productOptions.find((item) => item.value === selectedItems?.[field.name]?.productId)?.product.quantityPrecision ?? 3) : 3}
+                              placeholder="数量"
+                              className="w-full"
+                            />
                           </Form.Item>
                           <Form.Item label="单位">
                             <Input
@@ -500,8 +695,29 @@ function CreateOrderContent() {
                             />
                           </Form.Item>
                           <Form.Item {...field} name={[field.name, "unitPriceYuan"]} label="单价（元）">
-                            <InputNumber min={0} precision={2} placeholder="单价（元）" className="w-full" />
+                            <InputNumber
+                              min={0}
+                              precision={2}
+                              placeholder="单价（元）"
+                              className="w-full"
+                            />
                           </Form.Item>
+                          {serverPricing?.calculation.lines[field.name] ? (
+                            <Space size={4} className="create-order-price-suggestion">
+                              <Typography.Text type="secondary">
+                                建议 ¥{(serverPricing.calculation.lines[field.name].suggestedUnitPriceCents / 100).toFixed(2)}
+                              </Typography.Text>
+                              <Button
+                                size="small"
+                                onClick={() => {
+                                  const line = serverPricing.calculation.lines[field.name];
+                                  form.setFieldValue(["items", field.name, "unitPriceYuan"], line.suggestedUnitPriceCents / 100);
+                                }}
+                              >
+                                采用建议价
+                              </Button>
+                            </Space>
+                          ) : null}
                           <Form.Item label=" ">
                             <Button icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} />
                           </Form.Item>
@@ -525,24 +741,18 @@ function CreateOrderContent() {
                           className="!w-full"
                           min={0}
                           precision={2}
-                          onChange={(value) => {
-                            suggestedLaborCostTouchedRef.current = true;
-                            if (!laborCostTouchedRef.current) {
-                              form.setFieldValue("laborCostYuan", value ?? 0);
-                            }
-                          }}
+                          readOnly
                         />
                       </Form.Item>
                       <Button
                         onClick={() => {
-                          suggestedLaborCostTouchedRef.current = false;
                           form.setFieldValue("suggestedLaborCostYuan", systemSuggestedLaborCostYuan);
                           if (!laborCostTouchedRef.current) {
                             form.setFieldValue("laborCostYuan", systemSuggestedLaborCostYuan);
                           }
                         }}
                       >
-                        恢复系统建议
+                        使用系统建议
                       </Button>
                     </Space.Compact>
                   </Form.Item>
@@ -580,6 +790,9 @@ function CreateOrderContent() {
                     <Input.TextArea rows={2} placeholder="说明为什么调整施工人工费，例如车型复杂、外出距离、追加施工项目等" />
                   </Form.Item>
                 ) : null}
+                <Form.Item name="estimatedCostYuan" label="预计成本（元）" extra={costEstimateQuery.data?.hasMissingCost ? "部分产品缺少成本，将按需进入审批" : "按库存加权成本、最近入库成本或标准成本估算"}>
+                  <InputNumber readOnly min={0} precision={2} className="w-full" />
+                </Form.Item>
               </Card>
 
               <Card title={<OrderStepTitle step={4} title="收款与备注" />} className="create-order-card">
@@ -605,8 +818,8 @@ function CreateOrderContent() {
                             </Button>
                           </Space>
                         }
-                      />
-                    ) : null}
+                  />
+                ) : null}
                     <div className="create-order-field-grid">
                       <Form.Item
                         name={["deposit", "accountId"]}
@@ -662,6 +875,10 @@ function CreateOrderContent() {
                     </div>
                   </>
                 ) : null}
+
+                <Form.Item name="pricingAdjustmentReason" label="价格审批说明" extra="成交价偏离建议价时会随报价单提交，正常订单可留空">
+                  <Input.TextArea rows={2} placeholder="例如：客户组合采购，申请本单优惠" />
+                </Form.Item>
 
                 <Form.Item name="remark" label="备注">
                   <Input.TextArea rows={4} />

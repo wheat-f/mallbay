@@ -71,4 +71,10 @@ export class CreateProductDto {
   @IsInt()
   @Min(0)
   basePriceCents!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  standardCostCents?: number;
 }

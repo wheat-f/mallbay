@@ -1078,3 +1078,23 @@ test("OrdersService rejects commercial updates after payment is fully settled", 
     /订单收款已确认完成，不能修改产品清单/
   );
 });
+
+
+test("OrdersService rejects commercial edits when a pricing snapshot is attached", async () => {
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({
+      order: {
+        findUnique: async () => ({
+          id: "order-1",
+          storeId: "store-1",
+          salesPersonId: "sales-1",
+          status: OrderStatus.PENDING_DISPATCH,
+          amount: { pricingCalculationId: "calc-1", outstandingCents: 1000 }
+        })
+      }
+    })
+  };
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  await assert.rejects(() => service.updateCommercials({ id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } }, "order-1", { changeReason: "调整", items: [], laborCostCents: 0 } as never), /价格快照已冻结/);
+});

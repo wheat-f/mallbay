@@ -68,6 +68,13 @@ type OrderDetail = {
     totalAmountCents: number;
     paidAmountCents: number;
     outstandingCents: number;
+    pricingCalculationId?: string | null;
+    pricingMode?: "LEGACY" | "ACTIVE";
+    pricingRuleSetVersion?: number | null;
+    pricingInputHash?: string | null;
+    pricingOutputSnapshot?: {
+      calculation?: { suggestedProductAmountCents?: number; suggestedLaborCostCents?: number; suggestedTotalCents?: number; appliedRules?: Array<{ ruleName?: string; group?: string }> };
+    } | null;
   } | null;
   payments?: { id: string; paymentType: string; amountCents: number; paidAt: string; account?: { name: string } }[];
 };
@@ -161,6 +168,7 @@ export default function OrderDetailPage() {
     order
       && commercialEditableStatuses.includes(order.status as (typeof commercialEditableStatuses)[number])
       && hasEditableOutstandingAmount
+      && order.amount?.pricingMode !== "ACTIVE"
   );
   const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH";
   const orderSteps = getOrderSteps(order?.status);
@@ -342,6 +350,15 @@ export default function OrderDetailPage() {
                   </div>
                   {canEditCommercials ? (
                     <Typography.Text type="secondary">收款未完全确认前可修改产品清单</Typography.Text>
+                  ) : order?.amount?.pricingMode === "ACTIVE" ? (
+                    <Typography.Text type="secondary">正式订单价格快照已冻结，不能修改产品清单或成交价。</Typography.Text>
+                  ) : order?.amount?.pricingMode === "LEGACY" ? (
+                    <div className="order-pricing-snapshot-panel">
+                      <div className="order-info-grid">
+                        <span>价格模式</span><strong>历史订单（LEGACY）</strong>
+                        <span>建议价快照</span><strong>未接入新价格引擎</strong>
+                      </div>
+                    </div>
                   ) : null}
                 </Card>
               </div>
@@ -361,6 +378,18 @@ export default function OrderDetailPage() {
                     <span>人工费调整原因</span><strong>{order?.amount?.laborCostAdjustmentReason ?? "-"}</strong>
                     <span>备注</span><strong>{order?.remark ?? "-"}</strong>
                   </div>
+                  {order?.amount?.pricingCalculationId ? (
+                    <div className="order-pricing-snapshot-panel">
+                      <div className="order-info-grid">
+                        <span>建议价规则版本</span><strong>v{order.amount.pricingRuleSetVersion ?? "-"}</strong>
+                        <span>建议产品合计</span><strong>{yuanCurrency(order.amount.pricingOutputSnapshot?.calculation?.suggestedProductAmountCents)}</strong>
+                        <span>建议人工费</span><strong>{yuanCurrency(order.amount.pricingOutputSnapshot?.calculation?.suggestedLaborCostCents)}</strong>
+                        <span>建议总价</span><strong>{yuanCurrency(order.amount.pricingOutputSnapshot?.calculation?.suggestedTotalCents)}</strong>
+                        <span>计算哈希</span><strong>{order.amount.pricingInputHash?.slice(0, 12) ?? "-"}…</strong>
+                      </div>
+                      <Typography.Text type="secondary">正式订单已冻结服务端价格快照；规则发布不会改写本单。</Typography.Text>
+                    </div>
+                  ) : null}
                   {shouldShowFulfillmentConfirmation ? (
                     <div className="order-fulfillment-panel">
                       <Tag color="processing">待派工</Tag>

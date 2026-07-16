@@ -77,6 +77,7 @@ export type OrderProduct = {
 export type CreateOrderFormValues = {
   customerId: string;
   vehicleId?: string;
+  vehicleClassCode?: string;
   constructionType: CreateOrderPayload["constructionType"];
   constructionLocation: CreateOrderPayload["constructionLocation"];
   constructionAddress?: string;
@@ -86,6 +87,9 @@ export type CreateOrderFormValues = {
   laborCostYuan?: number;
   suggestedLaborCostYuan?: number;
   laborCostAdjustmentReason?: string;
+  pricingAdjustmentReason?: string;
+  pricingCalculationId?: string;
+  estimatedCostYuan?: number;
   shouldRecordDeposit?: boolean;
   deposit?: {
     accountId?: string;
@@ -237,6 +241,8 @@ export function toCreateOrderPayload(values: CreateOrderFormValues, storeId: str
     laborCostYuan,
     suggestedLaborCostYuan,
     laborCostAdjustmentReason,
+    pricingAdjustmentReason: _pricingAdjustmentReason,
+    estimatedCostYuan,
     shouldRecordDeposit,
     deposit,
     appointmentDate: _appointmentDate,
@@ -273,6 +279,7 @@ export function toCreateOrderPayload(values: CreateOrderFormValues, storeId: str
     laborCostCents: yuanToCents(laborCostYuan),
     ...(suggestedLaborCostYuan !== undefined ? { suggestedLaborCostCents: yuanToCents(suggestedLaborCostYuan) } : {}),
     ...(trimmedLaborAdjustmentReason ? { laborCostAdjustmentReason: trimmedLaborAdjustmentReason } : {}),
+    ...(estimatedCostYuan !== undefined ? { estimatedCostCents: yuanToCents(estimatedCostYuan) } : {}),
     ...(normalizedDeposit ? { deposit: normalizedDeposit } : {})
   };
 }

@@ -14,10 +14,12 @@ import { ObservabilityModule } from "./observability/observability.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ProductsModule } from "./products/products.module";
+import { PricingModule } from "./pricing/pricing.module";
 import { PurchasesModule } from "./purchases/purchases.module";
 import { RebatesModule } from "./rebates/rebates.module";
 import { ReportsModule } from "./reports/reports.module";
 import { SettingsModule } from "./settings/settings.module";
+import { SalesQuotesModule } from "./sales-quotes/sales-quotes.module";
 import { StoresModule } from "./stores/stores.module";
 import { UsersModule } from "./users/users.module";
 import { WarrantiesModule } from "./warranties/warranties.module";
@@ -42,6 +44,8 @@ import { HealthController } from "./health.controller";
     ReportsModule,
     SettingsModule,
     ProductsModule,
+    PricingModule,
+    SalesQuotesModule,
     PurchasesModule,
     OrdersModule,
     UsersModule,

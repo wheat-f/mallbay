@@ -76,6 +76,12 @@ export class UpdateProductDto {
   basePriceCents?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  standardCostCents?: number;
+
+  @IsOptional()
   @IsEnum(ProductStatus)
   status?: ProductStatus;
 }

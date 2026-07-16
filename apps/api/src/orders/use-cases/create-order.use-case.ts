@@ -36,7 +36,7 @@ export class CreateOrderUseCase {
     this.orderNumber = orderNumber ?? createDefaultOrderNumberGenerator();
   }
 
-  async execute(user: UserWithStoreMember, dto: CreateOrderDto) {
+  async execute(user: UserWithStoreMember, dto: CreateOrderDto, options: { approvedQuote?: boolean } = {}) {
     if (!PermissionPolicy.canCreateOrder(user, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
@@ -63,7 +63,7 @@ export class CreateOrderUseCase {
         items: dto.items,
         laborCostCents: dto.laborCostCents,
         estimatedCostCents: dto.estimatedCostCents
-      })
+      }, options)
       : null;
     if (dto.pricingCalculationId && !pricingSnapshot) {
       throw new BadRequestException("价格试算服务不可用，请重新试算");

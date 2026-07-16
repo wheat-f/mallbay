@@ -287,10 +287,10 @@ export class SalesQuotesService {
     if (quote.salesPersonId !== actor.id && !PermissionPolicy.isStoreManager(actor, quote.storeId)) {
       throw new ForbiddenException("只有报价销售或店长可以转订单");
     }
+    if (quote.convertedOrderId) return { orderId: quote.convertedOrderId, quoteId: quote.id };
     if (quote.status !== SalesQuoteStatus.APPROVED || quote.validUntil <= new Date()) {
       throw new BadRequestException("只有有效的已批准报价单可以转订单");
     }
-    if (quote.convertedOrderId) return { orderId: quote.convertedOrderId, quoteId: quote.id };
 
     const input = await this.prisma.pricingCalculation.findUnique({ where: { id: quote.pricingCalculationId }, select: { inputSnapshot: true } });
     const pricingInput = input?.inputSnapshot as unknown as { constructionType: ConstructionType; constructionLocation: ConstructionLocation } | undefined;
@@ -321,7 +321,7 @@ export class SalesQuotesService {
         capacityReservationId: quote.capacityReservation?.id,
         estimatedCostCents: quote.estimatedCostCents ?? undefined,
         remark: `由报价单 ${quote.quoteNo} 转入`
-      });
+      }, { approvedQuote: true });
       await this.prisma.salesQuote.update({ where: { id: quote.id }, data: { convertedOrderId: order.id } });
       await this.recordAudit({ action: "sales_quote_converted", actorId: actor.id, targetType: "SalesQuote", targetId: quote.id, metadata: { orderId: order.id, storeId: quote.storeId } });
       return { orderId: order.id, quoteId: quote.id };

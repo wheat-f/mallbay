@@ -1,7 +1,7 @@
 # 销售订单智能建议价与价格审批实施计划
 
 - 文档类型：功能实施计划
-- 文档状态：实施完成（首版代码、自动化验证和迁移回滚演练已完成，待发布窗口执行真实浏览器业务验收）
+- 文档状态：实施完成（首版代码、自动化验证、迁移回滚演练及本地真实浏览器业务验收均已完成）
 - 适用范围：基础字典、车辆价格级别、车型映射、价格规则、订单试算、报价审批、容量软占位、毛利保护、总部模板
 - 来源依据：销售订单建议价需求访谈、现有产品/订单/施工容量/库存成本实现、MallBay 文档与工程治理规范
 - 目标读者：产品负责人、后端开发、前端开发、测试、门店实施人员
@@ -972,16 +972,18 @@ MUST 使用包含历史产品、订单、车辆、容量和库存批次的临时
 - 工作区差异校验：通过（git diff --check）。
 - 完整 API 类型检查：通过（`pnpm --filter @mallbay/api typecheck`）。
 - 完整 Web 类型检查：通过（`pnpm --filter @mallbay/web typecheck`）。
-- API 单元回归：292 项通过；覆盖订单、容量、价格引擎、报价、产品、库存、权限、审计持久化和既有业务模块；其中本轮价格相关定向集 51 项全部通过。
+- API 单元回归：295 项通过；覆盖订单、容量、价格引擎、报价、产品、库存、权限、审计持久化和既有业务模块；新增覆盖当前已发布规则自动匹配、已审批报价转单和重复转单幂等。
 - Web 回归：581 项通过，新增草稿价格快照保留与恢复选择覆盖。
 - API 生产构建：通过（`pnpm --filter @mallbay/api build`）。
 - Web 生产构建：通过（`pnpm --filter @mallbay/web build`），新规则、报价、车辆和订单路由均成功生成。
-- 本地生产服务路由探测：通过（/auth、/orders/create、/orders/pricing、/orders/quotes 返回 200 且无框架错误；未登录访问 /admin/pricing-templates 正确回到 /auth）；未宣称已完成登录后业务验收。
+- 本地生产服务路由探测：通过（/auth、/orders/create、/orders/pricing、/orders/quotes 返回 200 且无框架错误；未登录访问 /admin/pricing-templates 正确回到 /auth）。
 - Prisma Client 生成和 schema 校验：通过（`prisma generate`、`prisma validate`）。
 - 数据库迁移演练：通过（临时 Docker PostgreSQL 执行 `prisma migrate deploy`，5 个新增迁移全部应用；`prisma migrate status` 显示 schema up to date；`db:preflight` 通过；API flow 6 项通过）。
 - 审计回归：通过（规则发布/停用/复制、报价提交/审批/撤回/重算/转单、容量占位/确认/释放/对账、模板发布/复制和灰度切换均同时写入结构化日志与 `AuditEvent`；窄 Prisma mock 兼容测试通过）。
 - 迁移回滚演练：通过（从开发库备份恢复到临时库 `mallbay_rehearsal_20260716`，故意失败 Prisma 迁移进入待恢复状态；清理部分副作用后执行 `prisma migrate resolve --rolled-back`，修复迁移重新 deploy 成功并显示 schema up to date；临时门店可切回 `LEGACY`；演练库已销毁）。
-- 浏览器级业务验收：未执行（当前环境未提供 Browser 插件，项目也未配置 Playwright；Web 581 项组件/交互回归和生产构建已通过，发布前仍需在真实浏览器复核主流程）。
+- 本地认证 API 业务流：通过。店长发布 v2 结构化规则后，服务端自动读取产品主数据并计算 `5 米 × ¥1100 + ¥1800 人工费 = ¥7300`；成交价分别验证 `NORMAL / APPROVAL_REQUIRED / BLOCKED`；待审批报价经店长批准后成功转正式订单，重复转换返回同一订单。
+- 浏览器级业务验收：通过。真实登录后验证规则版本与运行模式、服务端试算和计算步骤、报价审批列表、已转订单、正式订单 v2 冻结快照、新建订单单位展示、自动建议价、一键采用及成交价手动修正；浏览器控制台无 warning/error。
+- 浏览器验收发现并修复三项运行缺陷：审批通过报价转单不再重复进入审批；重复转单优先返回既有订单；未指定规则集 ID 时自动消费当前生效的已发布版本并返回实际规则集 ID。
 
 迁移演练使用本地 Docker PostgreSQL 的既有开发卷完成，未执行 reset；回滚演练使用独立临时库，正式环境发布仍需按同一流程先备份、再执行 `prisma migrate deploy`，禁止覆盖业务库。
 

@@ -40,9 +40,10 @@ export class PricingService {
     const store = await this.prisma.store.findUnique({ where: { id: dto.storeId }, select: { pricingRolloutMode: true } });
     const rolloutMode = store?.pricingRolloutMode ?? PricingRolloutMode.ACTIVE;
     try {
-      persistedRuleSet = dto.ruleSetId
-        ? await this.pricingRules.getForCalculation(dto.storeId, dto.ruleSetId)
-        : undefined;
+      // When the caller does not pin a version (the normal create-order and
+      // simulator flow), resolve the currently effective published rule set.
+      // An explicit id still pins the calculation to that immutable version.
+      persistedRuleSet = await this.pricingRules.getForCalculation(dto.storeId, dto.ruleSetId);
       if (dto.ruleSetId && !persistedRuleSet) {
         throw new BadRequestException("价格规则版本不存在、未发布或已失效");
       }
@@ -109,7 +110,7 @@ export class PricingService {
     return {
       mode: "SIMULATION" as const,
       rolloutMode,
-      ruleSetId: dto.ruleSetId ?? null,
+      ruleSetId: persistedRuleSet?.id ?? null,
       pricingCalculationId: rolloutMode === PricingRolloutMode.ACTIVE ? persistedCalculation?.id ?? null : null,
       shadowPricingCalculationId: rolloutMode === PricingRolloutMode.SHADOW ? persistedCalculation?.id ?? null : null,
       shadowComparison: shadowComparison ?? null,
@@ -186,7 +187,8 @@ export class PricingService {
       items: Array<{ productId: string; quantity: number; unitPriceCents: number }>;
       laborCostCents: number;
       estimatedCostCents?: number;
-    }
+    },
+    options: { approvedQuote?: boolean } = {}
   ) {
     const actor = await this.withStoreMember(user);
     if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) {
@@ -228,7 +230,13 @@ export class PricingService {
       output.protectionPolicy
     );
     if (guard.decision === "BLOCKED") throw new BadRequestException("成交价低于保护范围，不能直接生成正式订单");
-    if (guard.decision === "APPROVAL_REQUIRED") throw new BadRequestException("当前成交价需要先提交报价审批");
+    // An approved quote has already passed the required approval workflow. We
+    // still evaluate the immutable snapshot (and continue to reject BLOCKED
+    // prices), but must not send the approved quote back into the approval
+    // queue during conversion to a formal order.
+    if (guard.decision === "APPROVAL_REQUIRED" && !options.approvedQuote) {
+      throw new BadRequestException("当前成交价需要先提交报价审批");
+    }
     return {
       pricingCalculationId: snapshot.id,
       pricingRuleSetVersion: snapshot.ruleSetVersion,

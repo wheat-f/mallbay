@@ -2,7 +2,29 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { ConstructionType, OrderStatus, PaymentAccountType, PaymentType, ProductUnit, StorePosition } from "@prisma/client";
-import { OrdersService } from "./orders.service";
+import { OrdersService, redactOrderAmount } from "./orders.service";
+
+test("销售订单读取会移除内部成本、毛利、提成和成本快照字段", () => {
+  const safe = redactOrderAmount({
+    constructionChargeCents: 110000,
+    suggestedConstructionChargeCents: 120000,
+    materialCostCents: 30000,
+    profitCents: 80000,
+    salesCommissionCents: 9000,
+    estimatedMaterialCostCents: 30000,
+    estimatedConstructionCostCents: 20000,
+    estimatedTotalCostCents: 50000,
+    costCompleteness: "COMPLETE",
+    temporaryCostCents: 45000,
+    temporaryCostReason: "补充材料成本",
+    pricingOutputSnapshot: { costEstimate: { estimatedTotalCostCents: 50000 } }
+  });
+  assert.equal(safe.constructionChargeCents, 110000);
+  assert.equal(safe.suggestedConstructionChargeCents, 120000);
+  for (const field of ["materialCostCents", "profitCents", "salesCommissionCents", "estimatedMaterialCostCents", "estimatedConstructionCostCents", "estimatedTotalCostCents", "costCompleteness", "temporaryCostCents", "temporaryCostReason", "pricingOutputSnapshot"]) {
+    assert.equal(field in safe, false);
+  }
+});
 
 test("OrdersService detail includes item inventory allocations for fulfillment preview", async () => {
   const findUniqueCalls: unknown[] = [];

@@ -13,6 +13,14 @@ export type SalesQuoteRow = {
   items?: Array<{ id?: string; productId: string; quantity: number; salesUnit?: string; suggestedUnitPriceCents?: number; finalUnitPriceCents: number; finalAmountCents?: number; productSnapshot?: { brand?: string; name?: string; model?: string } }>;
   approvals?: Array<{ id: string; status: string; approvalType: string; reviewNote?: string | null; submittedAt: string; reviewedAt?: string | null }>;
   finalLaborCostCents?: number;
+  finalConstructionChargeCents?: number;
+  suggestedConstructionChargeCents?: number;
+  estimatedMaterialCostCents?: number | null;
+  estimatedConstructionCostCents?: number | null;
+  estimatedTotalCostCents?: number | null;
+  costCompleteness?: "COMPLETE" | "TEMPORARY" | "MISSING" | null;
+  temporaryCostCents?: number | null;
+  temporaryCostReason?: string | null;
   suggestedProductAmountCents?: number;
   suggestedLaborCostCents?: number;
   customer?: { id?: string; name?: string | null; companyName?: string | null; contactPerson?: string | null };
@@ -25,11 +33,47 @@ export type RecalculateSalesQuotePayload = {
   storeId: string;
   pricingCalculationId: string;
   items: Array<{ productId: string; finalUnitPriceCents: number }>;
-  finalLaborCostCents: number;
+  finalConstructionChargeCents?: number;
+  /** @deprecated compatibility alias for finalConstructionChargeCents. */
+  finalLaborCostCents?: number;
   estimatedCostCents?: number;
+  temporaryCostCents?: number;
+  temporaryCostReason?: string;
   adjustmentReasonCode?: string;
   adjustmentReasonText?: string;
   validHours?: number;
+};
+
+export type SalesQuoteExportDimension = "customer" | "date" | "product";
+
+export type SalesQuoteExportDetail = {
+  quoteId: string;
+  quoteNo: string;
+  customerName: string;
+  vehicle: string;
+  status: SalesQuoteRow["status"];
+  createdAt: string;
+  validUntil: string;
+  productId: string;
+  productBrand: string;
+  productName: string;
+  productModel: string;
+  productSpecification: string;
+  quantity: number;
+  salesUnit: string;
+  suggestedUnitPriceCents: number;
+  finalUnitPriceCents: number;
+  finalAmountCents: number;
+  suggestedConstructionChargeCents: number;
+  finalConstructionChargeCents: number;
+  quoteTotalCents: number;
+  estimatedMaterialCostCents?: number | null;
+  estimatedConstructionCostCents?: number | null;
+  estimatedTotalCostCents?: number | null;
+  costCompleteness?: "COMPLETE" | "TEMPORARY" | "MISSING" | null;
+  temporaryCostCents?: number | null;
+  temporaryCostReason?: string | null;
+  estimatedMarginBps?: number | null;
 };
 
 export type CreateSalesQuotePayload = RecalculateSalesQuotePayload & {
@@ -47,6 +91,8 @@ export const salesQuoteApi = {
   create: (payload: CreateSalesQuotePayload) =>
     request<SalesQuoteRow>("/sales-quotes", { method: "POST", body: JSON.stringify(payload) }),
   list: (storeId: string) => request<SalesQuoteRow[]>(`/sales-quotes?storeId=${encodeURIComponent(storeId)}`),
+  exportDetails: (storeId: string, exportDimension: SalesQuoteExportDimension = "date") =>
+    request<SalesQuoteExportDetail[]>(`/sales-quotes/export-details?storeId=${encodeURIComponent(storeId)}&exportDimension=${exportDimension}`),
   get: (id: string, storeId: string) => request<SalesQuoteRow>(`/sales-quotes/${id}?storeId=${encodeURIComponent(storeId)}`),
   submit: (id: string, storeId: string) => request<SalesQuoteRow>(`/sales-quotes/${id}/submit`, { method: "POST", body: JSON.stringify({ storeId }) }),
   approve: (id: string, storeId: string, reviewNote?: string) =>

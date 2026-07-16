@@ -42,6 +42,8 @@ pnpm dev
 - [docs/governance/API_GUIDELINES.md](./docs/governance/API_GUIDELINES.md): REST API、错误、分页、鉴权和版本策略
 - [docs/governance/REFACTOR_PLAN.md](./docs/governance/REFACTOR_PLAN.md): 当前问题清单和渐进式改造路线
 - [docs/features/sales-order-pricing-engine-implementation-plan.md](./docs/features/sales-order-pricing-engine-implementation-plan.md): 销售订单智能建议价、价格规则、报价审批与毛利保护实施计划
+- [docs/features/sales-order-construction-charge-cost-implementation-plan.md](./docs/features/sales-order-construction-charge-cost-implementation-plan.md): 销售订单施工收费、标准工时、预计/实际成本、毛利与结算调整实施计划
+- [docs/qa/sales-order-construction-cost-checklist.md](./docs/qa/sales-order-construction-cost-checklist.md): 施工收费、成本核算、灰度和回滚验收清单
 - [docs/features/paint-protection-film-system-plan.md](./docs/features/paint-protection-film-system-plan.md): 漆面保护膜施工管理系统 V1.7 需求建设方案
 - [docs/features/v1-7-requirements-gap-plan.md](./docs/features/v1-7-requirements-gap-plan.md): V1.7 全功能需求差距与验收计划
 - [docs/features/v1-7-local-verification-audit.md](./docs/features/v1-7-local-verification-audit.md): V1.7 本地验收审计

@@ -11,14 +11,14 @@ test("order detail audit events render actor business labels", () => {
   assert.doesNotMatch(pageSource, /return labels\[action\] \?\? action/);
 });
 
-test("order detail renders suggested and final labor cost with adjustment reason", () => {
+test("order detail renders suggested and final construction charge with adjustment reason", () => {
   const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
 
-  assert.match(pageSource, /建议人工费/);
-  assert.match(pageSource, /最终人工费/);
-  assert.match(pageSource, /人工费调整原因/);
-  assert.match(pageSource, /suggestedLaborCostCents/);
-  assert.match(pageSource, /laborCostAdjustmentReason/);
+  assert.match(pageSource, /系统建议施工收费/);
+  assert.match(pageSource, /本单施工收费/);
+  assert.match(pageSource, /施工收费调整原因/);
+  assert.match(pageSource, /suggestedConstructionChargeCents/);
+  assert.match(pageSource, /constructionChargeAdjustmentReason/);
 });
 
 test("order detail exposes pending dispatch confirmation and fulfillment links", () => {
@@ -176,7 +176,7 @@ test("order detail commercial editor uses a prototype right-side drawer", () => 
   assert.match(pageSource, /"COMPLETED"/);
   assert.match(pageSource, /id: item\.id/);
   assert.match(pageSource, /收款未完全确认前可修改产品清单/);
-  assert.match(pageSource, /施工后确认实际用料时，可在收款未完全确认前调整产品、数量、单价和人工费/);
+  assert.match(pageSource, /收款未完全确认前可调整产品、数量、单价和施工收费/);
   assert.doesNotMatch(pageSource, /order\.status === "PENDING_DISPATCH" && hasEditableOutstandingAmount/);
   assert.match(pageSource, /rootClassName="order-commercials-drawer"/);
   assert.match(pageSource, /order-commercials-drawer-footer/);

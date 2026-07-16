@@ -14,6 +14,11 @@ type DefaultDictionaryDefinition = {
 const DEFAULT_DICTIONARIES: readonly DefaultDictionaryDefinition[] = [
   { name: "施工类型", code: "CONSTRUCTION_TYPE", items: ["漆面保护膜", "改色膜", "隔热膜", "改装", "检查"], itemCodes: ["PPF", "COLOR_FILM", "HEAT_FILM", "MODIFICATION", "INSPECTION"] },
   { name: "施工地点", code: "CONSTRUCTION_LOCATION", items: ["到店", "外出"], itemCodes: ["IN_STORE", "OUTSIDE"] },
+  { name: "施工岗位类型", code: "CONSTRUCTION_POSITION_TYPE", items: ["施工师傅", "施工学徒"], itemCodes: ["CONSTRUCTION", "APPRENTICE"] },
+  { name: "工时偏差原因", code: "CONSTRUCTION_TIME_VARIANCE_REASON", items: ["客户临时追加", "车辆实际状况", "返工处理", "外出等待", "其他"], itemCodes: ["CUSTOMER_ADDON", "VEHICLE_CONDITION", "REWORK", "OUTSIDE_WAITING", "OTHER"] },
+  { name: "成本调整原因", code: "CONSTRUCTION_COST_ADJUSTMENT_REASON", items: ["外包费用", "返工人工", "额外补贴", "提成修正", "其他"], itemCodes: ["OUTSOURCING", "REWORK_LABOR", "ALLOWANCE", "COMMISSION", "OTHER"] },
+  { name: "成本异常原因", code: "CONSTRUCTION_COST_EXCEPTION_REASON", items: ["实际成本超预计", "实际毛利低于底线", "材料成本缺失", "工时偏差", "其他"], itemCodes: ["ACTUAL_COST_OVER_ESTIMATE", "ACTUAL_MARGIN_BELOW_THRESHOLD", "MATERIAL_COST_MISSING", "TIME_VARIANCE", "OTHER"] },
+  { name: "施工补贴类型", code: "CONSTRUCTION_ALLOWANCE_TYPE", items: ["外出补贴", "夜间补贴", "高难度补贴", "其他"], itemCodes: ["OUTSIDE", "NIGHT", "COMPLEXITY", "OTHER"] },
   { name: "线索来源", code: "LEAD_SOURCE", items: ["抖音", "小红书", "快手", "门店", "转介绍", "合作伙伴", "其他"] },
   { name: "客户类型", code: "CUSTOMER_TYPE", items: ["个人客户", "企业客户"] },
   { name: "性别", code: "GENDER", items: ["男", "女", "未知"] },
@@ -35,6 +40,11 @@ const DEFAULT_DICTIONARIES: readonly DefaultDictionaryDefinition[] = [
 const FIXED_DICTIONARY_CODES = new Set([
   "CONSTRUCTION_TYPE",
   "CONSTRUCTION_LOCATION",
+  "CONSTRUCTION_POSITION_TYPE",
+  "CONSTRUCTION_TIME_VARIANCE_REASON",
+  "CONSTRUCTION_COST_ADJUSTMENT_REASON",
+  "CONSTRUCTION_COST_EXCEPTION_REASON",
+  "CONSTRUCTION_ALLOWANCE_TYPE",
   "PRODUCT_CATEGORY",
   "PRODUCT_UNIT"
 ]);

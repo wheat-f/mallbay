@@ -2615,6 +2615,12 @@ body {
   width: 100%;
 }
 
+.pricing-condition-operator,
+.pricing-condition-operator .ant-select {
+  min-width: 0;
+  width: 100%;
+}
+
 .pricing-conflict-alert {
   margin-bottom: 16px;
 }
@@ -2771,6 +2777,62 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 18px;
+}
+
+.construction-page-actions,
+.construction-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.construction-page-actions {
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid var(--mb-border-subtle);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-alt);
+}
+
+.construction-page-actions .ant-btn,
+.construction-form-actions .ant-btn,
+.construction-hub-card .ant-btn {
+  min-height: 38px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.construction-page-actions .ant-btn-primary,
+.construction-form-actions .ant-btn-primary,
+.construction-primary-action,
+.construction-hub-card .ant-btn-primary {
+  box-shadow: 0 6px 14px rgb(17 73 119 / 16%);
+}
+
+.construction-primary-action {
+  min-height: 38px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.construction-hub-card {
+  height: 100%;
+}
+
+.construction-hub-card .ant-card-body {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 12px;
+}
+
+.construction-hub-card .ant-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.construction-form-actions-spaced {
+  margin-top: 16px;
 }
 
 .pricing-publish-checks {

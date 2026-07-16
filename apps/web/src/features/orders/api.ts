@@ -20,7 +20,12 @@ export type CreateOrderPayload = {
   appointmentDate?: string;
   appointmentTimeSlot?: string;
   items: { productId: string; quantity: number; unitPriceCents: number }[];
-  laborCostCents: number;
+  /** Customer-facing construction service charge. */
+  constructionChargeCents?: number;
+  suggestedConstructionChargeCents?: number;
+  constructionChargeAdjustmentReason?: string;
+  /** @deprecated compatibility aliases for historic clients. */
+  laborCostCents?: number;
   suggestedLaborCostCents?: number;
   laborCostAdjustmentReason?: string;
   pricingCalculationId?: string;
@@ -36,7 +41,8 @@ export type CreateOrderPayload = {
 
 export type UpdateOrderCommercialsPayload = {
   items: Array<CreateOrderPayload["items"][number] & { id?: string }>;
-  laborCostCents: number;
+  /** Update endpoint remains on the legacy contract until its own migration. */
+  constructionChargeCents: number;
   remark?: string;
   changeReason: string;
 };
@@ -97,10 +103,20 @@ export type SalesOrderExportDetail = {
   unitPriceCents: number;
   itemAmountCents: number;
   productAmountCents: number;
-  laborCostCents: number;
+  constructionChargeCents: number;
   orderTotalCents: number;
   paidAmountCents: number;
   outstandingCents: number;
+  estimatedMaterialCostCents?: number | null;
+  estimatedConstructionCostCents?: number | null;
+  estimatedTotalCostCents?: number | null;
+  costCompleteness?: "COMPLETE" | "TEMPORARY" | "MISSING" | null;
+  actualMaterialCostCents?: number | null;
+  actualConstructionCostCents?: number | null;
+  actualTotalCostCents?: number | null;
+  actualGrossProfitCents?: number | null;
+  actualGrossMarginBps?: number | null;
+  costSettlementStatus?: string | null;
 };
 
 export type SalesOrderExportQuery = Omit<OrderListQuery, "page" | "pageSize"> & {

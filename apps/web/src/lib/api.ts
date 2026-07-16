@@ -22,6 +22,8 @@ export type { CreateSalesCommissionRulePayload, GenerateWorkerCommissionsPayload
 export type {
   CapacityPayload,
   ConstructionOrderMaterials,
+  ConstructionCostSettlement,
+  ConfirmCostSettlementPayload,
   ConstructionListQuery,
   OfflineSyncPayload,
   SchedulePayload

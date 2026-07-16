@@ -216,15 +216,27 @@ function OrdersContent() {
           单价: row.unitPriceCents / 100,
           产品行金额: row.itemAmountCents / 100,
           商品小计: row.productAmountCents / 100,
-          人工费: row.laborCostCents / 100,
-          整单金额_每行重复: row.orderTotalCents / 100,
+           施工收费: row.constructionChargeCents / 100,
+           整单金额_每行重复: row.orderTotalCents / 100,
           已收金额_每行重复: row.paidAmountCents / 100,
           待收金额_每行重复: row.outstandingCents / 100,
           状态: getOrderStatusLabel(row.status),
           施工类型: getConstructionTypeLabel(row.constructionType),
           预约日期: formatOrderListDate(row.appointmentDate),
           预约时段: row.appointmentTimeSlot ?? "",
-          创建时间: formatOrderListDate(row.createdAt)
+           创建时间: formatOrderListDate(row.createdAt),
+           ...(row.estimatedTotalCostCents === undefined ? {} : {
+             预计材料成本: (row.estimatedMaterialCostCents ?? 0) / 100,
+             预计施工成本: (row.estimatedConstructionCostCents ?? 0) / 100,
+             预计总成本: (row.estimatedTotalCostCents ?? 0) / 100,
+             成本完整性: row.costCompleteness ?? "未计算",
+             实际材料成本: row.actualMaterialCostCents == null ? "待确认" : row.actualMaterialCostCents / 100,
+             实际施工成本: row.actualConstructionCostCents == null ? "待确认" : row.actualConstructionCostCents / 100,
+             实际总成本: row.actualTotalCostCents == null ? "待确认" : row.actualTotalCostCents / 100,
+             实际毛利: row.actualGrossProfitCents == null ? "待确认" : row.actualGrossProfitCents / 100,
+             实际毛利率: row.actualGrossMarginBps == null ? "待确认" : row.actualGrossMarginBps / 10000,
+             成本结算状态: row.costSettlementStatus ?? "未生成"
+           })
         })),
         { title: "销售订单产品明细", subtitle: `按${exportDimension === "customer" ? "客户" : exportDimension === "date" ? "日期" : "产品"}维度导出，逐产品行展示` }
       );

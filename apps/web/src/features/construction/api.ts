@@ -134,6 +134,40 @@ export type ConstructionOrderMaterials = {
   materials: ConstructionMaterialItem[];
 };
 
+export type ConstructionCostSettlement = {
+  id: string;
+  storeId: string;
+  status: "PENDING_CONFIRMATION" | "CONFIRMED" | "SETTLED";
+  standardWorkMinutes: number;
+  declaredWorkMinutes?: number | null;
+  confirmedWorkMinutes: number;
+  estimatedMaterialCostCents?: number | null;
+  estimatedConstructionCostCents?: number | null;
+  actualMaterialCostCents: number;
+  actualConstructionCostCents: number;
+  actualTotalCostCents: number;
+  actualGrossProfitCents?: number | null;
+  actualGrossMarginBps?: number | null;
+  order?: { id: string; orderNo: string; vehicle?: { carPlate?: string | null; carModel?: string | null } | null };
+  // Individual rates, commissions and allowances are returned only to finance/admin.
+  workerLines: Array<{ workerUserId: string; standardMinutes: number; declaredMinutes?: number | null; confirmedMinutes: number; hourlyCostCentsSnapshot?: number; baseCostCents?: number; commissionCents?: number; allowanceCents?: number; worker?: { realName?: string | null; username?: string | null } }>;
+  adjustments: Array<{ id: string; adjustmentType: string; amountCents: number; reasonCode: string; reasonText?: string | null; status: "PENDING" | "APPROVED" | "REJECTED" | "SETTLED" }>;
+  exceptions: Array<{ id: string; exceptionType: string; expectedCents: number; actualCents: number; varianceCents: number; status: string }>;
+};
+
+export type ConfirmCostSettlementPayload = {
+  workerLines: Array<{ workerUserId: string; confirmedMinutes: number; commissionCents?: number; allowanceCents?: number; varianceReasonCode?: string; varianceReasonText?: string }>;
+};
+
+export type WorkCostDeclaration = {
+  id: string;
+  status: "PENDING_CONFIRMATION" | "CONFIRMED" | "SETTLED";
+  standardMinutes: number;
+  declaredMinutes?: number | null;
+  varianceReasonCode?: string | null;
+  varianceReasonText?: string | null;
+};
+
 export const constructionApi = {
   capacities: (query: ConstructionListQuery) =>
     request<DailyCapacitySummary[]>(`/construction/capacities${toQueryString(query)}`),
@@ -248,7 +282,49 @@ export const constructionApi = {
     request<OfflineSyncResult>("/construction/offline-sync", {
       method: "POST",
       body: JSON.stringify(payload)
-    })
+    }),
+
+  costSettlements: (query: ConstructionListQuery & { status?: string }) =>
+    request<ConstructionCostSettlement[]>(`/construction/cost-settlements${toQueryString(query)}`),
+
+  confirmCostSettlement: (id: string, payload: ConfirmCostSettlementPayload) =>
+    request<ConstructionCostSettlement>(`/construction/cost-settlements/${id}/confirm`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  workCostDeclaration: (recordId: string) =>
+    request<WorkCostDeclaration>(`/construction/records/${recordId}/cost-declaration`),
+
+  declareCostWork: (id: string, payload: { declaredWorkMinutes: number; varianceReasonCode?: string; varianceReasonText?: string }) =>
+    request<WorkCostDeclaration>(`/construction/cost-settlements/${id}/declaration`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  batchConfirmCostSettlements: (settlementIds: string[]) =>
+    request<ConstructionCostSettlement[]>("/construction/cost-settlements/batch-confirm", {
+      method: "POST",
+      body: JSON.stringify({ settlementIds })
+    }),
+
+  createCostAdjustment: (id: string, payload: { idempotencyKey: string; adjustmentType: string; amountCents: number; reasonCode: string; reasonText?: string }) =>
+    request<ConstructionCostSettlement["adjustments"][number]>(`/construction/cost-settlements/${id}/adjustments`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  approveCostAdjustment: (id: string, status: "APPROVED" | "REJECTED") =>
+    request<ConstructionCostSettlement["adjustments"][number]>(`/construction/cost-adjustments/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ status })
+    }),
+
+  settleCostSettlement: (id: string) =>
+    request<ConstructionCostSettlement>(`/construction/cost-settlements/${id}/settle`, { method: "POST" }),
+
+  exportCostSettlements: (storeId: string) =>
+    request<Array<Record<string, string | number | null>>>(`/construction/cost-settlements/export${toQueryString({ storeId })}`)
 };
 
 function toQueryString(query: Record<string, string | number | undefined>) {

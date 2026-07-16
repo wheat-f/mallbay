@@ -7,6 +7,8 @@ test("management menu maps manager role to full prototype sidebar", () => {
   const labels = items.map((item) => item.label);
   const membersItem = items.find((item) => item.label === "人员管理");
   const productItem = items.find((item) => item.label === "产品管理");
+  const costSettlementItem = items.find((item) => item.label === "施工成本确认");
+  const costStandardsItem = items.find((item) => item.label === "施工收费标准");
   const inventoryItem = items.find((item) => item.label === "库存管理");
   const purchaseItem = items.find((item) => item.label === "采购管理");
 
@@ -15,8 +17,10 @@ test("management menu maps manager role to full prototype sidebar", () => {
   assert.equal(labels.includes("销售订单"), true);
   assert.equal(labels.includes("产品管理"), true);
   assert.equal(productItem?.href, "/products");
-  assert.deepEqual(labels.slice(0, 6), ["工作台", "客户管理", "销售订单", "建议价设置", "报价审批", "产品管理"]);
+  assert.deepEqual(labels.slice(0, 7), ["工作台", "客户管理", "销售订单", "建议价设置", "施工收费标准", "报价审批", "产品管理"]);
   assert.equal(labels.includes("施工管理"), true);
+  assert.equal(costStandardsItem?.href, "/orders/pricing/construction-costs");
+  assert.equal(costSettlementItem?.href, "/construction/cost-settlements");
   assert.equal(labels.includes("施工容量"), false);
   assert.equal(labels.includes("库存管理"), true);
   assert.equal(inventoryItem?.href, "/inventory");
@@ -31,7 +35,7 @@ test("management menu maps manager role to full prototype sidebar", () => {
   assert.equal(membersItem?.href, "/members");
   assert.deepEqual(
     labels,
-    ["工作台", "客户管理", "销售订单", "建议价设置", "报价审批", "产品管理", "施工管理", "库存管理", "采购管理", "质保管理", "售后管理", "人员管理", "财务管理", "报表分析", "发票管理", "返利管理", "系统设置"]
+    ["工作台", "客户管理", "销售订单", "建议价设置", "施工收费标准", "报价审批", "产品管理", "施工管理", "施工成本确认", "库存管理", "采购管理", "质保管理", "售后管理", "人员管理", "财务管理", "报表分析", "发票管理", "返利管理", "系统设置"]
   );
 });
 
@@ -42,12 +46,20 @@ test("management menu keeps customer service inventory and purchase read-only en
   assert.equal(labels.includes("产品管理"), false);
   assert.equal(items.find((item) => item.label === "库存管理")?.href, "/inventory");
   assert.equal(items.find((item) => item.label === "采购管理")?.href, "/purchases");
+  assert.equal(labels.includes("施工收费标准"), false);
 });
 
 test("management menu scopes sales users to sales workflow", () => {
   const labels = getManagementMenuItems({ position: "SALES", storeId: "store-1" }).map((item) => item.label);
 
   assert.deepEqual(labels, ["工作台", "客户管理", "销售订单", "报价审批", "报表分析"]);
+});
+
+test("management menu routes finance to the independent role-cost page", () => {
+  const items = getManagementMenuItems({ position: "FINANCE", storeId: "store-1" });
+  assert.equal(items.find((item) => item.label === "岗位成本标准")?.href, "/orders/pricing/construction-costs/rates");
+  assert.equal(items.find((item) => item.label === "施工成本结算")?.href, "/construction/cost-settlements");
+  assert.equal(items.some((item) => item.label === "施工收费标准"), false);
 });
 
 test("management menu exposes desktop worker self-service entries for construction staff", () => {
@@ -77,6 +89,8 @@ test("management menu exposes auditor review entry", () => {
 test("active management menu key follows route groups", () => {
   assert.equal(getActiveManagementMenuKey("/orders/create"), "orders");
   assert.equal(getActiveManagementMenuKey("/orders/pricing"), "pricing");
+  assert.equal(getActiveManagementMenuKey("/orders/pricing/construction-costs/standards"), "construction-charge-standards");
+  assert.equal(getActiveManagementMenuKey("/orders/pricing/construction-costs/rates"), "construction-role-costs");
   assert.equal(getActiveManagementMenuKey("/orders/quotes"), "sales-quotes");
   assert.equal(getActiveManagementMenuKey("/construction/tasks"), "construction-tasks");
   assert.equal(getActiveManagementMenuKey("/construction/schedules"), "construction-schedules");

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { conditionOperatorOptions } from "./pricing-workspace";
 
 test("pricing API exposes rule detail update and vehicle maintenance contracts", () => {
   const api = readFileSync("src/features/pricing/api.ts", "utf8");
@@ -31,9 +32,53 @@ test("pricing workspace uses system dictionaries and autosaves structured busine
   assert.match(page, /window\.setTimeout\(\(\) => saveDraft\(false\), 1200\)/);
   assert.match(page, /findRuleConflictIndexes/);
   assert.match(page, /同一适用条件只能保留一条价格调整/);
+  assert.match(page, /施工成本已改为统一的标准成本口径/);
+  assert.match(page, /constructionCostSource: "STRUCTURED_STANDARD"/);
+  assert.match(page, /产品建议价规则/);
+  assert.match(page, /施工收费不在本页维护/);
+  assert.match(workspace, /title: "产品建议价规则"/);
+  assert.match(workspace, /function conditionOperatorOptions/);
+  assert.match(workspace, /NUMERIC_CONDITION_FIELDS/);
+  assert.match(workspace, /conditionOperatorHelp/);
+  assert.equal(workspace.includes('value: "LABOR", label: "施工人工费"'), false);
+  assert.equal(page.includes("施工项目来自门店系统字典"), false);
   assert.match(workspace, /产品建议价/);
   assert.equal(page.includes("普通偏差 bps"), false);
   assert.equal(page.includes("人工分"), false);
+});
+
+test("pricing condition operators follow the selected field semantics", () => {
+  assert.deepEqual(conditionOperatorOptions("vehicleClassCode").map((item) => item.value), ["EQ", "IN"]);
+  assert.deepEqual(conditionOperatorOptions("productCategory").map((item) => item.value), ["EQ", "IN"]);
+  assert.deepEqual(conditionOperatorOptions("quantity").map((item) => item.value), ["EQ", "BETWEEN", "GTE", "LTE"]);
+});
+
+test("construction cost setup page binds dictionary data, standards, and published role rates", () => {
+  const page = readFileSync("app/orders/pricing/construction-costs/page.tsx", "utf8");
+  const servicesPage = readFileSync("app/orders/pricing/construction-costs/services/page.tsx", "utf8");
+  const ratesPage = readFileSync("app/orders/pricing/construction-costs/rates/page.tsx", "utf8");
+  const standardsPage = readFileSync("app/orders/pricing/construction-costs/standards/page.tsx", "utf8");
+  const api = readFileSync("src/features/pricing/api.ts", "utf8");
+  assert.match(page, /施工收费与成本标准/);
+  assert.match(page, /CONSTRUCTION_POSITION_TYPE/);
+  assert.match(page, /pricingApi\.createConstructionServiceItem/);
+  assert.match(page, /pricingApi\.createPositionCostRateVersion/);
+  assert.match(page, /pricingApi\.publishPositionCostRateVersion/);
+  assert.match(page, /pricingApi\.updateRuleSet/);
+  assert.match(page, /function HelpLabel/);
+  assert.match(page, /function SectionTitle/);
+  assert.match(page, /positionLabel\(rate\.positionTypeCode\)/);
+  assert.match(page, /locationLabel\(row\.constructionLocationCode\)/);
+  assert.match(page, /同一施工组只保存一条主标准/);
+  assert.match(page, /每个追加项目收费/);
+  assert.match(page, /standardsOverlap/);
+  assert.match(page, /ConstructionPageActions/);
+  assert.match(page, /construction-page-actions/);
+  assert.match(servicesPage, /section="services"/);
+  assert.match(ratesPage, /section="rates"/);
+  assert.match(standardsPage, /section="standards"/);
+  assert.match(api, /constructionServiceItems:/);
+  assert.match(api, /positionCostRateVersions:/);
 });
 
 test("vehicle pricing page prioritizes unmatched real vehicles and hides technical priority", () => {

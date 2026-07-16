@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PricingRulesService, validateRuleConflicts } from "./pricing-rules.service";
+import { PricingRulesService, assertNoConstructionGroupConflict, validateRuleConflicts, validateRuleDefinitions } from "./pricing-rules.service";
 
 const manager = {
   id: "manager-1",
@@ -80,4 +80,21 @@ test("IN 条件的候选值顺序不能绕过冲突校验", () => {
     { ...common, conditions: [{ field: "salesUnit", operator: "IN", value: ["ROLL", "METER"] }] },
     { ...common, conditions: [{ field: "salesUnit", operator: "IN", value: ["METER", "ROLL"] }] }
   ]), /同一适用条件不能配置多条价格调整/);
+});
+
+test("枚举条件与数量条件只能使用匹配的判断方式", () => {
+  const base = { name: "测试规则", group: "PRODUCT", target: "PRODUCT_LINE", actionType: "ADD_CENTS", actionValue: 100, enabled: true };
+  assert.throws(() => validateRuleDefinitions([{ ...base, conditions: [{ field: "vehicleClassCode", operator: "GTE", value: "B" }] }] as never), /只能使用“为”或“属于”/);
+  assert.throws(() => validateRuleDefinitions([{ ...base, conditions: [{ field: "quantity", operator: "IN", value: [1, 2] }] }] as never), /数量类条件只能使用/);
+  assert.doesNotThrow(() => validateRuleDefinitions([{ ...base, conditions: [{ field: "vehicleClassCode", operator: "EQ", value: "B" }] }] as never));
+  assert.doesNotThrow(() => validateRuleDefinitions([{ ...base, conditions: [{ field: "quantity", operator: "BETWEEN", value: [1, 3] }] }] as never));
+});
+
+test("同一施工组的重叠施工标准不能通过不同服务项目绕过", () => {
+  const standards = [
+    { serviceItemId: "service-primary", constructionLocationCode: "IN_STORE", productCategoryCode: "PPF", baseConstructionChargeCents: 100, standardWorkMinutes: 60, crewRoles: [{ positionTypeCode: "CONSTRUCTION", workerCount: 1, workMinutes: 60 }] },
+    { serviceItemId: "service-addon", constructionLocationCode: "IN_STORE", productCategoryCode: "PPF", baseConstructionChargeCents: 200, standardWorkMinutes: 60, crewRoles: [{ positionTypeCode: "CONSTRUCTION", workerCount: 1, workMinutes: 60 }] }
+  ] as never;
+  assert.throws(() => assertNoConstructionGroupConflict(standards, new Map([["service-primary", "PPF"], ["service-addon", "PPF"]])), /同一施工组/);
+  assert.doesNotThrow(() => assertNoConstructionGroupConflict(standards, new Map([["service-primary", "PPF"], ["service-addon", "COLOR_FILM"]])));
 });

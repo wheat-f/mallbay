@@ -72,6 +72,23 @@ test("正式订单只能复用与试算快照一致的产品行", async () => {
   );
 });
 
+test("新价格快照成本缺失时禁止直接生成正式订单", async () => {
+  const service = createService();
+  const prisma = (service as unknown as { prisma: { pricingCalculation: { findFirst: () => Promise<Record<string, unknown>> } } }).prisma;
+  const original = prisma.pricingCalculation.findFirst;
+  prisma.pricingCalculation.findFirst = async () => ({
+    ...await original(),
+    outputSnapshot: {
+      ...(await original()).outputSnapshot,
+      costEstimate: { costCompleteness: "MISSING" }
+    }
+  });
+  await assert.rejects(service.validateOrder(user, {
+    storeId: "store-1", pricingCalculationId: "calc-1",
+    items: [{ productId: "product-1", quantity: 1, unitPriceCents: 100000 }], laborCostCents: 10000
+  }), /预计成本尚未完整/);
+});
+
 test("已批准报价转正式订单时允许复用审批价但仍拒绝硬性阻断价", async () => {
   const service = createService();
 
@@ -177,4 +194,31 @@ test("未指定规则集时自动使用当前生效版本并返回实际规则�
   assert.equal(result.calculation.lines[0].suggestedUnitPriceCents, 110000);
   assert.equal(result.calculation.suggestedLaborCostCents, 180000);
   assert.equal(result.calculation.suggestedTotalCents, 730000);
+  assert.equal(result.constructionChargeAvailable, false);
+});
+
+test("缺少门店运行模式时按 LEGACY 处理，不能意外启用新价格流程", async () => {
+  const service = new PricingService({
+    store: { findUnique: async () => null },
+    product: {
+      findMany: async () => [{
+        id: "product-1", name: "基础膜", category: "PPF", brand: "验收品牌", model: "基础膜-100",
+        salesUnit: "METER", basePriceCents: 100000, quantityPrecision: 3
+      }]
+    }
+  } as never, { getForCalculation: async () => null } as never);
+
+  const result = await service.calculate(user, {
+    storeId: "store-1",
+    input: {
+      ruleSetVersion: 1,
+      constructionType: "PPF",
+      constructionLocation: "IN_STORE",
+      baseLaborCostCents: 0,
+      lines: [{ id: "line-1", productId: "product-1", category: "", brand: "", model: "", salesUnit: "ROLL", quantity: 1, baseUnitPriceCents: 0 }]
+    }
+  } as never);
+
+  assert.equal(result.rolloutMode, "LEGACY");
+  assert.equal(result.pricingCalculationId, null);
 });

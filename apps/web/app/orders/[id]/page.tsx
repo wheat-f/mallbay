@@ -65,6 +65,9 @@ type OrderDetail = {
     laborCostCents: number;
     suggestedLaborCostCents?: number | null;
     laborCostAdjustmentReason?: string | null;
+    constructionChargeCents?: number | null;
+    suggestedConstructionChargeCents?: number | null;
+    constructionChargeAdjustmentReason?: string | null;
     totalAmountCents: number;
     paidAmountCents: number;
     outstandingCents: number;
@@ -88,7 +91,7 @@ type ProductOption = {
 
 type CommercialsFormValues = {
   items: { id?: string; productId: string; quantity: number; unitPriceYuan: number }[];
-  laborCostYuan: number;
+  constructionChargeYuan: number;
   remark?: string;
   changeReason: string;
 };
@@ -146,7 +149,7 @@ export default function OrderDetailPage() {
           quantity: item.quantity,
           unitPriceCents: yuanToCents(item.unitPriceYuan)
         })),
-        laborCostCents: yuanToCents(values.laborCostYuan),
+        constructionChargeCents: yuanToCents(values.constructionChargeYuan),
         remark: values.remark,
         changeReason: values.changeReason
       }),
@@ -195,7 +198,7 @@ export default function OrderDetailPage() {
         quantity: item.quantity,
         unitPriceYuan: centsToYuan(item.unitPriceCents) ?? 0
       })),
-      laborCostYuan: centsToYuan(order.amount?.laborCostCents) ?? 0,
+      constructionChargeYuan: centsToYuan(order.amount?.constructionChargeCents ?? order.amount?.laborCostCents) ?? 0,
       remark: order.remark ?? undefined,
       changeReason: ""
     });
@@ -298,7 +301,7 @@ export default function OrderDetailPage() {
             <section className="management-kpi-grid">
               {[
                 ["产品费用", yuanCurrency(order?.amount?.productAmountCents), `${order?.items?.length ?? 0} 项产品`],
-                ["施工人工费", yuanCurrency(order?.amount?.laborCostCents), "按订单最终金额计"],
+                ["施工收费", yuanCurrency(order?.amount?.constructionChargeCents ?? order?.amount?.laborCostCents), "按订单最终收费计"],
                 ["已收金额", yuanCurrency(order?.amount?.paidAmountCents), "定金与收款累计"],
                 ["待收金额", yuanCurrency(order?.amount?.outstandingCents), "交付前需核对"]
               ].map(([label, value, description]) => (
@@ -345,7 +348,7 @@ export default function OrderDetailPage() {
                   </div>
                   <div className="order-total-panel">
                     <div><span>商品小计</span><strong>{yuanCurrency(order?.amount?.productAmountCents)}</strong></div>
-                    <div><span>工时费</span><strong>{yuanCurrency(order?.amount?.laborCostCents)}</strong></div>
+                    <div><span>施工收费</span><strong>{yuanCurrency(order?.amount?.constructionChargeCents ?? order?.amount?.laborCostCents)}</strong></div>
                     <div><span>订单总计</span><strong>{yuanCurrency(order?.amount?.totalAmountCents)}</strong></div>
                   </div>
                   {canEditCommercials ? (
@@ -368,14 +371,12 @@ export default function OrderDetailPage() {
                   <div className="order-info-grid">
                     <span>施工类型</span><strong>{getConstructionTypeLabel(order?.constructionType)}</strong>
                     <span>施工地点</span><strong>{getConstructionLocationLabel(order?.constructionLocation)}</strong>
-                    <span>建议人工费</span>
+                    <span>系统建议施工收费</span>
                     <strong>
-                      {order?.amount?.suggestedLaborCostCents === null || order?.amount?.suggestedLaborCostCents === undefined
-                        ? "-"
-                        : yuanCurrency(order.amount.suggestedLaborCostCents)}
+                      {yuanCurrency(order?.amount?.suggestedConstructionChargeCents ?? order?.amount?.suggestedLaborCostCents)}
                     </strong>
-                    <span>最终人工费</span><strong>{yuanCurrency(order?.amount?.laborCostCents)}</strong>
-                    <span>人工费调整原因</span><strong>{order?.amount?.laborCostAdjustmentReason ?? "-"}</strong>
+                    <span>本单施工收费</span><strong>{yuanCurrency(order?.amount?.constructionChargeCents ?? order?.amount?.laborCostCents)}</strong>
+                    <span>施工收费调整原因</span><strong>{order?.amount?.constructionChargeAdjustmentReason ?? order?.amount?.laborCostAdjustmentReason ?? "-"}</strong>
                     <span>备注</span><strong>{order?.remark ?? "-"}</strong>
                   </div>
                   {order?.amount?.pricingCalculationId ? (
@@ -383,7 +384,7 @@ export default function OrderDetailPage() {
                       <div className="order-info-grid">
                         <span>建议价规则版本</span><strong>v{order.amount.pricingRuleSetVersion ?? "-"}</strong>
                         <span>建议产品合计</span><strong>{yuanCurrency(order.amount.pricingOutputSnapshot?.calculation?.suggestedProductAmountCents)}</strong>
-                        <span>建议人工费</span><strong>{yuanCurrency(order.amount.pricingOutputSnapshot?.calculation?.suggestedLaborCostCents)}</strong>
+                        <span>系统建议施工收费</span><strong>{yuanCurrency(order.amount.pricingOutputSnapshot?.calculation?.suggestedLaborCostCents)}</strong>
                         <span>建议总价</span><strong>{yuanCurrency(order.amount.pricingOutputSnapshot?.calculation?.suggestedTotalCents)}</strong>
                         <span>计算哈希</span><strong>{order.amount.pricingInputHash?.slice(0, 12) ?? "-"}…</strong>
                       </div>
@@ -525,7 +526,7 @@ export default function OrderDetailPage() {
             onFinish={(values) => updateCommercialsMutation.mutate(values)}
           >
             <Typography.Paragraph type="secondary">
-              施工后确认实际用料时，可在收款未完全确认前调整产品、数量、单价和人工费；已锁库或已出库的库存记录会保留追踪。
+              收款未完全确认前可调整产品、数量、单价和施工收费；已锁库或已出库的库存记录会保留追踪。
             </Typography.Paragraph>
             <Form.List name="items">
               {(fields, { add, remove }) => (
@@ -577,9 +578,9 @@ export default function OrderDetailPage() {
               )}
             </Form.List>
             <Form.Item
-              name="laborCostYuan"
-              label="施工人工费（元）"
-              rules={[{ required: true, message: "请输入施工人工费" }]}
+              name="constructionChargeYuan"
+              label="本单施工收费（元）"
+              rules={[{ required: true, message: "请输入本单施工收费" }]}
             >
               <InputNumber min={0} precision={2} />
             </Form.Item>
@@ -724,7 +725,7 @@ export default function OrderDetailPage() {
                   setFulfillmentChecklist((current) => ({ ...current, commercialConfirmed: event.target.checked }))
                 }
               >
-                <strong>产品、数量、单价和人工费已确认</strong>
+                <strong>产品、数量、单价和施工收费已确认</strong>
                 <span>提交后将进入库房备货与施工派工，请确保价格和数量准确。</span>
               </Checkbox>
             </section>
@@ -791,7 +792,7 @@ function getFulfillmentChecklistItems(checklist: FulfillmentChecklist) {
     {
       key: "commercialConfirmed",
       checked: checklist.commercialConfirmed,
-      summary: checklist.commercialConfirmed ? "产品、数量、单价和人工费已确认" : "待确认产品、数量、单价和人工费"
+      summary: checklist.commercialConfirmed ? "产品、数量、单价和施工收费已确认" : "待确认产品、数量、单价和施工收费"
     },
     {
       key: "scheduleNotified",

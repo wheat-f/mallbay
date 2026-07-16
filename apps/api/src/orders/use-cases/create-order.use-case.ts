@@ -20,6 +20,15 @@ export type OrderNumberGenerator = {
   next(): string;
 };
 
+type CreateOrderOptions = {
+  /** A quote has already completed its approval flow. */
+  approvedQuote?: boolean;
+  /** The approved quote was allowed to use a manager-entered temporary cost. */
+  allowTemporaryCost?: boolean;
+  /** Immutable temporary-cost evidence transferred from the approved quote. */
+  temporaryCost?: { cents: number; reason: string };
+};
+
 @Injectable()
 export class CreateOrderUseCase {
   private readonly orderNumber: OrderNumberGenerator;
@@ -36,7 +45,7 @@ export class CreateOrderUseCase {
     this.orderNumber = orderNumber ?? createDefaultOrderNumberGenerator();
   }
 
-  async execute(user: UserWithStoreMember, dto: CreateOrderDto, options: { approvedQuote?: boolean } = {}) {
+  async execute(user: UserWithStoreMember, dto: CreateOrderDto, options: CreateOrderOptions = {}) {
     if (!PermissionPolicy.canCreateOrder(user, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
@@ -61,8 +70,7 @@ export class CreateOrderUseCase {
         storeId: dto.storeId,
         pricingCalculationId: dto.pricingCalculationId,
         items: dto.items,
-        laborCostCents: dto.laborCostCents,
-        estimatedCostCents: dto.estimatedCostCents
+        constructionChargeCents: resolveConstructionChargeCents(dto)
       }, options)
       : null;
     if (dto.pricingCalculationId && !pricingSnapshot) {
@@ -133,17 +141,19 @@ export class CreateOrderUseCase {
         (sum, item) => sum + multiplyMoneyCents(item.unitPriceCents, item.quantity),
         0
       );
-      const laborCostCents = dto.laborCostCents;
-      const suggestedLaborCostCents = dto.suggestedLaborCostCents;
-      const laborCostAdjustmentReason = normalizeOptionalText(dto.laborCostAdjustmentReason);
+      const constructionChargeCents = resolveConstructionChargeCents(dto);
+      const suggestedConstructionChargeCents = dto.suggestedConstructionChargeCents ?? dto.suggestedLaborCostCents;
+      const constructionChargeAdjustmentReason = normalizeOptionalText(
+        dto.constructionChargeAdjustmentReason ?? dto.laborCostAdjustmentReason
+      );
       if (
-        suggestedLaborCostCents !== undefined &&
-        suggestedLaborCostCents !== laborCostCents &&
-        !laborCostAdjustmentReason
+        suggestedConstructionChargeCents !== undefined &&
+        suggestedConstructionChargeCents !== constructionChargeCents &&
+        !constructionChargeAdjustmentReason
       ) {
-        throw new BadRequestException("调整施工人工费必须填写原因");
+        throw new BadRequestException("调整本单施工收费必须填写原因");
       }
-      const totalAmountCents = productAmountCents + laborCostCents;
+      const totalAmountCents = productAmountCents + constructionChargeCents;
       const paidAmountCents = dto.deposit?.amountCents ?? 0;
       const outstandingCents = totalAmountCents - paidAmountCents;
 
@@ -202,9 +212,15 @@ export class CreateOrderUseCase {
         data: {
           orderId: order.id,
           productAmountCents,
-          laborCostCents,
-          suggestedLaborCostCents,
-          laborCostAdjustmentReason,
+          // Write legacy aliases during the compatibility window so existing
+          // detail pages, exports and integrations retain their historical
+          // customer-charge semantics.
+          laborCostCents: constructionChargeCents,
+          suggestedLaborCostCents: suggestedConstructionChargeCents,
+          laborCostAdjustmentReason: constructionChargeAdjustmentReason,
+          constructionChargeCents,
+          suggestedConstructionChargeCents,
+          constructionChargeAdjustmentReason,
           totalAmountCents,
           paidAmountCents,
           outstandingCents,
@@ -216,7 +232,13 @@ export class CreateOrderUseCase {
               pricingCalculationId: pricingSnapshot.pricingCalculationId,
               pricingRuleSetVersion: pricingSnapshot.pricingRuleSetVersion,
               pricingInputHash: pricingSnapshot.pricingInputHash,
-              pricingOutputSnapshot: pricingSnapshot.pricingOutputSnapshot as Prisma.InputJsonValue
+              pricingOutputSnapshot: pricingSnapshot.pricingOutputSnapshot as Prisma.InputJsonValue,
+              estimatedMaterialCostCents: pricingSnapshot.costEstimate?.estimatedMaterialCostCents ?? undefined,
+              estimatedConstructionCostCents: pricingSnapshot.costEstimate?.estimatedConstructionCostCents ?? undefined,
+              estimatedTotalCostCents: pricingSnapshot.costEstimate?.estimatedTotalCostCents ?? undefined,
+              costCompleteness: pricingSnapshot.costEstimate?.costCompleteness ?? undefined,
+              temporaryCostCents: options.temporaryCost?.cents,
+              temporaryCostReason: options.temporaryCost?.reason
             }
             : {})
         }
@@ -358,6 +380,12 @@ function normalizeCapacityDate(value: string) {
 function normalizeOptionalText(value: string | null | undefined) {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
+}
+
+function resolveConstructionChargeCents(dto: CreateOrderDto) {
+  const value = dto.constructionChargeCents ?? dto.laborCostCents;
+  if (value === undefined) throw new BadRequestException("本单施工收费不能为空");
+  return value;
 }
 
 function calculateProfitCents(totalAmountCents: number, materialCostCents: number, salesCommissionCents: number) {

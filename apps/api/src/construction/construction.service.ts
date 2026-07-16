@@ -14,6 +14,7 @@ import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/p
 import { PrismaService } from "../prisma/prisma.service";
 import type { MulterFile } from "../users/multer-file.type";
 import { OssService } from "../users/oss.service";
+import { ConstructionCostSettlementService } from "./construction-cost-settlement.service";
 import {
   AssignOrderDto,
   CompleteConstructionDto,
@@ -45,7 +46,8 @@ export type AuthenticatedConstructionUser = UserWithStoreMember & {
 export class ConstructionService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Optional() @Inject(OssService) private readonly oss?: OssService
+    @Optional() @Inject(OssService) private readonly oss?: OssService,
+    @Optional() private readonly costSettlements?: ConstructionCostSettlementService
   ) {}
 
   async listCapacities(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
@@ -283,6 +285,7 @@ export class ConstructionService {
       }
     });
     await this.createCommissionSnapshots(actor.id, record);
+    await this.costSettlements?.initializeForCompletedRecord(record.id, actor.id);
     return updated;
   }
 
@@ -782,13 +785,21 @@ export class ConstructionService {
     if (existing) {
       return;
     }
+    const workerIds = record.assignments.map((assignment) => assignment.workerUserId);
+    const actualCommissions = workerIds.length && typeof this.prisma.workerCommission?.findMany === "function"
+      ? await this.prisma.workerCommission.findMany({
+        where: { orderId: record.orderId, workerUserId: { in: workerIds } },
+        select: { workerUserId: true, finalAmountCents: true, calculationNote: true }
+      })
+      : [];
+    const commissionByWorker = new Map(actualCommissions.map((item) => [item.workerUserId, item]));
     await this.prisma.workerCommissionSnapshot.createMany({
       data: record.assignments.map((assignment) => ({
         recordId: record.id,
         orderId: record.orderId,
         workerUserId: assignment.workerUserId,
-        amountCents: 0,
-        calculationNote: "Phase 2 完工快照，复杂提成规则进入 Phase 4",
+        amountCents: commissionByWorker.get(assignment.workerUserId)?.finalAmountCents ?? 0,
+        calculationNote: commissionByWorker.get(assignment.workerUserId)?.calculationNote ?? "完工时尚无个人提成，成本确认时以财务维护的实际提成为准",
         createdById
       }))
     });

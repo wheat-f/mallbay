@@ -108,6 +108,11 @@ test("construction task detail page is a desktop execution workspace", () => {
   assert.match(pageSource, /constructionApi\.completeOrder/);
   assert.match(pageSource, /constructionApi\.orderMaterials/);
   assert.match(pageSource, /constructionApi\.pickupMaterials/);
+  assert.match(pageSource, /constructionApi\.workCostDeclaration/);
+  assert.match(pageSource, /constructionApi\.declareCostWork/);
+  assert.match(pageSource, /工时偏差申报/);
+  assert.match(pageSource, /CONSTRUCTION_TIME_VARIANCE_REASON/);
+  assert.match(pageSource, /偏差原因（必选，来自系统字典）/);
   assert.match(pageSource, /pendingAllocationIds/);
   assert.match(pageSource, /materialPickupState/);
   assert.match(pageSource, /completeBlockReason/);

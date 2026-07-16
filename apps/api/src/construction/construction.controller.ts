@@ -19,15 +19,22 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import type { MulterFile } from "../users/multer-file.type";
 import { ConstructionService, type AuthenticatedConstructionUser } from "./construction.service";
 import { CapacityReservationService } from "./capacity-reservation.service";
+import { ConstructionCostSettlementService } from "./construction-cost-settlement.service";
 import {
   AssignOrderDto,
+  ApproveCostAdjustmentDto,
+  BatchConfirmCostSettlementDto,
+  ConfirmCostSettlementDto,
   CompleteConstructionDto,
   LeaveRequestDto,
   ListConstructionDto,
+  ListCostSettlementsDto,
   OfflineSyncDto,
   PickupConstructionMaterialDto,
   QualityCheckDto,
   RecordMaterialLossDto,
+  WorkCostDeclarationDto,
+  CreateCostAdjustmentDto,
   StartConstructionDto,
   UpdateDailyCapacityDto,
   UpdateLeaveRequestDto,
@@ -45,7 +52,62 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("construction")
 export class ConstructionController {
-  constructor(private readonly construction: ConstructionService, private readonly capacities: CapacityReservationService) {}
+  constructor(private readonly construction: ConstructionService, private readonly capacities: CapacityReservationService, private readonly costSettlements: ConstructionCostSettlementService) {}
+
+  @Get("cost-settlements")
+  listCostSettlements(@Req() req: AuthRequest, @Query() query: ListCostSettlementsDto) {
+    return this.costSettlements.list(req.user, query);
+  }
+
+  @Get("cost-settlements/export")
+  exportCostSettlements(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
+    return this.costSettlements.exportDetails(req.user, storeId);
+  }
+
+  @Get("cost-settlements/:id")
+  getCostSettlement(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.costSettlements.get(req.user, id);
+  }
+
+  @Post("cost-settlements/:id/declaration")
+  declareCostWork(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: WorkCostDeclarationDto) {
+    return this.costSettlements.declare(req.user, id, dto);
+  }
+
+  @Get("records/:recordId/cost-declaration")
+  getOwnCostDeclaration(@Req() req: AuthRequest, @Param("recordId") recordId: string) {
+    return this.costSettlements.getOwnDeclaration(req.user, recordId);
+  }
+
+  @Post("cost-settlements/:id/confirm")
+  confirmCostSettlement(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ConfirmCostSettlementDto) {
+    return this.costSettlements.confirm(req.user, id, dto, { allowAbnormal: true });
+  }
+
+  @Post("cost-settlements/batch-confirm")
+  batchConfirmCostSettlements(@Req() req: AuthRequest, @Body() dto: BatchConfirmCostSettlementDto) {
+    return this.costSettlements.batchConfirm(req.user, dto);
+  }
+
+  @Post("cost-settlements/:id/adjustments")
+  createCostAdjustment(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: CreateCostAdjustmentDto) {
+    return this.costSettlements.createAdjustment(req.user, id, dto);
+  }
+
+  @Post("cost-adjustments/:id/approve")
+  approveCostAdjustment(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ApproveCostAdjustmentDto) {
+    return this.costSettlements.approveAdjustment(req.user, id, dto);
+  }
+
+  @Post("cost-settlements/:id/settle")
+  settleCostSettlement(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.costSettlements.settle(req.user, id);
+  }
+
+  @Get("orders/:orderId/cost-comparison")
+  compareOrderCost(@Req() req: AuthRequest, @Param("orderId") orderId: string) {
+    return this.costSettlements.compareOrder(req.user, orderId);
+  }
 
   @Get("capacities")
   listCapacities(@Req() req: AuthRequest, @Query() query: ListConstructionDto) {

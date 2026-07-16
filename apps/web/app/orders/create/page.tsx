@@ -22,7 +22,6 @@ import {
   getOrderCapacityStatus,
   getOrderCustomerHistorySummary,
   getOrderProductLabel,
-  getSuggestedLaborCostYuan,
   resolveCreatedCustomerSelection,
   resolveVehicleIdForCustomer,
   toCreateOrderPayload,
@@ -89,6 +88,10 @@ function CreateOrderContent() {
   const params = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
+  const canViewInternalCost = Boolean(
+    user?.isAuditor || ["MANAGER", "FINANCE"].includes(user?.storeMember?.position ?? "")
+  );
+  const canManageTemporaryCost = Boolean(user?.isAuditor || user?.storeMember?.position === "MANAGER");
   const [customerKeyword, setCustomerKeyword] = useState("");
   const [referrerKeyword, setReferrerKeyword] = useState("");
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
@@ -96,7 +99,7 @@ function CreateOrderContent() {
   const [serverPricing, setServerPricing] = useState<PricingCalculationResponse | null>(null);
   const [draftPricingChoiceOpen, setDraftPricingChoiceOpen] = useState(false);
   const [newOrderCustomerType, setNewOrderCustomerType] = useState("PERSONAL");
-  const laborCostTouchedRef = useRef(false);
+  const constructionChargeTouchedRef = useRef(false);
   const draftRestoredRef = useRef(false);
   const draftPricingPendingRef = useRef(false);
   const [form] = Form.useForm<CreateOrderFormValues>();
@@ -110,8 +113,9 @@ function CreateOrderContent() {
   const selectedConstructionLocation = Form.useWatch("constructionLocation", form) ?? "IN_STORE";
   const selectedConstructionType = Form.useWatch("constructionType", form) ?? "PPF";
   const selectedItems = Form.useWatch("items", form);
-  const selectedLaborCostYuan = Form.useWatch("laborCostYuan", form);
-  const selectedSuggestedLaborCostYuan = Form.useWatch("suggestedLaborCostYuan", form);
+  const selectedConstructionChargeYuan = Form.useWatch("constructionChargeYuan", form);
+  const selectedSuggestedConstructionChargeYuan = Form.useWatch("suggestedConstructionChargeYuan", form);
+  const selectedTemporaryCostYuan = Form.useWatch("temporaryCostYuan", form);
   const selectedDeposit = Form.useWatch("deposit", form);
   const shouldRecordDeposit = Form.useWatch("shouldRecordDeposit", form);
   const selectedAppointmentDateValue = formatOrderDateValue(selectedAppointmentDate);
@@ -191,15 +195,15 @@ function CreateOrderContent() {
   });
   const costLines = useMemo(() => (selectedItems ?? []).filter((item) => item?.productId && item?.quantity).map((item) => ({ productId: item.productId, quantity: Number(item.quantity) })), [selectedItems]);
   const costEstimateQuery = useQuery({
-    queryKey: ["pricing-cost-estimate", storeId, costLines, selectedLaborCostYuan],
-    queryFn: () => pricingApi.estimateCost({ storeId: storeId!, lines: costLines, laborCostCents: yuanToCents(selectedLaborCostYuan) }),
+    queryKey: ["pricing-cost-estimate", storeId, costLines],
+    queryFn: () => pricingApi.estimateCost({ storeId: storeId!, lines: costLines }),
     enabled: Boolean(storeId && costLines.length)
   });
-  const systemSuggestedLaborCostYuan = getSuggestedLaborCostYuan(
-    selectedConstructionType,
-    selectedConstructionLocation,
-    selectedVehicle?.carModel
-  );
+  // 施工收费只能由服务端根据当前发布的施工标准试算；页面不能再用车型/施工类别
+  // 的本地默认值冒充“系统建议”，否则收费和成本会落到不同口径。
+  const systemSuggestedConstructionChargeYuan = serverPricing?.constructionChargeAvailable
+    ? centsToYuan(serverPricing.calculation.suggestedLaborCostCents)
+    : undefined;
   const now = Date.now();
   const publishedRuleSet = pricingRuleSetsQuery.data?.find((item) => {
     const starts = new Date(item.effectiveFrom).getTime() <= now;
@@ -243,7 +247,8 @@ function CreateOrderContent() {
         constructionType: selectedConstructionType,
         constructionLocation: selectedConstructionLocation,
         effectiveAt: new Date().toISOString(),
-        baseLaborCostCents: yuanToCents(systemSuggestedLaborCostYuan),
+        // 已发布规则集会在服务端解析施工标准。这里不再提交页面默认施工收费。
+        baseLaborCostCents: 0,
         lines: lines as NonNullable<typeof lines[number]>[]
       }
     };
@@ -257,9 +262,11 @@ function CreateOrderContent() {
     onSuccess: (result) => {
       setServerPricing(result);
       form.setFieldValue("pricingCalculationId", result.pricingCalculationId ?? undefined);
-      const suggestedLabor = centsToYuan(result.calculation.suggestedLaborCostCents) ?? 0;
-      form.setFieldValue("suggestedLaborCostYuan", suggestedLabor);
-      if (!laborCostTouchedRef.current) form.setFieldValue("laborCostYuan", suggestedLabor);
+      const suggestedConstructionCharge = result.constructionChargeAvailable
+        ? centsToYuan(result.calculation.suggestedLaborCostCents)
+        : undefined;
+      form.setFieldValue("suggestedConstructionChargeYuan", suggestedConstructionCharge);
+      if (!constructionChargeTouchedRef.current) form.setFieldValue("constructionChargeYuan", suggestedConstructionCharge);
     },
     onError: (error: Error) => message.error(`价格试算失败：${error.message}`)
   });
@@ -276,11 +283,6 @@ function CreateOrderContent() {
     return () => window.clearTimeout(timer);
   }, [form, params, pricingInput]);
 
-  useEffect(() => {
-    if (costEstimateQuery.data) {
-      form.setFieldValue("estimatedCostYuan", costEstimateQuery.data.estimatedCostCents / 100);
-    }
-  }, [costEstimateQuery.data, form]);
   const selectedCapacity = ((capacitiesQuery.data ?? []) as DailyCapacitySummary[])[0];
   const capacityStatus = selectedAppointmentDate
     ? getOrderCapacityStatus(selectedCapacity, selectedConstructionLocation, selectedConstructionType)
@@ -292,12 +294,21 @@ function CreateOrderContent() {
   }));
   const amountSummary = getOrderAmountSummary({
     items: selectedItems,
-    laborCostYuan: selectedLaborCostYuan,
+    constructionChargeYuan: selectedConstructionChargeYuan,
     deposit: shouldRecordDeposit ? selectedDeposit : undefined
   });
   const customerHistory = selectedCustomer ? getOrderCustomerHistorySummary(selectedCustomer) : undefined;
-  const suggestedLaborCostYuan = selectedSuggestedLaborCostYuan ?? systemSuggestedLaborCostYuan;
-  const hasLaborCostAdjustment = selectedLaborCostYuan !== undefined && selectedLaborCostYuan !== suggestedLaborCostYuan;
+  const suggestedConstructionChargeYuan = selectedSuggestedConstructionChargeYuan ?? systemSuggestedConstructionChargeYuan;
+  const hasConstructionChargeAdjustment = suggestedConstructionChargeYuan !== undefined && selectedConstructionChargeYuan !== undefined && selectedConstructionChargeYuan !== suggestedConstructionChargeYuan;
+  const estimateMaterialCents = serverPricing?.costEstimate?.estimatedMaterialCostCents ?? costEstimateQuery.data?.estimatedMaterialCostCents ?? 0;
+  const hasMissingMaterialCost = Boolean(serverPricing?.costEstimate?.hasMissingCost ?? costEstimateQuery.data?.hasMissingCost);
+  const estimateConstructionCents = serverPricing?.costEstimate?.estimatedConstructionCostCents ?? 0;
+  const systemEstimatedTotalCents = serverPricing?.costEstimate?.estimatedTotalCostCents;
+  const displayedEstimatedTotalCents = systemEstimatedTotalCents ?? (selectedTemporaryCostYuan === undefined ? undefined : yuanToCents(selectedTemporaryCostYuan));
+  const displayedEstimatedGrossCents = displayedEstimatedTotalCents === undefined ? undefined : Math.round(amountSummary.totalAmountYuan * 100) - displayedEstimatedTotalCents;
+  const displayedEstimatedMargin = displayedEstimatedGrossCents === undefined || amountSummary.totalAmountYuan <= 0
+    ? undefined
+    : displayedEstimatedGrossCents / Math.round(amountSummary.totalAmountYuan * 100);
 
   const createQuoteMutation = useMutation({
     mutationFn: (values: CreateOrderFormValues) => {
@@ -313,10 +324,11 @@ function CreateOrderContent() {
         constructionLocation: values.constructionLocation,
         pricingCalculationId: values.pricingCalculationId,
         items: values.items.map((item) => ({ productId: item.productId, finalUnitPriceCents: yuanToCents(item.unitPriceYuan) })),
-        finalLaborCostCents: yuanToCents(values.laborCostYuan),
-        estimatedCostCents: values.estimatedCostYuan === undefined ? undefined : yuanToCents(values.estimatedCostYuan),
+        finalConstructionChargeCents: yuanToCents(values.constructionChargeYuan ?? values.laborCostYuan),
+        temporaryCostCents: values.temporaryCostYuan === undefined ? undefined : yuanToCents(values.temporaryCostYuan),
+        temporaryCostReason: trimOptional(values.temporaryCostReason),
         adjustmentReasonCode: "SALES_ADJUSTMENT",
-        adjustmentReasonText: trimOptional(values.pricingAdjustmentReason) ?? trimOptional(values.laborCostAdjustmentReason) ?? "本单成交价偏离建议价，提交审批"
+        adjustmentReasonText: trimOptional(values.pricingAdjustmentReason) ?? trimOptional(values.constructionChargeAdjustmentReason ?? values.laborCostAdjustmentReason) ?? "本单成交价偏离建议价，提交审批"
       });
     },
     onSuccess: () => { message.success("已提交报价审批，批准后可转正式订单"); router.push("/orders/quotes"); },
@@ -337,6 +349,14 @@ function CreateOrderContent() {
         message.info("当前成交价需要审批，正在创建报价单");
         createQuoteMutation.mutate(form.getFieldsValue(true) as CreateOrderFormValues);
         return;
+      }
+      if (error.message.includes("临时成本报价审批") && canManageTemporaryCost) {
+        const values = form.getFieldsValue(true) as CreateOrderFormValues;
+        if (values.temporaryCostYuan !== undefined && trimOptional(values.temporaryCostReason)) {
+          message.info("预计成本暂不完整，正在按本单临时成本提交报价审批");
+          createQuoteMutation.mutate(values);
+          return;
+        }
       }
       message.error(error.message);
     }
@@ -446,16 +466,17 @@ function CreateOrderContent() {
     }
     form.setFieldsValue({
       ...draft.values,
-      suggestedLaborCostYuan: draft.values.suggestedLaborCostYuan ?? systemSuggestedLaborCostYuan
+      suggestedConstructionChargeYuan: draft.values.suggestedConstructionChargeYuan ?? draft.values.suggestedLaborCostYuan,
+      constructionChargeYuan: draft.values.constructionChargeYuan ?? draft.values.laborCostYuan
     });
     if (draft.pricingSnapshot && draft.values.pricingCalculationId) {
       setServerPricing(draft.pricingSnapshot);
       draftPricingPendingRef.current = true;
       setDraftPricingChoiceOpen(true);
     }
-    laborCostTouchedRef.current = true;
+    constructionChargeTouchedRef.current = true;
     message.success("已恢复订单草稿");
-  }, [form, message, params, storeId, systemSuggestedLaborCostYuan]);
+  }, [form, message, params, storeId]);
 
   const keepDraftPricing = () => {
     draftPricingPendingRef.current = false;
@@ -487,11 +508,12 @@ function CreateOrderContent() {
   }, [form, selectedCustomer]);
 
   useEffect(() => {
-    form.setFieldValue("suggestedLaborCostYuan", systemSuggestedLaborCostYuan);
-    if (!laborCostTouchedRef.current) {
-      form.setFieldValue("laborCostYuan", systemSuggestedLaborCostYuan);
+    if (systemSuggestedConstructionChargeYuan === undefined) return;
+    form.setFieldValue("suggestedConstructionChargeYuan", systemSuggestedConstructionChargeYuan);
+    if (!constructionChargeTouchedRef.current) {
+      form.setFieldValue("constructionChargeYuan", systemSuggestedConstructionChargeYuan);
     }
-  }, [form, systemSuggestedLaborCostYuan]);
+  }, [form, systemSuggestedConstructionChargeYuan]);
 
   return (
     <>
@@ -544,7 +566,7 @@ function CreateOrderContent() {
             customerId: initialCustomerId,
             constructionType: "PPF",
             constructionLocation: "IN_STORE",
-            laborCostYuan: 0,
+            constructionChargeYuan: 0,
             shouldRecordDeposit: false,
             items: defaultItems
           }}
@@ -732,67 +754,99 @@ function CreateOrderContent() {
 
                 <div className="create-order-labor-grid mt-4">
                   <Form.Item
-                    label="建议人工费（元）"
-                    extra={`系统初始建议 ¥${systemSuggestedLaborCostYuan.toFixed(2)}，可按本单实际情况调整`}
+                    label="系统建议施工收费（元）"
+                    extra={systemSuggestedConstructionChargeYuan === undefined
+                      ? "等待服务端按已发布施工标准试算；未匹配标准时不会生成建议收费"
+                      : `服务端建议 ¥${systemSuggestedConstructionChargeYuan.toFixed(2)}，由已发布施工标准计算，不可直接修改`}
                   >
                     <Space.Compact className="w-full">
-                      <Form.Item name="suggestedLaborCostYuan" noStyle>
+                      <Form.Item name="suggestedConstructionChargeYuan" noStyle>
                         <InputNumber
                           className="!w-full"
                           min={0}
                           precision={2}
                           readOnly
+                          placeholder="待服务端试算"
                         />
                       </Form.Item>
                       <Button
                         onClick={() => {
-                          form.setFieldValue("suggestedLaborCostYuan", systemSuggestedLaborCostYuan);
-                          if (!laborCostTouchedRef.current) {
-                            form.setFieldValue("laborCostYuan", systemSuggestedLaborCostYuan);
+                          if (systemSuggestedConstructionChargeYuan === undefined) return;
+                          form.setFieldValue("suggestedConstructionChargeYuan", systemSuggestedConstructionChargeYuan);
+                          if (!constructionChargeTouchedRef.current) {
+                            form.setFieldValue("constructionChargeYuan", systemSuggestedConstructionChargeYuan);
                           }
                         }}
+                        disabled={systemSuggestedConstructionChargeYuan === undefined}
                       >
                         使用系统建议
                       </Button>
                     </Space.Compact>
                   </Form.Item>
-                  <Form.Item label="成交人工费（元）">
+                  <Form.Item label="本单施工收费（元）">
                     <Space.Compact className="w-full">
-                      <Form.Item name="laborCostYuan" noStyle>
+                      <Form.Item name="constructionChargeYuan" noStyle>
                         <InputNumber
                           className="!w-full"
                           min={0}
                           precision={2}
                           onChange={() => {
-                            laborCostTouchedRef.current = true;
+                            constructionChargeTouchedRef.current = true;
                           }}
                         />
                       </Form.Item>
                       <Button
                         onClick={() => {
-                          form.setFieldValue("laborCostYuan", suggestedLaborCostYuan);
-                          form.setFieldValue("laborCostAdjustmentReason", undefined);
-                          laborCostTouchedRef.current = false;
+                          if (suggestedConstructionChargeYuan === undefined) return;
+                          form.setFieldValue("constructionChargeYuan", suggestedConstructionChargeYuan);
+                          form.setFieldValue("constructionChargeAdjustmentReason", undefined);
+                          constructionChargeTouchedRef.current = false;
                         }}
+                        disabled={suggestedConstructionChargeYuan === undefined}
                       >
                         采用建议价
                       </Button>
                     </Space.Compact>
                   </Form.Item>
                 </div>
-                {hasLaborCostAdjustment ? (
+                {hasConstructionChargeAdjustment ? (
                   <Form.Item
-                    name="laborCostAdjustmentReason"
-                    label="人工费调整原因"
-                    extra={`建议人工费 ¥${suggestedLaborCostYuan.toFixed(2)}，最终人工费 ¥${(selectedLaborCostYuan ?? 0).toFixed(2)}`}
-                    rules={[{ required: true, whitespace: true, message: "调整施工人工费必须填写原因" }]}
+                    name="constructionChargeAdjustmentReason"
+                    label="施工收费调整原因"
+                    extra={`系统建议 ¥${(suggestedConstructionChargeYuan ?? 0).toFixed(2)}，本单收费 ¥${(selectedConstructionChargeYuan ?? 0).toFixed(2)}`}
+                    rules={[{ required: true, whitespace: true, message: "调整本单施工收费必须填写原因" }]}
                   >
-                    <Input.TextArea rows={2} placeholder="说明为什么调整施工人工费，例如车型复杂、外出距离、追加施工项目等" />
+                    <Input.TextArea rows={2} placeholder="说明调整原因，例如车型复杂、外出距离、追加施工项目等" />
                   </Form.Item>
                 ) : null}
-                <Form.Item name="estimatedCostYuan" label="预计成本（元）" extra={costEstimateQuery.data?.hasMissingCost ? "部分产品缺少成本，将按需进入审批" : "按库存加权成本、最近入库成本或标准成本估算"}>
-                  <InputNumber readOnly min={0} precision={2} className="w-full" />
-                </Form.Item>
+                {canViewInternalCost ? <div className="create-order-cost-preview" aria-live="polite">
+                  <Typography.Text strong>内部成本与毛利</Typography.Text>
+                  <div>预计材料成本：{hasMissingMaterialCost ? "待维护材料成本" : `¥${(estimateMaterialCents / 100).toFixed(2)}`}</div>
+                  <div>预计施工成本：{serverPricing?.costEstimate?.estimatedConstructionCostCents == null ? "待维护施工标准" : `¥${(estimateConstructionCents / 100).toFixed(2)}`}</div>
+                  <div>预计总成本：{displayedEstimatedTotalCents === undefined ? "暂无法完整计算" : `¥${(displayedEstimatedTotalCents / 100).toFixed(2)}`}</div>
+                  <div>预计毛利：{displayedEstimatedGrossCents === undefined ? "暂无法完整计算" : `¥${(displayedEstimatedGrossCents / 100).toFixed(2)}（${((displayedEstimatedMargin ?? 0) * 100).toFixed(2)}%）`}</div>
+                  <div>成本状态：{serverPricing?.costEstimate?.costCompleteness === "COMPLETE" ? "完整" : serverPricing?.costEstimate?.costCompleteness === "TEMPORARY" ? "临时成本，需审批" : "待补齐"}</div>
+                  <Typography.Text type="secondary">
+                    {serverPricing?.costEstimate?.reason ?? (costEstimateQuery.data?.hasMissingCost ? "部分产品成本待维护，暂不能形成完整预计成本" : "施工成本标准待配置，暂不能形成完整预计成本")}
+                  </Typography.Text>
+                  {canManageTemporaryCost && serverPricing?.costEstimate?.costCompleteness === "MISSING" ? <>
+                    <Form.Item
+                      name="temporaryCostYuan"
+                      label="本单临时预计成本（元）"
+                      rules={[{ required: true, message: "预计成本缺失时，请填写本单临时成本或补齐成本标准" }]}
+                      extra="仅店长可填写。填写后必须随报价单审批，批准后冻结为本单预计成本。"
+                    >
+                      <InputNumber min={0} precision={2} className="w-full" placeholder="填写经核实的总成本" />
+                    </Form.Item>
+                    <Form.Item
+                      name="temporaryCostReason"
+                      label="临时成本依据"
+                      rules={[{ required: true, whitespace: true, message: "请说明临时成本依据" }]}
+                    >
+                      <Input.TextArea rows={2} placeholder="例如：供应商报价、近期批次成本或外包核价" />
+                    </Form.Item>
+                  </> : null}
+                </div> : null}
               </Card>
 
               <Card title={<OrderStepTitle step={4} title="收款与备注" />} className="create-order-card">
@@ -896,8 +950,8 @@ function CreateOrderContent() {
                   <strong>¥{amountSummary.productAmountYuan.toFixed(2)}</strong>
                 </div>
                 <div className="create-order-summary-row">
-                  <span>施工人工费</span>
-                  <strong>¥{amountSummary.laborCostYuan.toFixed(2)}</strong>
+                  <span>施工收费</span>
+                  <strong>¥{amountSummary.constructionChargeYuan.toFixed(2)}</strong>
                 </div>
                 <div className="create-order-summary-row create-order-summary-total">
                   <span>订单总额</span>

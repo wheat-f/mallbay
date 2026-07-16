@@ -11,7 +11,6 @@ import {
   getOrderCustomerLabel,
   getOrderCustomerHistorySummary,
   getOrderProductLabel,
-  getSuggestedLaborCostYuan,
   resolveCreatedCustomerSelection,
   resolveVehicleIdForCustomer,
   toCreateOrderPayload,
@@ -209,7 +208,7 @@ test("toCreateOrderPayload converts yuan form values to cents API payload", () =
       constructionType: "PPF",
       constructionLocation: "IN_STORE",
       items: [{ productId: "product-1", quantity: 2, unitPriceCents: 19990 }],
-      laborCostCents: 8880,
+      constructionChargeCents: 8880,
       remark: "test"
     }
   );
@@ -236,7 +235,7 @@ test("toCreateOrderPayload formats appointment date picker values before submit"
       appointmentDate: "2026-06-18",
       appointmentTimeSlot: "09:00",
       items: [{ productId: "product-1", quantity: 1, unitPriceCents: 10000 }],
-      laborCostCents: 0
+      constructionChargeCents: 0
     }
   );
 });
@@ -262,7 +261,7 @@ test("toCreateOrderPayload trims optional text fields before submit", () => {
       constructionAddress: "湖南长沙岳麓区",
       remark: "客户要求施工前确认车况",
       items: [{ productId: "product-1", quantity: 1, unitPriceCents: 10000 }],
-      laborCostCents: 0
+      constructionChargeCents: 0
     }
   );
 
@@ -329,9 +328,9 @@ test("toCreateOrderPayload includes labor suggestion snapshot and adjustment rea
       constructionType: "PPF",
       constructionLocation: "OUTSIDE",
       items: [{ productId: "product-1", quantity: 1, unitPriceCents: 10000 }],
-      laborCostCents: 250000,
-      suggestedLaborCostCents: 220000,
-      laborCostAdjustmentReason: "外出距离远，需要增加人工费"
+      constructionChargeCents: 250000,
+      suggestedConstructionChargeCents: 220000,
+      constructionChargeAdjustmentReason: "外出距离远，需要增加人工费"
     }
   );
 });
@@ -351,6 +350,7 @@ test("getOrderAmountSummary totals products labor deposit and outstanding amount
     }),
     {
       productAmountYuan: 250.5,
+      constructionChargeYuan: 20,
       laborCostYuan: 20,
       totalAmountYuan: 270.5,
       depositAmountYuan: 80,
@@ -359,12 +359,6 @@ test("getOrderAmountSummary totals products labor deposit and outstanding amount
   );
 });
 
-test("getSuggestedLaborCostYuan calculates labor by construction type location and car model", () => {
-  assert.equal(getSuggestedLaborCostYuan("PPF", "IN_STORE", "宝马 5 系"), 1800);
-  assert.equal(getSuggestedLaborCostYuan("PPF", "OUTSIDE", "宝马 X5 SUV"), 2500);
-  assert.equal(getSuggestedLaborCostYuan("HEAT_FILM", "IN_STORE", "GL8 MPV"), 1100);
-  assert.equal(getSuggestedLaborCostYuan("MODIFICATION", "OUTSIDE", "大型越野"), 2700);
-});
 
 test("getOrderCapacityStatus explains missing full and available capacity", () => {
   assert.deepEqual(getOrderCapacityStatus(undefined, "IN_STORE", "PPF"), {

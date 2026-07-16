@@ -7,7 +7,7 @@ import { CapacityReservationService } from "../construction/capacity-reservation
 import { ConstructionLocation, ConstructionType } from "@prisma/client";
 import { evaluatePricingGuard, type PricingCalculationResult, type PricingProtectionPolicy } from "../pricing/domain/pricing-engine";
 import type { PricingAuthenticatedUser } from "../pricing/pricing.service";
-import { CreateSalesQuoteDto, ListSalesQuotesDto, RecalculateSalesQuoteDto, ReviewSalesQuoteDto, SubmitSalesQuoteDto, WithdrawSalesQuoteDto } from "./dto/sales-quote.dto";
+import { CreateSalesQuoteDto, ExportSalesQuoteDetailsDto, ListSalesQuotesDto, RecalculateSalesQuoteDto, ReviewSalesQuoteDto, SubmitSalesQuoteDto, WithdrawSalesQuoteDto } from "./dto/sales-quote.dto";
 import { CreateOrderUseCase } from "../orders/use-cases/create-order.use-case";
 import { AuditLogService } from "../observability/audit-log.service";
 import type { AuditEvent } from "../observability/audit-log.service";
@@ -38,6 +38,7 @@ export class SalesQuotesService {
     if (!snapshot) throw new BadRequestException("价格试算快照不存在");
     const output = snapshot.outputSnapshot as unknown as {
       calculation: PricingCalculationResult;
+      costEstimate?: CostEstimateSnapshot;
       protectionPolicy?: PricingProtectionPolicy | null;
     };
     const pricingInputSnapshot = snapshot.inputSnapshot as unknown as { vehicleClassCode?: string };
@@ -65,21 +66,41 @@ export class SalesQuotesService {
       }
       return { id: line.id, unitPriceCents: item.finalUnitPriceCents };
     });
+    const finalConstructionChargeCents = resolveFinalConstructionChargeCents(dto);
+    const rawCostEstimate = readCostEstimate(output);
+    const usesTemporaryCost = rawCostEstimate.costCompleteness !== "COMPLETE" && dto.temporaryCostCents !== undefined;
+    if (usesTemporaryCost && (!PermissionPolicy.isStoreManager(actor, dto.storeId) || !dto.temporaryCostReason?.trim())) {
+      throw new BadRequestException("仅店长可填写本单临时成本，且必须说明成本依据");
+    }
+    if (rawCostEstimate.costCompleteness !== "COMPLETE" && !usesTemporaryCost) {
+      throw new BadRequestException("预计成本尚未完整；请补齐成本标准，或由店长填写本单临时成本并提交审批");
+    }
+    const costEstimate = usesTemporaryCost
+      ? { ...rawCostEstimate, estimatedTotalCostCents: dto.temporaryCostCents!, costCompleteness: "TEMPORARY" as const }
+      : rawCostEstimate;
     const guard = evaluatePricingGuard(
       output.calculation,
-      { lines: finalLines, laborCostCents: dto.finalLaborCostCents, estimatedCostCents: dto.estimatedCostCents },
+      {
+        lines: finalLines,
+        laborCostCents: finalConstructionChargeCents,
+        estimatedCostCents: (costEstimate.costCompleteness === "COMPLETE" || costEstimate.costCompleteness === "TEMPORARY")
+          ? costEstimate.estimatedTotalCostCents ?? undefined
+          : undefined
+      },
       output.protectionPolicy
     );
     if (guard.decision === "BLOCKED") throw new BadRequestException("成交价低于保护范围，不能提交报价");
-    if (guard.decision === "NORMAL") throw new BadRequestException("当前成交价无需报价审批，可直接生成正式订单");
-    if (!dto.adjustmentReasonCode?.trim() && !dto.adjustmentReasonText?.trim()) {
+    if (guard.decision === "NORMAL" && !usesTemporaryCost) throw new BadRequestException("当前成交价无需报价审批，可直接生成正式订单");
+    if (!usesTemporaryCost && !dto.adjustmentReasonCode?.trim() && !dto.adjustmentReasonText?.trim()) {
       throw new BadRequestException("提交报价审批必须填写改价原因");
     }
 
-    const submitForApproval = dto.submitForApproval !== false;
+    // A temporary cost is an exceptional cost source and may never remain a
+    // draft that can later bypass quote approval.
+    const submitForApproval = usesTemporaryCost || dto.submitForApproval !== false;
     const finalProductAmountCents = dto.items.reduce((sum, item, index) => sum + multiplyMoneyCents(item.finalUnitPriceCents, output.calculation.lines[index].quantity), 0);
     const marginCheck = guard.checks.find((check) => check.scope === "MARGIN");
-    const approvalType = marginCheck?.decision === "APPROVAL_REQUIRED" ? PricingApprovalType.MARGIN : PricingApprovalType.DEVIATION;
+    const approvalType = usesTemporaryCost || marginCheck?.decision === "APPROVAL_REQUIRED" ? PricingApprovalType.MARGIN : PricingApprovalType.DEVIATION;
     const validUntil = new Date(Date.now() + (dto.validHours ?? output.protectionPolicy.softHoldHours ?? 24) * 60 * 60 * 1000);
     const quote = await this.prisma.salesQuote.create({
       data: {
@@ -93,11 +114,19 @@ export class SalesQuotesService {
         vehicleClassSnapshot: vehicleClassSnapshot as Prisma.InputJsonValue,
         suggestedProductAmountCents: output.calculation.suggestedProductAmountCents,
         suggestedLaborCostCents: output.calculation.suggestedLaborCostCents,
+        suggestedConstructionChargeCents: output.calculation.suggestedLaborCostCents,
         suggestedTotalCents: output.calculation.suggestedTotalCents,
         finalProductAmountCents,
-        finalLaborCostCents: dto.finalLaborCostCents,
-        finalTotalCents: finalProductAmountCents + dto.finalLaborCostCents,
-        estimatedCostCents: dto.estimatedCostCents,
+        finalLaborCostCents: finalConstructionChargeCents,
+        finalConstructionChargeCents,
+        finalTotalCents: finalProductAmountCents + finalConstructionChargeCents,
+        estimatedCostCents: costEstimate.estimatedTotalCostCents ?? undefined,
+        estimatedMaterialCostCents: costEstimate.estimatedMaterialCostCents ?? undefined,
+        estimatedConstructionCostCents: costEstimate.estimatedConstructionCostCents ?? undefined,
+        estimatedTotalCostCents: costEstimate.estimatedTotalCostCents ?? undefined,
+        costCompleteness: costEstimate.costCompleteness,
+        temporaryCostCents: usesTemporaryCost ? dto.temporaryCostCents : undefined,
+        temporaryCostReason: usesTemporaryCost ? dto.temporaryCostReason?.trim() : undefined,
         estimatedMarginBps: marginCheck?.marginBps,
         adjustmentReasonCode: dto.adjustmentReasonCode,
         adjustmentReasonText: dto.adjustmentReasonText,
@@ -163,7 +192,69 @@ export class SalesQuotesService {
       storeId: dto.storeId,
       ...(PermissionPolicy.isStoreManager(actor, dto.storeId) ? {} : { salesPersonId: actor.id })
     };
-    return this.prisma.salesQuote.findMany({ where, orderBy: { createdAt: "desc" }, include: { approvals: true, items: true } });
+    const quotes = await this.prisma.salesQuote.findMany({ where, orderBy: { createdAt: "desc" }, include: { approvals: true, items: true } });
+    return PermissionPolicy.canManageFinance(actor, dto.storeId) ? quotes : quotes.map(redactQuoteCost);
+  }
+
+  async exportDetails(user: PricingAuthenticatedUser, dto: ExportSalesQuoteDetailsDto) {
+    const actor = await this.withStoreMember(user);
+    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) throw new ForbiddenException("无权限");
+    const canViewCosts = PermissionPolicy.canManageFinance(actor, dto.storeId);
+    const quotes = await this.prisma.salesQuote.findMany({
+      where: {
+        storeId: dto.storeId,
+        ...(PermissionPolicy.isStoreManager(actor, dto.storeId) ? {} : { salesPersonId: actor.id })
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        customer: { select: { name: true, companyName: true, contactPerson: true } },
+        vehicle: { select: { carPlate: true, carModel: true } },
+        items: { orderBy: { createdAt: "asc" } }
+      }
+    });
+    const rows = quotes.flatMap((quote) => quote.items.map((item) => {
+      const product = item.productSnapshot as { brand?: string; name?: string; model?: string; specification?: string } | null;
+      const base = {
+        quoteId: quote.id,
+        quoteNo: quote.quoteNo,
+        customerName: quote.customer?.companyName ?? quote.customer?.name ?? quote.customer?.contactPerson ?? "",
+        vehicle: [quote.vehicle?.carPlate, quote.vehicle?.carModel].filter(Boolean).join(" / "),
+        status: quote.status,
+        createdAt: quote.createdAt,
+        validUntil: quote.validUntil,
+        productId: item.productId,
+        productBrand: product?.brand ?? "",
+        productName: product?.name ?? "",
+        productModel: product?.model ?? "",
+        productSpecification: product?.specification ?? "",
+        quantity: decimalToNumber(item.quantity),
+        salesUnit: item.salesUnit,
+        suggestedUnitPriceCents: item.suggestedUnitPriceCents,
+        finalUnitPriceCents: item.finalUnitPriceCents,
+        finalAmountCents: item.finalAmountCents,
+        suggestedConstructionChargeCents: quote.suggestedConstructionChargeCents ?? quote.suggestedLaborCostCents,
+        finalConstructionChargeCents: quote.finalConstructionChargeCents ?? quote.finalLaborCostCents,
+        quoteTotalCents: quote.finalTotalCents
+      };
+      return canViewCosts
+        ? {
+          ...base,
+          estimatedMaterialCostCents: quote.estimatedMaterialCostCents,
+          estimatedConstructionCostCents: quote.estimatedConstructionCostCents,
+          estimatedTotalCostCents: quote.estimatedTotalCostCents,
+          costCompleteness: quote.costCompleteness,
+          temporaryCostCents: quote.temporaryCostCents,
+          temporaryCostReason: quote.temporaryCostReason,
+          estimatedMarginBps: quote.estimatedMarginBps
+        }
+        : base;
+    }));
+    const dimension = dto.exportDimension ?? "date";
+    return rows.sort((left, right) => {
+      if (dimension === "customer") return left.customerName.localeCompare(right.customerName, "zh-CN") || left.quoteNo.localeCompare(right.quoteNo);
+      if (dimension === "product") return left.productName.localeCompare(right.productName, "zh-CN") || left.quoteNo.localeCompare(right.quoteNo);
+      return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime() || left.quoteNo.localeCompare(right.quoteNo);
+    });
   }
 
   async get(user: PricingAuthenticatedUser, id: string, storeId: string) {
@@ -187,7 +278,7 @@ export class SalesQuotesService {
       }
     });
     if (!quote) throw new NotFoundException("报价单不存在");
-    return quote;
+    return PermissionPolicy.canManageFinance(actor, storeId) ? quote : redactQuoteCost(quote);
   }
 
   async submit(user: PricingAuthenticatedUser, id: string, dto: SubmitSalesQuoteDto) {
@@ -206,20 +297,27 @@ export class SalesQuotesService {
     }
     if (quote.status === SalesQuoteStatus.PENDING_APPROVAL) return this.get(user, id, dto.storeId);
     if (quote.status !== SalesQuoteStatus.DRAFT) throw new BadRequestException("只有草稿报价可以提交审批");
-    const output = quote.pricingCalculation.outputSnapshot as unknown as { calculation: PricingCalculationResult; protectionPolicy?: PricingProtectionPolicy | null };
+    const output = quote.pricingCalculation.outputSnapshot as unknown as { calculation: PricingCalculationResult; costEstimate?: CostEstimateSnapshot; protectionPolicy?: PricingProtectionPolicy | null };
     const input = quote.pricingCalculation.inputSnapshot as unknown as { constructionType: ConstructionType; constructionLocation: ConstructionLocation };
     if (!output.calculation || !output.protectionPolicy || !input.constructionType || !input.constructionLocation) {
       throw new BadRequestException("报价单价格或施工快照不完整");
     }
+    if (quote.costCompleteness === "TEMPORARY" && (quote.temporaryCostCents === null || !quote.temporaryCostReason?.trim())) {
+      throw new BadRequestException("临时成本报价缺少冻结的金额或成本依据，不能提交审批");
+    }
     const guard = evaluatePricingGuard(output.calculation, {
       lines: quote.items.map((item, index) => ({ id: output.calculation.lines[index]?.id ?? item.id, unitPriceCents: item.finalUnitPriceCents })),
-      laborCostCents: quote.finalLaborCostCents,
-      estimatedCostCents: quote.estimatedCostCents ?? undefined
+      laborCostCents: quote.finalConstructionChargeCents ?? quote.finalLaborCostCents,
+      estimatedCostCents: quote.costCompleteness === "COMPLETE" || quote.costCompleteness === "TEMPORARY"
+        ? quote.estimatedTotalCostCents ?? quote.estimatedCostCents ?? undefined
+        : undefined
     }, output.protectionPolicy);
     if (guard.decision === "BLOCKED") throw new BadRequestException("成交价低于保护范围，不能提交报价");
-    if (guard.decision === "NORMAL") throw new BadRequestException("当前成交价无需报价审批，可直接生成正式订单");
+    if (guard.decision === "NORMAL" && quote.costCompleteness !== "TEMPORARY") throw new BadRequestException("当前成交价无需报价审批，可直接生成正式订单");
     const marginCheck = guard.checks.find((check) => check.scope === "MARGIN");
-    const approvalType = marginCheck?.decision === "APPROVAL_REQUIRED" ? PricingApprovalType.MARGIN : PricingApprovalType.DEVIATION;
+    const approvalType = quote.costCompleteness === "TEMPORARY" || marginCheck?.decision === "APPROVAL_REQUIRED"
+      ? PricingApprovalType.MARGIN
+      : PricingApprovalType.DEVIATION;
     const validUntil = new Date(Date.now() + (output.protectionPolicy.softHoldHours ?? 24) * 60 * 60 * 1000);
     await this.capacityReservations.holdQuote({
       storeId: dto.storeId,
@@ -350,8 +448,9 @@ export class SalesQuotesService {
       constructionLocation: pricingInput.constructionLocation,
       pricingCalculationId: dto.pricingCalculationId,
       items: dto.items,
-      finalLaborCostCents: dto.finalLaborCostCents,
-      estimatedCostCents: dto.estimatedCostCents,
+      finalConstructionChargeCents: resolveFinalConstructionChargeCents(dto),
+      temporaryCostCents: dto.temporaryCostCents,
+      temporaryCostReason: dto.temporaryCostReason,
       adjustmentReasonCode: dto.adjustmentReasonCode,
       adjustmentReasonText: dto.adjustmentReasonText,
       validHours: dto.validHours
@@ -374,6 +473,9 @@ export class SalesQuotesService {
     if (quote.convertedOrderId) return { orderId: quote.convertedOrderId, quoteId: quote.id };
     if (quote.status !== SalesQuoteStatus.APPROVED || quote.validUntil <= new Date()) {
       throw new BadRequestException("只有有效的已批准报价单可以转订单");
+    }
+    if (quote.costCompleteness === "TEMPORARY" && (quote.temporaryCostCents === null || !quote.temporaryCostReason?.trim())) {
+      throw new BadRequestException("临时成本报价缺少冻结的金额或成本依据，不能转正式订单");
     }
 
     const input = await this.prisma.pricingCalculation.findUnique({ where: { id: quote.pricingCalculationId }, select: { inputSnapshot: true } });
@@ -400,12 +502,17 @@ export class SalesQuotesService {
         appointmentDate: quote.appointmentDate?.toISOString(),
         appointmentTimeSlot: quote.appointmentTimeSlot ?? undefined,
         items: quote.items.map((item) => ({ productId: item.productId, quantity: decimalToNumber(item.quantity), unitPriceCents: item.finalUnitPriceCents })),
-        laborCostCents: quote.finalLaborCostCents,
+        constructionChargeCents: quote.finalConstructionChargeCents ?? quote.finalLaborCostCents,
         pricingCalculationId: quote.pricingCalculationId,
         capacityReservationId: quote.capacityReservation?.id,
-        estimatedCostCents: quote.estimatedCostCents ?? undefined,
         remark: `由报价单 ${quote.quoteNo} 转入`
-      }, { approvedQuote: true });
+      }, {
+        approvedQuote: true,
+        allowTemporaryCost: quote.costCompleteness === "TEMPORARY",
+        temporaryCost: quote.costCompleteness === "TEMPORARY" && quote.temporaryCostCents !== null && quote.temporaryCostReason
+          ? { cents: quote.temporaryCostCents, reason: quote.temporaryCostReason }
+          : undefined
+      });
       await this.prisma.salesQuote.update({ where: { id: quote.id }, data: { convertedOrderId: order.id } });
       await this.recordAudit({ action: "sales_quote_converted", actorId: actor.id, targetType: "SalesQuote", targetId: quote.id, metadata: { orderId: order.id, storeId: quote.storeId } });
       return { orderId: order.id, quoteId: quote.id };
@@ -438,4 +545,41 @@ function decimalToNumber(value: unknown) {
   if (typeof value === "string") return Number(value);
   if (value && typeof value === "object" && "toNumber" in value && typeof value.toNumber === "function") return value.toNumber();
   return Number(value);
+}
+
+type CostEstimateSnapshot = {
+  estimatedMaterialCostCents?: number | null;
+  estimatedConstructionCostCents?: number | null;
+  estimatedTotalCostCents?: number | null;
+  costCompleteness?: "COMPLETE" | "TEMPORARY" | "MISSING";
+};
+
+function readCostEstimate(output: { costEstimate?: CostEstimateSnapshot }) {
+  return {
+    estimatedMaterialCostCents: output.costEstimate?.estimatedMaterialCostCents ?? null,
+    estimatedConstructionCostCents: output.costEstimate?.estimatedConstructionCostCents ?? null,
+    estimatedTotalCostCents: output.costEstimate?.estimatedTotalCostCents ?? null,
+    costCompleteness: output.costEstimate?.costCompleteness ?? "MISSING" as const
+  };
+}
+
+/** Sales users can see quote and approval outcomes but not internal cost or margin. */
+function redactQuoteCost<T>(quote: T): Omit<T, "estimatedCostCents" | "estimatedMaterialCostCents" | "estimatedConstructionCostCents" | "estimatedTotalCostCents" | "costCompleteness" | "temporaryCostCents" | "temporaryCostReason" | "estimatedMarginBps"> {
+  const safe = { ...(quote as object) } as Record<string, unknown>;
+  for (const field of ["estimatedCostCents", "estimatedMaterialCostCents", "estimatedConstructionCostCents", "estimatedTotalCostCents", "costCompleteness", "temporaryCostCents", "temporaryCostReason", "estimatedMarginBps"]) {
+    delete safe[field];
+  }
+  // The quote page needs the rule version/hash for traceability, but the
+  // persisted calculation output also contains internal cost details.
+  if (safe.pricingCalculation && typeof safe.pricingCalculation === "object") {
+    const { outputSnapshot: _outputSnapshot, ...pricingCalculation } = safe.pricingCalculation as Record<string, unknown>;
+    safe.pricingCalculation = pricingCalculation;
+  }
+  return safe as Omit<T, "estimatedCostCents" | "estimatedMaterialCostCents" | "estimatedConstructionCostCents" | "estimatedTotalCostCents" | "costCompleteness" | "temporaryCostCents" | "temporaryCostReason" | "estimatedMarginBps">;
+}
+
+function resolveFinalConstructionChargeCents(dto: Pick<CreateSalesQuoteDto | RecalculateSalesQuoteDto, "finalConstructionChargeCents" | "finalLaborCostCents">) {
+  const value = dto.finalConstructionChargeCents ?? dto.finalLaborCostCents;
+  if (value === undefined) throw new BadRequestException("本单施工收费不能为空");
+  return value;
 }

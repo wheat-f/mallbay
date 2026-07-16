@@ -22,6 +22,26 @@ import { CreateOrderUseCase } from "./use-cases/create-order.use-case";
 
 const CUSTOMER_SERVICE = "CUSTOMER_SERVICE" as StorePosition;
 
+const INTERNAL_ORDER_AMOUNT_FIELDS = [
+  "salesCommissionCents",
+  "materialCostCents",
+  "profitCents",
+  "pricingOutputSnapshot",
+  "estimatedMaterialCostCents",
+  "estimatedConstructionCostCents",
+  "estimatedTotalCostCents",
+  "costCompleteness",
+  "temporaryCostCents",
+  "temporaryCostReason"
+] as const;
+
+/** Sales may see customer-facing charge values, never internal cost/profit snapshots. */
+export function redactOrderAmount<T extends object>(amount: T): Omit<T, (typeof INTERNAL_ORDER_AMOUNT_FIELDS)[number]> {
+  const safe = { ...amount } as Record<string, unknown>;
+  for (const field of INTERNAL_ORDER_AMOUNT_FIELDS) delete safe[field];
+  return safe as Omit<T, (typeof INTERNAL_ORDER_AMOUNT_FIELDS)[number]>;
+}
+
 export type AuthenticatedOrderUser = UserWithStoreMember & {
   username?: string;
 };
@@ -47,6 +67,7 @@ export class OrdersService {
 
     const { page, pageSize, skip } = normalizePagination(dto.page, dto.pageSize);
     const where = this.buildOrderWhere(actor, dto);
+    const canViewCosts = PermissionPolicy.canManageFinance(actor, dto.storeId);
     const [total, items] = await Promise.all([
       this.prisma.order.count({ where }),
       this.prisma.order.findMany({
@@ -70,7 +91,10 @@ export class OrdersService {
       pageSize,
       items: items.map((item) => ({
         ...item,
-        amount: item.amount ? { ...item.amount, pricingMode: getOrderPricingMode(item.amount) } : null,
+        amount: item.amount ? {
+          ...(canViewCosts ? item.amount : redactOrderAmount(item.amount)),
+          pricingMode: getOrderPricingMode(item.amount)
+        } : null,
         status: getEffectiveOrderStatus(item.status, item.constructionRecord?.status)
       }))
     };
@@ -81,6 +105,7 @@ export class OrdersService {
     if (!OrderPolicy.canViewStoreOrders(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
+    const canViewCosts = PermissionPolicy.canManageFinance(actor, dto.storeId);
 
     const orders = await this.prisma.order.findMany({
       where: this.buildOrderWhere(actor, dto),
@@ -89,6 +114,16 @@ export class OrdersService {
         customer: { select: { name: true, companyName: true, contactPerson: true } },
         vehicle: { select: { carPlate: true, carModel: true, carColor: true } },
         constructionRecord: { select: { status: true } },
+        costSettlement: canViewCosts ? {
+          select: {
+            status: true,
+            actualMaterialCostCents: true,
+            actualConstructionCostCents: true,
+            actualTotalCostCents: true,
+            actualGrossProfitCents: true,
+            actualGrossMarginBps: true
+          }
+        } : false,
         amount: true,
         items: { include: { product: true } }
       }
@@ -114,11 +149,23 @@ export class OrdersService {
       unitPriceCents: item.unitPriceCents,
       itemAmountCents: item.amountCents,
       productAmountCents: order.amount?.productAmountCents ?? 0,
-      laborCostCents: order.amount?.laborCostCents ?? 0,
-      orderTotalCents: order.amount?.totalAmountCents ?? 0,
+       constructionChargeCents: order.amount?.constructionChargeCents ?? order.amount?.laborCostCents ?? 0,
+       orderTotalCents: order.amount?.totalAmountCents ?? 0,
       paidAmountCents: order.amount?.paidAmountCents ?? 0,
       outstandingCents: order.amount?.outstandingCents ?? 0,
-      pricingMode: getOrderPricingMode(order.amount)
+       pricingMode: getOrderPricingMode(order.amount),
+       ...(canViewCosts ? {
+         estimatedMaterialCostCents: order.amount?.estimatedMaterialCostCents ?? null,
+         estimatedConstructionCostCents: order.amount?.estimatedConstructionCostCents ?? null,
+         estimatedTotalCostCents: order.amount?.estimatedTotalCostCents ?? null,
+         costCompleteness: order.amount?.costCompleteness ?? null,
+         actualMaterialCostCents: order.costSettlement?.actualMaterialCostCents ?? null,
+         actualConstructionCostCents: order.costSettlement?.actualConstructionCostCents ?? null,
+         actualTotalCostCents: order.costSettlement?.actualTotalCostCents ?? null,
+         actualGrossProfitCents: order.costSettlement?.actualGrossProfitCents ?? null,
+         actualGrossMarginBps: order.costSettlement?.actualGrossMarginBps ?? null,
+         costSettlementStatus: order.costSettlement?.status ?? null
+       } : {})
     })));
 
     return rows.sort((left, right) => compareSalesExportRows(left, right, dto.exportDimension ?? "customer"));
@@ -140,10 +187,14 @@ export class OrdersService {
       throw new NotFoundException("订单不存在");
     }
     this.assertCanViewOrder(actor, order.storeId, order.salesPersonId);
+    const canViewCosts = PermissionPolicy.canManageFinance(actor, order.storeId);
     return {
       ...order,
       items: order.items.map((item) => ({ ...item, quantity: toNullableNumber(item.quantity) })),
-      amount: order.amount ? { ...order.amount, pricingMode: getOrderPricingMode(order.amount) } : null
+      amount: order.amount ? {
+        ...(canViewCosts ? order.amount : redactOrderAmount(order.amount)),
+        pricingMode: getOrderPricingMode(order.amount)
+      } : null
     };
   }
 

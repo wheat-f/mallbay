@@ -16,6 +16,7 @@ import {
 } from "class-validator";
 import {
   ConstructionPhotoStage,
+  ConstructionCostAdjustmentStatus,
   ConstructionTaskStatus,
   QualityCheckResult,
   ScheduleStatus,
@@ -302,4 +303,109 @@ export class OfflineSyncDto {
   @ArrayMaxSize(50)
   @ValidateNested({ each: true })
   operations!: OfflineSyncOperationDto[];
+}
+
+export class ListCostSettlementsDto extends ListConstructionDto {
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+export class WorkCostDeclarationDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  declaredWorkMinutes!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  varianceReasonCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  varianceReasonText?: string;
+}
+
+export class ConfirmCostWorkerLineDto {
+  @IsString()
+  workerUserId!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  confirmedMinutes!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  commissionCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  allowanceCents?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  varianceReasonCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  varianceReasonText?: string;
+}
+
+export class ConfirmCostSettlementDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ConfirmCostWorkerLineDto)
+  workerLines!: ConfirmCostWorkerLineDto[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  actualMaterialCostCents?: number;
+}
+
+export class BatchConfirmCostSettlementDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  settlementIds!: string[];
+}
+
+export class CreateCostAdjustmentDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  idempotencyKey?: string;
+
+  @IsString()
+  @MaxLength(50)
+  adjustmentType!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  amountCents!: number;
+
+  @IsString()
+  @MaxLength(50)
+  reasonCode!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reasonText?: string;
+}
+
+export class ApproveCostAdjustmentDto {
+  @IsEnum(ConstructionCostAdjustmentStatus)
+  status!: "APPROVED" | "REJECTED";
 }

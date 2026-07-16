@@ -21,7 +21,11 @@
 ### 功能方案与实施计划
 
 - [features/sales-order-pricing-engine-implementation-plan.md](./features/sales-order-pricing-engine-implementation-plan.md)：销售订单智能建议价、价格规则、报价审批与毛利保护实施计划。
+- [features/sales-order-construction-charge-cost-implementation-plan.md](./features/sales-order-construction-charge-cost-implementation-plan.md)：销售订单施工收费、标准工时、预计/实际成本、毛利与结算调整实施计划。
+- [features/sales-order-pricing-and-construction-charge-guide.md](./features/sales-order-pricing-and-construction-charge-guide.md)：产品建议价与施工收费的功能边界、计算关系和典型使用场景。
+- [features/sales-order-pricing-construction-charge-operation-manual.md](./features/sales-order-pricing-construction-charge-operation-manual.md)：店长、财务和销售的产品建议价与施工收费操作手册。
 - [qa/sales-order-pricing-checklist.md](./qa/sales-order-pricing-checklist.md)：销售订单建议价与价格审批自动化、人工验收和数据库演练清单。
+- [qa/sales-order-construction-cost-checklist.md](./qa/sales-order-construction-cost-checklist.md)：施工收费、预计/实际成本、权限、导出、灰度与回滚验收清单。
 - [features/paint-protection-film-system-plan.md](./features/paint-protection-film-system-plan.md)：漆面保护膜施工管理系统 V1.7 需求建设方案。
 - [features/v1-7-requirements-gap-plan.md](./features/v1-7-requirements-gap-plan.md)：V1.7 全功能需求差距与验收计划。
 - [features/v1-7-local-verification-audit.md](./features/v1-7-local-verification-audit.md)：V1.7 本地验收审计。

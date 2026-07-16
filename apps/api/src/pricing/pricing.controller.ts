@@ -22,6 +22,8 @@ import { CopyPricingTemplateDto, CreatePricingTemplateDto, CreatePricingTemplate
 import { PricingTemplateService } from "./pricing-template.service";
 import { PricingRolloutService } from "./pricing-rollout.service";
 import { SetPricingRolloutDto } from "./dto/pricing-rollout.dto";
+import { ConstructionCostConfigService } from "./construction-cost-config.service";
+import { CreateConstructionServiceItemDto, CreatePositionCostRateVersionDto, StoreScopedDto, UpdateConstructionServiceItemDto, UpdatePositionCostRateVersionDto } from "./dto/construction-cost-config.dto";
 
 type AuthRequest = Request & { user: PricingAuthenticatedUser };
 
@@ -33,6 +35,7 @@ export class PricingController {
     private readonly vehiclePricing: VehiclePricingService,
     private readonly pricingRules: PricingRulesService,
     private readonly costs: CostEstimatorService,
+    private readonly constructionCosts: ConstructionCostConfigService,
     private readonly templates: PricingTemplateService,
     private readonly rollout: PricingRolloutService
   ) {}
@@ -47,6 +50,41 @@ export class PricingController {
     return this.costs.estimate(req.user, dto);
   }
 
+  @Get("construction-service-items")
+  listConstructionServiceItems(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
+    return this.constructionCosts.listServiceItems(req.user, storeId);
+  }
+
+  @Post("construction-service-items")
+  createConstructionServiceItem(@Req() req: AuthRequest, @Body() dto: CreateConstructionServiceItemDto) {
+    return this.constructionCosts.createServiceItem(req.user, dto);
+  }
+
+  @Patch("construction-service-items/:id")
+  updateConstructionServiceItem(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateConstructionServiceItemDto) {
+    return this.constructionCosts.updateServiceItem(req.user, id, dto);
+  }
+
+  @Get("position-cost-rate-versions")
+  listPositionCostRateVersions(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
+    return this.constructionCosts.listRateVersions(req.user, storeId);
+  }
+
+  @Post("position-cost-rate-versions")
+  createPositionCostRateVersion(@Req() req: AuthRequest, @Body() dto: CreatePositionCostRateVersionDto) {
+    return this.constructionCosts.createRateVersion(req.user, dto);
+  }
+
+  @Patch("position-cost-rate-versions/:id")
+  updatePositionCostRateVersion(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdatePositionCostRateVersionDto) {
+    return this.constructionCosts.updateRateVersion(req.user, id, dto);
+  }
+
+  @Post("position-cost-rate-versions/:id/publish")
+  publishPositionCostRateVersion(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: StoreScopedDto) {
+    return this.constructionCosts.publishRateVersion(req.user, dto.storeId, id);
+  }
+
   @Get("templates")
   listTemplates(@Req() req: AuthRequest) {
     return this.templates.list(req.user);
@@ -55,6 +93,16 @@ export class PricingController {
   @Get("rollout")
   getRollout(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
     return this.rollout.get(req.user, storeId);
+  }
+
+  @Get("rollout/precheck")
+  precheckRollout(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
+    return this.rollout.precheck(req.user, storeId);
+  }
+
+  @Get("rollout/migration-precheck")
+  migrationPrecheck(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
+    return this.rollout.migrationPrecheck(req.user, storeId);
   }
 
   @Post("rollout")

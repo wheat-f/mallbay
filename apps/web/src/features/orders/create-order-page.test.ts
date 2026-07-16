@@ -155,10 +155,8 @@ test("create order page saves and restores the local draft", () => {
   assert.match(pageSource, /saveCreateOrderDraft\(localStorage/);
   assert.match(pageSource, /loadCreateOrderDraft\(localStorage, storeId\)/);
   assert.match(pageSource, /form\.setFieldsValue\(\{\s*\.\.\.draft\.values,/);
-  assert.match(
-    pageSource,
-    /draft\.values\.suggestedLaborCostYuan \?\? systemSuggestedLaborCostYuan/
-  );
+  assert.match(pageSource, /draft\.values\.suggestedConstructionChargeYuan \?\? draft\.values\.suggestedLaborCostYuan/);
+  assert.doesNotMatch(pageSource, /draft\.values\.suggestedConstructionChargeYuan \?\? draft\.values\.suggestedLaborCostYuan \?\? systemSuggestedConstructionChargeYuan/);
   assert.match(pageSource, /销售订单列表的“本机草稿”中继续编辑/);
 });
 
@@ -169,27 +167,35 @@ test("create order customer history warning avoids deprecated Alert message prop
   assert.doesNotMatch(pageSource, /<Alert className="mb-3" type="warning" showIcon message=/);
 });
 
-test("create order page records labor cost adjustment reason when final labor differs from suggestion", () => {
+test("create order page records construction charge adjustment reason when final charge differs from suggestion", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
-  assert.match(pageSource, /suggestedLaborCostYuan/);
-  assert.match(pageSource, /laborCostAdjustmentReason/);
-  assert.match(pageSource, /调整施工人工费必须填写原因/);
-  assert.match(pageSource, /建议人工费/);
+  assert.match(pageSource, /suggestedConstructionChargeYuan/);
+  assert.match(pageSource, /constructionChargeAdjustmentReason/);
+  assert.match(pageSource, /调整本单施工收费必须填写原因/);
+  assert.match(pageSource, /系统建议施工收费/);
 });
 
-test("create order page keeps suggested labor price read-only and allows adopting it", () => {
+test("create order page keeps suggested construction charge read-only and allows adopting it", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
-  assert.match(pageSource, /name="suggestedLaborCostYuan"/);
-  assert.match(pageSource, /label="建议人工费（元）"/);
-  assert.match(pageSource, /系统初始建议/);
+  assert.match(pageSource, /name="suggestedConstructionChargeYuan"/);
+  assert.match(pageSource, /label="系统建议施工收费（元）"/);
+  assert.match(pageSource, /等待服务端按已发布施工标准试算/);
+  assert.match(pageSource, /constructionChargeAvailable/);
   assert.match(pageSource, /使用系统建议/);
   assert.match(pageSource, /readOnly/);
-  assert.match(pageSource, /label="成交人工费（元）"/);
+  assert.match(pageSource, /label="本单施工收费（元）"/);
   assert.match(pageSource, /采用建议价/);
   assert.match(pageSource, /onFinish=\{\(values\) => createMutation\.mutate\(values\)\}/);
-  assert.doesNotMatch(pageSource, /createMutation\.mutate\(\{ \.\.\.values, suggestedLaborCostYuan \}\)/);
+  assert.doesNotMatch(pageSource, /createMutation\.mutate\(\{ \.\.\.values, suggestedConstructionChargeYuan \}\)/);
+});
+
+test("create order page does not present missing material cost as zero", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /hasMissingMaterialCost/);
+  assert.match(pageSource, /待维护材料成本/);
 });
 
 test("create order page uses a time range picker for appointment time slot instead of free text input", () => {

@@ -84,12 +84,18 @@ export type CreateOrderFormValues = {
   appointmentDate?: string | PickerValue;
   appointmentTimeSlot?: string | TimeRangePickerValue;
   items: { productId: string; quantity: number; unitPriceYuan: number }[];
+  constructionChargeYuan?: number;
+  suggestedConstructionChargeYuan?: number;
+  constructionChargeAdjustmentReason?: string;
+  /** @deprecated local-draft compatibility fields. */
   laborCostYuan?: number;
   suggestedLaborCostYuan?: number;
   laborCostAdjustmentReason?: string;
   pricingAdjustmentReason?: string;
+  /** Manager-only exceptional cost used to create an approval quote. */
+  temporaryCostYuan?: number;
+  temporaryCostReason?: string;
   pricingCalculationId?: string;
-  estimatedCostYuan?: number;
   shouldRecordDeposit?: boolean;
   deposit?: {
     accountId?: string;
@@ -238,11 +244,15 @@ export function centsToYuan(value?: number | null) {
 
 export function toCreateOrderPayload(values: CreateOrderFormValues, storeId: string): CreateOrderPayload {
   const {
+    constructionChargeYuan,
+    suggestedConstructionChargeYuan,
+    constructionChargeAdjustmentReason,
     laborCostYuan,
     suggestedLaborCostYuan,
     laborCostAdjustmentReason,
     pricingAdjustmentReason: _pricingAdjustmentReason,
-    estimatedCostYuan,
+    temporaryCostYuan: _temporaryCostYuan,
+    temporaryCostReason: _temporaryCostReason,
     shouldRecordDeposit,
     deposit,
     appointmentDate: _appointmentDate,
@@ -263,7 +273,11 @@ export function toCreateOrderPayload(values: CreateOrderFormValues, storeId: str
         paidAt: formatOrderDateValue(deposit.paidAt) ?? ""
       }
     : undefined;
-  const trimmedLaborAdjustmentReason = trimOptionalText(laborCostAdjustmentReason);
+  const resolvedConstructionChargeYuan = constructionChargeYuan ?? laborCostYuan;
+  const resolvedSuggestedConstructionChargeYuan = suggestedConstructionChargeYuan ?? suggestedLaborCostYuan;
+  const trimmedConstructionChargeAdjustmentReason = trimOptionalText(
+    constructionChargeAdjustmentReason ?? laborCostAdjustmentReason
+  );
 
   return {
     ...payloadValues,
@@ -276,10 +290,9 @@ export function toCreateOrderPayload(values: CreateOrderFormValues, storeId: str
       ...item,
       unitPriceCents: yuanToCents(unitPriceYuan)
     })),
-    laborCostCents: yuanToCents(laborCostYuan),
-    ...(suggestedLaborCostYuan !== undefined ? { suggestedLaborCostCents: yuanToCents(suggestedLaborCostYuan) } : {}),
-    ...(trimmedLaborAdjustmentReason ? { laborCostAdjustmentReason: trimmedLaborAdjustmentReason } : {}),
-    ...(estimatedCostYuan !== undefined ? { estimatedCostCents: yuanToCents(estimatedCostYuan) } : {}),
+    constructionChargeCents: yuanToCents(resolvedConstructionChargeYuan),
+    ...(resolvedSuggestedConstructionChargeYuan !== undefined ? { suggestedConstructionChargeCents: yuanToCents(resolvedSuggestedConstructionChargeYuan) } : {}),
+    ...(trimmedConstructionChargeAdjustmentReason ? { constructionChargeAdjustmentReason: trimmedConstructionChargeAdjustmentReason } : {}),
     ...(normalizedDeposit ? { deposit: normalizedDeposit } : {})
   };
 }
@@ -294,40 +307,18 @@ export function getOrderAmountSummary(values: Partial<CreateOrderFormValues>) {
     (sum, item) => sum + (item.quantity ?? 0) * (item.unitPriceYuan ?? 0),
     0
   );
-  const laborCostYuan = values.laborCostYuan ?? 0;
-  const totalAmountYuan = productAmountYuan + laborCostYuan;
+  const constructionChargeYuan = values.constructionChargeYuan ?? values.laborCostYuan ?? 0;
+  const totalAmountYuan = productAmountYuan + constructionChargeYuan;
   const depositAmountYuan = values.deposit?.amountYuan ?? 0;
 
   return {
     productAmountYuan: roundMoney(productAmountYuan),
-    laborCostYuan: roundMoney(laborCostYuan),
+    constructionChargeYuan: roundMoney(constructionChargeYuan),
+    laborCostYuan: roundMoney(constructionChargeYuan),
     totalAmountYuan: roundMoney(totalAmountYuan),
     depositAmountYuan: roundMoney(depositAmountYuan),
     outstandingAmountYuan: roundMoney(Math.max(totalAmountYuan - depositAmountYuan, 0))
   };
-}
-
-export function getSuggestedLaborCostYuan(
-  constructionType: CreateOrderFormValues["constructionType"],
-  constructionLocation: CreateOrderFormValues["constructionLocation"],
-  carModel?: string | null
-) {
-  const baseByType: Record<CreateOrderFormValues["constructionType"], number> = {
-    PPF: 1800,
-    COLOR_FILM: 1600,
-    HEAT_FILM: 800,
-    MODIFICATION: 2000,
-    INSPECTION: 200
-  };
-  const outsideSurcharge = constructionLocation === "OUTSIDE" ? 400 : 0;
-  const largeVehicleSurcharge = isLargeVehicle(carModel) ? 300 : 0;
-
-  return baseByType[constructionType] + outsideSurcharge + largeVehicleSurcharge;
-}
-
-function isLargeVehicle(carModel?: string | null) {
-  if (!carModel) return false;
-  return /suv|mpv|大型|越野|商务|gl8|x5|x7/i.test(carModel);
 }
 
 function getConstructionStatusLabel(value?: string | null) {

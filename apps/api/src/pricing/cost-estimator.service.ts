@@ -64,7 +64,20 @@ export class CostEstimatorService {
         costs[line.productId].recentCents = usable[0].unitCostCents;
       }
     }
-    return estimateCosts({ lines: dto.lines, costs, laborCostCents: dto.laborCostCents });
+    return estimateCosts({ lines: dto.lines, costs });
+  }
+
+  /**
+   * Pricing calculations need the same authoritative material-cost source as
+   * the standalone preview endpoint, but have already authenticated the user.
+   */
+  async estimateForStore(storeId: string, lines: EstimateCostDto["lines"]) {
+    const serviceUser: PricingAuthenticatedUser = {
+      id: "cost-estimator-service",
+      isAuditor: true,
+      storeMember: { storeId, position: "MANAGER" as never }
+    };
+    return this.estimate(serviceUser, { storeId, lines });
   }
 
   private async withStoreMember(user: PricingAuthenticatedUser): Promise<UserWithStoreMember> {

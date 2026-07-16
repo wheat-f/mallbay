@@ -82,10 +82,19 @@ export class CreateOrderDto {
   @Type(() => CreateOrderItemDto)
   items!: CreateOrderItemDto[];
 
+  /** Customer-facing construction service charge. */
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  laborCostCents!: number;
+  constructionChargeCents?: number;
+
+  /** @deprecated compatibility alias for constructionChargeCents. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  laborCostCents?: number;
 
   @IsOptional()
   @Type(() => Number)
@@ -94,9 +103,20 @@ export class CreateOrderDto {
   suggestedLaborCostCents?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  suggestedConstructionChargeCents?: number;
+
+  @IsOptional()
   @IsString()
   @MaxLength(300)
   laborCostAdjustmentReason?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  constructionChargeAdjustmentReason?: string;
 
   @IsOptional()
   @IsString()
@@ -121,6 +141,19 @@ export class CreateOrderDto {
   @IsInt()
   @Min(0)
   estimatedCostCents?: number;
+
+  /** Client values are ignored; estimates are always reconstructed server-side. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  estimatedMaterialCostCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  estimatedConstructionCostCents?: number;
 
   @IsOptional()
   @ValidateNested()

@@ -12,8 +12,15 @@ export type CostEstimateLine = {
 export type CostEstimateResult = {
   lines: CostEstimateLine[];
   materialCostCents: number;
+  /** Explicit replacement for the ambiguous legacy estimatedCostCents field. */
+  estimatedMaterialCostCents: number;
+  /**
+   * Backward-compatible alias. It is material-only and MUST NOT include any
+   * customer-facing construction charge.
+   */
   estimatedCostCents: number;
   hasMissingCost: boolean;
+  costCompleteness: "COMPLETE" | "MISSING";
 };
 
 /**
@@ -24,6 +31,7 @@ export type CostEstimateResult = {
 export function estimateCosts(input: {
   lines: Array<{ productId: string; quantity: number }>;
   costs: Record<string, { weightedAverageCents?: number; recentCents?: number; standardCents?: number }>;
+  /** @deprecated ignored for compatibility; customer charges are not costs. */
   laborCostCents?: number;
 }): CostEstimateResult {
   const lines = input.lines.map((line) => {
@@ -47,10 +55,13 @@ export function estimateCosts(input: {
     };
   });
   const materialCostCents = lines.reduce((sum, line) => sum + line.estimatedCostCents, 0);
+  const hasMissingCost = lines.some((line) => line.source === "MISSING");
   return {
     lines,
     materialCostCents,
-    estimatedCostCents: materialCostCents + (input.laborCostCents ?? 0),
-    hasMissingCost: lines.some((line) => line.source === "MISSING")
+    estimatedMaterialCostCents: materialCostCents,
+    estimatedCostCents: materialCostCents,
+    hasMissingCost,
+    costCompleteness: hasMissingCost ? "MISSING" : "COMPLETE"
   };
 }

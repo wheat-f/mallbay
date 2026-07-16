@@ -127,9 +127,9 @@ export default function PricingRuleSetDetailPage() {
               ) : (
                 <Typography.Text type="secondary">本版本未配置价格保护条件</Typography.Text>
               )}
-              {policy?.internalLaborCostConfig ? (
+              {(policy?.internalLaborCostConfig as { constructionCostSource?: string } | undefined)?.constructionCostSource === "STRUCTURED_STANDARD" ? (
                 <Typography.Paragraph type="secondary" className="pricing-policy-note">
-                  施工成本按系统施工项目字典分别维护，金额统一以人民币展示。
+                  施工成本按岗位小时成本版本与施工收费标准自动计算；本版本不会使用旧的施工基础人工费。
                 </Typography.Paragraph>
               ) : null}
             </Card>

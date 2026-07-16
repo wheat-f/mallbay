@@ -87,6 +87,103 @@ export class PricingProtectionPolicyDto {
   internalLaborCostConfig!: Record<string, unknown>;
 }
 
+export class ConstructionStandardCrewRoleDto {
+  @IsString()
+  @MaxLength(50)
+  positionTypeCode!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  workerCount!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  workMinutes!: number;
+}
+
+export class ConstructionStandardLineDto {
+  @IsString()
+  serviceItemId!: string;
+
+  @IsOptional()
+  @IsString()
+  vehiclePriceClassId?: string;
+
+  @IsString()
+  @MaxLength(50)
+  constructionLocationCode!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  productCategoryCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  salesUnitCode?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  quantityFrom?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  quantityTo?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  baseConstructionChargeCents!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  standardWorkMinutes!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  addonChargeCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  addonWorkMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  standardCommissionCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  standardAllowanceCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  priority?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ConstructionStandardCrewRoleDto)
+  crewRoles!: ConstructionStandardCrewRoleDto[];
+}
+
 export class CreatePricingRuleSetDto {
   @IsString()
   storeId!: string;
@@ -102,6 +199,16 @@ export class CreatePricingRuleSetDto {
   @ValidateNested({ each: true })
   @Type(() => CreatePricingRuleDto)
   rules!: CreatePricingRuleDto[];
+
+  @IsOptional()
+  @IsString()
+  positionCostRateVersionId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ConstructionStandardLineDto)
+  constructionStandards?: ConstructionStandardLineDto[];
 
   @ValidateNested()
   @Type(() => PricingProtectionPolicyDto)

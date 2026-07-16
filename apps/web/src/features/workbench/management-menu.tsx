@@ -53,9 +53,13 @@ export const managementMenuItems: ManagementMenuItem[] = [
   { key: "customers", label: "客户管理", href: "/customers", icon: <TeamOutlined />, positions: ["MANAGER", "SALES", "CUSTOMER_SERVICE"] },
   { key: "orders", label: "销售订单", href: "/orders", icon: <ShoppingCartOutlined />, positions: ["MANAGER", "SALES", "CUSTOMER_SERVICE", "FINANCE"] },
   { key: "pricing", label: "建议价设置", href: "/orders/pricing", icon: <SettingOutlined />, positions: ["MANAGER"] },
+  { key: "construction-charge-standards", label: "施工收费标准", href: "/orders/pricing/construction-costs", icon: <ToolOutlined />, positions: ["MANAGER"] },
+  { key: "construction-role-costs", label: "岗位成本标准", href: "/orders/pricing/construction-costs/rates", icon: <WalletOutlined />, positions: ["FINANCE"] },
   { key: "sales-quotes", label: "报价审批", href: "/orders/quotes", icon: <AuditOutlined />, positions: ["MANAGER", "SALES"] },
   { key: "products", label: "产品管理", href: "/products", icon: <ShopOutlined />, positions: ["MANAGER", "PURCHASING"] },
   { key: "construction", label: "施工管理", href: "/construction/assignments", icon: <ToolOutlined />, positions: ["MANAGER", "SCHEDULER"] },
+  { key: "construction-cost-settlements", label: "施工成本确认", href: "/construction/cost-settlements", icon: <WalletOutlined />, positions: ["MANAGER"] },
+  { key: "construction-cost-settlements", label: "施工成本结算", href: "/construction/cost-settlements", icon: <WalletOutlined />, positions: ["FINANCE"] },
   { key: "inventory", label: "库存管理", href: "/inventory", icon: <AppstoreOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "PURCHASING"] },
   { key: "purchases", label: "采购管理", href: "/purchases", icon: <FileDoneOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "PURCHASING"] },
   { key: "warranties", label: "质保管理", href: "/warranties", icon: <FileProtectOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "SCHEDULER"] },
@@ -88,11 +92,14 @@ export function getManagementMenuItems(input: {
 }
 
 export function getActiveManagementMenuKey(pathname: string) {
+  if (pathname.startsWith("/orders/pricing/construction-costs/rates")) return "construction-role-costs";
+  if (pathname.startsWith("/orders/pricing/construction-costs")) return "construction-charge-standards";
   if (pathname.startsWith("/workbench")) return "workbench";
   if (pathname.startsWith("/construction/tasks")) return "construction-tasks";
   if (pathname.startsWith("/construction/schedules")) return "construction-schedules";
   if (pathname.startsWith("/construction/leaves")) return "construction-leaves";
   if (pathname.startsWith("/construction/materials")) return "construction-materials";
+  if (pathname.startsWith("/construction/cost-settlements")) return "construction-cost-settlements";
   if (pathname.startsWith("/construction/profile")) return "construction-profile";
   if (pathname.startsWith("/after-sales/tasks")) return "after-sales-tasks";
   if (pathname.startsWith("/customers")) return "customers";

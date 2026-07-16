@@ -1,5 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
-import { Prisma, PricingRolloutMode } from "@prisma/client";
+import { BadRequestException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
+import { Prisma, PricingRolloutMode, type ProductUnit } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -15,14 +15,33 @@ import { CalculatePricingDto } from "./dto/calculate-pricing.dto";
 import { PricingRulesService } from "./pricing-rules.service";
 import { compareShadowPricing } from "./domain/shadow-comparison";
 import { resolveBaseLaborCost } from "./domain/labor-cost";
+import { CostEstimatorService } from "./cost-estimator.service";
+import { estimateConstructionCost } from "./domain/construction-cost";
 
 export type PricingAuthenticatedUser = UserWithStoreMember & { username?: string };
+
+type CostEstimateSnapshot = {
+  lines: unknown[];
+  materialCostCents: number;
+  estimatedMaterialCostCents: number;
+  estimatedCostCents: number;
+  hasMissingCost: boolean;
+  estimatedConstructionCostCents: number | null;
+  estimatedTotalCostCents: number | null;
+  costCompleteness: "COMPLETE" | "MISSING";
+  standardWorkMinutes: number | null;
+  matchedStandardIds: string[];
+  positionCostRateVersionId: string | null;
+  positionCostRates: Array<{ positionTypeCode: string; hourlyCostCents: number }>;
+  reason?: string;
+};
 
 @Injectable()
 export class PricingService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly pricingRules: PricingRulesService
+    private readonly pricingRules: PricingRulesService,
+    @Optional() private readonly costs?: CostEstimatorService
   ) {}
 
   async calculate(user: PricingAuthenticatedUser, dto: CalculatePricingDto) {
@@ -37,8 +56,12 @@ export class PricingService {
     let persistedPolicy;
     let persistedCalculation;
     let shadowComparison;
+    let costEstimate: CostEstimateSnapshot;
+    let constructionChargeAvailable = false;
     const store = await this.prisma.store.findUnique({ where: { id: dto.storeId }, select: { pricingRolloutMode: true } });
-    const rolloutMode = store?.pricingRolloutMode ?? PricingRolloutMode.ACTIVE;
+    // Missing rollout state must be fail-safe.  ACTIVE is available only after
+    // the explicit store precheck succeeds; it must never be a fallback.
+    const rolloutMode = store?.pricingRolloutMode ?? PricingRolloutMode.LEGACY;
     try {
       // When the caller does not pin a version (the normal create-order and
       // simulator flow), resolve the currently effective published rule set.
@@ -57,16 +80,80 @@ export class PricingService {
         ...assertStoreInput(dto.input, dto.storeId),
         ...(persistedRuleSet ? { ruleSetVersion: persistedRuleSet.version } : {})
       };
-      const input = await this.hydrateProductFacts(dto.storeId, {
+      let input = await this.hydrateProductFacts(dto.storeId, {
         ...rawInput,
         baseLaborCostCents: persistedRuleSet
           ? resolveBaseLaborCost(persistedRuleSet.protectionPolicy?.internalLaborCostConfig, rawInput)
           : rawInput.baseLaborCostCents
       });
+      const constructionEstimate = persistedRuleSet?.constructionStandards?.length
+        ? estimateConstructionCost(input, persistedRuleSet.constructionStandards.map((standard) => ({
+          id: standard.id,
+          priority: standard.priority,
+          enabled: standard.enabled,
+          constructionTypeCode: standard.serviceItem.constructionTypeCode,
+          serviceGroupCode: standard.serviceItem.serviceGroupCode,
+          defaultProductCategoryCode: standard.serviceItem.defaultProductCategoryCode,
+          vehiclePriceClassCode: standard.vehiclePriceClass?.code,
+          constructionLocationCode: standard.constructionLocationCode,
+          productCategoryCode: standard.productCategoryCode,
+          salesUnitCode: standard.salesUnitCode,
+          quantityFrom: standard.quantityFrom == null ? null : Number(standard.quantityFrom),
+          quantityTo: standard.quantityTo == null ? null : Number(standard.quantityTo),
+          baseConstructionChargeCents: standard.baseConstructionChargeCents,
+          standardWorkMinutes: standard.standardWorkMinutes,
+          addonChargeCents: standard.addonChargeCents,
+          addonWorkMinutes: standard.addonWorkMinutes,
+          standardCommissionCents: standard.standardCommissionCents,
+          standardAllowanceCents: standard.standardAllowanceCents,
+          crewRoles: standard.crewRoles
+        })), persistedRuleSet.positionCostRateVersion?.rates ?? [])
+        : { complete: false, reason: "施工成本标准尚未配置", matchedStandardIds: [] };
+      constructionChargeAvailable = constructionEstimate.complete;
+      if (constructionEstimate.complete) {
+        input = { ...input, baseLaborCostCents: constructionEstimate.suggestedConstructionChargeCents! };
+      }
       calculation = calculatePricing(
         input,
         rolloutMode === PricingRolloutMode.LEGACY ? [] : rules
       );
+      const materialEstimate = this.costs
+        ? await this.costs.estimateForStore(dto.storeId, input.lines.map((line) => ({
+          productId: line.productId,
+          quantity: line.quantity,
+          salesUnit: line.salesUnit as ProductUnit
+        })))
+        : {
+          lines: [],
+          materialCostCents: 0,
+          estimatedMaterialCostCents: 0,
+          estimatedCostCents: 0,
+          hasMissingCost: true,
+          costCompleteness: "MISSING" as const
+        };
+      const costCompleteness = !materialEstimate.hasMissingCost && constructionEstimate.complete
+        ? "COMPLETE" as const
+        : "MISSING" as const;
+      costEstimate = {
+        ...materialEstimate,
+        estimatedConstructionCostCents: constructionEstimate.complete
+          ? constructionEstimate.estimatedConstructionCostCents!
+          : null,
+        estimatedTotalCostCents: costCompleteness === "COMPLETE"
+          ? materialEstimate.estimatedMaterialCostCents + constructionEstimate.estimatedConstructionCostCents!
+          : null,
+        costCompleteness,
+        standardWorkMinutes: constructionEstimate.complete ? constructionEstimate.standardWorkMinutes ?? null : null,
+        matchedStandardIds: constructionEstimate.matchedStandardIds,
+        positionCostRateVersionId: persistedRuleSet?.positionCostRateVersionId ?? null,
+        positionCostRates: persistedRuleSet?.positionCostRateVersion?.rates.map((rate) => ({
+          positionTypeCode: rate.positionTypeCode,
+          hourlyCostCents: rate.hourlyCostCents
+        })) ?? [],
+        reason: materialEstimate.hasMissingCost
+          ? "部分产品缺少成本，暂不能形成完整预计成本"
+          : constructionEstimate.reason
+      };
       if (rolloutMode === PricingRolloutMode.SHADOW) {
         shadowComparison = compareShadowPricing(input, calculation);
       }
@@ -81,7 +168,11 @@ export class PricingService {
         }
         : undefined);
       guard = dto.finalAmount && policy
-        ? evaluatePricingGuard(calculation, dto.finalAmount, policy)
+        ? evaluatePricingGuard(calculation, {
+          ...dto.finalAmount,
+          // The client can never supply an estimated cost for margin approval.
+          estimatedCostCents: undefined
+        }, policy)
         : undefined;
 
       if (persistedRuleSet) {
@@ -94,10 +185,15 @@ export class PricingService {
             inputSnapshot: input as unknown as Prisma.InputJsonValue,
             outputSnapshot: {
               calculation,
+              costEstimate,
               protectionPolicy: policy ?? null,
               shadowComparison: shadowComparison ?? null
             } as unknown as Prisma.InputJsonValue,
             appliedRules: calculation.appliedRules as unknown as Prisma.InputJsonValue,
+            estimatedMaterialCostCents: costEstimate.estimatedMaterialCostCents,
+            estimatedConstructionCostCents: costEstimate.estimatedConstructionCostCents,
+            estimatedTotalCostCents: costEstimate.estimatedTotalCostCents,
+            costCompleteness: costEstimate.costCompleteness,
             decision: guard?.decision ?? "NORMAL",
             createdById: actor.id
           }
@@ -114,7 +210,12 @@ export class PricingService {
       pricingCalculationId: rolloutMode === PricingRolloutMode.ACTIVE ? persistedCalculation?.id ?? null : null,
       shadowPricingCalculationId: rolloutMode === PricingRolloutMode.SHADOW ? persistedCalculation?.id ?? null : null,
       shadowComparison: shadowComparison ?? null,
+      // 对客施工收费也必须来自匹配的已发布施工标准；该标记不含内部金额，销售可安全读取。
+      constructionChargeAvailable,
       calculation,
+      costEstimate: PermissionPolicy.canManageFinance(actor, dto.storeId)
+        ? costEstimate
+        : { costCompleteness: costEstimate.costCompleteness },
       guard
     };
   }
@@ -185,10 +286,15 @@ export class PricingService {
       storeId: string;
       pricingCalculationId: string;
       items: Array<{ productId: string; quantity: number; unitPriceCents: number }>;
-      laborCostCents: number;
-      estimatedCostCents?: number;
+      constructionChargeCents?: number;
+      /** @deprecated compatibility input; represents a customer charge. */
+      laborCostCents?: number;
     },
-    options: { approvedQuote?: boolean } = {}
+    options: {
+      approvedQuote?: boolean;
+      allowTemporaryCost?: boolean;
+      temporaryCost?: { cents: number; reason: string };
+    } = {}
   ) {
     const actor = await this.withStoreMember(user);
     if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) {
@@ -205,6 +311,12 @@ export class PricingService {
 
     const output = snapshot.outputSnapshot as unknown as {
       calculation: PricingCalculationResult;
+      costEstimate?: {
+        estimatedMaterialCostCents?: number;
+        estimatedConstructionCostCents?: number | null;
+        estimatedTotalCostCents?: number | null;
+        costCompleteness?: "COMPLETE" | "TEMPORARY" | "MISSING";
+      };
       protectionPolicy?: PricingProtectionPolicy | null;
     };
     const calculation = output.calculation;
@@ -220,12 +332,35 @@ export class PricingService {
     if (!output.protectionPolicy) {
       throw new BadRequestException("价格试算快照缺少保护策略");
     }
+    const canUseTemporaryCost = Boolean(
+      options.approvedQuote &&
+      options.allowTemporaryCost &&
+      options.temporaryCost &&
+      Number.isInteger(options.temporaryCost.cents) &&
+      options.temporaryCost.cents >= 0 &&
+      options.temporaryCost.reason.trim()
+    );
+    if (output.costEstimate && output.costEstimate.costCompleteness !== "COMPLETE" && !canUseTemporaryCost) {
+      throw new BadRequestException("预计成本尚未完整，不能直接生成正式订单；请补齐成本标准或先走临时成本报价审批");
+    }
+    const costEstimate = canUseTemporaryCost
+      ? {
+        ...output.costEstimate,
+        estimatedTotalCostCents: options.temporaryCost!.cents,
+        costCompleteness: "TEMPORARY" as const
+      }
+      : output.costEstimate;
     const guard = evaluatePricingGuard(
       calculation,
       {
         lines: dto.items.map((item, index) => ({ id: calculation.lines[index].id, unitPriceCents: item.unitPriceCents })),
-        laborCostCents: dto.laborCostCents,
-        estimatedCostCents: dto.estimatedCostCents
+        laborCostCents: dto.constructionChargeCents ?? dto.laborCostCents ?? 0,
+        // Only an immutable service-side snapshot can participate in margin
+        // protection. Missing construction cost intentionally disables the
+        // margin calculation until the standard module is enabled.
+        estimatedCostCents: costEstimate?.costCompleteness === "COMPLETE" || costEstimate?.costCompleteness === "TEMPORARY"
+          ? costEstimate.estimatedTotalCostCents ?? undefined
+          : undefined
       },
       output.protectionPolicy
     );
@@ -241,7 +376,8 @@ export class PricingService {
       pricingCalculationId: snapshot.id,
       pricingRuleSetVersion: snapshot.ruleSetVersion,
       pricingInputHash: snapshot.inputHash,
-      pricingOutputSnapshot: snapshot.outputSnapshot
+      pricingOutputSnapshot: snapshot.outputSnapshot,
+      costEstimate: costEstimate ?? null
     };
   }
 

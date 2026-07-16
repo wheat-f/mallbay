@@ -5,7 +5,7 @@ import { Button, Steps, Tag, Typography } from "antd";
 import type { PricingRule } from "./api";
 
 export const PRICING_STEPS = [
-  { title: "产品与施工价格", description: "设置产品调整和人工费" },
+  { title: "产品建议价规则", description: "设置产品建议价调整" },
   { title: "车型级别与匹配", description: "处理待归类车型" },
   { title: "改价审批与保护", description: "设置偏差和毛利底线" },
   { title: "试算并发布", description: "检查影响后正式生效" }
@@ -33,10 +33,38 @@ export const OPERATOR_OPTIONS = [
   { value: "LTE", label: "不超过" }
 ] as const;
 
+const NUMERIC_CONDITION_FIELDS = new Set(["quantity", "lineCount", "totalQuantity"]);
+
+/**
+ * 条件字段不是都可以比较大小：车型级别、产品类别等都是字典枚举，
+ * 只有数量类字段才有可比较的数值含义。
+ */
+const ENUM_CONDITION_OPERATORS = new Set(["EQ", "IN"]);
+const NUMERIC_CONDITION_OPERATORS = new Set(["EQ", "BETWEEN", "GTE", "LTE"]);
+
+export function isNumericConditionField(field?: string) {
+  return Boolean(field && NUMERIC_CONDITION_FIELDS.has(field));
+}
+
+export function conditionOperatorOptions(field?: string) {
+  const allowedOperators = isNumericConditionField(field)
+    ? NUMERIC_CONDITION_OPERATORS
+    : ENUM_CONDITION_OPERATORS;
+  return OPERATOR_OPTIONS.filter((item) => allowedOperators.has(item.value));
+}
+
+export function conditionOperatorHelp(field?: string) {
+  return isNumericConditionField(field)
+    ? "数量可按单个值、区间、下限或上限匹配。"
+    : "此项为选择项，只能匹配指定值或多个指定值，不能比较大小。";
+}
+
+export function defaultConditionOperator(field?: string) {
+  return isNumericConditionField(field) ? "GTE" : "EQ";
+}
+
 export const TARGET_OPTIONS = [
-  { value: "PRODUCT_LINE", label: "产品建议价" },
-  { value: "LABOR", label: "施工人工费" },
-  { value: "ORDER", label: "订单总价" }
+  { value: "PRODUCT_LINE", label: "产品建议价" }
 ] as const;
 
 export const ACTION_OPTIONS = [
@@ -48,7 +76,11 @@ export const ACTION_OPTIONS = [
 
 const FIELD_LABELS = Object.fromEntries(CONDITION_FIELD_OPTIONS.map((item) => [item.value, item.label]));
 const OPERATOR_LABELS = Object.fromEntries(OPERATOR_OPTIONS.map((item) => [item.value, item.label]));
-const TARGET_LABELS = Object.fromEntries(TARGET_OPTIONS.map((item) => [item.value, item.label]));
+const TARGET_LABELS: Record<string, string> = {
+  PRODUCT_LINE: "产品建议价",
+  LABOR: "施工人工费（历史规则）",
+  ORDER: "订单总价（历史规则）"
+};
 const ACTION_LABELS = Object.fromEntries(ACTION_OPTIONS.map((item) => [item.value, item.label]));
 
 export function PricingWorkspaceHeader({
@@ -99,7 +131,7 @@ export function PricingWorkspaceTabs({
 }) {
   const items = [
     { key: "overview" as const, label: "概览" },
-    { key: "price" as const, label: "产品与施工价格" },
+    { key: "price" as const, label: "产品建议价规则" },
     { key: "vehicle" as const, label: "车型级别与匹配" },
     { key: "protection" as const, label: "改价审批与保护" },
     { key: "versions" as const, label: "草稿及版本" }

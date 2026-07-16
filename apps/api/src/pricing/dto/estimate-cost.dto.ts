@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
 import type { ProductUnit } from "@prisma/client";
-import { ArrayMinSize, IsArray, IsInt, IsNumber, IsOptional, IsString, Min, ValidateNested } from "class-validator";
+import { ArrayMinSize, IsArray, IsNumber, IsOptional, IsString, Min, ValidateNested } from "class-validator";
 
 export class EstimateCostLineDto {
   @IsString()
@@ -26,9 +26,4 @@ export class EstimateCostDto {
   @Type(() => EstimateCostLineDto)
   lines!: EstimateCostLineDto[];
 
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  laborCostCents?: number;
 }

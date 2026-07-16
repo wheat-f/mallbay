@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { App, Button, Card, Descriptions, Empty, Image, Modal, Table, Tag, Upload } from "antd";
+import { App, Button, Card, Descriptions, Empty, Image, Input, InputNumber, Modal, Select, Space, Table, Tag, Upload } from "antd";
 import {
   ArrowLeftOutlined,
   CheckOutlined,
@@ -19,6 +19,7 @@ import type { ConstructionMaterialItem, ConstructionOrderMaterials } from "../..
 import { constructionApi } from "../../../../src/lib/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
+import { dictionaryApi, type DictionaryItem } from "../../../../src/features/settings/api";
 
 type PhotoStage = "BEFORE" | "DURING" | "AFTER";
 
@@ -57,6 +58,9 @@ export default function ConstructionTaskDetailPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const [previewPhoto, setPreviewPhoto] = useState<TaskPhoto | null>(null);
+  const [declaredMinutes, setDeclaredMinutes] = useState<number>();
+  const [varianceReasonCode, setVarianceReasonCode] = useState<string>();
+  const [varianceReasonText, setVarianceReasonText] = useState("");
 
   const taskQuery = useQuery({
     queryKey: ["construction-task-detail", storeId, params.id],
@@ -73,6 +77,17 @@ export default function ConstructionTaskDetailPage() {
     queryFn: () => constructionApi.orderMaterials(params.id),
     enabled: Boolean(record)
   });
+  const declarationQuery = useQuery({
+    queryKey: ["construction-work-cost-declaration", record?.id],
+    queryFn: () => constructionApi.workCostDeclaration(record!.id),
+    enabled: Boolean(record?.id && record.status === "COMPLETED")
+  });
+  const dictionariesQuery = useQuery({
+    queryKey: ["store-dictionaries", storeId],
+    queryFn: () => dictionaryApi.list(storeId!),
+    enabled: Boolean(storeId)
+  });
+  const varianceReasonOptions = getDictionaryOptions(dictionariesQuery.data ?? [], "CONSTRUCTION_TIME_VARIANCE_REASON");
 
   const materialData = materialsQuery.data;
   const pendingAllocationIds = (materialData?.materials ?? []).flatMap((item) =>
@@ -89,6 +104,19 @@ export default function ConstructionTaskDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["construction-order-materials", params.id] })
     ]);
   };
+
+  const declareWorkMutation = useMutation({
+    mutationFn: () => constructionApi.declareCostWork(declarationQuery.data!.id, {
+      declaredWorkMinutes: declaredMinutes ?? declarationQuery.data!.declaredMinutes ?? declarationQuery.data!.standardMinutes,
+      ...(varianceReasonCode ? { varianceReasonCode } : {}),
+      ...(varianceReasonText.trim() ? { varianceReasonText: varianceReasonText.trim() } : {})
+    }),
+    onSuccess: async () => {
+      message.success("工时申报已提交，等待店长确认");
+      await queryClient.invalidateQueries({ queryKey: ["construction-work-cost-declaration", record?.id] });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
 
   const startMutation = useMutation({
     mutationFn: () => constructionApi.startOrder(params.id),
@@ -208,6 +236,11 @@ export default function ConstructionTaskDetailPage() {
                   <Descriptions.Item label="完工时间">{formatNullableDate(record.completedAt)}</Descriptions.Item>
                 </Descriptions>
               </Card>
+
+              {record.status === "COMPLETED" ? <Card className="worker-task-info-card" title="工时偏差申报" extra={<Tag color={declarationQuery.data?.status === "PENDING_CONFIRMATION" ? "warning" : "default"}>{declarationQuery.data?.status === "PENDING_CONFIRMATION" ? "待店长确认" : declarationQuery.data?.status === "CONFIRMED" ? "已确认" : declarationQuery.data?.status === "SETTLED" ? "已结算" : "加载中"}</Tag>}>
+                <p>系统按标准工时结算。若实际工时不同，请在店长确认前申报并说明原因；确认后请联系店长通过调整单处理。</p>
+                {declarationQuery.data ? <Space direction="vertical" style={{ width: "100%" }}><div>标准工时：<strong>{declarationQuery.data.standardMinutes} 分钟</strong></div><InputNumber min={0} value={declaredMinutes ?? declarationQuery.data.declaredMinutes ?? declarationQuery.data.standardMinutes} onChange={(value) => setDeclaredMinutes(Number(value ?? 0))} addonAfter="分钟" style={{ width: "100%" }} disabled={declarationQuery.data.status !== "PENDING_CONFIRMATION"} />{(declaredMinutes ?? declarationQuery.data.declaredMinutes ?? declarationQuery.data.standardMinutes) !== declarationQuery.data.standardMinutes ? <><Select value={varianceReasonCode ?? declarationQuery.data.varianceReasonCode ?? undefined} onChange={setVarianceReasonCode} options={varianceReasonOptions} placeholder="偏差原因（必选，来自系统字典）" disabled={declarationQuery.data.status !== "PENDING_CONFIRMATION"} /><Input value={varianceReasonText || declarationQuery.data.varianceReasonText || ""} onChange={(event) => setVarianceReasonText(event.target.value)} placeholder="补充说明（可选）" disabled={declarationQuery.data.status !== "PENDING_CONFIRMATION"} /></> : null}<Button type="primary" loading={declareWorkMutation.isPending} disabled={declarationQuery.data.status !== "PENDING_CONFIRMATION" || ((declaredMinutes ?? declarationQuery.data.declaredMinutes ?? declarationQuery.data.standardMinutes) !== declarationQuery.data.standardMinutes && !(varianceReasonCode ?? declarationQuery.data.varianceReasonCode))} onClick={() => declareWorkMutation.mutate()}>提交工时申报</Button></Space> : <span>正在生成成本确认记录…</span>}
+              </Card> : null}
 
               <Card
                 className="worker-task-material-card"
@@ -411,6 +444,12 @@ function getStatusColor(status: string) {
   if (status === "COMPLETED") return "success";
   if (status === "IN_CONSTRUCTION") return "processing";
   return "default";
+}
+
+function getDictionaryOptions(dictionaries: DictionaryItem[], code: string) {
+  return (dictionaries.find((item) => item.code === code && item.status === "ACTIVE")?.dictionaryItems ?? [])
+    .filter((item) => item.status === "ACTIVE")
+    .map((item) => ({ value: item.code, label: item.name }));
 }
 
 function canStartTask(status: string) {

@@ -25,6 +25,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -43,15 +44,18 @@ import {
 import {
   ACTION_OPTIONS,
   CONDITION_FIELD_OPTIONS,
-  OPERATOR_OPTIONS,
   PricingWorkspaceHeader,
   PricingWorkspaceTabs,
   TARGET_OPTIONS,
   businessRuleName,
+  conditionOperatorOptions,
+  conditionOperatorHelp,
+  defaultConditionOperator,
   formatPercent,
   formatRuleSentence,
   formatYuan,
   findRuleConflictIndexes,
+  isNumericConditionField,
   isPercentAction
 } from "../../../src/features/pricing/pricing-workspace";
 import { dictionaryApi, type DictionaryItem } from "../../../src/features/settings/api";
@@ -67,14 +71,6 @@ type PricingProduct = {
   category: string;
   salesUnit: string;
   basePriceCents: number;
-};
-
-const DEFAULT_LABOR_COSTS: Record<string, number> = {
-  PPF: 180000,
-  COLOR_FILM: 160000,
-  HEAT_FILM: 80000,
-  MODIFICATION: 200000,
-  INSPECTION: 20000
 };
 
 function emptyRule(index = 0): PricingRule {
@@ -114,8 +110,18 @@ function groupForField(field: string) {
 }
 
 function normalizeRule(rule: PricingRule, index: number): PricingRule {
+  const condition = rule.conditions[0];
+  const operator = conditionOperatorOptions(condition?.field).some((item) => item.value === condition?.operator)
+    ? condition.operator
+    : defaultConditionOperator(condition?.field);
+  const value = operator === condition?.operator
+    ? condition.value
+    : isNumericConditionField(condition?.field)
+      ? Number(Array.isArray(condition?.value) ? condition.value[0] ?? 0 : condition?.value ?? 0)
+      : Array.isArray(condition?.value) ? condition.value[0] ?? "" : condition?.value ?? "";
   return {
     ...rule,
+    conditions: [{ ...condition, operator, value }],
     name: rule.name.trim() || businessRuleName(rule),
     priority: index + 1,
     sortOrder: index,
@@ -146,7 +152,6 @@ export default function PricingRulesPage() {
   const [normalDeviationBps, setNormalDeviationBps] = useState(500);
   const [approvalDeviationBps, setApprovalDeviationBps] = useState(1500);
   const [minimumMarginBps, setMinimumMarginBps] = useState(1000);
-  const [laborBaseCosts, setLaborBaseCosts] = useState<Record<string, number>>(DEFAULT_LABOR_COSTS);
   const [rules, setRules] = useState<PricingRule[]>([emptyRule()]);
   const [dirty, setDirty] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
@@ -213,12 +218,10 @@ export default function PricingRulesPage() {
   useEffect(() => {
     if (!draftRuleSet || hydratedDraftId.current === draftRuleSet.id) return;
     const policy = draftRuleSet.protectionPolicy;
-    const config = (policy?.internalLaborCostConfig ?? {}) as { baseLaborCostCentsByConstruction?: Record<string, number> };
     setEffectiveFrom(dayjs(draftRuleSet.effectiveFrom));
     setNormalDeviationBps(policy?.normalDeviationBps ?? 500);
     setApprovalDeviationBps(policy?.approvalDeviationBps ?? 1500);
     setMinimumMarginBps(policy?.minimumMarginBps ?? 1000);
-    setLaborBaseCosts(config.baseLaborCostCentsByConstruction ?? DEFAULT_LABOR_COSTS);
     setRules((draftRuleSet.rules?.length ? draftRuleSet.rules : [emptyRule()]).map((rule, index) => normalizeRule(rule, index)));
     setActiveRuleIndex(0);
     setDirty(false);
@@ -246,10 +249,11 @@ export default function PricingRulesPage() {
         minimumMarginBps,
         softHoldHours: draftRuleSet?.protectionPolicy?.softHoldHours ?? 24,
         allowSpecialApproval: draftRuleSet?.protectionPolicy?.allowSpecialApproval ?? false,
-        internalLaborCostConfig: { baseLaborCostCentsByConstruction: laborBaseCosts }
+        // 对客报价规则不再维护人工成本；施工成本只由岗位小时成本和施工标准计算。
+        internalLaborCostConfig: { constructionCostSource: "STRUCTURED_STANDARD" }
       }
     };
-  }, [approvalDeviationBps, draftRuleSet, effectiveFrom, laborBaseCosts, minimumMarginBps, normalDeviationBps, rules, storeId]);
+  }, [approvalDeviationBps, draftRuleSet, effectiveFrom, minimumMarginBps, normalDeviationBps, rules, storeId]);
 
   const saveMutation = useMutation({
     mutationFn: (payload: PricingRuleSetPayload) => pricingApi.updateRuleSet(draftRuleSet!.id, payload),
@@ -281,7 +285,7 @@ export default function PricingRulesPage() {
     if (!dirty || !draftRuleSet || conflictIndexes.size) return;
     const timer = window.setTimeout(() => saveDraft(false), 1200);
     return () => window.clearTimeout(timer);
-  }, [dirty, draftRuleSet, rules, normalDeviationBps, approvalDeviationBps, minimumMarginBps, laborBaseCosts, effectiveFrom, conflictIndexes, saveDraft]);
+  }, [dirty, draftRuleSet, rules, normalDeviationBps, approvalDeviationBps, minimumMarginBps, effectiveFrom, conflictIndexes, saveDraft]);
 
   const startDraftMutation = useMutation({
     mutationFn: async () => {
@@ -468,7 +472,8 @@ export default function PricingRulesPage() {
               </div>
             </section>
             <section className="pricing-overview-checklist">
-              <div><CheckCircleFilled /><span>产品与施工价格</span><Button type="link" onClick={() => setActiveView("price")}>查看</Button></div>
+              <div><CheckCircleFilled /><span>产品建议价规则</span><Button type="link" onClick={() => setActiveView("price")}>查看</Button></div>
+              <div><CheckCircleFilled /><span>施工收费与成本标准</span><Link href="/orders/pricing/construction-costs">维护</Link></div>
               <div><CheckCircleFilled /><span>车型级别与匹配</span><Button type="link" onClick={() => router.push("/orders/pricing/vehicles")}>查看</Button></div>
               <div><SafetyCertificateOutlined /><span>改价审批与保护</span><Button type="link" onClick={() => setActiveView("protection")}>查看</Button></div>
               <div><EyeOutlined /><span>试算并发布</span><Button type="link" onClick={() => setActiveView("versions")}>查看</Button></div>
@@ -481,11 +486,18 @@ export default function PricingRulesPage() {
             <section className="pricing-rule-editor">
               <div className="pricing-editor-section-head">
                 <div>
-                  <Typography.Title level={4}>规则组：产品与施工价格</Typography.Title>
-                  <Typography.Text type="secondary">使用下面的业务句式定义价格调整，系统自动处理顺序和冲突。</Typography.Text>
+                  <Typography.Title level={4}>规则组：产品建议价规则</Typography.Title>
+                  <Typography.Text type="secondary">这里只调整产品建议价；施工收费、标准工时和内部施工成本请到“施工收费标准”维护。</Typography.Text>
                 </div>
                 <Tag color="processing">编辑中</Tag>
               </div>
+              <Alert
+                type="info"
+                showIcon
+                title="施工收费不在本页维护"
+                description={<span>本页每条规则只会调整产品建议价。施工服务的主项目收费、追加项目收费、标准工时和班组成本，请前往 <Link href="/orders/pricing/construction-costs/standards">施工收费标准</Link> 配置。</span>}
+                style={{ marginBottom: 16 }}
+              />
 
               <div className="pricing-sentence-builder">
                 <div className="pricing-sentence-row pricing-sentence-condition">
@@ -498,16 +510,35 @@ export default function PricingRulesPage() {
                     const dictionaryCode = dictionaryCodeForField(field);
                     const firstDictionaryValue = dictionaryCode ? getDictionaryOptions(dictionaries, dictionaryCode)[0]?.value : undefined;
                     updateRule(activeRuleIndex, { group: groupForField(field) });
-                    updateCondition(activeRuleIndex, { field, operator: "EQ", value: firstDictionaryValue ?? "" });
+                    updateCondition(activeRuleIndex, { field, operator: defaultConditionOperator(field), value: isNumericConditionField(field) ? 1 : firstDictionaryValue ?? "" });
                   }}
                 />
-                <Select
-                  aria-label="选择判断方式"
-                  value={activeRule.conditions[0]?.operator}
-                  options={OPERATOR_OPTIONS.map((item) => ({ ...item }))}
-                  onChange={(operator) => updateCondition(activeRuleIndex, { operator })}
-                />
-                {conditionOptions(activeRule).length > 0 ? (
+                <Tooltip title={conditionOperatorHelp(activeRule.conditions[0]?.field)}>
+                  <div className="pricing-condition-operator">
+                    <Select
+                      aria-label={`选择判断方式：${conditionOperatorHelp(activeRule.conditions[0]?.field)}`}
+                      value={activeRule.conditions[0]?.operator}
+                      options={conditionOperatorOptions(activeRule.conditions[0]?.field).map((item) => ({ ...item }))}
+                      onChange={(operator) => {
+                        const currentValue = activeRule.conditions[0]?.value;
+                        const nextValue = operator === "BETWEEN"
+                          ? [0, 0]
+                          : operator === "IN"
+                            ? (Array.isArray(currentValue) ? currentValue : currentValue === "" || currentValue == null ? [] : [currentValue])
+                            : Array.isArray(currentValue) ? (currentValue[0] ?? (isNumericConditionField(activeRule.conditions[0]?.field) ? 0 : "")) : currentValue;
+                        updateCondition(activeRuleIndex, { operator, value: nextValue });
+                      }}
+                    />
+                  </div>
+                </Tooltip>
+                {isNumericConditionField(activeRule.conditions[0]?.field) ? (
+                  activeRule.conditions[0]?.operator === "BETWEEN" ? (
+                    <Space.Compact className="pricing-condition-value" block>
+                      <InputNumber aria-label="填写数值下限" min={0} value={Array.isArray(activeRule.conditions[0]?.value) ? Number(activeRule.conditions[0]?.value[0] ?? 0) : 0} onChange={(value) => updateCondition(activeRuleIndex, { value: [value ?? 0, Array.isArray(activeRule.conditions[0]?.value) ? Number(activeRule.conditions[0]?.value[1] ?? 0) : 0] })} />
+                      <InputNumber aria-label="填写数值上限" min={0} value={Array.isArray(activeRule.conditions[0]?.value) ? Number(activeRule.conditions[0]?.value[1] ?? 0) : 0} onChange={(value) => updateCondition(activeRuleIndex, { value: [Array.isArray(activeRule.conditions[0]?.value) ? Number(activeRule.conditions[0]?.value[0] ?? 0) : 0, value ?? 0] })} />
+                    </Space.Compact>
+                  ) : <InputNumber className="pricing-condition-value" aria-label="填写条件数值" min={0} value={Number(activeRule.conditions[0]?.value ?? 0)} onChange={(value) => updateCondition(activeRuleIndex, { value: value ?? 0 })} />
+                ) : conditionOptions(activeRule).length > 0 ? (
                   <Select
                     className="pricing-condition-value"
                     aria-label="选择条件值"
@@ -533,7 +564,9 @@ export default function PricingRulesPage() {
                 <Select
                   aria-label="选择调整对象"
                   value={activeRule.target}
-                  options={TARGET_OPTIONS.map((item) => ({ ...item }))}
+                  options={activeRule.target === "PRODUCT_LINE"
+                    ? TARGET_OPTIONS.map((item) => ({ ...item }))
+                    : [...TARGET_OPTIONS.map((item) => ({ ...item })), { value: activeRule.target, label: `历史规则：${activeRule.target === "LABOR" ? "施工人工费" : "订单总价"}（请改为产品建议价或删除）`, disabled: true }]}
                   onChange={(target) => updateRule(activeRuleIndex, { target })}
                 />
                 <Select
@@ -686,30 +719,12 @@ export default function PricingRulesPage() {
                 </label>
               </div>
             </section>
-            <section>
-              <div className="pricing-editor-section-head">
-                <div>
-                  <Typography.Title level={4}>施工基础人工费</Typography.Title>
-                  <Typography.Text type="secondary">施工项目来自门店系统字典，金额以人民币展示。</Typography.Text>
-                </div>
-              </div>
-              <div className="pricing-labor-grid">
-                {getDictionaryOptions(dictionaries, "CONSTRUCTION_TYPE").map((item) => (
-                  <label key={item.value}>
-                    <span>{item.label}</span>
-                    <InputNumber
-                      min={0}
-                      prefix="¥"
-                      value={(laborBaseCosts[item.value] ?? 0) / 100}
-                      onChange={(value) => {
-                        setLaborBaseCosts((current) => ({ ...current, [item.value]: Math.round((value ?? 0) * 100) }));
-                        markDirty();
-                      }}
-                    />
-                  </label>
-                ))}
-              </div>
-            </section>
+            <Alert
+              type="info"
+              showIcon
+              title="施工成本已改为统一的标准成本口径"
+              description={<span>此处不再维护“施工基础人工费”，以免与施工成本标准重复。施工成本由财务发布的岗位小时成本，结合店长维护的主项目、追加项目、班组和标准工时自动计算；请前往 <Link href="/orders/pricing/construction-costs/standards">施工收费标准</Link> 维护。</span>}
+            />
           </div>
         ) : null}
 
@@ -778,6 +793,7 @@ export default function PricingRulesPage() {
                       { value: "ACTIVE", label: "正式启用" }
                     ]}
                   />
+                  <Link href="/orders/pricing/construction-costs">维护施工收费与成本标准</Link>
                 </div>
               }]}
             />

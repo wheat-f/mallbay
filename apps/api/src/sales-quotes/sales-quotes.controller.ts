@@ -3,7 +3,7 @@ import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nest
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import type { PricingAuthenticatedUser } from "../pricing/pricing.service";
-import { CreateSalesQuoteDto, ListSalesQuotesDto, RecalculateSalesQuoteDto, ReviewSalesQuoteDto, SubmitSalesQuoteDto, WithdrawSalesQuoteDto } from "./dto/sales-quote.dto";
+import { CreateSalesQuoteDto, ExportSalesQuoteDetailsDto, ListSalesQuotesDto, RecalculateSalesQuoteDto, ReviewSalesQuoteDto, SubmitSalesQuoteDto, WithdrawSalesQuoteDto } from "./dto/sales-quote.dto";
 import { SalesQuotesService } from "./sales-quotes.service";
 
 type AuthRequest = Request & { user: PricingAuthenticatedUser };
@@ -21,6 +21,11 @@ export class SalesQuotesController {
   @Get()
   list(@Req() req: AuthRequest, @Query() query: ListSalesQuotesDto) {
     return this.quotes.list(req.user, query);
+  }
+
+  @Get("export-details")
+  exportDetails(@Req() req: AuthRequest, @Query() query: ExportSalesQuoteDetailsDto) {
+    return this.quotes.exportDetails(req.user, query);
   }
 
   @Get(":id")

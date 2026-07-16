@@ -31,12 +31,64 @@ export type PricingRuleSetSummary = {
   effectiveTo?: string | null;
   rules?: PricingRule[];
   protectionPolicy?: PricingProtectionPolicy | null;
+  positionCostRateVersionId?: string | null;
+  constructionStandards?: ConstructionStandard[];
+};
+
+export type ConstructionServiceItem = {
+  id: string;
+  code: string;
+  name: string;
+  constructionTypeCode: string;
+  serviceGroupCode: string;
+  defaultProductCategoryCode?: string | null;
+  status: "ACTIVE" | "INACTIVE";
+};
+
+export type PositionCostRate = { id?: string; positionTypeCode: string; hourlyCostCents: number };
+export type PositionCostRateVersion = {
+  id: string;
+  version: number;
+  status: "DRAFT" | "PUBLISHED" | "RETIRED";
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  rates: PositionCostRate[];
+};
+
+export type ConstructionStandardCrewRole = {
+  positionTypeCode: string;
+  workerCount: number;
+  workMinutes: number;
+};
+
+export type ConstructionStandard = {
+  id?: string;
+  serviceItemId: string;
+  vehiclePriceClassId?: string | null;
+  constructionLocationCode: string;
+  productCategoryCode?: string | null;
+  salesUnitCode?: string | null;
+  quantityFrom?: number | null;
+  quantityTo?: number | null;
+  baseConstructionChargeCents: number;
+  standardWorkMinutes: number;
+  addonChargeCents?: number;
+  addonWorkMinutes?: number;
+  standardCommissionCents?: number;
+  standardAllowanceCents?: number;
+  priority?: number;
+  enabled?: boolean;
+  crewRoles: ConstructionStandardCrewRole[];
+  serviceItem?: ConstructionServiceItem;
+  vehiclePriceClass?: VehiclePriceClass | null;
 };
 
 export type PricingRuleSetPayload = {
   storeId: string;
   effectiveFrom: string;
   effectiveTo?: string;
+  positionCostRateVersionId?: string;
+  constructionStandards?: Array<Omit<ConstructionStandard, "id" | "serviceItem" | "vehiclePriceClass">>;
   rules: Array<{
     group: string;
     target: string;
@@ -94,6 +146,7 @@ export type PricingCalculationResponse = {
   mode: "SIMULATION";
   ruleSetId: string | null;
   pricingCalculationId: string | null;
+  constructionChargeAvailable?: boolean;
   calculation: {
     ruleSetVersion: number;
     lines: Array<{
@@ -111,14 +164,25 @@ export type PricingCalculationResponse = {
   rolloutMode?: "LEGACY" | "SHADOW" | "ACTIVE";
   shadowPricingCalculationId?: string | null;
   shadowComparison?: { legacyTotalCents: number; suggestedTotalCents: number; deltaTotalCents: number; deltaBps: number } | null;
+  costEstimate?: {
+    materialCostCents?: number;
+    estimatedMaterialCostCents?: number;
+    estimatedConstructionCostCents: number | null;
+    estimatedTotalCostCents: number | null;
+    hasMissingCost: boolean;
+    costCompleteness: "COMPLETE" | "TEMPORARY" | "MISSING";
+    reason?: string;
+  };
   guard?: { decision: "NORMAL" | "APPROVAL_REQUIRED" | "BLOCKED" };
 };
 
 export type VehiclePriceClass = { id: string; code: string; name: string; isDefault: boolean; status: string };
 export type VehicleModelMapping = { id: string; brand?: string | null; modelKeyword: string; yearFrom?: number | null; yearTo?: number | null; priority: number; status?: string; vehiclePriceClassId?: string; vehiclePriceClass?: VehiclePriceClass };
-export type CostEstimateResponse = { lines: Array<{ productId: string; quantity: number; source: string; estimatedCostCents: number; warning?: string }>; materialCostCents: number; estimatedCostCents: number; hasMissingCost: boolean };
+export type CostEstimateResponse = { lines: Array<{ productId: string; quantity: number; source: string; estimatedCostCents: number; warning?: string }>; materialCostCents: number; estimatedMaterialCostCents: number; estimatedCostCents: number; hasMissingCost: boolean; costCompleteness: "COMPLETE" | "MISSING" };
 export type PricingTemplate = { id: string; code: string; name: string; description?: string | null; status: string; versions: Array<{ id: string; version: number; publishedAt?: string | null }> };
 export type PricingRollout = { id: string; name: string; pricingRolloutMode: "LEGACY" | "SHADOW" | "ACTIVE" };
+export type PricingRolloutPrecheck = { ready: boolean; errors: string[]; ruleSet: { id: string; version: number; standards: number; positionCostRateVersionId?: string | null } | null };
+export type PricingMigrationPrecheck = PricingRolloutPrecheck & { orders: { totalOrders: number; legacyOrders: number; activeOrders: number; incompleteCostOrders: number; temporaryCostOrders: number }; warnings: string[] };
 
 export const pricingApi = {
   ruleSets: (storeId: string) =>
@@ -181,12 +245,26 @@ export const pricingApi = {
   unmatchedVehicles: (storeId: string) => request<Array<{ id: string; carModel: string; carPlate?: string | null; customerId: string; suggestedMapping?: { mappingId: string; modelKeyword: string; source: "KEYWORD"; vehiclePriceClass?: VehiclePriceClass } | null }>>(`/pricing/vehicle-model-mappings/unmatched?storeId=${encodeURIComponent(storeId)}`),
   resolveVehicleClass: (payload: { storeId: string; model: string; brand?: string; year?: number }) =>
     request<{ source: "AUTO" | "AUTO_DEFAULT" | "UNMATCHED" | "MANUAL"; vehiclePriceClass: VehiclePriceClass | null; matchedMappingId: string | null }>("/pricing/vehicle-classify", { method: "POST", body: JSON.stringify(payload) }),
-  estimateCost: (payload: { storeId: string; lines: Array<{ productId: string; quantity: number; salesUnit?: string }>; laborCostCents?: number }) =>
+  estimateCost: (payload: { storeId: string; lines: Array<{ productId: string; quantity: number; salesUnit?: string }> }) =>
     request<CostEstimateResponse>("/pricing/estimate-cost", { method: "POST", body: JSON.stringify(payload) }),
+  constructionServiceItems: (storeId: string) => request<ConstructionServiceItem[]>(`/pricing/construction-service-items?storeId=${encodeURIComponent(storeId)}`),
+  createConstructionServiceItem: (payload: { storeId: string; code: string; name: string; constructionTypeCode: string; serviceGroupCode: string; defaultProductCategoryCode?: string }) =>
+    request<ConstructionServiceItem>("/pricing/construction-service-items", { method: "POST", body: JSON.stringify(payload) }),
+  updateConstructionServiceItem: (id: string, payload: { storeId: string; name?: string; constructionTypeCode?: string; serviceGroupCode?: string; defaultProductCategoryCode?: string; status?: "ACTIVE" | "INACTIVE" }) =>
+    request<ConstructionServiceItem>(`/pricing/construction-service-items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  positionCostRateVersions: (storeId: string) => request<PositionCostRateVersion[]>(`/pricing/position-cost-rate-versions?storeId=${encodeURIComponent(storeId)}`),
+  createPositionCostRateVersion: (payload: { storeId: string; effectiveFrom: string; effectiveTo?: string; rates: Array<{ positionTypeCode: string; hourlyCostCents: number }> }) =>
+    request<PositionCostRateVersion>("/pricing/position-cost-rate-versions", { method: "POST", body: JSON.stringify(payload) }),
+  updatePositionCostRateVersion: (id: string, payload: { storeId: string; effectiveFrom: string; effectiveTo?: string; rates: Array<{ positionTypeCode: string; hourlyCostCents: number }> }) =>
+    request<PositionCostRateVersion>(`/pricing/position-cost-rate-versions/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  publishPositionCostRateVersion: (id: string, storeId: string) =>
+    request<PositionCostRateVersion>(`/pricing/position-cost-rate-versions/${id}/publish`, { method: "POST", body: JSON.stringify({ storeId }) }),
   templates: () => request<PricingTemplate[]>("/pricing/templates"),
   createTemplate: (payload: { code: string; name: string; description?: string }) => request<PricingTemplate>("/pricing/templates", { method: "POST", body: JSON.stringify(payload) }),
   createTemplateVersion: (templateId: string, payload: { rules: unknown[]; protectionPolicy: Record<string, unknown> }) => request<{ id: string; version: number }>(`/pricing/templates/${templateId}/versions`, { method: "POST", body: JSON.stringify(payload) }),
   publishTemplateVersion: (templateId: string, versionId: string) => request<unknown>(`/pricing/templates/${templateId}/versions/${versionId}/publish`, { method: "POST" }),
   rollout: (storeId: string) => request<PricingRollout>(`/pricing/rollout?storeId=${encodeURIComponent(storeId)}`),
+  rolloutPrecheck: (storeId: string) => request<PricingRolloutPrecheck>(`/pricing/rollout/precheck?storeId=${encodeURIComponent(storeId)}`),
+  pricingMigrationPrecheck: (storeId: string) => request<PricingMigrationPrecheck>(`/pricing/rollout/migration-precheck?storeId=${encodeURIComponent(storeId)}`),
   setRollout: (payload: { storeId: string; mode: PricingRollout["pricingRolloutMode"] }) => request<PricingRollout>("/pricing/rollout", { method: "POST", body: JSON.stringify(payload) })
 };

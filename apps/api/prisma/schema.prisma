@@ -56,6 +56,7 @@ model User {
   constructionAssigned           ConstructionAssignment[]     @relation("ConstructionAssignedWorker")
   constructionDispatched         ConstructionRecord[]         @relation("ConstructionDispatchedBy")
   constructionPhotos             ConstructionPhoto[]          @relation("ConstructionPhotoUploadedBy")
+  constructionCostWorkerLines    ConstructionCostWorkerLine[]
   qualityChecks                  ConstructionRecord[]         @relation("ConstructionQualityCheckedBy")
   leaveRequests                  LeaveRequest[]               @relation("LeaveRequestWorker")
   schedules                      Schedule[]                   @relation("ScheduleWorker")
@@ -155,6 +156,34 @@ enum PricingCalculationDecision {
   BLOCKED
 }
 
+/// Completeness of the server-side internal cost snapshot. A missing value is
+/// intentionally different from zero: zero is a valid cost, missing means the
+/// system must not present a reliable margin.
+enum CostCompleteness {
+  COMPLETE
+  TEMPORARY
+  MISSING
+}
+
+enum PositionCostRateVersionStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum ConstructionCostSettlementStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+  SETTLED
+}
+
+enum ConstructionCostAdjustmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SETTLED
+}
+
 enum SalesQuoteStatus {
   DRAFT
   PENDING_APPROVAL
@@ -200,7 +229,9 @@ enum StoreStatus {
 model Store {
   id                 String             @id @default(cuid())
   status             StoreStatus        @default(DRAFTED)
-  pricingRolloutMode PricingRolloutMode @default(ACTIVE)
+  // A store must pass the published-rule, construction-standard and position-rate
+  // precheck before it can use the new calculation path for formal orders.
+  pricingRolloutMode PricingRolloutMode @default(LEGACY)
 
   // 当前对外展示的内容（审核通过后从 StoreAuditSubmission 同步过来）
   name        String // 审核员创建时初始化，后续可通过审核更新
@@ -249,6 +280,9 @@ model Store {
   pricingCalculations        PricingCalculation[]
   salesQuotes                SalesQuote[]
   capacityReservations       CapacityReservation[]
+  constructionServiceItems   ConstructionServiceItem[]
+  positionCostRateVersions   PositionCostRateVersion[]
+  constructionCostSettlements ConstructionCostSettlement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -798,6 +832,7 @@ model VehiclePriceClass {
   store     Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
   vehicles  CustomerVehicle[]
   mappings  VehicleModelMapping[]
+  constructionStandards ConstructionStandardLine[]
   createdBy User?                 @relation("VehiclePriceClassCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@unique([storeId, code])
@@ -837,6 +872,7 @@ model PricingRuleSet {
   publishedById           String?
   publishedAt             DateTime?
   sourceTemplateVersionId String?
+  positionCostRateVersionId String?
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
 
@@ -844,11 +880,117 @@ model PricingRuleSet {
   rules            PricingRule[]
   protectionPolicy PricingProtectionPolicy?
   calculations     PricingCalculation[]
+  constructionStandards ConstructionStandardLine[]
+  positionCostRateVersion PositionCostRateVersion? @relation(fields: [positionCostRateVersionId], references: [id], onDelete: Restrict)
   createdBy        User                     @relation("PricingRuleSetCreatedBy", fields: [createdById], references: [id])
   publishedBy      User?                    @relation("PricingRuleSetPublishedBy", fields: [publishedById], references: [id])
 
   @@unique([storeId, version])
   @@index([storeId, status, effectiveFrom])
+  @@index([positionCostRateVersionId])
+}
+
+/// Store master data for a customer-facing construction service. It has richer
+/// attributes than a dictionary item and can be selected by pricing standards.
+model ConstructionServiceItem {
+  id                          String   @id @default(cuid())
+  storeId                     String
+  code                        String
+  name                        String
+  constructionTypeCode        String
+  serviceGroupCode            String
+  defaultProductCategoryCode  String?
+  status                      DictionaryStatus @default(ACTIVE)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  store              Store                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  constructionStandards ConstructionStandardLine[]
+
+  @@unique([storeId, code])
+  @@index([storeId, status, serviceGroupCode])
+}
+
+/// Finance-owned rate card. A pricing rule set points to one immutable
+/// published version, so later personnel cost changes never rewrite history.
+model PositionCostRateVersion {
+  id            String                        @id @default(cuid())
+  storeId       String
+  version       Int
+  status        PositionCostRateVersionStatus @default(DRAFT)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  createdById   String
+  publishedById String?
+  publishedAt   DateTime?
+  createdAt     DateTime                      @default(now())
+  updatedAt     DateTime                      @updatedAt
+
+  store          Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  rates          PositionCostRate[]
+  pricingRuleSets PricingRuleSet[]
+
+  @@unique([storeId, version])
+  @@index([storeId, status, effectiveFrom])
+}
+
+model PositionCostRate {
+  id              String   @id @default(cuid())
+  versionId       String
+  positionTypeCode String
+  hourlyCostCents Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  version PositionCostRateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, positionTypeCode])
+}
+
+/// Part of a PricingRuleSet to ensure customer charge, workload and cost
+/// references are drafted, simulated and published together.
+model ConstructionStandardLine {
+  id                         String   @id @default(cuid())
+  ruleSetId                  String
+  serviceItemId              String
+  vehiclePriceClassId        String?
+  constructionLocationCode   String
+  productCategoryCode        String?
+  salesUnitCode              String?
+  quantityFrom               Decimal? @db.Decimal(12, 3)
+  quantityTo                 Decimal? @db.Decimal(12, 3)
+  baseConstructionChargeCents Int
+  standardWorkMinutes        Int
+  addonChargeCents           Int      @default(0)
+  addonWorkMinutes           Int      @default(0)
+  standardCommissionCents    Int      @default(0)
+  standardAllowanceCents     Int      @default(0)
+  priority                   Int      @default(0)
+  enabled                    Boolean  @default(true)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  ruleSet            PricingRuleSet          @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+  serviceItem        ConstructionServiceItem @relation(fields: [serviceItemId], references: [id], onDelete: Restrict)
+  vehiclePriceClass  VehiclePriceClass?      @relation(fields: [vehiclePriceClassId], references: [id], onDelete: SetNull)
+  crewRoles          ConstructionStandardCrewRole[]
+
+  @@index([ruleSetId, enabled, priority])
+  @@index([serviceItemId])
+}
+
+model ConstructionStandardCrewRole {
+  id               String   @id @default(cuid())
+  standardLineId   String
+  positionTypeCode String
+  workerCount      Int
+  workMinutes      Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  standardLine ConstructionStandardLine @relation(fields: [standardLineId], references: [id], onDelete: Cascade)
+
+  @@unique([standardLineId, positionTypeCode])
 }
 
 model PricingRuleTemplate {
@@ -932,6 +1074,10 @@ model PricingCalculation {
   outputSnapshot Json
   appliedRules   Json
   decision       PricingCalculationDecision @default(NORMAL)
+  estimatedMaterialCostCents     Int?
+  estimatedConstructionCostCents Int?
+  estimatedTotalCostCents        Int?
+  costCompleteness               CostCompleteness?
   createdById    String
   expiresAt      DateTime?
   createdAt      DateTime                   @default(now())
@@ -962,6 +1108,16 @@ model SalesQuote {
   finalLaborCostCents         Int
   finalTotalCents             Int
   estimatedCostCents          Int?
+  /// New explicit fields coexist with the legacy *LaborCost* fields until the
+  /// API and historical exports have completed their compatibility window.
+  suggestedConstructionChargeCents Int?
+  finalConstructionChargeCents     Int?
+  estimatedMaterialCostCents       Int?
+  estimatedConstructionCostCents   Int?
+  estimatedTotalCostCents          Int?
+  costCompleteness                 CostCompleteness?
+  temporaryCostCents               Int?
+  temporaryCostReason              String?
   estimatedMarginBps          Int?
   adjustmentReasonCode        String?
   adjustmentReasonText        String?
@@ -1092,6 +1248,7 @@ model Order {
   customerRebates      CustomerRebate[]
   salesQuote           SalesQuote?
   capacityReservation  CapacityReservation?
+  costSettlement       ConstructionCostSettlement?
 
   @@index([storeId, status])
   @@index([storeId, salesPersonId])
@@ -1136,6 +1293,17 @@ model OrderAmount {
   pricingRuleSetVersion     Int?
   pricingInputHash          String?
   pricingOutputSnapshot     Json?
+  /// Explicit customer-charge fields. Legacy laborCost* fields remain readable
+  /// for historical orders and are backfilled during the additive migration.
+  constructionChargeCents          Int?
+  suggestedConstructionChargeCents Int?
+  constructionChargeAdjustmentReason String?
+  estimatedMaterialCostCents       Int?
+  estimatedConstructionCostCents   Int?
+  estimatedTotalCostCents          Int?
+  costCompleteness                 CostCompleteness?
+  temporaryCostCents               Int?
+  temporaryCostReason              String?
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
@@ -1244,9 +1412,111 @@ model ConstructionRecord {
   photos              ConstructionPhoto[]
   commissionSnapshots WorkerCommissionSnapshot[]
   workerCommissions   WorkerCommission[]
+  costSettlement      ConstructionCostSettlement?
 
   @@index([storeId, status])
   @@index([dispatchedById])
+}
+
+/// One cost settlement is created for each construction record. It is distinct
+/// from task timing: standard work is the default, workers may declare a
+/// variance, and a manager must confirm before financial settlement.
+model ConstructionCostSettlement {
+  id                           String                           @id @default(cuid())
+  storeId                      String
+  orderId                      String                           @unique
+  constructionRecordId         String                           @unique
+  status                       ConstructionCostSettlementStatus @default(PENDING_CONFIRMATION)
+  standardWorkMinutes          Int
+  declaredWorkMinutes          Int?
+  confirmedWorkMinutes         Int
+  estimatedMaterialCostCents   Int?
+  estimatedConstructionCostCents Int?
+  actualMaterialCostCents      Int                              @default(0)
+  actualConstructionCostCents  Int                              @default(0)
+  actualTotalCostCents         Int                              @default(0)
+  actualGrossProfitCents       Int?
+  actualGrossMarginBps         Int?
+  sourceSnapshot               Json
+  confirmedById                String?
+  confirmedAt                  DateTime?
+  settledById                  String?
+  settledAt                    DateTime?
+  createdAt                    DateTime                         @default(now())
+  updatedAt                    DateTime                         @updatedAt
+
+  store              Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order              Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  constructionRecord ConstructionRecord @relation(fields: [constructionRecordId], references: [id], onDelete: Cascade)
+  workerLines        ConstructionCostWorkerLine[]
+  adjustments        ConstructionCostAdjustment[]
+  exceptions         OrderCostException[]
+
+  @@index([storeId, status, updatedAt])
+}
+
+model ConstructionCostWorkerLine {
+  id                     String   @id @default(cuid())
+  settlementId           String
+  workerUserId           String
+  positionTypeCode       String
+  standardMinutes        Int
+  declaredMinutes        Int?
+  confirmedMinutes       Int
+  hourlyCostCentsSnapshot Int
+  baseCostCents          Int
+  commissionCents        Int      @default(0)
+  allowanceCents         Int      @default(0)
+  varianceReasonCode     String?
+  varianceReasonText     String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  settlement ConstructionCostSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  worker     User                       @relation(fields: [workerUserId], references: [id], onDelete: Restrict)
+
+  @@unique([settlementId, workerUserId])
+  @@index([workerUserId])
+}
+
+model ConstructionCostAdjustment {
+  id             String                          @id @default(cuid())
+  settlementId   String
+  idempotencyKey String?
+  adjustmentType String
+  amountCents    Int
+  reasonCode     String
+  reasonText     String?
+  status         ConstructionCostAdjustmentStatus @default(PENDING)
+  requestedById  String
+  approvedById   String?
+  approvedAt     DateTime?
+  settledAt      DateTime?
+  createdAt      DateTime                        @default(now())
+  updatedAt      DateTime                        @updatedAt
+
+  settlement ConstructionCostSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+
+  @@index([settlementId, status])
+  @@unique([settlementId, idempotencyKey])
+}
+
+model OrderCostException {
+  id             String   @id @default(cuid())
+  settlementId   String
+  exceptionType  String
+  expectedCents  Int
+  actualCents    Int
+  varianceCents  Int
+  status         String   @default("OPEN")
+  ownerId        String?
+  resolution     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  settlement ConstructionCostSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+
+  @@index([settlementId, status])
 }
 
 model ConstructionAssignment {

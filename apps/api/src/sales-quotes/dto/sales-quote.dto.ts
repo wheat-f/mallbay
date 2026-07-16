@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { ArrayMinSize, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMinSize, IsArray, IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
 import { ConstructionLocation, ConstructionType } from "@prisma/client";
 
 export class CreateSalesQuoteItemDto {
@@ -52,16 +52,35 @@ export class CreateSalesQuoteDto {
   @Type(() => CreateSalesQuoteItemDto)
   items!: CreateSalesQuoteItemDto[];
 
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  finalLaborCostCents!: number;
+  finalConstructionChargeCents?: number;
+
+  /** @deprecated compatibility alias for finalConstructionChargeCents. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  finalLaborCostCents?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   estimatedCostCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  temporaryCostCents?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  temporaryCostReason?: string;
 
   @IsOptional()
   @IsString()
@@ -87,6 +106,16 @@ export class CreateSalesQuoteDto {
 export class ListSalesQuotesDto {
   @IsString()
   storeId!: string;
+}
+
+/** Full server-side, one-product-per-row export. */
+export class ExportSalesQuoteDetailsDto {
+  @IsString()
+  storeId!: string;
+
+  @IsOptional()
+  @IsIn(["customer", "date", "product"])
+  exportDimension?: "customer" | "date" | "product";
 }
 
 export class SubmitSalesQuoteDto {
@@ -127,16 +156,35 @@ export class RecalculateSalesQuoteDto {
   @Type(() => CreateSalesQuoteItemDto)
   items!: CreateSalesQuoteItemDto[];
 
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  finalLaborCostCents!: number;
+  finalConstructionChargeCents?: number;
+
+  /** @deprecated compatibility alias for finalConstructionChargeCents. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  finalLaborCostCents?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   estimatedCostCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  temporaryCostCents?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  temporaryCostReason?: string;
 
   @IsOptional()
   @IsString()

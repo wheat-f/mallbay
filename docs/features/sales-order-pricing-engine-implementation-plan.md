@@ -976,6 +976,7 @@ MUST 使用包含历史产品、订单、车辆、容量和库存批次的临时
 - Web 回归：581 项通过，新增草稿价格快照保留与恢复选择覆盖。
 - API 生产构建：通过（`pnpm --filter @mallbay/api build`）。
 - Web 生产构建：通过（`pnpm --filter @mallbay/web build`），新规则、报价、车辆和订单路由均成功生成。
+- 本地生产服务路由探测：通过（/auth、/orders/create、/orders/pricing、/orders/quotes 返回 200 且无框架错误；未登录访问 /admin/pricing-templates 正确回到 /auth）；未宣称已完成登录后业务验收。
 - Prisma Client 生成和 schema 校验：通过（`prisma generate`、`prisma validate`）。
 - 数据库迁移演练：通过（临时 Docker PostgreSQL 执行 `prisma migrate deploy`，5 个新增迁移全部应用；`prisma migrate status` 显示 schema up to date；`db:preflight` 通过；API flow 6 项通过）。
 - 审计回归：通过（规则发布/停用/复制、报价提交/审批/撤回/重算/转单、容量占位/确认/释放/对账、模板发布/复制和灰度切换均同时写入结构化日志与 `AuditEvent`；窄 Prisma mock 兼容测试通过）。

@@ -1,5 +1,6 @@
 import type { CreateOrderFormValues } from "./create-order-form";
 import { formatOrderDateValue, formatOrderTimeSlotValue } from "./create-order-form";
+import type { PricingCalculationResponse } from "../pricing/api";
 
 export const CREATE_ORDER_DRAFT_STORAGE_KEY = "mallbay-create-order-draft:v1";
 const LEGACY_CREATE_ORDER_DRAFT_STORAGE_KEY = "mallbay-create-order-draft";
@@ -9,6 +10,7 @@ export type CreateOrderDraft = {
   storeId: string;
   savedAt: string;
   values: CreateOrderFormValues;
+  pricingSnapshot?: PricingCalculationResponse;
   summary: {
     customerName: string;
     productCount: number;

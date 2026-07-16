@@ -20,6 +20,8 @@
 
 ### 功能方案与实施计划
 
+- [features/sales-order-pricing-engine-implementation-plan.md](./features/sales-order-pricing-engine-implementation-plan.md)：销售订单智能建议价、价格规则、报价审批与毛利保护实施计划。
+- [qa/sales-order-pricing-checklist.md](./qa/sales-order-pricing-checklist.md)：销售订单建议价与价格审批自动化、人工验收和数据库演练清单。
 - [features/paint-protection-film-system-plan.md](./features/paint-protection-film-system-plan.md)：漆面保护膜施工管理系统 V1.7 需求建设方案。
 - [features/v1-7-requirements-gap-plan.md](./features/v1-7-requirements-gap-plan.md)：V1.7 全功能需求差距与验收计划。
 - [features/v1-7-local-verification-audit.md](./features/v1-7-local-verification-audit.md)：V1.7 本地验收审计。

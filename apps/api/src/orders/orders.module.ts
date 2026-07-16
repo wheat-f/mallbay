@@ -4,11 +4,12 @@ import { OrdersService } from "./orders.service";
 import { OrderRepository } from "./repositories/order.repository";
 import { CreateOrderUseCase } from "./use-cases/create-order.use-case";
 import { ObservabilityModule } from "../observability/observability.module";
+import { PricingModule } from "../pricing/pricing.module";
 
 @Module({
-  imports: [ObservabilityModule],
+  imports: [ObservabilityModule, PricingModule],
   controllers: [OrdersController, PaymentAccountsController],
   providers: [OrdersService, OrderRepository, CreateOrderUseCase],
-  exports: [OrdersService]
+  exports: [OrdersService, CreateOrderUseCase]
 })
 export class OrdersModule {}

@@ -8,6 +8,7 @@ import {
   type UserWithStoreMember
 } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
+import { multiplyMoneyCents } from "../pricing/domain/money";
 import { AuditLogService, type AuditEvent } from "../observability/audit-log.service";
 import { OrderPolicy } from "./domain/order-policy";
 import { CreateOrderDto } from "./dto/create-order.dto";
@@ -69,6 +70,7 @@ export class OrdersService {
       pageSize,
       items: items.map((item) => ({
         ...item,
+        amount: item.amount ? { ...item.amount, pricingMode: getOrderPricingMode(item.amount) } : null,
         status: getEffectiveOrderStatus(item.status, item.constructionRecord?.status)
       }))
     };
@@ -107,7 +109,7 @@ export class OrdersService {
       productName: item.product.name,
       productModel: item.product.model,
       productSpecification: item.product.specification,
-      quantity: item.quantity,
+      quantity: toNullableNumber(item.quantity),
       salesUnit: item.salesUnit ?? item.product.salesUnit,
       unitPriceCents: item.unitPriceCents,
       itemAmountCents: item.amountCents,
@@ -115,7 +117,8 @@ export class OrdersService {
       laborCostCents: order.amount?.laborCostCents ?? 0,
       orderTotalCents: order.amount?.totalAmountCents ?? 0,
       paidAmountCents: order.amount?.paidAmountCents ?? 0,
-      outstandingCents: order.amount?.outstandingCents ?? 0
+      outstandingCents: order.amount?.outstandingCents ?? 0,
+      pricingMode: getOrderPricingMode(order.amount)
     })));
 
     return rows.sort((left, right) => compareSalesExportRows(left, right, dto.exportDimension ?? "customer"));
@@ -137,7 +140,11 @@ export class OrdersService {
       throw new NotFoundException("订单不存在");
     }
     this.assertCanViewOrder(actor, order.storeId, order.salesPersonId);
-    return order;
+    return {
+      ...order,
+      items: order.items.map((item) => ({ ...item, quantity: toNullableNumber(item.quantity) })),
+      amount: order.amount ? { ...order.amount, pricingMode: getOrderPricingMode(order.amount) } : null
+    };
   }
 
   async addPayment(user: AuthenticatedOrderUser, orderId: string, dto: CreateOrderPaymentDto) {
@@ -219,6 +226,9 @@ export class OrdersService {
       if (!order?.amount) {
         throw new NotFoundException("订单不存在");
       }
+      if (order.amount.pricingCalculationId) {
+        throw new BadRequestException("正式订单价格快照已冻结，不能修改产品清单或成交价");
+      }
       if (!canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
         throw new ForbiddenException("无权限");
       }
@@ -247,7 +257,7 @@ export class OrdersService {
         productId: item.productId,
         quantity: item.quantity,
         unitPriceCents: item.unitPriceCents,
-        amountCents: item.quantity * item.unitPriceCents
+        amountCents: multiplyMoneyCents(item.unitPriceCents, item.quantity)
       }));
       const productAmountCents = nextItems.reduce((sum, item) => sum + item.amountCents, 0);
       const totalAmountCents = productAmountCents + dto.laborCostCents;
@@ -771,13 +781,13 @@ function toNullableNumber(value: unknown) {
 
 function toOrderItemAuditSummary(item: {
   productId: string;
-  quantity: number;
+  quantity: unknown;
   unitPriceCents: number;
   amountCents: number;
 }) {
   return {
     productId: item.productId,
-    quantity: item.quantity,
+    quantity: toNullableNumber(item.quantity),
     unitPriceCents: item.unitPriceCents,
     amountCents: item.amountCents
   };
@@ -837,4 +847,9 @@ function hashSensitiveField(value: string) {
   const keyMaterial = process.env.SENSITIVE_FIELD_KEY ?? "mallbay-dev-sensitive-key";
   const hashSalt = process.env.SENSITIVE_FIELD_HASH_SALT ?? keyMaterial;
   return createHash("sha256").update(`${hashSalt}:${value}`).digest("hex");
+}
+
+
+function getOrderPricingMode(amount: { pricingCalculationId?: string | null } | null | undefined) {
+  return amount?.pricingCalculationId ? "ACTIVE" as const : "LEGACY" as const;
 }

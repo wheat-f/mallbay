@@ -1,25 +1,43 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { DictionaryStatus } from "@prisma/client";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { DictionaryMode, DictionaryStatus, Prisma } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateDictionaryDto, UpdateDictionaryDto } from "./dto/dictionary.dto";
 
-const DEFAULT_DICTIONARIES = [
-  { name: "施工类型", code: "CONSTRUCTION_TYPE", items: ["漆面保护膜", "改色膜", "隔热膜", "改装", "检查"] },
-  { name: "施工地点", code: "CONSTRUCTION_LOCATION", items: ["到店", "外出"] },
+type DefaultDictionaryDefinition = {
+  name: string;
+  code: string;
+  items: readonly string[];
+  itemCodes?: readonly string[];
+};
+
+const DEFAULT_DICTIONARIES: readonly DefaultDictionaryDefinition[] = [
+  { name: "施工类型", code: "CONSTRUCTION_TYPE", items: ["漆面保护膜", "改色膜", "隔热膜", "改装", "检查"], itemCodes: ["PPF", "COLOR_FILM", "HEAT_FILM", "MODIFICATION", "INSPECTION"] },
+  { name: "施工地点", code: "CONSTRUCTION_LOCATION", items: ["到店", "外出"], itemCodes: ["IN_STORE", "OUTSIDE"] },
   { name: "线索来源", code: "LEAD_SOURCE", items: ["抖音", "小红书", "快手", "门店", "转介绍", "合作伙伴", "其他"] },
   { name: "客户类型", code: "CUSTOMER_TYPE", items: ["个人客户", "企业客户"] },
   { name: "性别", code: "GENDER", items: ["男", "女", "未知"] },
-  { name: "产品分类", code: "PRODUCT_CATEGORY", items: ["漆面保护膜", "改色膜", "隔热膜", "改装", "其他"] },
-  { name: "产品单位", code: "PRODUCT_UNIT", items: ["卷", "米", "平方米", "平方厘米", "件"] },
+  { name: "产品分类", code: "PRODUCT_CATEGORY", items: ["漆面保护膜", "改色膜", "隔热膜", "改装", "其他"], itemCodes: ["PPF", "COLOR_FILM", "HEAT_FILM", "MODIFICATION", "OTHER"] },
+  { name: "产品单位", code: "PRODUCT_UNIT", items: ["卷", "米", "平方米", "平方厘米", "件"], itemCodes: ["ROLL", "METER", "SQUARE_METER", "SQUARE_CENTIMETER", "PIECE"] },
   { name: "质保周期", code: "WARRANTY_PERIOD", items: ["3年", "5年", "10年"] },
   { name: "付款类型", code: "PAYMENT_TYPE", items: ["定金", "尾款", "全款"] },
   { name: "收款账户类型", code: "PAYMENT_ACCOUNT_TYPE", items: ["对公账户", "个人账户", "微信", "支付宝", "其他"] },
   { name: "质检结果", code: "QUALITY_CHECK_RESULT", items: ["通过", "需要返工"] },
   { name: "售后责任", code: "AFTER_SALE_RESPONSIBILITY", items: ["客户人为损坏", "施工方责任", "原厂产品质量", "门店服务责任"] },
   { name: "费用申请类型", code: "FINANCE_APPLICATION_TYPE", items: ["费用申请", "报销申请"] },
-  { name: "财务附件类别", code: "FINANCE_ATTACHMENT_CATEGORY", items: ["发票", "合同", "付款凭证", "其他"] }
+  { name: "财务附件类别", code: "FINANCE_ATTACHMENT_CATEGORY", items: ["发票", "合同", "付款凭证", "其他"] },
+  { name: "价格改价原因", code: "PRICE_ADJUSTMENT_REASON", items: ["客户议价", "活动优惠", "竞品价格", "特殊车型", "店长特批", "其他"] },
+  { name: "报价驳回原因", code: "QUOTE_REJECTION_REASON", items: ["保护价过低", "毛利不足", "理由不充分", "信息不完整", "其他"] },
+  { name: "价格规则标签", code: "PRICING_RULE_TAG", items: ["产品", "车辆", "施工", "套餐", "附加费"] },
+  { name: "容量释放原因", code: "CAPACITY_HOLD_RELEASE_REASON", items: ["审批驳回", "销售撤回", "超时", "预约变更", "其他"] }
 ] as const;
+
+const FIXED_DICTIONARY_CODES = new Set([
+  "CONSTRUCTION_TYPE",
+  "CONSTRUCTION_LOCATION",
+  "PRODUCT_CATEGORY",
+  "PRODUCT_UNIT"
+]);
 
 export type AuthenticatedSettingsUser = UserWithStoreMember & { username?: string };
 
@@ -49,20 +67,27 @@ export class DictionariesService {
     }
     return actor;
   }
-  private serialize(dictionary: { id: string; storeId: string; name: string; code: string; items: unknown; status: DictionaryStatus; createdAt: Date; updatedAt: Date }) {
+  private serialize(dictionary: Prisma.DictionaryGetPayload<{ include: { dictionaryItems: true } }>) {
+    const normalizedItems = dictionary.dictionaryItems
+      .filter((item) => item.status === DictionaryStatus.ACTIVE)
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.code.localeCompare(right.code));
     return {
       ...dictionary,
-      items: Array.isArray(dictionary.items) ? dictionary.items.filter((item): item is string => typeof item === "string") : []
+      items: normalizedItems.length > 0
+        ? normalizedItems.map((item) => item.name)
+        : Array.isArray(dictionary.items) ? dictionary.items.filter((item): item is string => typeof item === "string") : [],
+      dictionaryItems: normalizedItems
     };
   }
 
   private async ensureDefaults(storeId: string) {
     for (const item of DEFAULT_DICTIONARIES) {
-      await this.prisma.dictionary.upsert({
+      const dictionary = await this.prisma.dictionary.upsert({
         where: { storeId_code: { storeId, code: item.code } },
         create: { storeId, name: item.name, code: item.code, items: [...item.items] },
         update: {}
       });
+      await this.syncItems(dictionary.id, item.items, FIXED_DICTIONARY_CODES.has(item.code), item.itemCodes);
     }
   }
 
@@ -72,7 +97,7 @@ export class DictionariesService {
     if (!targetStoreId) throw new ForbiddenException("未绑定门店");
     await this.assertStoreReader(actor, targetStoreId);
     await this.ensureDefaults(targetStoreId);
-    const rows = await this.prisma.dictionary.findMany({ where: { storeId: targetStoreId }, orderBy: { createdAt: "asc" } });
+    const rows = await this.prisma.dictionary.findMany({ where: { storeId: targetStoreId }, orderBy: { createdAt: "asc" }, include: { dictionaryItems: true } });
     return rows.map((row) => this.serialize(row));
   }
 
@@ -87,13 +112,18 @@ export class DictionariesService {
         status: dto.status ?? DictionaryStatus.ACTIVE
       }
     });
-    return this.serialize(row);
+    const dictionaryItems = await this.syncItems(row.id, dto.items);
+    return this.serialize({ ...row, dictionaryItems });
   }
 
   async update(user: AuthenticatedSettingsUser, id: string, dto: UpdateDictionaryDto) {
     const dictionary = await this.prisma.dictionary.findUnique({ where: { id } });
     if (!dictionary) throw new NotFoundException("字典不存在");
     await this.assertManager(user, dictionary.storeId);
+    if (FIXED_DICTIONARY_CODES.has(dictionary.code)) {
+      if (dto.status === DictionaryStatus.INACTIVE) throw new BadRequestException("系统固定字典不可停用");
+      if (dto.items !== undefined) assertFixedDictionaryItems(dictionary.code, dto.items);
+    }
     const row = await this.prisma.dictionary.update({
       where: { id },
       data: {
@@ -102,14 +132,68 @@ export class DictionariesService {
         ...(dto.status === undefined ? {} : { status: dto.status })
       }
     });
-    return this.serialize(row);
+    const dictionaryItems = dto.items === undefined
+      ? await this.prisma.dictionaryItem.findMany({ where: { dictionaryId: row.id } })
+      : await this.syncItems(
+        row.id,
+        dto.items,
+        FIXED_DICTIONARY_CODES.has(row.code),
+        DEFAULT_DICTIONARIES.find((item) => item.code === row.code)?.itemCodes
+      );
+    return this.serialize({ ...row, dictionaryItems });
   }
 
   async remove(user: AuthenticatedSettingsUser, id: string) {
     const dictionary = await this.prisma.dictionary.findUnique({ where: { id } });
     if (!dictionary) throw new NotFoundException("字典不存在");
     await this.assertManager(user, dictionary.storeId);
+    if (FIXED_DICTIONARY_CODES.has(dictionary.code)) throw new BadRequestException("系统固定字典不可删除");
     const row = await this.prisma.dictionary.update({ where: { id }, data: { status: DictionaryStatus.INACTIVE } });
-    return this.serialize(row);
+    const dictionaryItems = await this.prisma.dictionaryItem.findMany({ where: { dictionaryId: row.id } });
+    return this.serialize({ ...row, dictionaryItems });
+  }
+
+  private async syncItems(dictionaryId: string, names: readonly string[], isSystem = false, stableCodes?: readonly string[]) {
+    const normalizedNames = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+    const existing = await this.prisma.dictionaryItem.findMany({ where: { dictionaryId }, orderBy: { sortOrder: "asc" } });
+    const byName = new Map(existing.map((item) => [item.name, item]));
+    let nextCode = existing.reduce((max, item) => {
+      const match = /^ITEM_(\d+)$/.exec(item.code);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0) + 1;
+    for (const [sortOrder, name] of normalizedNames.entries()) {
+      const current = byName.get(name);
+      const code = stableCodes?.[sortOrder] ?? current?.code ?? `ITEM_${String(nextCode++).padStart(3, "0")}`;
+      if (current) {
+        await this.prisma.dictionaryItem.update({
+          where: { id: current.id },
+          data: { code, name, sortOrder, isSystem, status: DictionaryStatus.ACTIVE }
+        });
+      } else {
+        await this.prisma.dictionaryItem.upsert({
+          where: { dictionaryId_code: { dictionaryId, code } },
+          create: { dictionaryId, code, name, sortOrder, isSystem, status: DictionaryStatus.ACTIVE },
+          update: { name, sortOrder, isSystem, status: DictionaryStatus.ACTIVE }
+        });
+      }
+    }
+    if (normalizedNames.length > 0) {
+      await this.prisma.dictionaryItem.updateMany({
+        where: { dictionaryId, name: { notIn: normalizedNames } },
+        data: { status: DictionaryStatus.INACTIVE }
+      });
+    }
+    await this.prisma.dictionary.update({ where: { id: dictionaryId }, data: { mode: DictionaryMode.NORMALIZED } });
+    return this.prisma.dictionaryItem.findMany({ where: { dictionaryId } });
+  }
+}
+
+
+function assertFixedDictionaryItems(code: string, items: string[]) {
+  const definition = DEFAULT_DICTIONARIES.find((item) => item.code === code);
+  const expected = new Set(definition?.items ?? []);
+  const actual = new Set(items.map((item) => item.trim()).filter(Boolean));
+  if (expected.size !== actual.size || [...expected].some((item) => !actual.has(item))) {
+    throw new BadRequestException("系统固定字典不允许新增或删除编码");
   }
 }

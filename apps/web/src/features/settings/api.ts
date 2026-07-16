@@ -8,6 +8,14 @@ export type DictionaryItem = {
   name: string;
   code: string;
   items: string[];
+  dictionaryItems?: Array<{
+    id: string;
+    code: string;
+    name: string;
+    sortOrder: number;
+    isSystem: boolean;
+    status: DictionaryStatus;
+  }>;
   status: DictionaryStatus;
   createdAt: string;
   updatedAt: string;

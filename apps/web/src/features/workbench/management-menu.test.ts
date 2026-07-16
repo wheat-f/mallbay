@@ -15,7 +15,7 @@ test("management menu maps manager role to full prototype sidebar", () => {
   assert.equal(labels.includes("销售订单"), true);
   assert.equal(labels.includes("产品管理"), true);
   assert.equal(productItem?.href, "/products");
-  assert.deepEqual(labels.slice(0, 4), ["工作台", "客户管理", "销售订单", "产品管理"]);
+  assert.deepEqual(labels.slice(0, 6), ["工作台", "客户管理", "销售订单", "建议价设置", "报价审批", "产品管理"]);
   assert.equal(labels.includes("施工管理"), true);
   assert.equal(labels.includes("施工容量"), false);
   assert.equal(labels.includes("库存管理"), true);
@@ -31,7 +31,7 @@ test("management menu maps manager role to full prototype sidebar", () => {
   assert.equal(membersItem?.href, "/members");
   assert.deepEqual(
     labels,
-    ["工作台", "客户管理", "销售订单", "产品管理", "施工管理", "库存管理", "采购管理", "质保管理", "售后管理", "人员管理", "财务管理", "报表分析", "发票管理", "返利管理", "系统设置"]
+    ["工作台", "客户管理", "销售订单", "建议价设置", "报价审批", "产品管理", "施工管理", "库存管理", "采购管理", "质保管理", "售后管理", "人员管理", "财务管理", "报表分析", "发票管理", "返利管理", "系统设置"]
   );
 });
 
@@ -47,7 +47,7 @@ test("management menu keeps customer service inventory and purchase read-only en
 test("management menu scopes sales users to sales workflow", () => {
   const labels = getManagementMenuItems({ position: "SALES", storeId: "store-1" }).map((item) => item.label);
 
-  assert.deepEqual(labels, ["工作台", "客户管理", "销售订单", "报表分析"]);
+  assert.deepEqual(labels, ["工作台", "客户管理", "销售订单", "报价审批", "报表分析"]);
 });
 
 test("management menu exposes desktop worker self-service entries for construction staff", () => {
@@ -76,6 +76,8 @@ test("management menu exposes auditor review entry", () => {
 
 test("active management menu key follows route groups", () => {
   assert.equal(getActiveManagementMenuKey("/orders/create"), "orders");
+  assert.equal(getActiveManagementMenuKey("/orders/pricing"), "pricing");
+  assert.equal(getActiveManagementMenuKey("/orders/quotes"), "sales-quotes");
   assert.equal(getActiveManagementMenuKey("/construction/tasks"), "construction-tasks");
   assert.equal(getActiveManagementMenuKey("/construction/schedules"), "construction-schedules");
   assert.equal(getActiveManagementMenuKey("/construction/leaves"), "construction-leaves");

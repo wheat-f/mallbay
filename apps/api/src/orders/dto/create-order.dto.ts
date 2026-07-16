@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
@@ -18,8 +19,8 @@ export class CreateOrderItemDto {
   productId!: string;
 
   @Type(() => Number)
-  @IsInt()
-  @Min(1)
+  @IsNumber({ maxDecimalPlaces: 3 })
+  @Min(0.001)
   quantity!: number;
 
   @Type(() => Number)
@@ -101,6 +102,25 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(500)
   remark?: string;
+
+  @IsOptional()
+  @IsString()
+  pricingCalculationId?: string;
+
+  /** Internal conversion fields; normal clients should omit them. */
+  @IsOptional()
+  @IsString()
+  capacityReservationId?: string;
+
+  @IsOptional()
+  @IsString()
+  salesPersonId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  estimatedCostCents?: number;
 
   @IsOptional()
   @ValidateNested()

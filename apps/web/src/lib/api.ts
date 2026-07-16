@@ -10,6 +10,8 @@ export { memberApi } from "../features/members/api";
 export { notificationApi } from "../features/notifications/api";
 export { orderApi } from "../features/orders/api";
 export { productApi } from "../features/products/api";
+export { pricingApi } from "../features/pricing/api";
+export { salesQuoteApi } from "../features/sales-quotes/api";
 export { rebatesApi } from "../features/rebates/api";
 export { reportsApi } from "../features/reports/api";
 export { storeApi } from "../features/stores/api";

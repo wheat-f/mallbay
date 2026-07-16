@@ -7,9 +7,11 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { ConstructionLocation, ConstructionType, OrderStatus, ProductStatus, ProductUnit } from "@prisma/client";
+import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, OrderStatus, Prisma, ProductStatus, ProductUnit } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../../common/policies/permission.policy";
 import { PrismaService } from "../../prisma/prisma.service";
+import { PricingService } from "../../pricing/pricing.service";
+import { multiplyMoneyCents } from "../../pricing/domain/money";
 import { CreateOrderDto } from "../dto/create-order.dto";
 
 export const ORDER_NUMBER_GENERATOR = Symbol("ORDER_NUMBER_GENERATOR");
@@ -26,15 +28,22 @@ export class CreateOrderUseCase {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional()
     @Inject(ORDER_NUMBER_GENERATOR)
-    orderNumber?: OrderNumberGenerator
+    orderNumber?: OrderNumberGenerator,
+    @Optional()
+    @Inject(PricingService)
+    private readonly pricing?: PricingService
   ) {
     this.orderNumber = orderNumber ?? createDefaultOrderNumberGenerator();
   }
 
-  async execute(user: UserWithStoreMember, dto: CreateOrderDto) {
+  async execute(user: UserWithStoreMember, dto: CreateOrderDto, options: { approvedQuote?: boolean } = {}) {
     if (!PermissionPolicy.canCreateOrder(user, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
+    if (dto.salesPersonId && dto.salesPersonId !== user.id && !PermissionPolicy.isStoreManager(user, dto.storeId)) {
+      throw new ForbiddenException("无权限指定其他销售人员");
+    }
+    const salesPersonId = dto.salesPersonId ?? user.id;
     const constructionAddress = normalizeOptionalText(dto.constructionAddress);
     const appointmentTimeSlot = normalizeOptionalText(dto.appointmentTimeSlot);
     if (dto.constructionLocation === ConstructionLocation.OUTSIDE && !constructionAddress) {
@@ -47,8 +56,35 @@ export class CreateOrderUseCase {
       throw new BadRequestException("预约日期不能为空");
     }
 
+    const pricingSnapshot = dto.pricingCalculationId
+      ? await this.pricing?.validateOrder(user, {
+        storeId: dto.storeId,
+        pricingCalculationId: dto.pricingCalculationId,
+        items: dto.items,
+        laborCostCents: dto.laborCostCents,
+        estimatedCostCents: dto.estimatedCostCents
+      }, options)
+      : null;
+    if (dto.pricingCalculationId && !pricingSnapshot) {
+      throw new BadRequestException("价格试算服务不可用，请重新试算");
+    }
+
     return this.prisma.$transaction(async (tx) => {
-      const capacityReservation = dto.appointmentDate
+      const heldCapacityReservation = dto.capacityReservationId
+        ? await tx.capacityReservation.findUnique({ where: { id: dto.capacityReservationId } })
+        : null;
+      if (dto.capacityReservationId && (!heldCapacityReservation || heldCapacityReservation.storeId !== dto.storeId ||
+        heldCapacityReservation.sourceType !== CapacityReservationSourceType.QUOTE ||
+        heldCapacityReservation.constructionLocation !== dto.constructionLocation ||
+        heldCapacityReservation.constructionType !== dto.constructionType ||
+        heldCapacityReservation.date.getTime() !== normalizeCapacityDate(dto.appointmentDate ?? "").getTime() ||
+        (heldCapacityReservation.status !== CapacityReservationStatus.HELD && heldCapacityReservation.status !== CapacityReservationStatus.CONFIRMED))) {
+        throw new BadRequestException("容量预约占位不存在或已释放");
+      }
+      if (heldCapacityReservation && !dto.appointmentDate) {
+        throw new BadRequestException("使用容量预约占位时必须填写预约日期");
+      }
+      const capacityReservation = dto.appointmentDate && !heldCapacityReservation
         ? await this.reserveDailyCapacity(
           tx,
           dto.storeId,
@@ -85,9 +121,16 @@ export class CreateOrderUseCase {
         throw new BadRequestException("订单包含不存在或已停用的产品");
       }
       const productsById = new Map(products.map((product) => [product.id, product]));
+      for (const item of dto.items) {
+        const product = productsById.get(item.productId);
+        const precision = product?.quantityPrecision ?? 3;
+        if (countDecimalPlaces(item.quantity) > precision) {
+          throw new BadRequestException("产品 " + (product?.name ?? item.productId) + " 数量最多支持 " + precision + " 位小数");
+        }
+      }
 
       const productAmountCents = dto.items.reduce(
-        (sum, item) => sum + item.quantity * item.unitPriceCents,
+        (sum, item) => sum + multiplyMoneyCents(item.unitPriceCents, item.quantity),
         0
       );
       const laborCostCents = dto.laborCostCents;
@@ -121,7 +164,7 @@ export class CreateOrderUseCase {
           orderNo: this.orderNumber.next(),
           customerId: dto.customerId,
           vehicleId: dto.vehicleId,
-          salesPersonId: user.id,
+          salesPersonId,
           constructionType: dto.constructionType,
           constructionLocation: dto.constructionLocation,
           constructionAddress,
@@ -150,7 +193,7 @@ export class CreateOrderUseCase {
             baseQuantityPerSalesUnit,
             requiredBaseQuantity: item.quantity * baseQuantityPerSalesUnit,
             unitPriceCents: item.unitPriceCents,
-            amountCents: item.quantity * item.unitPriceCents
+            amountCents: multiplyMoneyCents(item.unitPriceCents, item.quantity)
           };
         })
       });
@@ -167,7 +210,15 @@ export class CreateOrderUseCase {
           outstandingCents,
           materialCostCents: 0,
           salesCommissionCents: 0,
-          profitCents: calculateProfitCents(totalAmountCents, 0, 0)
+          profitCents: calculateProfitCents(totalAmountCents, 0, 0),
+          ...(pricingSnapshot
+            ? {
+              pricingCalculationId: pricingSnapshot.pricingCalculationId,
+              pricingRuleSetVersion: pricingSnapshot.pricingRuleSetVersion,
+              pricingInputHash: pricingSnapshot.pricingInputHash,
+              pricingOutputSnapshot: pricingSnapshot.pricingOutputSnapshot as Prisma.InputJsonValue
+            }
+            : {})
         }
       });
 
@@ -185,7 +236,24 @@ export class CreateOrderUseCase {
       }
 
       if (capacityReservation) {
-        await tx.dailyCapacity.update(capacityReservation);
+        if (typeof tx.capacityReservation?.create === "function") await tx.capacityReservation.create({
+          data: {
+            storeId: dto.storeId,
+            dailyCapacityId: capacityReservation.dailyCapacityId,
+            date: capacityReservation.date,
+            constructionLocation: dto.constructionLocation,
+            constructionType: dto.constructionType,
+            sourceType: CapacityReservationSourceType.ORDER,
+            orderId: order.id,
+            status: CapacityReservationStatus.CONFIRMED
+          }
+        });
+      }
+      if (heldCapacityReservation) {
+        await tx.capacityReservation.update({
+          where: { id: heldCapacityReservation.id },
+          data: { status: CapacityReservationStatus.CONFIRMED, orderId: order.id }
+        });
       }
 
       return order;
@@ -196,7 +264,8 @@ export class CreateOrderUseCase {
     tx: {
       dailyCapacity: {
         findUnique(args: unknown): Promise<DailyCapacityLike | null>;
-        update(args: unknown): Promise<unknown>;
+        updateMany?(args: unknown): Promise<{ count: number }>;
+        update?(args: unknown): Promise<unknown>;
       };
     },
     storeId: string,
@@ -216,11 +285,11 @@ export class CreateOrderUseCase {
     if (location === ConstructionLocation.IN_STORE) {
       assertCapacityAvailable(capacity.inStoreReserved, capacity.inStoreCapacity);
       increments.inStoreReserved = { increment: 1 };
-    } else {
+    }
+    else {
       assertCapacityAvailable(capacity.outsideReserved, capacity.outsideCapacity);
       increments.outsideReserved = { increment: 1 };
     }
-
     if (type === ConstructionType.HEAT_FILM) {
       assertCapacityAvailable(capacity.heatFilmReserved, capacity.heatFilmCapacity);
       increments.heatFilmReserved = { increment: 1 };
@@ -230,11 +299,24 @@ export class CreateOrderUseCase {
       increments.inspectionReserved = { increment: 1 };
     }
 
-    return {
-      where: { id: capacity.id },
-      data: increments
-    };
+    let updated: { count: number };
+    if (typeof tx.dailyCapacity.updateMany === "function") {
+      updated = await tx.dailyCapacity.updateMany({
+        where: { id: capacity.id, ...getDailyCapacityAvailabilityWhere(capacity, location, type) },
+        data: increments
+      });
+    } else {
+      if (typeof tx.dailyCapacity.update !== "function") {
+        throw new BadRequestException("施工容量服务不可用");
+      }
+      await tx.dailyCapacity.update({ where: { id: capacity.id }, data: increments });
+      updated = { count: 1 };
+    }
+    if (updated.count !== 1) throw new BadRequestException("施工容量已满，请刷新后重试");
+    return { dailyCapacityId: capacity.id, date };
   }
+
+
 }
 
 type DailyCapacityLike = {
@@ -248,6 +330,19 @@ type DailyCapacityLike = {
   inspectionCapacity: number;
   inspectionReserved: number;
 };
+
+function getDailyCapacityAvailabilityWhere(
+  capacity: DailyCapacityLike,
+  location: ConstructionLocation,
+  type: ConstructionType
+) {
+  const where: Record<string, { lt: number }> = {};
+  if (location === ConstructionLocation.IN_STORE) where.inStoreReserved = { lt: capacity.inStoreCapacity };
+  else where.outsideReserved = { lt: capacity.outsideCapacity };
+  if (type === ConstructionType.HEAT_FILM) where.heatFilmReserved = { lt: capacity.heatFilmCapacity };
+  if (type === ConstructionType.INSPECTION) where.inspectionReserved = { lt: capacity.inspectionCapacity };
+  return where;
+}
 
 function assertCapacityAvailable(reserved: number, capacity: number) {
   if (reserved >= capacity) {
@@ -288,4 +383,16 @@ function createDefaultOrderNumberGenerator(): OrderNumberGenerator {
       return `ORD${date}${suffix}`;
     }
   };
+}
+
+
+function countDecimalPlaces(value: number) {
+  if (!Number.isFinite(value)) return Number.POSITIVE_INFINITY;
+  const text = String(value).toLowerCase();
+  const [coefficient, exponentText] = text.split("e");
+  const decimalLength = coefficient.includes(".")
+    ? coefficient.length - coefficient.indexOf(".") - 1
+    : 0;
+  const exponent = exponentText ? Number(exponentText) : 0;
+  return exponent < 0 ? Math.max(0, decimalLength + exponent * -1) : Math.max(0, decimalLength - exponent);
 }

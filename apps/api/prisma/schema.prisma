@@ -29,59 +29,70 @@ model User {
   // 运营人员角色（目前仅审核员一个岗位）
   isAuditor Boolean @default(false)
 
-  storeMembers               StoreMember[]
-  sentInvitations            StoreInvitation[]          @relation("InvitedBy")
-  receivedInvitations        StoreInvitation[]          @relation("InvitedUser")
-  notifications              Notification[]
-  submittedSubmissions       StoreAuditSubmission[]     @relation("SubmittedBy")
-  reviewedSubmissions        StoreAuditSubmission[]     @relation("ReviewedBy")
-  createdStores              Store[]                    @relation("CreatedBy")
-  ownedCustomers             Customer[]                 @relation("CustomerOwner")
-  customerNotes              CustomerNote[]             @relation("CustomerNoteCreatedBy")
-  customerTags               CustomerTag[]              @relation("CustomerTagCreatedBy")
-  salesOrders                Order[]                    @relation("OrderSalesPerson")
-  orderPayments              OrderPayment[]             @relation("OrderPaymentCreatedBy")
-  constructionProfile        ConstructionWorkerProfile?
-  constructionAssigned       ConstructionAssignment[]   @relation("ConstructionAssignedWorker")
-  constructionDispatched     ConstructionRecord[]       @relation("ConstructionDispatchedBy")
-  constructionPhotos         ConstructionPhoto[]        @relation("ConstructionPhotoUploadedBy")
-  qualityChecks              ConstructionRecord[]       @relation("ConstructionQualityCheckedBy")
-  leaveRequests              LeaveRequest[]             @relation("LeaveRequestWorker")
-  schedules                  Schedule[]                 @relation("ScheduleWorker")
-  commissionSnapshots        WorkerCommissionSnapshot[] @relation("WorkerCommissionWorker")
-  createdCommissionSnapshots WorkerCommissionSnapshot[] @relation("WorkerCommissionCreatedBy")
-  inventoryMovements         InventoryMovement[]        @relation("InventoryMovementCreatedBy")
-  warehousesCreated          Warehouse[]                @relation("WarehouseCreatedBy")
-  inventoryAllocationsLocked OrderInventoryAllocation[] @relation("InventoryAllocationLockedBy")
-  inventoryAllocationsOut    OrderInventoryAllocation[] @relation("InventoryAllocationOutboundBy")
-  purchaseRequirements       PurchaseRequirement[]      @relation("PurchaseRequirementCreatedBy")
-  purchaseOrders             PurchaseOrder[]            @relation("PurchaseOrderCreatedBy")
-  suppliersCreated           Supplier[]                 @relation("SupplierCreatedBy")
-  supplierContactsCreated    SupplierContact[]          @relation("SupplierContactCreatedBy")
-  supplierRatingsCreated     SupplierRatingHistory[]    @relation("SupplierRatingCreatedBy")
-  warranties                 Warranty[]                 @relation("WarrantyCreatedBy")
-  afterSalesCreated          AfterSale[]                @relation("AfterSaleCreatedBy")
-  afterSalesAssigned         AfterSaleAssignment[]      @relation("AfterSaleAssignedWorker")
-  afterSalesAssignedBy       AfterSaleAssignment[]      @relation("AfterSaleAssignedBy")
-  afterSalePhotosUploaded    AfterSalePhoto[]           @relation("AfterSalePhotoUploadedBy")
-  penalties                  Penalty[]                  @relation("PenaltyWorker")
-  penaltiesCreated           Penalty[]                  @relation("PenaltyCreatedBy")
-  salesCommissionRules       SalesCommissionRule[]      @relation("SalesCommissionRuleCreatedBy")
-  salesCommissionLogs        SalesCommissionLog[]       @relation("SalesCommissionSalesUser")
-  createdSalesCommissions    SalesCommissionLog[]       @relation("SalesCommissionCreatedBy")
-  workerCommissions          WorkerCommission[]         @relation("WorkerCommissionWorker")
-  createdWorkerCommissions   WorkerCommission[]         @relation("WorkerCommissionCreatedBy")
-  expenseApplications        ExpenseApplication[]       @relation("ExpenseApplicant")
-  reviewedExpenses           ExpenseApplication[]       @relation("ExpenseReviewedBy")
-  reimbursementApplications  ReimbursementApplication[] @relation("ReimbursementApplicant")
-  reviewedReimbursements     ReimbursementApplication[] @relation("ReimbursementReviewedBy")
-  paymentRecords             PaymentRecord[]            @relation("PaymentRecordCreatedBy")
-  financeApprovalRecords     FinanceApprovalRecord[]    @relation("FinanceApprovalOperator")
-  financeAttachments         FinanceAttachment[]        @relation("FinanceAttachmentUploader")
-  invoicesApplied            Invoice[]                  @relation("InvoiceAppliedBy")
-  invoicesHandled            InvoiceLog[]               @relation("InvoiceLogCreatedBy")
-  rebatesApplied             CustomerRebate[]           @relation("RebateAppliedBy")
-  rebatesHandled             RebateLog[]                @relation("RebateLogCreatedBy")
+  storeMembers                   StoreMember[]
+  sentInvitations                StoreInvitation[]            @relation("InvitedBy")
+  receivedInvitations            StoreInvitation[]            @relation("InvitedUser")
+  notifications                  Notification[]
+  submittedSubmissions           StoreAuditSubmission[]       @relation("SubmittedBy")
+  reviewedSubmissions            StoreAuditSubmission[]       @relation("ReviewedBy")
+  createdStores                  Store[]                      @relation("CreatedBy")
+  createdPricingRuleSets         PricingRuleSet[]             @relation("PricingRuleSetCreatedBy")
+  publishedPricingRuleSets       PricingRuleSet[]             @relation("PricingRuleSetPublishedBy")
+  createdPricingTemplates        PricingRuleTemplate[]        @relation("PricingRuleTemplateCreatedBy")
+  publishedPricingTemplates      PricingRuleTemplateVersion[] @relation("PricingRuleTemplateVersionPublishedBy")
+  createdPricingTemplateVersions PricingRuleTemplateVersion[] @relation("PricingRuleTemplateVersionCreatedBy")
+  createdVehiclePriceClasses     VehiclePriceClass[]          @relation("VehiclePriceClassCreatedBy")
+  createdVehicleMappings         VehicleModelMapping[]        @relation("VehicleModelMappingCreatedBy")
+  pricingCalculations            PricingCalculation[]         @relation("PricingCalculationCreatedBy")
+  salesQuotes                    SalesQuote[]                 @relation("SalesQuoteSalesPerson")
+  submittedPricingApprovals      PricingApproval[]            @relation("PricingApprovalSubmittedBy")
+  reviewedPricingApprovals       PricingApproval[]            @relation("PricingApprovalReviewedBy")
+  ownedCustomers                 Customer[]                   @relation("CustomerOwner")
+  customerNotes                  CustomerNote[]               @relation("CustomerNoteCreatedBy")
+  customerTags                   CustomerTag[]                @relation("CustomerTagCreatedBy")
+  salesOrders                    Order[]                      @relation("OrderSalesPerson")
+  orderPayments                  OrderPayment[]               @relation("OrderPaymentCreatedBy")
+  constructionProfile            ConstructionWorkerProfile?
+  constructionAssigned           ConstructionAssignment[]     @relation("ConstructionAssignedWorker")
+  constructionDispatched         ConstructionRecord[]         @relation("ConstructionDispatchedBy")
+  constructionPhotos             ConstructionPhoto[]          @relation("ConstructionPhotoUploadedBy")
+  qualityChecks                  ConstructionRecord[]         @relation("ConstructionQualityCheckedBy")
+  leaveRequests                  LeaveRequest[]               @relation("LeaveRequestWorker")
+  schedules                      Schedule[]                   @relation("ScheduleWorker")
+  commissionSnapshots            WorkerCommissionSnapshot[]   @relation("WorkerCommissionWorker")
+  createdCommissionSnapshots     WorkerCommissionSnapshot[]   @relation("WorkerCommissionCreatedBy")
+  inventoryMovements             InventoryMovement[]          @relation("InventoryMovementCreatedBy")
+  warehousesCreated              Warehouse[]                  @relation("WarehouseCreatedBy")
+  inventoryAllocationsLocked     OrderInventoryAllocation[]   @relation("InventoryAllocationLockedBy")
+  inventoryAllocationsOut        OrderInventoryAllocation[]   @relation("InventoryAllocationOutboundBy")
+  purchaseRequirements           PurchaseRequirement[]        @relation("PurchaseRequirementCreatedBy")
+  purchaseOrders                 PurchaseOrder[]              @relation("PurchaseOrderCreatedBy")
+  suppliersCreated               Supplier[]                   @relation("SupplierCreatedBy")
+  supplierContactsCreated        SupplierContact[]            @relation("SupplierContactCreatedBy")
+  supplierRatingsCreated         SupplierRatingHistory[]      @relation("SupplierRatingCreatedBy")
+  warranties                     Warranty[]                   @relation("WarrantyCreatedBy")
+  afterSalesCreated              AfterSale[]                  @relation("AfterSaleCreatedBy")
+  afterSalesAssigned             AfterSaleAssignment[]        @relation("AfterSaleAssignedWorker")
+  afterSalesAssignedBy           AfterSaleAssignment[]        @relation("AfterSaleAssignedBy")
+  afterSalePhotosUploaded        AfterSalePhoto[]             @relation("AfterSalePhotoUploadedBy")
+  penalties                      Penalty[]                    @relation("PenaltyWorker")
+  penaltiesCreated               Penalty[]                    @relation("PenaltyCreatedBy")
+  salesCommissionRules           SalesCommissionRule[]        @relation("SalesCommissionRuleCreatedBy")
+  salesCommissionLogs            SalesCommissionLog[]         @relation("SalesCommissionSalesUser")
+  createdSalesCommissions        SalesCommissionLog[]         @relation("SalesCommissionCreatedBy")
+  workerCommissions              WorkerCommission[]           @relation("WorkerCommissionWorker")
+  createdWorkerCommissions       WorkerCommission[]           @relation("WorkerCommissionCreatedBy")
+  expenseApplications            ExpenseApplication[]         @relation("ExpenseApplicant")
+  reviewedExpenses               ExpenseApplication[]         @relation("ExpenseReviewedBy")
+  reimbursementApplications      ReimbursementApplication[]   @relation("ReimbursementApplicant")
+  reviewedReimbursements         ReimbursementApplication[]   @relation("ReimbursementReviewedBy")
+  paymentRecords                 PaymentRecord[]              @relation("PaymentRecordCreatedBy")
+  financeApprovalRecords         FinanceApprovalRecord[]      @relation("FinanceApprovalOperator")
+  financeAttachments             FinanceAttachment[]          @relation("FinanceAttachmentUploader")
+  invoicesApplied                Invoice[]                    @relation("InvoiceAppliedBy")
+  invoicesHandled                InvoiceLog[]                 @relation("InvoiceLogCreatedBy")
+  rebatesApplied                 CustomerRebate[]             @relation("RebateAppliedBy")
+  rebatesHandled                 RebateLog[]                  @relation("RebateLogCreatedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -94,6 +105,91 @@ enum DictionaryStatus {
   INACTIVE
 }
 
+enum DictionaryMode {
+  LEGACY
+  NORMALIZED
+}
+
+enum PricingRuleSetStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum PricingTemplateStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum PricingRolloutMode {
+  LEGACY
+  SHADOW
+  ACTIVE
+}
+
+enum PricingRuleGroup {
+  PRODUCT
+  VEHICLE
+  CONSTRUCTION
+  SURCHARGE
+  BUNDLE
+}
+
+enum PricingRuleTarget {
+  PRODUCT_LINE
+  LABOR
+  ORDER
+}
+
+enum PricingRuleActionType {
+  ADD_CENTS
+  SUBTRACT_CENTS
+  MULTIPLY_BPS
+  DISCOUNT_BPS
+}
+
+enum PricingCalculationDecision {
+  NORMAL
+  APPROVAL_REQUIRED
+  BLOCKED
+}
+
+enum SalesQuoteStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  EXPIRED
+  CONVERTED
+  WITHDRAWN
+}
+
+enum PricingApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PricingApprovalType {
+  DEVIATION
+  MARGIN
+  MINIMUM_PRICE
+  SPECIAL_APPROVAL
+}
+
+enum CapacityReservationSourceType {
+  QUOTE
+  ORDER
+}
+
+enum CapacityReservationStatus {
+  HELD
+  CONFIRMED
+  RELEASED
+  EXPIRED
+}
+
 enum StoreStatus {
   DRAFTED // 筹办中：审核员刚创建，店长尚未提交信息
   PENDING_REVIEW // 审核中：店长已提交，等待审核员审核
@@ -102,8 +198,9 @@ enum StoreStatus {
 }
 
 model Store {
-  id     String      @id @default(cuid())
-  status StoreStatus @default(DRAFTED)
+  id                 String             @id @default(cuid())
+  status             StoreStatus        @default(DRAFTED)
+  pricingRolloutMode PricingRolloutMode @default(ACTIVE)
 
   // 当前对外展示的内容（审核通过后从 StoreAuditSubmission 同步过来）
   name        String // 审核员创建时初始化，后续可通过审核更新
@@ -146,6 +243,12 @@ model Store {
   invoices                   Invoice[]
   customerRebates            CustomerRebate[]
   dictionaries               Dictionary[]
+  pricingRuleSets            PricingRuleSet[]
+  vehiclePriceClasses        VehiclePriceClass[]
+  vehicleModelMappings       VehicleModelMapping[]
+  pricingCalculations        PricingCalculation[]
+  salesQuotes                SalesQuote[]
+  capacityReservations       CapacityReservation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -161,13 +264,34 @@ model Dictionary {
   code      String
   items     Json
   status    DictionaryStatus @default(ACTIVE)
+  mode      DictionaryMode   @default(LEGACY)
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store           Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  dictionaryItems DictionaryItem[]
 
   @@unique([storeId, code])
   @@index([storeId, status])
+}
+
+model DictionaryItem {
+  id           String           @id @default(cuid())
+  dictionaryId String
+  code         String
+  name         String
+  description  String?
+  sortOrder    Int              @default(0)
+  status       DictionaryStatus @default(ACTIVE)
+  isSystem     Boolean          @default(false)
+  metadata     Json?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  dictionary Dictionary @relation(fields: [dictionaryId], references: [id], onDelete: Cascade)
+
+  @@unique([dictionaryId, code])
+  @@index([dictionaryId, status, sortOrder])
 }
 
 // 当前对外展示的门店照片（审核通过后从 StoreSubmissionPhoto 同步过来）
@@ -534,17 +658,18 @@ model Customer {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
-  store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  owner      User              @relation("CustomerOwner", fields: [ownerUserId], references: [id])
-  referrer   Customer?         @relation("CustomerReferrals", fields: [referrerId], references: [id])
-  referrals  Customer[]        @relation("CustomerReferrals")
-  vehicles   CustomerVehicle[]
-  users      CustomerUser[]
-  notes      CustomerNote[]
-  tags       CustomerTag[]
-  orders     Order[]
-  warranties Warranty[]
-  afterSales AfterSale[]
+  store       Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  owner       User              @relation("CustomerOwner", fields: [ownerUserId], references: [id])
+  referrer    Customer?         @relation("CustomerReferrals", fields: [referrerId], references: [id])
+  referrals   Customer[]        @relation("CustomerReferrals")
+  vehicles    CustomerVehicle[]
+  users       CustomerUser[]
+  notes       CustomerNote[]
+  tags        CustomerTag[]
+  orders      Order[]
+  warranties  Warranty[]
+  afterSales  AfterSale[]
+  salesQuotes SalesQuote[]
 
   @@unique([storeId, phoneHash])
   @@index([storeId, ownerUserId])
@@ -580,13 +705,17 @@ model CustomerVehicle {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  orders     Order[]
-  warranties Warranty[]
+  customer            Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orders              Order[]
+  warranties          Warranty[]
+  salesQuotes         SalesQuote[]
+  vehiclePriceClassId String?
+  vehiclePriceClass   VehiclePriceClass? @relation(fields: [vehiclePriceClassId], references: [id], onDelete: SetNull)
 
   @@index([customerId])
   @@index([carPlate])
   @@index([vinHash])
+  @@index([vehiclePriceClassId])
 }
 
 model CustomerNote {
@@ -634,6 +763,7 @@ model Product {
   quantityPrecision Int             @default(3)
   warrantyYears     Int?
   basePriceCents    Int
+  standardCostCents Int?
   status            ProductStatus   @default(ACTIVE)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
@@ -645,10 +775,285 @@ model Product {
   inventoryAllocations     OrderInventoryAllocation[]
   purchaseRequirementItems PurchaseRequirementItem[]
   purchaseOrderItems       PurchaseOrderItem[]
+  salesQuoteItems          SalesQuoteItem[]
 
   @@unique([storeId, brand, model])
   @@index([storeId, category])
   @@index([storeId, status])
+}
+
+model VehiclePriceClass {
+  id          String           @id @default(cuid())
+  storeId     String
+  code        String
+  name        String
+  description String?
+  sortOrder   Int              @default(0)
+  isDefault   Boolean          @default(false)
+  status      DictionaryStatus @default(ACTIVE)
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  store     Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  vehicles  CustomerVehicle[]
+  mappings  VehicleModelMapping[]
+  createdBy User?                 @relation("VehiclePriceClassCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([storeId, code])
+  @@index([storeId, status])
+}
+
+model VehicleModelMapping {
+  id                  String           @id @default(cuid())
+  storeId             String
+  brand               String?
+  modelKeyword        String
+  yearFrom            Int?
+  yearTo              Int?
+  vehiclePriceClassId String
+  priority            Int              @default(0)
+  status              DictionaryStatus @default(ACTIVE)
+  createdById         String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  store             Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  vehiclePriceClass VehiclePriceClass @relation(fields: [vehiclePriceClassId], references: [id], onDelete: Cascade)
+  createdBy         User?             @relation("VehicleModelMappingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([storeId, status, priority])
+  @@index([vehiclePriceClassId])
+}
+
+model PricingRuleSet {
+  id                      String               @id @default(cuid())
+  storeId                 String
+  version                 Int
+  status                  PricingRuleSetStatus @default(DRAFT)
+  effectiveFrom           DateTime
+  effectiveTo             DateTime?
+  createdById             String
+  publishedById           String?
+  publishedAt             DateTime?
+  sourceTemplateVersionId String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+
+  store            Store                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  rules            PricingRule[]
+  protectionPolicy PricingProtectionPolicy?
+  calculations     PricingCalculation[]
+  createdBy        User                     @relation("PricingRuleSetCreatedBy", fields: [createdById], references: [id])
+  publishedBy      User?                    @relation("PricingRuleSetPublishedBy", fields: [publishedById], references: [id])
+
+  @@unique([storeId, version])
+  @@index([storeId, status, effectiveFrom])
+}
+
+model PricingRuleTemplate {
+  id          String                @id @default(cuid())
+  code        String                @unique
+  name        String
+  description String?
+  status      PricingTemplateStatus @default(DRAFT)
+  createdById String
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  createdBy User                         @relation("PricingRuleTemplateCreatedBy", fields: [createdById], references: [id])
+  versions  PricingRuleTemplateVersion[]
+
+  @@index([status, updatedAt])
+}
+
+model PricingRuleTemplateVersion {
+  id               String    @id @default(cuid())
+  templateId       String
+  version          Int
+  rules            Json
+  protectionPolicy Json
+  createdById      String
+  publishedById    String?
+  publishedAt      DateTime?
+  createdAt        DateTime  @default(now())
+
+  template    PricingRuleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  createdBy   User                @relation("PricingRuleTemplateVersionCreatedBy", fields: [createdById], references: [id])
+  publishedBy User?               @relation("PricingRuleTemplateVersionPublishedBy", fields: [publishedById], references: [id])
+
+  @@unique([templateId, version])
+  @@index([templateId, publishedAt])
+}
+
+model PricingRule {
+  id          String                @id @default(cuid())
+  ruleSetId   String
+  group       PricingRuleGroup
+  target      PricingRuleTarget
+  name        String
+  conditions  Json
+  actionType  PricingRuleActionType
+  actionValue Int
+  priority    Int                   @default(0)
+  sortOrder   Int                   @default(0)
+  enabled     Boolean               @default(true)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  ruleSet PricingRuleSet @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+
+  @@index([ruleSetId, group, target, enabled])
+}
+
+model PricingProtectionPolicy {
+  id                      String   @id @default(cuid())
+  ruleSetId               String   @unique
+  normalDeviationBps      Int
+  approvalDeviationBps    Int
+  minimumMarginBps        Int
+  blockBelowMarginBps     Int?
+  softHoldHours           Int      @default(24)
+  allowSpecialApproval    Boolean  @default(false)
+  internalLaborCostConfig Json
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  ruleSet PricingRuleSet @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+}
+
+model PricingCalculation {
+  id             String                     @id @default(cuid())
+  storeId        String
+  ruleSetId      String
+  ruleSetVersion Int
+  inputHash      String
+  inputSnapshot  Json
+  outputSnapshot Json
+  appliedRules   Json
+  decision       PricingCalculationDecision @default(NORMAL)
+  createdById    String
+  expiresAt      DateTime?
+  createdAt      DateTime                   @default(now())
+
+  store       Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  ruleSet     PricingRuleSet @relation(fields: [ruleSetId], references: [id], onDelete: Restrict)
+  createdBy   User           @relation("PricingCalculationCreatedBy", fields: [createdById], references: [id])
+  salesQuotes SalesQuote[]
+
+  @@index([storeId, createdAt])
+  @@index([ruleSetId, inputHash])
+}
+
+model SalesQuote {
+  id                          String           @id @default(cuid())
+  storeId                     String
+  quoteNo                     String           @unique
+  customerId                  String
+  vehicleId                   String?
+  salesPersonId               String
+  pricingCalculationId        String
+  status                      SalesQuoteStatus @default(DRAFT)
+  vehicleClassSnapshot        Json?
+  suggestedProductAmountCents Int
+  suggestedLaborCostCents     Int
+  suggestedTotalCents         Int
+  finalProductAmountCents     Int
+  finalLaborCostCents         Int
+  finalTotalCents             Int
+  estimatedCostCents          Int?
+  estimatedMarginBps          Int?
+  adjustmentReasonCode        String?
+  adjustmentReasonText        String?
+  validUntil                  DateTime
+  approvedAt                  DateTime?
+  convertedOrderId            String?          @unique
+  appointmentDate             DateTime?
+  appointmentTimeSlot         String?
+  constructionAddress         String?
+  createdAt                   DateTime         @default(now())
+  updatedAt                   DateTime         @updatedAt
+
+  store               Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customer            Customer             @relation(fields: [customerId], references: [id])
+  vehicle             CustomerVehicle?     @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  salesPerson         User                 @relation("SalesQuoteSalesPerson", fields: [salesPersonId], references: [id])
+  pricingCalculation  PricingCalculation   @relation(fields: [pricingCalculationId], references: [id], onDelete: Restrict)
+  convertedOrder      Order?               @relation(fields: [convertedOrderId], references: [id], onDelete: SetNull)
+  items               SalesQuoteItem[]
+  approvals           PricingApproval[]
+  capacityReservation CapacityReservation?
+
+  @@index([storeId, status, createdAt])
+  @@index([customerId, createdAt])
+  @@index([pricingCalculationId])
+}
+
+model SalesQuoteItem {
+  id                      String      @id @default(cuid())
+  quoteId                 String
+  productId               String
+  productSnapshot         Json
+  quantity                Decimal     @db.Decimal(12, 3)
+  salesUnit               ProductUnit
+  basePriceCents          Int
+  suggestedUnitPriceCents Int
+  finalUnitPriceCents     Int
+  suggestedAmountCents    Int
+  finalAmountCents        Int
+  minimumPriceCents       Int?
+  calculationSnapshot     Json
+  createdAt               DateTime    @default(now())
+
+  quote   SalesQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product Product    @relation(fields: [productId], references: [id])
+
+  @@index([quoteId])
+  @@index([productId])
+}
+
+model PricingApproval {
+  id            String                @id @default(cuid())
+  quoteId       String
+  status        PricingApprovalStatus @default(PENDING)
+  approvalType  PricingApprovalType
+  submittedById String
+  reviewedById  String?
+  reviewNote    String?
+  submittedAt   DateTime              @default(now())
+  reviewedAt    DateTime?
+
+  quote       SalesQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  submittedBy User       @relation("PricingApprovalSubmittedBy", fields: [submittedById], references: [id])
+  reviewedBy  User?      @relation("PricingApprovalReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([quoteId, status])
+  @@index([submittedById, submittedAt])
+}
+
+model CapacityReservation {
+  id                   String                        @id @default(cuid())
+  storeId              String
+  dailyCapacityId      String
+  date                 DateTime                      @db.Date
+  constructionLocation ConstructionLocation
+  constructionType     ConstructionType
+  sourceType           CapacityReservationSourceType
+  quoteId              String?                       @unique
+  orderId              String?                       @unique
+  status               CapacityReservationStatus     @default(HELD)
+  expiresAt            DateTime?
+  releasedReasonCode   String?
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+
+  store         Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  dailyCapacity DailyCapacity @relation(fields: [dailyCapacityId], references: [id], onDelete: Cascade)
+  quote         SalesQuote?   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  order         Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, date, status])
+  @@index([expiresAt, status])
 }
 
 model Order {
@@ -685,6 +1090,8 @@ model Order {
   workerCommissions    WorkerCommission[]
   invoices             Invoice[]
   customerRebates      CustomerRebate[]
+  salesQuote           SalesQuote?
+  capacityReservation  CapacityReservation?
 
   @@index([storeId, status])
   @@index([storeId, salesPersonId])
@@ -696,7 +1103,7 @@ model OrderItem {
   id                       String       @id @default(cuid())
   orderId                  String
   productId                String
-  quantity                 Int
+  quantity                 Decimal     @db.Decimal(12, 3)
   salesUnit                ProductUnit?
   baseUnit                 ProductUnit?
   baseQuantityPerSalesUnit Decimal?     @db.Decimal(12, 3)
@@ -725,6 +1132,10 @@ model OrderAmount {
   salesCommissionCents      Int     @default(0)
   materialCostCents         Int     @default(0)
   profitCents               Int     @default(0)
+  pricingCalculationId      String?
+  pricingRuleSetVersion     Int?
+  pricingInputHash          String?
+  pricingOutputSnapshot     Json?
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
@@ -784,7 +1195,8 @@ model DailyCapacity {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store        Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  reservations CapacityReservation[]
 
   @@unique([storeId, date])
   @@index([storeId])

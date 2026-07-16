@@ -276,9 +276,12 @@ export default function AdminPage() {
               管理平台所有加盟店的生命周期与信息变更审核
             </p>
           </div>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-            创建门店并分配经理
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => router.push("/admin/pricing-templates")}>总部建议价模板</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+              创建门店并分配经理
+            </Button>
+          </div>
         </div>
 
         <section className="admin-review-dashboard-grid">

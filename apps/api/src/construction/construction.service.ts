@@ -58,7 +58,8 @@ export class ConstructionService {
         storeId: query.storeId,
         date: buildDateRange(query.from, query.to)
       },
-      orderBy: { date: "asc" }
+      orderBy: { date: "asc" },
+      include: { reservations: { select: { id: true, sourceType: true, status: true, expiresAt: true, quoteId: true, orderId: true } } }
     });
   }
 

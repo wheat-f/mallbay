@@ -2,6 +2,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -17,6 +18,7 @@ import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import type { MulterFile } from "../users/multer-file.type";
 import { ConstructionService, type AuthenticatedConstructionUser } from "./construction.service";
+import { CapacityReservationService } from "./capacity-reservation.service";
 import {
   AssignOrderDto,
   CompleteConstructionDto,
@@ -43,7 +45,7 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("construction")
 export class ConstructionController {
-  constructor(private readonly construction: ConstructionService) {}
+  constructor(private readonly construction: ConstructionService, private readonly capacities: CapacityReservationService) {}
 
   @Get("capacities")
   listCapacities(@Req() req: AuthRequest, @Query() query: ListConstructionDto) {
@@ -53,6 +55,13 @@ export class ConstructionController {
   @Post("capacities")
   upsertCapacity(@Req() req: AuthRequest, @Body() dto: UpsertDailyCapacityDto) {
     return this.construction.upsertCapacity(req.user, dto);
+  }
+
+  @Get("capacities/reconciliation")
+  reconcileCapacities(@Req() req: AuthRequest, @Query() query: ListConstructionDto) {
+    const member = req.user.storeMember;
+    if (!req.user.isAuditor && (!member || member.storeId !== query.storeId || member.position !== "MANAGER")) throw new ForbiddenException("只有店长可以执行容量对账");
+    return this.capacities.reconcile(query.storeId, query.from ?? new Date().toISOString(), false);
   }
 
   @Patch("capacities/:id")

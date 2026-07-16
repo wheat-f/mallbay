@@ -59,3 +59,34 @@ test("create order draft removal clears the versioned storage entry", () => {
 
   assert.equal(storage.getItem(CREATE_ORDER_DRAFT_STORAGE_KEY), null);
 });
+
+test("create order draft keeps the server pricing snapshot for an explicit restore choice", () => {
+  const storage = new MemoryStorage();
+  saveCreateOrderDraft(storage, {
+    storeId: "store-1",
+    savedAt: "2026-07-15T10:00:00.000Z",
+    values: {
+      customerId: "customer-1",
+      constructionType: "PPF",
+      constructionLocation: "IN_STORE",
+      items: [{ productId: "product-1", quantity: 1, unitPriceYuan: 6800 }]
+    },
+    pricingSnapshot: {
+      mode: "SIMULATION",
+      ruleSetId: "rule-set-1",
+      pricingCalculationId: "calc-1",
+      calculation: {
+        ruleSetVersion: 2,
+        lines: [],
+        suggestedProductAmountCents: 680000,
+        suggestedLaborCostCents: 10000,
+        suggestedTotalCents: 690000,
+        calculationSteps: []
+      },
+      guard: { decision: "NORMAL" }
+    },
+    summary: { customerName: "张三", productCount: 1, totalAmountYuan: 6800 }
+  });
+
+  assert.equal(loadCreateOrderDraft(storage, "store-1")?.pricingSnapshot?.pricingCalculationId, "calc-1");
+});

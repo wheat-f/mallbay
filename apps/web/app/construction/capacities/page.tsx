@@ -1,6 +1,16 @@
 "use client";
 
 import type { DailyCapacitySummary } from "@mallbay/shared";
+
+type CapacityReservationSummary = {
+  sourceType?: "QUOTE" | "ORDER";
+  status?: string;
+  expiresAt?: string | null;
+  quoteId?: string | null;
+  orderId?: string | null;
+};
+
+type CapacityRow = DailyCapacitySummary & { reservations?: CapacityReservationSummary[] };
 import { App, Button, Card, DatePicker, Form, InputNumber, Space, Typography } from "antd";
 import { ArrowLeftOutlined, DownloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,7 +55,7 @@ export default function ConstructionCapacitiesPage() {
     queryFn: () => constructionApi.capacities({ storeId: storeId! }),
     enabled: Boolean(storeId)
   });
-  const capacityRows = useMemo(() => capacitiesQuery.data ?? [], [capacitiesQuery.data]);
+  const capacityRows = useMemo(() => (capacitiesQuery.data ?? []) as CapacityRow[], [capacitiesQuery.data]);
   const hasTodayCapacity = capacityRows.some((row) => formatDate(row.date) === dayjs().format("YYYY-MM-DD"));
   const calendarCells = useMemo(() => buildCapacityCalendar(visibleMonth, capacityRows), [capacityRows, visibleMonth]);
 
@@ -88,7 +98,10 @@ export default function ConstructionCapacitiesPage() {
           "复检容量": row.inspectionCapacity,
           "复检已预约": row.inspectionReserved,
           "复检剩余": row.inspectionCapacity - row.inspectionReserved,
-          "复检使用率": safeCapacityRate(row.inspectionReserved, row.inspectionCapacity)
+          "复检使用率": safeCapacityRate(row.inspectionReserved, row.inspectionCapacity),
+          "报价软占位数": countHeldQuotes(row),
+          "正式预约数": countConfirmedOrders(row),
+          "预约明细": summarizeReservations(row.reservations)
         })),
         { title: `${visibleMonth.format("YYYY年MM月")}施工产能报表`, subtitle: "容量、预约、剩余和使用率" }
       );
@@ -158,6 +171,11 @@ export default function ConstructionCapacitiesPage() {
                       <span>外出施工 <strong>{cell.row.outsideReserved}/{cell.row.outsideCapacity}</strong></span>
                       <span>玻璃膜施工 <strong>{cell.row.heatFilmReserved}/{cell.row.heatFilmCapacity}</strong></span>
                       <span>复检 <strong>{cell.row.inspectionReserved}/{cell.row.inspectionCapacity}</strong></span>
+                      {cell.row.reservations?.length ? (
+                        <span className="capacity-reservation-summary">
+                          报价占位 <strong>{countHeldQuotes(cell.row)}</strong> · 正式预约 <strong>{countConfirmedOrders(cell.row)}</strong>
+                        </span>
+                      ) : null}
                     </>
                   ) : (
                     <span>未设置容量</span>
@@ -257,7 +275,19 @@ function getSafeReturnTo(value: string | null) {
   return value;
 }
 
-function buildCapacityCalendar(month: Dayjs, rows: DailyCapacitySummary[]) {
+function countHeldQuotes(row: CapacityRow) {
+  return (row.reservations ?? []).filter((item) => item.sourceType === "QUOTE" && item.status === "HELD").length;
+}
+
+function countConfirmedOrders(row: CapacityRow) {
+  return (row.reservations ?? []).filter((item) => item.sourceType === "ORDER" && item.status === "CONFIRMED").length;
+}
+
+function summarizeReservations(reservations: CapacityReservationSummary[] | undefined) {
+  return (reservations ?? []).map((item) => (item.sourceType === "QUOTE" ? "报价" : "订单") + ":" + (item.status ?? "未知")).join("；");
+}
+
+function buildCapacityCalendar(month: Dayjs, rows: CapacityRow[]) {
   const rowMap = new Map(rows.map((row) => [formatDate(row.date), row]));
   const firstDay = month.startOf("month");
   const lastDay = month.endOf("month");

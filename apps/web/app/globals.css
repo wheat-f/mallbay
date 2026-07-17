@@ -3520,7 +3520,7 @@ body {
 
 .order-commercials-item-grid {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(96px, 0.32fr) minmax(120px, 0.42fr) auto;
+  grid-template-columns: minmax(240px, 1fr) minmax(88px, 0.28fr) minmax(72px, 0.2fr) minmax(120px, 0.42fr) auto;
   gap: 12px;
   align-items: start;
   border: 1px solid var(--mb-border);

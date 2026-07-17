@@ -60,8 +60,8 @@ export default function PurchasesOrdersPage() {
           已入库数量: row.receivedQuantity,
           待入库数量: row.pendingQuantity,
           单位: row.inventoryUnit ? getProductUnitLabel(row.inventoryUnit) : "",
-          采购单价: row.unitCostCents / 100,
-          产品行金额: row.itemAmountCents / 100,
+          采购含税单价: row.plannedUnitCostCents == null ? "待填写" : row.plannedUnitCostCents / 100,
+          产品行金额: row.itemAmountCents == null ? "待填写" : row.itemAmountCents / 100,
           状态: getPurchaseOrderStatusLabel(row.status),
           预计到货: formatPurchaseExportDate(row.expectedAt),
           创建时间: formatPurchaseExportDate(row.createdAt)

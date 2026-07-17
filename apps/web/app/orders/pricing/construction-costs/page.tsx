@@ -146,7 +146,9 @@ function toProtectionPayload(policy: PricingProtectionPolicy) {
 export function ConstructionCostConfigPage({ section = "hub" }: { section?: ConstructionCostPageSection }) {
   const { message } = App.useApp();
   const client = useQueryClient();
-  const storeId = useAuthStore((state) => state.user?.storeMember?.store.id);
+  const user = useAuthStore((state) => state.user);
+  const storeId = user?.storeMember?.store.id;
+  const canViewRateAmounts = Boolean(user?.isAuditor || user?.storeMember?.position === "FINANCE");
   const showHub = section === "hub";
   const showServices = section === "services";
   const showRates = section === "rates";
@@ -174,7 +176,7 @@ export function ConstructionCostConfigPage({ section = "hub" }: { section?: Cons
   const publishedRateVersions = rateVersions.filter((item) => item.status === "PUBLISHED");
   const draft = getDraftRuleSet(ruleSetsQuery.data ?? []);
   const serviceGroupById = useMemo(() => new Map(serviceItems.map((item) => [item.id, item.serviceGroupCode])), [serviceItems]);
-  const pageTitle = showServices ? "店长：施工服务项目" : showRates ? "财务：岗位小时成本" : showStandards ? "店长：施工收费与标准工时" : "施工收费标准";
+  const pageTitle = showServices ? "店长：施工服务项目" : showRates ? (canViewRateAmounts ? "财务：岗位小时成本" : "岗位小时成本（只读）") : showStandards ? "店长：施工收费与标准工时" : "施工收费标准";
   const pageDescription = showServices
     ? "店长维护可销售、可施工的服务项目及其施工组。服务项目是后续收费标准的基础档案。"
     : showRates
@@ -290,7 +292,7 @@ export function ConstructionCostConfigPage({ section = "hub" }: { section?: Cons
 
       {showHub ? <Row gutter={[16, 16]}>
         <Col xs={24} md={12} xl={8}><Card className="construction-hub-card" title={<SectionTitle title="店长：施工服务项目" help="定义门店可销售和施工的服务项目，并为同类施工指定同一施工组。" />} extra={<Tag color="blue">基础档案</Tag>}><Typography.Paragraph type="secondary">先维护服务项目和施工组。收费标准不在这里设置。</Typography.Paragraph><Link href="/orders/pricing/construction-costs/services"><Button type="primary" icon={<PlusOutlined />}>维护服务项目</Button></Link></Card></Col>
-        <Col xs={24} md={12} xl={8}><Card className="construction-hub-card" title={<SectionTitle title="财务：岗位小时成本" help="维护施工岗位的内部小时成本；该成本不向客户或销售展示。" />} extra={<Tag color="gold">财务维护</Tag>}><Typography.Paragraph type="secondary">独立新建、核对并发布成本版本，供店长选择。</Typography.Paragraph><Link href="/orders/pricing/construction-costs/rates"><Button type="primary" icon={<SettingOutlined />}>维护岗位成本</Button></Link></Card></Col>
+        <Col xs={24} md={12} xl={8}><Card className="construction-hub-card" title={<SectionTitle title="财务：岗位小时成本" help="维护施工岗位的内部小时成本；该成本不向客户或销售展示。" />} extra={<Tag color="gold">财务维护</Tag>}><Typography.Paragraph type="secondary">独立新建、核对并发布成本版本，供店长选择。</Typography.Paragraph><Link href="/orders/pricing/construction-costs/rates"><Button type="primary" icon={<SettingOutlined />}>{canViewRateAmounts ? "维护岗位成本" : "查看成本版本"}</Button></Link></Card></Col>
         <Col xs={24} md={12} xl={8}><Card className="construction-hub-card" title={<SectionTitle title="店长：施工收费与标准工时" help="将主项目收费、追加量和班组工时写入建议价草稿。" />} extra={<Tag color="purple">随建议价发布</Tag>}><Typography.Paragraph type="secondary">一组只维护一套主标准，附加产品按追加收费和追加工时计算。</Typography.Paragraph><Link href="/orders/pricing/construction-costs/standards"><Button type="primary" icon={<SaveOutlined />}>维护施工标准</Button></Link></Card></Col>
         <Col xs={24}><Alert type="info" showIcon title="推荐配置顺序：服务项目 → 岗位小时成本 → 施工收费与标准工时 → 建议价发布与试运行" description="岗位、施工类型、地点、产品分类和单位均来自系统字典。店长和财务只进入各自职责页面，建议价发布仍由店长在“建议价设置”中操作。" /></Col>
       </Row> : null}
@@ -313,7 +315,14 @@ export function ConstructionCostConfigPage({ section = "hub" }: { section?: Cons
 
       {showRates ? <Card title={<SectionTitle title="财务：维护并发布岗位小时成本" help="这是施工岗位的内部标准小时成本。财务发布后，店长才能把它绑定到施工标准；销售和客户不可见。" />} extra={<Tag color="gold">内部成本</Tag>}>
         <Typography.Paragraph type="secondary">金额是岗位的标准小时成本，不是对客施工收费，也不会展示给销售。已发布版本不可修改，如调薪请新建版本。</Typography.Paragraph>
-        <Form<RateValues> layout="vertical" onFinish={(values) => createRateVersion.mutate(values)} initialValues={{ effectiveFrom: dayjs(), rates: positionOptions.slice(0, 1).map((item) => ({ positionTypeCode: item.value, hourlyCostYuan: 0 })) }}>
+        {!canViewRateAmounts ? <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          title="岗位小时成本已由财务维护，配置没有丢失"
+          description="为保护内部成本金额，店长可确认版本、状态、生效期和已配置岗位数，并在施工标准中选择已发布版本；新增或调整金额请由财务账号操作。"
+        /> : null}
+        {canViewRateAmounts ? <Form<RateValues> layout="vertical" onFinish={(values) => createRateVersion.mutate(values)} initialValues={{ effectiveFrom: dayjs(), rates: positionOptions.slice(0, 1).map((item) => ({ positionTypeCode: item.value, hourlyCostYuan: 0 })) }}>
           <Row gutter={[16, 0]}>
             <Col xs={24} sm={12} lg={5}><Form.Item label={<HelpLabel label="生效日期" help="该成本版本从此日期开始用于新订单的预计施工成本。" />} name="effectiveFrom" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
             <Col xs={24} sm={12} lg={5}><Form.Item label={<HelpLabel label="结束日期（可选）" help="留空表示持续有效；填写后该版本只在这段日期内可用。" />} name="effectiveTo"><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
@@ -330,12 +339,12 @@ export function ConstructionCostConfigPage({ section = "hub" }: { section?: Cons
               </Space>
             </Card>}
           </Form.List>
-        </Form>
+        </Form> : null}
         <Divider />
         <Table rowKey="id" size="small" loading={rateVersionsQuery.isLoading} dataSource={rateVersions} pagination={false} columns={[
-          { title: <HelpLabel label="版本" help="每次成本调整新建一个版本，已发布版本不可修改。" />, dataIndex: "version", render: (value) => `v${value}` }, { title: <HelpLabel label="状态" help="只有“已发布”版本可绑定到施工标准。" />, dataIndex: "status", render: (value) => <Tag color={value === "PUBLISHED" ? "success" : value === "DRAFT" ? "processing" : "default"}>{value === "PUBLISHED" ? "已发布" : value === "DRAFT" ? "草稿" : "已停用"}</Tag> }, { title: <HelpLabel label="生效" help="成本版本开始适用新订单的日期。" />, dataIndex: "effectiveFrom", render: (value) => dayjs(value).format("YYYY-MM-DD") }, { title: <HelpLabel label="岗位小时成本" help="以中文岗位名展示的内部成本，不向销售和客户公开。" />, render: (_, row) => row.rates.map((rate) => `${positionLabel(rate.positionTypeCode)} ¥${(rate.hourlyCostCents / 100).toFixed(2)}/小时`).join("；") }, { title: <HelpLabel label="操作" help="发布前请确认金额和生效日期；发布后不能原地修改。" />, render: (_, row) => row.status === "DRAFT" ? <Button className="construction-primary-action" size="small" type="primary" loading={publishRateVersion.isPending} onClick={() => publishRateVersion.mutate(row.id)}>核对后发布</Button> : "—" }
+          { title: <HelpLabel label="版本" help="每次成本调整新建一个版本，已发布版本不可修改。" />, dataIndex: "version", render: (value) => `v${value}` }, { title: <HelpLabel label="状态" help="只有“已发布”版本可绑定到施工标准。" />, dataIndex: "status", render: (value) => <Tag color={value === "PUBLISHED" ? "success" : value === "DRAFT" ? "processing" : "default"}>{value === "PUBLISHED" ? "已发布" : value === "DRAFT" ? "草稿" : "已停用"}</Tag> }, { title: <HelpLabel label="生效" help="成本版本开始适用新订单的日期。" />, dataIndex: "effectiveFrom", render: (value) => dayjs(value).format("YYYY-MM-DD") }, { title: <HelpLabel label="岗位小时成本" help="财务可查看金额；店长可确认该版本已配置的岗位数量。" />, render: (_, row) => canViewRateAmounts ? row.rates.map((rate) => `${positionLabel(rate.positionTypeCode)} ¥${(rate.hourlyCostCents / 100).toFixed(2)}/小时`).join("；") : (row.rateCount ? `已配置 ${row.rateCount} 个岗位（金额仅财务可见）` : "未配置岗位") }, { title: <HelpLabel label="操作" help="发布前请确认金额和生效日期；发布后不能原地修改。" />, render: (_, row) => canViewRateAmounts && row.status === "DRAFT" ? <Button className="construction-primary-action" size="small" type="primary" loading={publishRateVersion.isPending} onClick={() => publishRateVersion.mutate(row.id)}>核对后发布</Button> : "—" }
         ]} />
-        {rateVersionsQuery.isError ? <Alert style={{ marginTop: 16 }} type="warning" showIcon title="只有财务、店长或管理员可以查看和维护岗位小时成本" /> : null}
+        {rateVersionsQuery.isError ? <Alert style={{ marginTop: 16 }} type="warning" showIcon title="无法读取岗位小时成本版本，请确认当前账号属于本门店的店长、财务或管理员" /> : null}
       </Card> : null}
 
       {showStandards ? <Card title={<SectionTitle title="施工标准配置" help="由店长为一个施工组定义对客主项目收费、追加量、标准用时和班组构成；这些业务标准与建议价草稿一同发布。" />} extra={<Tag color="purple">店长维护 · 随建议价版本发布</Tag>}>

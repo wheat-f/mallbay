@@ -161,7 +161,7 @@ export class CreateOrderUseCase {
         throw new BadRequestException("收款金额不能超过订单总额");
       }
 
-      if (dto.deposit) {
+      if (dto.deposit && dto.deposit.amountCents > 0) {
         const account = await tx.paymentAccount.findUnique({ where: { id: dto.deposit.accountId } });
         if (!account || account.storeId !== dto.storeId || !account.isActive) {
           throw new BadRequestException("收款账户不可用");
@@ -188,12 +188,9 @@ export class CreateOrderUseCase {
       await tx.orderItem.createMany({
         data: dto.items.map((item) => {
           const product = productsById.get(item.productId);
-          const salesUnit = product?.salesUnit ?? product?.unit ?? ProductUnit.PIECE;
-          const baseUnit = product?.inventoryUnit ?? salesUnit;
-          const baseQuantityPerSalesUnit =
-            salesUnit === ProductUnit.ROLL && product?.metersPerRoll
-              ? decimalToNumber(product.metersPerRoll)
-              : 1;
+          if (!product) throw new BadRequestException("订单包含不存在或已停用的产品");
+          const salesUnit = resolveOrderSalesUnit(product, item.salesUnit);
+          const { baseUnit, baseQuantityPerSalesUnit } = resolveOrderUnitConversion(product, salesUnit);
           return {
             orderId: order.id,
             productId: item.productId,
@@ -244,7 +241,7 @@ export class CreateOrderUseCase {
         }
       });
 
-      if (dto.deposit) {
+      if (dto.deposit && dto.deposit.amountCents > 0) {
         await tx.orderPayment.create({
           data: {
             orderId: order.id,
@@ -396,6 +393,38 @@ function decimalToNumber(value: number | { toNumber?: () => number; toString: ()
   if (typeof value === "number") return value;
   if (typeof value.toNumber === "function") return value.toNumber();
   return Number(value.toString());
+}
+
+type OrderUnitProduct = {
+  unit: ProductUnit;
+  salesUnit?: ProductUnit | null;
+  inventoryUnit?: ProductUnit | null;
+  metersPerRoll?: number | { toNumber?: () => number; toString: () => string } | null;
+};
+
+function resolveOrderSalesUnit(product: OrderUnitProduct, requestedUnit?: ProductUnit) {
+  const defaultSalesUnit = product.salesUnit ?? product.unit ?? ProductUnit.PIECE;
+  if (!requestedUnit || requestedUnit === defaultSalesUnit) return defaultSalesUnit;
+  const isRollMeterSwitch = [defaultSalesUnit, requestedUnit].every((unit) => unit === ProductUnit.ROLL || unit === ProductUnit.METER);
+  const metersPerRoll = product.metersPerRoll ? decimalToNumber(product.metersPerRoll) : 0;
+  if (isRollMeterSwitch && metersPerRoll > 0) return requestedUnit;
+  throw new BadRequestException("该产品未配置可用的销售单位换算，请在产品档案维护销售单位和每卷米数");
+}
+
+function resolveOrderUnitConversion(product: OrderUnitProduct, salesUnit: ProductUnit) {
+  const baseUnit = product.inventoryUnit ?? salesUnit;
+  if (salesUnit === baseUnit) return { baseUnit, baseQuantityPerSalesUnit: 1 };
+  const metersPerRoll = product.metersPerRoll ? decimalToNumber(product.metersPerRoll) : 0;
+  if (metersPerRoll <= 0) {
+    throw new BadRequestException("该产品未配置每卷米数，不能在卷和米之间切换销售单位");
+  }
+  if (salesUnit === ProductUnit.ROLL && baseUnit === ProductUnit.METER) {
+    return { baseUnit, baseQuantityPerSalesUnit: metersPerRoll };
+  }
+  if (salesUnit === ProductUnit.METER && baseUnit === ProductUnit.ROLL) {
+    return { baseUnit, baseQuantityPerSalesUnit: 1 / metersPerRoll };
+  }
+  throw new BadRequestException("销售单位与库存单位不支持换算");
 }
 
 function createDefaultOrderNumberGenerator(): OrderNumberGenerator {

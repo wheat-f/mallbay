@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
-import { ConstructionCostSettlementService, assertConfirmLines, assertVarianceReasons, buildCostException, isAbnormal, summarizeActualMaterialCost } from "./construction-cost-settlement.service";
+import { ConstructionCostSettlementService, assertConfirmLines, assertVarianceReasons, buildCostException, isAbnormal, isMaterialReceiptCostAdjustment, summarizeActualMaterialCost } from "./construction-cost-settlement.service";
 import { InventoryMovementType } from "@prisma/client";
 
 test("成本异常由申报偏差或预计材料成本缺失触发，不能进入批量确认", () => {
@@ -39,19 +39,33 @@ test("实际材料成本按订单出库和施工损耗的批次单位成本逐�
   ]);
   assert.equal(result.totalCents, 3700);
   assert.deepEqual(result.lines.map((line) => line.costCents), [2500, 1200]);
+  assert.equal(result.hasMissingCost, false);
+});
+
+test("未补录实际入库价的出库批次不能被静默计为零成本", () => {
+  const result = summarizeActualMaterialCost([
+    { id: "out-1", batchId: "batch-pending", productId: "product-a", movementType: InventoryMovementType.ORDER_OUT, quantity: 1, batch: { unitCostCents: null } }
+  ]);
+  assert.equal(result.totalCents, 0);
+  assert.equal(result.hasMissingCost, true);
+  assert.deepEqual(result.missingBatchIds, ["batch-pending"]);
+  assert.equal(isMaterialReceiptCostAdjustment("MATERIAL_RECEIPT_COST_DIFFERENCE"), true);
+  assert.equal(isMaterialReceiptCostAdjustment("MANUAL_COST"), false);
 });
 
 test("成本调整审批仅财务或系统审核员可执行，店长不能代替财务", async () => {
   const adjustment = { id: "adjustment-1", status: "PENDING", settlement: { storeId: "store-1" } };
   const updated: Array<{ status: string }> = [];
   const auditEvents: unknown[] = [];
-  const service = new ConstructionCostSettlementService({
+  const prisma = {
     constructionCostAdjustment: {
       findUnique: async () => adjustment,
       updateMany: async ({ data }: { data: { status: string } }) => { updated.push(data); return { count: 1 }; }
     },
-    auditEvent: { create: async ({ data }: { data: unknown }) => { auditEvents.push(data); return {}; } }
-  } as never);
+    auditEvent: { create: async ({ data }: { data: unknown }) => { auditEvents.push(data); return {}; } },
+    $transaction: async <T>(work: (tx: typeof prisma) => Promise<T>) => work(prisma)
+  };
+  const service = new ConstructionCostSettlementService(prisma as never);
   const manager = { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: "MANAGER" } };
   const finance = { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: "FINANCE" } };
 

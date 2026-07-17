@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { createHash } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { OrderStatus, Prisma, ProductStatus, StorePosition } from "@prisma/client";
+import { OrderAmendmentStatus, OrderStatus, Prisma, ProductStatus, StorePosition } from "@prisma/client";
 import { normalizePagination } from "../common/pagination";
 import {
   PermissionPolicy,
@@ -16,6 +16,7 @@ import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
 import { CreatePaymentAccountDto } from "./dto/create-payment-account.dto";
 import { ExportOrderDetailsDto, ListOrdersDto } from "./dto/list-orders.dto";
 import { ReturnOrderDto } from "./dto/return-order.dto";
+import { CreateOrderAmendmentRequestDto, ReviewOrderAmendmentRequestDto } from "./dto/order-amendment.dto";
 import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
 import { CreateOrderUseCase } from "./use-cases/create-order.use-case";
@@ -180,7 +181,8 @@ export class OrdersService {
         vehicle: { select: { id: true, carPlate: true, carModel: true, carColor: true } },
         items: { include: { product: true, inventoryAllocations: true } },
         amount: true,
-        payments: { orderBy: { paidAt: "desc" }, include: { account: true } }
+        payments: { orderBy: { paidAt: "desc" }, include: { account: true } },
+        amendmentRequests: { orderBy: { createdAt: "desc" } }
       }
     });
     if (!order) {
@@ -271,13 +273,15 @@ export class OrdersService {
         where: { id: orderId },
         include: {
           items: { include: { inventoryAllocations: true } },
-          amount: true
+          amount: true,
+          amendmentRequests: { where: { status: OrderAmendmentStatus.APPROVED }, select: { id: true } }
         }
       });
       if (!order?.amount) {
         throw new NotFoundException("订单不存在");
       }
-      if (order.amount.pricingCalculationId) {
+      const hasApprovedAmendment = order.amendmentRequests.length > 0;
+      if (order.amount.pricingCalculationId && !hasApprovedAmendment) {
         throw new BadRequestException("正式订单价格快照已冻结，不能修改产品清单或成交价");
       }
       if (!canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
@@ -286,9 +290,14 @@ export class OrdersService {
       if (!isOrderCommercialsEditableStatus(order.status)) {
         throw new BadRequestException("当前订单状态不能修改产品清单");
       }
-      if (order.amount.outstandingCents <= 0) {
+      if (order.amount.outstandingCents <= 0 && !hasApprovedAmendment) {
         throw new BadRequestException("订单收款已确认完成，不能修改产品清单");
       }
+      if (hasApprovedAmendment && dto.remark !== undefined && dto.remark !== order.remark) {
+        throw new BadRequestException("已结算订单改单仅允许修改产品、数量、单价和施工收费");
+      }
+
+      const constructionChargeCents = getCommercialConstructionChargeCents(dto);
 
       const productIds = [...new Set(dto.items.map((item) => item.productId))];
       const products = await tx.product.findMany({
@@ -311,14 +320,15 @@ export class OrdersService {
         amountCents: multiplyMoneyCents(item.unitPriceCents, item.quantity)
       }));
       const productAmountCents = nextItems.reduce((sum, item) => sum + item.amountCents, 0);
-      const totalAmountCents = productAmountCents + dto.laborCostCents;
-      const outstandingCents = totalAmountCents - order.amount.paidAmountCents;
+      const totalAmountCents = productAmountCents + constructionChargeCents;
+      const settlementDifferenceCents = totalAmountCents - order.amount.paidAmountCents;
+      const outstandingCents = Math.max(0, settlementDifferenceCents);
       const profitCents = calculateProfitCents(
         totalAmountCents,
         order.amount.materialCostCents,
         order.amount.salesCommissionCents
       );
-      if (outstandingCents < 0) {
+      if (settlementDifferenceCents < 0 && !hasApprovedAmendment) {
         throw new BadRequestException("订单金额不能小于已收款金额");
       }
 
@@ -329,10 +339,11 @@ export class OrdersService {
       };
       const afterAmount = {
         productAmountCents,
-        laborCostCents: dto.laborCostCents,
+        laborCostCents: constructionChargeCents,
         totalAmountCents,
         paidAmountCents: order.amount.paidAmountCents,
         outstandingCents,
+        settlementDifferenceCents,
         materialCostCents: order.amount.materialCostCents,
         salesCommissionCents: order.amount.salesCommissionCents,
         profitCents
@@ -343,16 +354,27 @@ export class OrdersService {
         where: { orderId },
         data: {
           productAmountCents,
-          laborCostCents: dto.laborCostCents,
+          laborCostCents: constructionChargeCents,
+          constructionChargeCents,
+          constructionChargeAdjustmentReason: dto.changeReason,
           totalAmountCents,
           outstandingCents,
+          settlementDifferenceCents,
           profitCents
         }
       });
       await tx.order.update({
         where: { id: orderId },
-        data: { remark: dto.remark }
+        // A settled-order amendment is a commercial adjustment only.  It must
+        // not change order context such as the customer, appointment or remark.
+        data: { remark: hasApprovedAmendment ? order.remark : dto.remark }
       });
+      if (hasApprovedAmendment) {
+        await tx.orderAmendmentRequest.updateMany({
+          where: { orderId, status: OrderAmendmentStatus.APPROVED },
+          data: { status: OrderAmendmentStatus.COMPLETED }
+        });
+      }
 
       const auditEvent = {
         action: "ORDER_COMMERCIALS_UPDATED",
@@ -375,6 +397,87 @@ export class OrdersService {
 
       return { id: orderId };
     });
+  }
+
+  async createAmendmentRequest(user: AuthenticatedOrderUser, orderId: string, dto: CreateOrderAmendmentRequestDto) {
+    const actor = await this.withStoreMember(user);
+    const reason = dto.reason.trim();
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { amount: true, payments: { orderBy: { paidAt: "desc" }, take: 1 } }
+    });
+    if (!order?.amount) throw new NotFoundException("订单不存在");
+    if (!canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
+      throw new ForbiddenException("仅订单店长、客服或负责销售员可重新提交改单申请");
+    }
+    if (order.amount.outstandingCents > 0) throw new BadRequestException("订单尚未结清，无需申请结算后金额修改");
+    const settledAt = order.payments[0]?.paidAt;
+    if (!settledAt || !isCurrentShanghaiMonth(settledAt)) {
+      throw new BadRequestException("仅允许申请修改本月已结算订单；跨月订单已冻结");
+    }
+    const existingRequest = await this.prisma.orderAmendmentRequest.findFirst({
+      where: {
+        orderId,
+        status: { in: [OrderAmendmentStatus.PENDING, OrderAmendmentStatus.APPROVED, OrderAmendmentStatus.COMPLETED] }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+    if (existingRequest?.status === OrderAmendmentStatus.PENDING) {
+      throw new BadRequestException("该订单已有待审批的金额修改申请");
+    }
+    if (existingRequest) {
+      throw new BadRequestException("该订单本月已完成一次结算后金额修改，不能再次申请");
+    }
+    const request = await this.prisma.orderAmendmentRequest.create({
+      data: { storeId: order.storeId, orderId, reason, requestedById: actor.id }
+    });
+    const auditEvent = {
+      action: "ORDER_AMENDMENT_REQUESTED", actorId: actor.id, targetType: "order", targetId: orderId,
+      metadata: { storeId: order.storeId, requestId: request.id, reason, settledAt }
+    };
+    await persistAuditEvent(this.prisma, auditEvent);
+    this.auditLog.record(auditEvent);
+    return request;
+  }
+
+  async reviewAmendmentRequest(
+    user: AuthenticatedOrderUser,
+    orderId: string,
+    requestId: string,
+    dto: ReviewOrderAmendmentRequestDto
+  ) {
+    const actor = await this.withStoreMember(user);
+    const request = await this.prisma.orderAmendmentRequest.findFirst({
+      where: { id: requestId, orderId }, include: { order: { include: { amount: true, payments: { orderBy: { paidAt: "desc" }, take: 1 } } } }
+    });
+    if (!request?.order.amount) throw new NotFoundException("改单申请不存在");
+    if (!PermissionPolicy.canViewStoreData(actor, request.storeId) || (!actor.isAuditor && actor.storeMember?.position !== StorePosition.FINANCE)) {
+      throw new ForbiddenException("仅财务可审批改单申请");
+    }
+    if (request.requestedById === actor.id) throw new ForbiddenException("申请人不能审批自己的改单申请");
+    if (request.status !== OrderAmendmentStatus.PENDING) throw new BadRequestException("该改单申请已处理");
+    if (!isCurrentShanghaiMonth(request.order.payments[0]?.paidAt)) throw new BadRequestException("跨月订单已冻结，不能审批改单申请");
+    const approved = dto.action === "APPROVE";
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const next = await tx.orderAmendmentRequest.update({
+        where: { id: requestId },
+        data: { status: approved ? OrderAmendmentStatus.APPROVED : OrderAmendmentStatus.REJECTED, reviewedById: actor.id, reviewedAt: new Date(), reviewNote: dto.reviewNote.trim() }
+      });
+      const auditEvent = {
+        action: approved ? "ORDER_AMENDMENT_APPROVED" : "ORDER_AMENDMENT_REJECTED", actorId: actor.id, targetType: "order", targetId: orderId,
+        metadata: {
+          storeId: request.storeId,
+          requestId,
+          decision: approved ? "APPROVED" : "REJECTED",
+          reviewNote: dto.reviewNote.trim(),
+          scope: "COMMERCIALS_ONLY"
+        }
+      };
+      await persistAuditEvent(tx, auditEvent);
+      this.auditLog.record(auditEvent);
+      return next;
+    });
+    return updated;
   }
 
   async returnToPendingDispatch(user: AuthenticatedOrderUser, orderId: string, dto: ReturnOrderDto) {
@@ -723,9 +826,30 @@ function isOrderCommercialsEditableStatus(status: OrderStatus) {
     OrderStatus.PENDING_DISPATCH,
     OrderStatus.DISPATCHED,
     OrderStatus.IN_CONSTRUCTION,
-    OrderStatus.COMPLETED
+    OrderStatus.COMPLETED,
+    // A warranty record does not make an unpaid order commercially immutable.
+    // The remaining receivable is still derived from the adjusted order total.
+    OrderStatus.WARRANTIED
   ];
   return editableStatuses.includes(status);
+}
+
+function getCommercialConstructionChargeCents(dto: UpdateOrderCommercialsDto) {
+  const value = dto.constructionChargeCents ?? dto.laborCostCents;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new BadRequestException("本单施工收费必须是大于或等于 0 的整数分值");
+  }
+  return value;
+}
+
+function isCurrentShanghaiMonth(value?: Date) {
+  if (!value) return false;
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit"
+  });
+  return formatter.format(value) === formatter.format(new Date());
 }
 
 function getEffectiveOrderStatus(

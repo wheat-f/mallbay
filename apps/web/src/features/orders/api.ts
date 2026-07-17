@@ -19,7 +19,7 @@ export type CreateOrderPayload = {
   constructionAddress?: string;
   appointmentDate?: string;
   appointmentTimeSlot?: string;
-  items: { productId: string; quantity: number; unitPriceCents: number }[];
+  items: { productId: string; quantity: number; unitPriceCents: number; salesUnit?: ProductUnit }[];
   /** Customer-facing construction service charge. */
   constructionChargeCents?: number;
   suggestedConstructionChargeCents?: number;
@@ -41,8 +41,10 @@ export type CreateOrderPayload = {
 
 export type UpdateOrderCommercialsPayload = {
   items: Array<CreateOrderPayload["items"][number] & { id?: string }>;
-  /** Update endpoint remains on the legacy contract until its own migration. */
+  /** Customer-facing construction charge. */
   constructionChargeCents: number;
+  /** Compatibility alias for API nodes not yet upgraded to constructionChargeCents. */
+  laborCostCents?: number;
   remark?: string;
   changeReason: string;
 };
@@ -50,6 +52,9 @@ export type UpdateOrderCommercialsPayload = {
 export type ReturnOrderPayload = {
   reason: string;
 };
+
+export type OrderAmendmentRequestPayload = { reason: string };
+export type ReviewOrderAmendmentRequestPayload = { action: "APPROVE" | "REJECT"; reviewNote: string };
 
 export type OrderListQuery = {
   storeId: string;
@@ -168,6 +173,18 @@ export const orderApi = {
 
   returnToPendingDispatch: (id: string, payload: ReturnOrderPayload) =>
     request<{ id: string; status: OrderStatus }>(`/orders/${id}/return-to-pending`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  createAmendmentRequest: (id: string, payload: OrderAmendmentRequestPayload) =>
+    request<{ id: string; status: string }>(`/orders/${id}/amendment-requests`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  reviewAmendmentRequest: (id: string, requestId: string, payload: ReviewOrderAmendmentRequestPayload) =>
+    request<{ id: string; status: string }>(`/orders/${id}/amendment-requests/${requestId}/review`, {
       method: "POST",
       body: JSON.stringify(payload)
     }),

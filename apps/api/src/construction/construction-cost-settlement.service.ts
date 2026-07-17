@@ -151,6 +151,7 @@ export class ConstructionCostSettlementService {
     assertConfirmLines(settlement.workerLines, dto.workerLines);
     assertVarianceReasons(settlement.workerLines, dto.workerLines);
     const actualMaterial = await this.calculateActualMaterialCost(settlement.orderId);
+    if (actualMaterial.hasMissingCost) throw new BadRequestException("订单存在尚未补录实际入库价的出库批次，请采购员补录后再确认成本");
     const actualMaterialCostCents = actualMaterial.totalCents;
     // Personal commission is maintained by the commission module. A manager
     // confirming work hours must not be able to replace it through the browser
@@ -295,12 +296,42 @@ export class ConstructionCostSettlementService {
     if (!adjustment) throw new NotFoundException("成本调整单不存在");
     if (!this.isFinanceOrAdmin(actor, adjustment.settlement.storeId)) throw new ForbiddenException("只有财务可以审批成本调整单");
     if (adjustment.status !== ConstructionCostAdjustmentStatus.PENDING) throw new BadRequestException("成本调整单已处理");
-    const updatedCount = await this.prisma.constructionCostAdjustment.updateMany({
-      where: { id, status: ConstructionCostAdjustmentStatus.PENDING },
-      data: { status: dto.status, approvedById: actor.id, approvedAt: new Date() }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedCount = await tx.constructionCostAdjustment.updateMany({
+        where: { id, status: ConstructionCostAdjustmentStatus.PENDING },
+        data: { status: dto.status, approvedById: actor.id, approvedAt: new Date() }
+      });
+      if (updatedCount.count !== 1) throw new BadRequestException("成本调整单已被其他操作处理，请刷新后重试");
+
+      // 已结算订单的实际入库价补录不能覆盖已冻结的历史快照。财务批准
+      // 材料成本差异单后，再将差异单独结算进实际材料成本和毛利。
+      if (dto.status === ConstructionCostAdjustmentStatus.APPROVED
+        && adjustment.settlement.status === ConstructionCostSettlementStatus.SETTLED
+        && isMaterialReceiptCostAdjustment(adjustment.adjustmentType)) {
+        const settlement = await tx.constructionCostSettlement.findUnique({
+          where: { id: adjustment.settlementId },
+          include: { order: { include: { amount: true } } }
+        });
+        if (!settlement) throw new NotFoundException("施工成本结算记录不存在");
+        const actualMaterialCostCents = settlement.actualMaterialCostCents + adjustment.amountCents;
+        const actualTotalCostCents = actualMaterialCostCents + settlement.actualConstructionCostCents;
+        const revenue = settlement.order.amount?.totalAmountCents ?? 0;
+        await tx.constructionCostSettlement.update({
+          where: { id: settlement.id },
+          data: {
+            actualMaterialCostCents,
+            actualTotalCostCents,
+            actualGrossProfitCents: revenue - actualTotalCostCents,
+            actualGrossMarginBps: revenue > 0 ? Math.floor(((revenue - actualTotalCostCents) * 10000) / revenue) : -10000
+          }
+        });
+        await tx.constructionCostAdjustment.update({
+          where: { id },
+          data: { status: ConstructionCostAdjustmentStatus.SETTLED, settledAt: new Date() }
+        });
+      }
+      return tx.constructionCostAdjustment.findUnique({ where: { id } });
     });
-    if (updatedCount.count !== 1) throw new BadRequestException("成本调整单已被其他操作处理，请刷新后重试");
-    const updated = await this.prisma.constructionCostAdjustment.findUnique({ where: { id } });
     if (!updated) throw new NotFoundException("成本调整单不存在");
     await this.recordAudit({ action: "construction_cost_adjustment_approved", actorId: actor.id, targetType: "ConstructionCostAdjustment", targetId: id, metadata: { storeId: adjustment.settlement.storeId, status: dto.status } });
     return updated;
@@ -312,9 +343,11 @@ export class ConstructionCostSettlementService {
     if (!this.isFinanceOrAdmin(actor, settlement.storeId)) throw new ForbiddenException("只有财务可以结算成本");
     if (settlement.status !== ConstructionCostSettlementStatus.CONFIRMED) throw new BadRequestException("只有已确认成本可以财务结算");
     const adjustments = settlement.adjustments.filter((item) => item.status === ConstructionCostAdjustmentStatus.APPROVED);
-    const adjustmentTotal = adjustments.reduce((sum, item) => sum + item.amountCents, 0);
-    const actualConstructionCostCents = settlement.actualConstructionCostCents + adjustmentTotal;
-    const actualTotalCostCents = settlement.actualMaterialCostCents + actualConstructionCostCents;
+    const materialAdjustmentTotal = adjustments.filter((item) => isMaterialReceiptCostAdjustment(item.adjustmentType)).reduce((sum, item) => sum + item.amountCents, 0);
+    const constructionAdjustmentTotal = adjustments.filter((item) => !isMaterialReceiptCostAdjustment(item.adjustmentType)).reduce((sum, item) => sum + item.amountCents, 0);
+    const actualMaterialCostCents = settlement.actualMaterialCostCents + materialAdjustmentTotal;
+    const actualConstructionCostCents = settlement.actualConstructionCostCents + constructionAdjustmentTotal;
+    const actualTotalCostCents = actualMaterialCostCents + actualConstructionCostCents;
     const revenue = settlement.order.amount?.totalAmountCents ?? 0;
     const settled = await this.prisma.$transaction(async (tx) => {
       // 财务结算也以状态为条件进行原子迁移，重复点击或并发请求都不能重复结算。
@@ -322,6 +355,7 @@ export class ConstructionCostSettlementService {
         where: { id, status: ConstructionCostSettlementStatus.CONFIRMED },
         data: {
           status: ConstructionCostSettlementStatus.SETTLED,
+          actualMaterialCostCents,
           actualConstructionCostCents,
           actualTotalCostCents,
           actualGrossProfitCents: revenue - actualTotalCostCents,
@@ -336,7 +370,7 @@ export class ConstructionCostSettlementService {
       if (!finalised) throw new NotFoundException("施工成本结算记录不存在");
       return finalised;
     });
-    await this.recordAudit({ action: "construction_cost_settled", actorId: actor.id, targetType: "ConstructionCostSettlement", targetId: id, metadata: { storeId: settlement.storeId, adjustmentTotal } });
+    await this.recordAudit({ action: "construction_cost_settled", actorId: actor.id, targetType: "ConstructionCostSettlement", targetId: id, metadata: { storeId: settlement.storeId, constructionAdjustmentTotal, materialAdjustmentTotal } });
     return settled;
   }
 
@@ -455,7 +489,7 @@ export function summarizeActualMaterialCost(movements: Array<{
 }>) {
   const lines = movements.map((movement) => {
     const quantity = decimalToNumber(movement.quantity);
-    const unitCostCents = movement.batch.unitCostCents ?? 0;
+    const unitCostCents = movement.batch.unitCostCents;
     return {
       movementId: movement.id,
       batchId: movement.batchId,
@@ -463,10 +497,20 @@ export function summarizeActualMaterialCost(movements: Array<{
       movementType: movement.movementType,
       quantity,
       unitCostCents,
-      costCents: multiplyMoneyCents(unitCostCents, quantity)
+      costCents: unitCostCents == null ? 0 : multiplyMoneyCents(unitCostCents, quantity)
     };
   });
-  return { totalCents: lines.reduce((sum, line) => sum + line.costCents, 0), lines };
+  return {
+    totalCents: lines.reduce((sum, line) => sum + line.costCents, 0),
+    hasMissingCost: lines.some((line) => line.unitCostCents == null),
+    missingBatchIds: [...new Set(lines.filter((line) => line.unitCostCents == null).map((line) => line.batchId))],
+    lines
+  };
+}
+
+/** 采购实际入库价补录形成的差异，属于材料而非人工成本。 */
+export function isMaterialReceiptCostAdjustment(adjustmentType: string) {
+  return adjustmentType === "MATERIAL_RECEIPT_COST_DIFFERENCE";
 }
 
 export function isAbnormal(settlement: { workerLines: Array<{ standardMinutes: number; declaredMinutes: number | null }>; estimatedMaterialCostCents: number | null }) {

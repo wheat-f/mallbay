@@ -7,6 +7,7 @@ import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
 import { CreatePaymentAccountDto } from "./dto/create-payment-account.dto";
 import { ExportOrderDetailsDto, ListOrdersDto } from "./dto/list-orders.dto";
 import { ReturnOrderDto } from "./dto/return-order.dto";
+import { CreateOrderAmendmentRequestDto, ReviewOrderAmendmentRequestDto } from "./dto/order-amendment.dto";
 import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
 import { OrdersService, type AuthenticatedOrderUser } from "./orders.service";
@@ -61,6 +62,21 @@ export class OrdersController {
     @Body() dto: ReturnOrderDto
   ) {
     return this.orders.returnToPendingDispatch(req.user, id, dto);
+  }
+
+  @Post(":id/amendment-requests")
+  createAmendmentRequest(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: CreateOrderAmendmentRequestDto) {
+    return this.orders.createAmendmentRequest(req.user, id, dto);
+  }
+
+  @Post(":id/amendment-requests/:requestId/review")
+  reviewAmendmentRequest(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Param("requestId") requestId: string,
+    @Body() dto: ReviewOrderAmendmentRequestDto
+  ) {
+    return this.orders.reviewAmendmentRequest(req.user, id, requestId, dto);
   }
 
   @Post(":id/payments")

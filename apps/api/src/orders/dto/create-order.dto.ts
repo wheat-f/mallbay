@@ -12,7 +12,7 @@ import {
   Min,
   ValidateNested
 } from "class-validator";
-import { ConstructionLocation, ConstructionType, PaymentType } from "@prisma/client";
+import { ConstructionLocation, ConstructionType, PaymentType, ProductUnit } from "@prisma/client";
 
 export class CreateOrderItemDto {
   @IsString()
@@ -27,6 +27,10 @@ export class CreateOrderItemDto {
   @IsInt()
   @Min(0)
   unitPriceCents!: number;
+
+  @IsOptional()
+  @IsEnum(ProductUnit)
+  salesUnit?: ProductUnit;
 }
 
 export class CreateOrderDepositDto {

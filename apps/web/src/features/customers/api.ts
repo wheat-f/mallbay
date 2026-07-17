@@ -26,6 +26,7 @@ export type CreateVehiclePayload = {
   carPlate?: string;
   vin?: string;
   carModel: string;
+  vehicleTypeCode: "SMALL_CAR" | "STANDARD_CAR" | "LUXURY_LARGE_CAR";
   carColor?: string;
   photoUrl?: string;
 };

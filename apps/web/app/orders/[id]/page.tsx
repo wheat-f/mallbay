@@ -1,6 +1,6 @@
 "use client";
 
-import { App, Button, Card, Checkbox, Drawer, Form, Input, InputNumber, Select, Skeleton, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Checkbox, Drawer, Form, Input, InputNumber, Select, Skeleton, Tag, Typography } from "antd";
 import {
   ArrowLeftOutlined,
   CarOutlined,
@@ -33,11 +33,14 @@ import {
   yuanCurrency
 } from "../../../src/features/orders/order-display";
 import { getAuditActorLabel } from "../../../src/features/audit/display";
+import { getProductUnitLabel } from "../../../src/features/products/display";
 import { OrderPaymentDrawer } from "../../../src/features/orders/order-payment-drawer";
+import { useAuthStore } from "../../../src/stores/auth-store";
 
 type OrderDetail = {
   id: string;
   storeId: string;
+  salesPersonId: string;
   orderNo: string;
   status: string;
   constructionType: string;
@@ -80,6 +83,13 @@ type OrderDetail = {
     } | null;
   } | null;
   payments?: { id: string; paymentType: string; amountCents: number; paidAt: string; account?: { name: string } }[];
+  amendmentRequests?: Array<{
+    id: string;
+    status: "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED" | "CANCELLED";
+    reason: string;
+    reviewNote?: string | null;
+    createdAt: string;
+  }>;
 };
 
 type ProductOption = {
@@ -87,6 +97,14 @@ type ProductOption = {
   brand?: string | null;
   name?: string | null;
   model?: string | null;
+  unit?: string | null;
+  salesUnit?: string | null;
+};
+
+type ProductSelectOption = {
+  label: string;
+  value: string;
+  product: ProductOption;
 };
 
 type CommercialsFormValues = {
@@ -95,6 +113,9 @@ type CommercialsFormValues = {
   remark?: string;
   changeReason: string;
 };
+
+type AmendmentFormValues = { reason: string };
+type AmendmentReviewFormValues = { action: "APPROVE" | "REJECT"; reviewNote: string };
 
 type FulfillmentChecklist = {
   customerConfirmed: boolean;
@@ -113,19 +134,25 @@ const emptyFulfillmentChecklist: FulfillmentChecklist = {
   commercialConfirmed: false
 };
 
-const commercialEditableStatuses = ["PENDING_DISPATCH", "DISPATCHED", "IN_CONSTRUCTION", "COMPLETED"] as const;
+const commercialEditableStatuses = ["PENDING_DISPATCH", "DISPATCHED", "IN_CONSTRUCTION", "COMPLETED", "WARRANTIED"] as const;
 
 export default function OrderDetailPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const user = useAuthStore((state) => state.user);
   const [commercialsOpen, setCommercialsOpen] = useState(false);
+  const [amendmentOpen, setAmendmentOpen] = useState(false);
+  const [amendmentReviewOpen, setAmendmentReviewOpen] = useState(false);
   const [paymentDrawerOpen, setPaymentDrawerOpen] = useState(false);
   const [fulfillmentDrawerOpen, setFulfillmentDrawerOpen] = useState(false);
   const [fulfillmentChecklist, setFulfillmentChecklist] = useState<FulfillmentChecklist>(emptyFulfillmentChecklist);
   const [fulfillmentNote, setFulfillmentNote] = useState("");
   const [commercialsForm] = Form.useForm<CommercialsFormValues>();
+  const [amendmentForm] = Form.useForm<AmendmentFormValues>();
+  const [amendmentReviewForm] = Form.useForm<AmendmentReviewFormValues>();
+  const commercialItems = Form.useWatch("items", commercialsForm);
   const orderQuery = useQuery({
     queryKey: ["order-detail", params.id],
     queryFn: () => orderApi.detail(params.id)
@@ -141,18 +168,21 @@ export default function OrderDetailPage() {
     enabled: commercialsOpen && Boolean(order?.storeId)
   });
   const updateCommercialsMutation = useMutation({
-    mutationFn: (values: CommercialsFormValues) =>
-      orderApi.updateCommercials(params.id, {
+    mutationFn: (values: CommercialsFormValues) => {
+      const constructionChargeCents = yuanToCents(values.constructionChargeYuan);
+      return orderApi.updateCommercials(params.id, {
         items: values.items.map((item) => ({
           id: item.id,
           productId: item.productId,
           quantity: item.quantity,
           unitPriceCents: yuanToCents(item.unitPriceYuan)
         })),
-        constructionChargeCents: yuanToCents(values.constructionChargeYuan),
-        remark: values.remark,
+        constructionChargeCents,
+        laborCostCents: constructionChargeCents,
+        ...(hasApprovedAmendment ? {} : { remark: values.remark }),
         changeReason: values.changeReason
-      }),
+      });
+    },
     onSuccess: async () => {
       message.success("订单变更已保存");
       setCommercialsOpen(false);
@@ -162,18 +192,74 @@ export default function OrderDetailPage() {
     },
     onError: (error: Error) => message.error(error.message)
   });
-  const productOptions = ((productsQuery.data?.items ?? []) as ProductOption[]).map((product) => ({
-    label: getOrderProductLabel(product),
-    value: product.id
+  const amendmentRequestMutation = useMutation({
+    mutationFn: (values: AmendmentFormValues) => orderApi.createAmendmentRequest(params.id, values),
+    onSuccess: async () => {
+      message.success("改单申请已提交，等待财务审批");
+      amendmentForm.resetFields();
+      setAmendmentOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["order-detail", params.id] });
+      await queryClient.invalidateQueries({ queryKey: ["order-audit-events", params.id] });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+  const productOptions: ProductSelectOption[] = ((productsQuery.data?.items ?? []) as ProductOption[]).map((product) => ({
+    label: `${getOrderProductLabel(product)}（销售单位：${getProductUnitLabel(resolveProductSalesUnit(product))}）`,
+    value: product.id,
+    product
   }));
   const hasEditableOutstandingAmount = (order?.amount?.outstandingCents ?? 0) > 0;
+  const pendingAmendment = order?.amendmentRequests?.find((request) => request.status === "PENDING");
+  const latestRejectedAmendment = order?.amendmentRequests?.find((request) => request.status === "REJECTED");
+  const hasPendingAmendment = Boolean(pendingAmendment);
+  const hasApprovedAmendment = order?.amendmentRequests?.some((request) => request.status === "APPROVED") ?? false;
+  const hasCompletedAmendment = order?.amendmentRequests?.some((request) => request.status === "COMPLETED") ?? false;
+  const canManageOrderAmendment = Boolean(
+    order && user && (
+      user.isAuditor ||
+      user.storeMember?.position === "MANAGER" ||
+      user.storeMember?.position === "CUSTOMER_SERVICE" ||
+      (user.storeMember?.position === "SALES" && user.id === order.salesPersonId)
+    )
+  );
+  const canRequestAmendment = Boolean(
+    order
+      && canManageOrderAmendment
+      && !hasEditableOutstandingAmount
+      && !hasPendingAmendment
+      && !hasApprovedAmendment
+      && !hasCompletedAmendment
+  );
+  const canReviewAmendment = Boolean(
+    pendingAmendment && (user?.isAuditor || user?.storeMember?.position === "FINANCE")
+  );
+  const canOperateFulfillment = Boolean(
+    order && user && (
+      user.storeMember?.position === "MANAGER" ||
+      user.storeMember?.position === "CUSTOMER_SERVICE" ||
+      (user.storeMember?.position === "SALES" && user.id === order.salesPersonId)
+    )
+  );
+  const amendmentReviewMutation = useMutation({
+    mutationFn: (values: AmendmentReviewFormValues) =>
+      orderApi.reviewAmendmentRequest(params.id, pendingAmendment!.id, values),
+    onSuccess: async (_response, values) => {
+      message.success(values.action === "APPROVE" ? "改单申请已批准，订单已开放修改" : "改单申请已驳回");
+      amendmentReviewForm.resetFields();
+      setAmendmentReviewOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["order-detail", params.id] });
+      await queryClient.invalidateQueries({ queryKey: ["order-audit-events", params.id] });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
   const canEditCommercials = Boolean(
     order
       && commercialEditableStatuses.includes(order.status as (typeof commercialEditableStatuses)[number])
-      && hasEditableOutstandingAmount
-      && order.amount?.pricingMode !== "ACTIVE"
+      && canManageOrderAmendment
+      && (hasEditableOutstandingAmount || hasApprovedAmendment)
+      && (order.amount?.pricingMode !== "ACTIVE" || hasApprovedAmendment)
   );
-  const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH";
+  const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH" && canOperateFulfillment;
   const orderSteps = getOrderSteps(order?.status);
   const fulfillmentInventorySummary = getFulfillmentInventorySummary(order?.items ?? []);
   const fulfillmentCanEnterConstruction = fulfillmentInventorySummary.canEnterConstruction;
@@ -271,6 +357,11 @@ export default function OrderDetailPage() {
                     修改订单
                   </Button>
                 ) : null}
+                {canRequestAmendment ? (
+                  <Button icon={<FileTextOutlined />} onClick={() => setAmendmentOpen(true)}>
+                    申请结算后金额修改
+                  </Button>
+                ) : null}
                 {shouldShowFulfillmentConfirmation ? (
                   <Button type="primary" icon={<CheckCircleOutlined />} onClick={openFulfillmentDrawer}>
                     确认派工流转
@@ -363,6 +454,7 @@ export default function OrderDetailPage() {
                       </div>
                     </div>
                   ) : null}
+                  {hasPendingAmendment ? <Alert type="warning" showIcon message="已提交本月结算改单申请，等待财务审批" /> : null}
                 </Card>
               </div>
 
@@ -464,6 +556,25 @@ export default function OrderDetailPage() {
                 </Card>
 
                 <Card className="order-detail-card order-audit-card" title={<><FileTextOutlined />变更审计</>}>
+                  {canReviewAmendment ? (
+                    <Alert
+                      className="mb-3"
+                      type="warning"
+                      showIcon
+                      message="待审批：本月已结算订单改单申请"
+                      description={`申请原因：${pendingAmendment?.reason ?? "-"}`}
+                      action={<Button size="small" type="primary" onClick={() => setAmendmentReviewOpen(true)}>财务审批</Button>}
+                    />
+                  ) : null}
+                  {latestRejectedAmendment && !canManageOrderAmendment ? (
+                    <Alert
+                      className="mb-3"
+                      type="info"
+                      showIcon
+                      message="改单申请已驳回"
+                      description="请由订单店长、客服或负责销售员补充原因后重新提交；财务仅负责审批。"
+                    />
+                  ) : null}
                   <div className="order-audit-timeline">
                     {auditEventsQuery.isLoading ? <Typography.Text type="secondary">加载中...</Typography.Text> : null}
                     {(auditEventsQuery.data ?? []).map((event: OrderAuditEvent) => (
@@ -473,7 +584,7 @@ export default function OrderDetailPage() {
                         <span>
                           {[
                             formatAuditCreatedAt(event.createdAt),
-                            getAuditReason(event.metadata),
+                            getOrderAuditSummary(event.action, event.metadata),
                             `操作人：${getAuditActorLabel(event)}`
                           ].filter(Boolean).join(" / ")}
                         </span>
@@ -501,8 +612,70 @@ export default function OrderDetailPage() {
         }}
       />
 
+      <Drawer
+        title="申请结算后金额修改"
+        open={amendmentOpen}
+        onClose={() => setAmendmentOpen(false)}
+        destroyOnHidden
+        footer={(
+          <div className="order-commercials-drawer-footer">
+            <Button onClick={() => setAmendmentOpen(false)}>取消</Button>
+            <Button type="primary" loading={amendmentRequestMutation.isPending} onClick={() => amendmentForm.submit()}>
+              提交财务审批
+            </Button>
+          </div>
+        )}
+      >
+        <Alert
+          type="info"
+          showIcon
+          message="仅最后结算日在本月的订单可申请一次。财务批准后仅开放产品、数量、单价和施工收费修改，不改变施工、交付或质保进度；原收款记录保留，差额由财务补收、退款或冲抵。"
+        />
+        <Form form={amendmentForm} layout="vertical" className="mt-4" onFinish={(values) => amendmentRequestMutation.mutate(values)}>
+          <Form.Item name="reason" label="申请原因" rules={[{ required: true, message: "请填写申请原因" }]}>
+            <Input.TextArea rows={4} placeholder="例如客户追加、变更产品或施工收费修正" />
+          </Form.Item>
+        </Form>
+      </Drawer>
+
+      <Drawer
+        title="财务审批：订单改单申请"
+        open={amendmentReviewOpen}
+        onClose={() => setAmendmentReviewOpen(false)}
+        destroyOnHidden
+        footer={(
+          <div className="order-commercials-drawer-footer">
+            <Button onClick={() => setAmendmentReviewOpen(false)}>取消</Button>
+            <Button type="primary" loading={amendmentReviewMutation.isPending} onClick={() => amendmentReviewForm.submit()}>
+              提交审批结果
+            </Button>
+          </div>
+        )}
+      >
+        <Alert
+          type="info"
+          showIcon
+          message="批准后仅开放一次产品与金额修改，不改变施工、交付或质保进度；历史收款记录保留。"
+          description={`申请原因：${pendingAmendment?.reason ?? "-"}`}
+        />
+        <Form
+          form={amendmentReviewForm}
+          layout="vertical"
+          className="mt-4"
+          initialValues={{ action: "APPROVE" }}
+          onFinish={(values) => amendmentReviewMutation.mutate(values)}
+        >
+          <Form.Item name="action" label="审批结论" rules={[{ required: true, message: "请选择审批结论" }]}>
+            <Select options={[{ value: "APPROVE", label: "批准，开放改单" }, { value: "REJECT", label: "驳回，不开放修改" }]} />
+          </Form.Item>
+          <Form.Item name="reviewNote" label="审批意见" rules={[{ required: true, message: "请填写审批意见" }]}>
+            <Input.TextArea rows={4} placeholder="说明批准或驳回的原因" />
+          </Form.Item>
+        </Form>
+      </Drawer>
+
         <Drawer
-          title="修改订单明细"
+          title={hasApprovedAmendment ? "修改已结算订单金额" : "修改订单明细"}
           open={commercialsOpen}
           onClose={() => setCommercialsOpen(false)}
           rootClassName="order-commercials-drawer"
@@ -526,7 +699,9 @@ export default function OrderDetailPage() {
             onFinish={(values) => updateCommercialsMutation.mutate(values)}
           >
             <Typography.Paragraph type="secondary">
-              收款未完全确认前可调整产品、数量、单价和施工收费；已锁库或已出库的库存记录会保留追踪。
+              {hasApprovedAmendment
+                ? "本次仅可修改产品、数量、单价和施工收费；不会改变客户、车辆、预约、库存/出库或施工进度。"
+                : "收款未完全确认前可调整产品、数量、单价和施工收费；已锁库或已出库的库存记录会保留追踪。"}
             </Typography.Paragraph>
             <Form.List name="items">
               {(fields, { add, remove }) => (
@@ -559,6 +734,15 @@ export default function OrderDetailPage() {
                         >
                           <InputNumber min={1} className="w-full" />
                         </Form.Item>
+                        <Form.Item label="单位">
+                          <Input
+                            readOnly
+                            value={getSelectedCommercialProductUnitLabel(
+                              commercialItems?.[field.name]?.productId,
+                              productOptions
+                            )}
+                          />
+                        </Form.Item>
                         <Form.Item
                           {...fieldProps}
                           name={[field.name, "unitPriceYuan"]}
@@ -584,9 +768,11 @@ export default function OrderDetailPage() {
             >
               <InputNumber min={0} precision={2} />
             </Form.Item>
-            <Form.Item name="remark" label="备注">
-              <Input.TextArea rows={3} />
-            </Form.Item>
+            {!hasApprovedAmendment ? (
+              <Form.Item name="remark" label="备注">
+                <Input.TextArea rows={3} />
+              </Form.Item>
+            ) : null}
             <Form.Item
               name="changeReason"
               label="变更原因"
@@ -804,9 +990,26 @@ function getFulfillmentChecklistItems(checklist: FulfillmentChecklist) {
 
 function getOrderAuditActionLabel(action: string) {
   const labels: Record<string, string> = {
-    ORDER_COMMERCIALS_UPDATED: "订单明细和金额变更"
+    ORDER_COMMERCIALS_UPDATED: "订单明细和金额变更",
+    ORDER_AMENDMENT_REQUESTED: "提交本月结算订单改单申请",
+    ORDER_AMENDMENT_APPROVED: "财务批准改单申请",
+    ORDER_AMENDMENT_REJECTED: "财务驳回改单申请",
+    ORDER_STATUS_REPAIRED_AFTER_AMENDMENT: "订单进度状态修复"
   };
   return labels[action] ?? "订单操作记录";
+}
+
+function resolveProductSalesUnit(product: ProductOption) {
+  return product.salesUnit ?? product.unit ?? "PIECE";
+}
+
+function getSelectedCommercialProductUnitLabel(
+  productId: string | undefined,
+  productOptions: ProductSelectOption[]
+) {
+  if (!productId) return "-";
+  const product = productOptions.find((option) => option.value === productId)?.product;
+  return product ? getProductUnitLabel(resolveProductSalesUnit(product)) : "单位待确认";
 }
 
 function getCustomerName(order?: OrderDetail) {
@@ -851,8 +1054,22 @@ function getOrderWorkflowIndex(status?: string) {
   return workflowIndexByStatus[status ?? "PENDING_DISPATCH"] ?? 0;
 }
 
-function getAuditReason(metadata?: Record<string, unknown>) {
-  return typeof metadata?.reason === "string" ? `原因：${metadata.reason}` : undefined;
+function getOrderAuditSummary(action: string, metadata?: Record<string, unknown>) {
+  const reason = typeof metadata?.reason === "string" ? metadata.reason : undefined;
+  const reviewNote = typeof metadata?.reviewNote === "string" ? metadata.reviewNote : undefined;
+  if (action === "ORDER_AMENDMENT_REQUESTED") {
+    return [reason ? `申请原因：${reason}` : undefined, "处理状态：待财务审批"].filter(Boolean).join("；");
+  }
+  if (action === "ORDER_AMENDMENT_APPROVED") {
+    return ["审批结论：已批准", reviewNote ? `审批意见：${reviewNote}` : undefined].filter(Boolean).join("；");
+  }
+  if (action === "ORDER_AMENDMENT_REJECTED") {
+    return ["审批结论：已驳回", reviewNote ? `审批意见：${reviewNote}` : undefined].filter(Boolean).join("；");
+  }
+  if (action === "ORDER_STATUS_REPAIRED_AFTER_AMENDMENT") {
+    return "已恢复原施工/质保进度；金额修改不再触发重新派工。";
+  }
+  return reason ? `变更原因：${reason}` : reviewNote ? `审批意见：${reviewNote}` : undefined;
 }
 
 function formatAuditCreatedAt(value: string) {

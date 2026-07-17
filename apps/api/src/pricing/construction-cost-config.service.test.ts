@@ -15,7 +15,7 @@ test("施工服务项目只能由店长维护，采购岗位不能借产品权�
   );
 });
 
-test("岗位小时成本只有财务可维护，店长只获得版本元数据", async () => {
+test("岗位小时成本只有财务可维护，店长可确认版本已配置但不读取金额", async () => {
   const prisma = {
     positionCostRateVersion: {
       findMany: async () => [{ id: "rate-v1", version: 1, status: "PUBLISHED", effectiveFrom: new Date("2026-07-16"), effectiveTo: null, rates: [{ positionTypeCode: "CONSTRUCTION", hourlyCostCents: 10000 }] }]
@@ -25,7 +25,9 @@ test("岗位小时成本只有财务可维护，店长只获得版本元数据",
   const managerRows = await service.listRateVersions(manager, storeId);
   const financeRows = await service.listRateVersions(finance, storeId);
   assert.deepEqual(managerRows[0].rates, []);
+  assert.equal(managerRows[0].rateCount, 1);
   assert.equal(financeRows[0].rates[0].hourlyCostCents, 10000);
+  assert.equal(financeRows[0].rateCount, 1);
   await assert.rejects(
     service.createRateVersion(manager, { storeId, effectiveFrom: "2026-07-16T00:00:00.000Z", rates: [{ positionTypeCode: "CONSTRUCTION", hourlyCostCents: 10000 }] }),
     /只有财务/

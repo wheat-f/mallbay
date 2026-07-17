@@ -22,7 +22,7 @@ pnpm dev
 - Web: http://localhost:3000
 - API: http://localhost:3001
 - PostgreSQL: localhost:5432
-- Redis: localhost:6379
+- Redis: localhost:16379（容器内仍为 6379，可通过 `REDIS_HOST_PORT` 覆盖宿主机端口）
 
 ## 已完成认证接口
 

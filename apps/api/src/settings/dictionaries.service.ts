@@ -11,6 +11,8 @@ type DefaultDictionaryDefinition = {
   itemCodes?: readonly string[];
 };
 
+export const VEHICLE_TYPE_CODES = ["SMALL_CAR", "STANDARD_CAR", "LUXURY_LARGE_CAR"] as const;
+
 const DEFAULT_DICTIONARIES: readonly DefaultDictionaryDefinition[] = [
   { name: "施工类型", code: "CONSTRUCTION_TYPE", items: ["漆面保护膜", "改色膜", "隔热膜", "改装", "检查"], itemCodes: ["PPF", "COLOR_FILM", "HEAT_FILM", "MODIFICATION", "INSPECTION"] },
   { name: "施工地点", code: "CONSTRUCTION_LOCATION", items: ["到店", "外出"], itemCodes: ["IN_STORE", "OUTSIDE"] },
@@ -24,6 +26,7 @@ const DEFAULT_DICTIONARIES: readonly DefaultDictionaryDefinition[] = [
   { name: "性别", code: "GENDER", items: ["男", "女", "未知"] },
   { name: "产品分类", code: "PRODUCT_CATEGORY", items: ["漆面保护膜", "改色膜", "隔热膜", "改装", "其他"], itemCodes: ["PPF", "COLOR_FILM", "HEAT_FILM", "MODIFICATION", "OTHER"] },
   { name: "产品单位", code: "PRODUCT_UNIT", items: ["卷", "米", "平方米", "平方厘米", "件"], itemCodes: ["ROLL", "METER", "SQUARE_METER", "SQUARE_CENTIMETER", "PIECE"] },
+  { name: "车辆类型", code: "VEHICLE_TYPE", items: ["小车", "常规车", "豪车/大车"], itemCodes: VEHICLE_TYPE_CODES },
   { name: "质保周期", code: "WARRANTY_PERIOD", items: ["3年", "5年", "10年"] },
   { name: "付款类型", code: "PAYMENT_TYPE", items: ["定金", "尾款", "全款"] },
   { name: "收款账户类型", code: "PAYMENT_ACCOUNT_TYPE", items: ["对公账户", "个人账户", "微信", "支付宝", "其他"] },
@@ -46,7 +49,8 @@ const FIXED_DICTIONARY_CODES = new Set([
   "CONSTRUCTION_COST_EXCEPTION_REASON",
   "CONSTRUCTION_ALLOWANCE_TYPE",
   "PRODUCT_CATEGORY",
-  "PRODUCT_UNIT"
+  "PRODUCT_UNIT",
+  "VEHICLE_TYPE"
 ]);
 
 export type AuthenticatedSettingsUser = UserWithStoreMember & { username?: string };

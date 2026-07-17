@@ -3,12 +3,11 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { conditionOperatorOptions } from "./pricing-workspace";
 
-test("pricing API exposes rule detail update and vehicle maintenance contracts", () => {
+test("pricing API exposes rule detail update while vehicle type maintenance stays in customer archives", () => {
   const api = readFileSync("src/features/pricing/api.ts", "utf8");
   assert.equal(api.includes("ruleSet: (id: string, storeId: string)"), true);
   assert.equal(api.includes("updateRuleSet: (id: string, payload: PricingRuleSetPayload)"), true);
-  assert.match(api, /updateVehicleClass/);
-  assert.match(api, /updateVehicleMapping/);
+  assert.match(api, /vehicleTypeCode\?: string/);
 });
 
 test("rule version detail presents a frozen business-readable snapshot", () => {
@@ -48,7 +47,7 @@ test("pricing workspace uses system dictionaries and autosaves structured busine
 });
 
 test("pricing condition operators follow the selected field semantics", () => {
-  assert.deepEqual(conditionOperatorOptions("vehicleClassCode").map((item) => item.value), ["EQ", "IN"]);
+  assert.deepEqual(conditionOperatorOptions("vehicleTypeCode").map((item) => item.value), ["EQ", "IN"]);
   assert.deepEqual(conditionOperatorOptions("productCategory").map((item) => item.value), ["EQ", "IN"]);
   assert.deepEqual(conditionOperatorOptions("quantity").map((item) => item.value), ["EQ", "BETWEEN", "GTE", "LTE"]);
 });
@@ -74,25 +73,21 @@ test("construction cost setup page binds dictionary data, standards, and publish
   assert.match(page, /standardsOverlap/);
   assert.match(page, /ConstructionPageActions/);
   assert.match(page, /construction-page-actions/);
+  assert.match(page, /canViewRateAmounts/);
+  assert.match(page, /配置没有丢失/);
+  assert.match(page, /已配置 \$\{row\.rateCount\} 个岗位/);
   assert.match(servicesPage, /section="services"/);
   assert.match(ratesPage, /section="rates"/);
   assert.match(standardsPage, /section="standards"/);
   assert.match(api, /constructionServiceItems:/);
   assert.match(api, /positionCostRateVersions:/);
+  assert.match(api, /rateCount\?: number/);
 });
 
-test("vehicle pricing page prioritizes unmatched real vehicles and hides technical priority", () => {
+test("legacy vehicle pricing route redirects to customer vehicle archives", () => {
   const page = readFileSync("app/orders/pricing/vehicles/page.tsx", "utf8");
-  assert.match(page, /先处理尚未归类的车辆/);
-  assert.match(page, /确认归类/);
-  assert.match(page, /高级维护：车型级别与通用映射/);
-  assert.equal(page.indexOf("待归类车辆") < page.indexOf("当前匹配规则"), true);
-  assert.equal(page.includes('title: "优先级"'), false);
-  assert.equal(page.includes('dataIndex: "customerId"'), false);
-  assert.match(page, /pricingApi\.updateVehicleClass/);
-  assert.match(page, /pricingApi\.updateVehicleMapping/);
-  assert.match(page, /修改车型级别/);
-  assert.match(page, /修改车型匹配规则/);
+  assert.match(page, /router\.replace\("\/customers"\)/);
+  assert.match(page, /customer vehicle archive/);
 });
 
 test("pricing simulator is a manager-friendly business form without JSON input", () => {

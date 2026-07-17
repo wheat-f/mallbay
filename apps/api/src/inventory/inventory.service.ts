@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import {
+  ConstructionCostSettlementStatus,
   InventoryMovementType,
   ProductUnit,
   PurchaseRequirementStatus,
@@ -24,6 +25,7 @@ import type {
   OutboundOrderInventoryDto,
   ReceivePurchaseItemBatchesDto,
   ReceivePurchaseItemDto,
+  UpdatePurchaseReceiptCostDto,
   UpdateWarehouseDto,
   UpdateSupplierDto
 } from "./dto/inventory.dto";
@@ -42,6 +44,7 @@ type CreatePurchaseOrderFromRequirementInput = {
     items: Array<{
       purchaseRequirementItemId: string;
       quantity: number;
+      unitCostCents?: number;
     }>;
   }>;
 };
@@ -461,6 +464,9 @@ export class InventoryService {
     if (!PermissionPolicy.canManagePurchase(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
+    if (dto.supplierName) {
+      await this.assertActiveSupplier(dto.storeId, dto.supplierName);
+    }
     return this.prisma.purchaseOrder.create({
       data: {
         storeId: dto.storeId,
@@ -596,7 +602,14 @@ export class InventoryService {
     const orders = await this.prisma.purchaseOrder.findMany({
       where: { storeId: dto.storeId },
       orderBy: { createdAt: "desc" },
-      include: { items: { include: { product: true } } }
+      include: {
+        items: {
+          include: {
+            product: true,
+            receiptCostRecords: { orderBy: { createdAt: "desc" }, include: { inventoryBatch: { select: { batchNo: true } } } }
+          }
+        }
+      }
     });
     const rows = orders.flatMap((order) => order.items.map((item) => {
       const quantity = decimalToNumber(item.quantity);
@@ -617,8 +630,8 @@ export class InventoryService {
         quantity,
         receivedQuantity,
         pendingQuantity: Math.max(0, quantity - receivedQuantity),
-        unitCostCents: item.unitCostCents ?? 0,
-        itemAmountCents: (item.unitCostCents ?? 0) * quantity
+        plannedUnitCostCents: item.unitCostCents,
+        itemAmountCents: item.unitCostCents == null ? null : item.unitCostCents * quantity
       };
     }));
 
@@ -659,7 +672,14 @@ export class InventoryService {
     const actor = await this.withStoreMember(user);
     const purchaseOrder = await this.prisma.purchaseOrder.findUnique({
       where: { id: purchaseOrderId },
-      include: { items: { include: { product: true } } }
+      include: {
+        items: {
+          include: {
+            product: true,
+            receiptCostRecords: { orderBy: { createdAt: "desc" }, include: { inventoryBatch: { select: { batchNo: true } } } }
+          }
+        }
+      }
     });
     if (!purchaseOrder) throw new NotFoundException("采购订单不存在");
     if (!PermissionPolicy.canViewPurchase(actor, purchaseOrder.storeId)) {
@@ -712,7 +732,7 @@ export class InventoryService {
       where: { storeId },
       orderBy: { createdAt: "desc" },
       include: {
-        items: true,
+        items: { include: { product: true } },
         sourceOrder: {
           select: {
             id: true,
@@ -835,12 +855,13 @@ export class InventoryService {
         if (!batch || batch.storeId !== order.storeId || batch.productId !== orderItem.productId) {
           throw new BadRequestException("库存批次与订单明细不匹配");
         }
-        const lockBaseQuantity = convertToBaseQuantity({
+        const lockBaseQuantity = this.convertInventoryQuantityOrReject({
           quantity: allocation.quantity,
           fromUnit: allocation.unit ?? batch.unit,
           baseUnit: batch.unit,
           packageUnit: batch.packageUnit,
-          baseQuantityPerPackage: decimalToNumber(batch.baseQuantityPerPackage ?? 1)
+          baseQuantityPerPackage: decimalToNumber(batch.baseQuantityPerPackage ?? 1),
+          action: "锁库"
         });
         if (lockBaseQuantity > decimalToNumber(batch.availableQuantity)) {
           throw new BadRequestException("锁库数量超出可用库存");
@@ -990,7 +1011,8 @@ export class InventoryService {
               return {
                 purchaseRequirementItemId: requirementItem.id,
                 productId: requirementItem.productId,
-                quantity: item.quantity
+                quantity: item.quantity,
+                unitCostCents: item.unitCostCents
               };
             });
 
@@ -1006,6 +1028,7 @@ export class InventoryService {
 
         const purchaseOrders = [];
         for (const allocation of normalizedAllocations) {
+          await this.assertActiveSupplier(requirement.storeId, allocation.supplierName, tx);
           const expectedAt = allocation.expectedAt ?? dto.expectedAt;
           const purchaseOrder = await tx.purchaseOrder.create({
             data: {
@@ -1035,6 +1058,11 @@ export class InventoryService {
         });
         return { purchaseOrders };
       }
+
+      if (!dto.supplierName) {
+        throw new BadRequestException("请选择供应商");
+      }
+      await this.assertActiveSupplier(requirement.storeId, dto.supplierName, tx);
 
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
@@ -1112,6 +1140,31 @@ export class InventoryService {
         packageUnit,
         baseQuantityPerPackage
       });
+      const actualUnitCostCents = dto.actualUnitCostCents === undefined ? item.unitCostCents : dto.actualUnitCostCents;
+      const plannedUnitCostCents = item.unitCostCents;
+      const differenceCents = actualUnitCostCents == null || plannedUnitCostCents == null
+        ? null
+        : actualUnitCostCents - plannedUnitCostCents;
+      const differenceReason = normalizeOptionalText(dto.costDifferenceReason);
+      if (differenceCents !== null && differenceCents !== 0 && !differenceReason) {
+        throw new BadRequestException("实际入库价与采购单价不一致时，请填写成本差异原因");
+      }
+      const baseUnitCostCents = actualUnitCostCents == null
+        ? null
+        : Math.round((actualUnitCostCents * dto.quantity) / baseReceivedQuantity);
+      const existingBatch = await tx.inventoryBatch.findUnique({
+        where: {
+          storeId_productId_batchNo: {
+            storeId: item.purchaseOrder.storeId,
+            productId: item.productId,
+            batchNo: dto.batchNo
+          }
+        },
+        select: { id: true, unitCostCents: true }
+      });
+      if (existingBatch?.unitCostCents != null && baseUnitCostCents != null && existingBatch.unitCostCents !== baseUnitCostCents) {
+        throw new BadRequestException("同一批次只能保留一个实际入库成本；价格不同请使用新的批次号入库");
+      }
       const batch = await tx.inventoryBatch.upsert({
         where: {
           storeId_productId_batchNo: {
@@ -1132,7 +1185,7 @@ export class InventoryService {
           baseQuantityPerPackage,
           totalQuantity: baseReceivedQuantity,
           availableQuantity: baseReceivedQuantity,
-          unitCostCents: item.unitCostCents,
+          unitCostCents: baseUnitCostCents,
           receivedAt: new Date(),
           warehouseId: warehouse?.id,
           warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName),
@@ -1149,7 +1202,42 @@ export class InventoryService {
           unit: baseUnit,
           receivedAt: new Date(),
           warehouseId: warehouse?.id,
-          warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName)
+          warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName),
+          unitCostCents: existingBatch?.unitCostCents ?? baseUnitCostCents
+        }
+      });
+      const receiptCostRecord = await tx.purchaseReceiptCostRecord.create({
+        data: {
+          storeId: item.purchaseOrder.storeId,
+          purchaseOrderItemId,
+          inventoryBatchId: batch.id,
+          receivedQuantity: dto.quantity,
+          purchaseUnit: packageUnit,
+          baseUnit,
+          baseQuantity: baseReceivedQuantity,
+          plannedUnitCostCents,
+          actualUnitCostCents,
+          baseUnitCostCents,
+          differenceCents,
+          differenceReason,
+          createdById: actor.id
+        }
+      });
+      await tx.auditEvent.create({
+        data: {
+          action: "PURCHASE_RECEIPT_COST_RECORDED",
+          actorId: actor.id,
+          storeId: item.purchaseOrder.storeId,
+          targetType: "PurchaseReceiptCostRecord",
+          targetId: receiptCostRecord.id,
+          metadata: {
+            purchaseOrderNo: item.purchaseOrder.orderNo,
+            batchNo: dto.batchNo,
+            plannedUnitCostCents,
+            actualUnitCostCents,
+            differenceCents,
+            differenceReason
+          }
         }
       });
       await tx.inventoryMovement.create({
@@ -1205,7 +1293,178 @@ export class InventoryService {
           });
         }
       }
-      return batch;
+      return { ...batch, receiptCostRecord };
+    });
+  }
+
+  async updatePurchaseReceiptCost(
+    user: AuthenticatedInventoryUser,
+    receiptCostRecordId: string,
+    dto: UpdatePurchaseReceiptCostDto
+  ) {
+    const actor = await this.withStoreMember(user);
+    return this.prisma.$transaction(async (tx) => {
+      const record = await tx.purchaseReceiptCostRecord.findUnique({
+        where: { id: receiptCostRecordId },
+        include: {
+          purchaseOrderItem: { include: { purchaseOrder: true } },
+          inventoryBatch: { select: { id: true, outboundQuantity: true } }
+        }
+      });
+      if (!record) throw new NotFoundException("入库成本记录不存在");
+      if (!PermissionPolicy.canManagePurchase(actor, record.storeId)) {
+        throw new ForbiddenException("无权限");
+      }
+      if (dto.actualUnitCostCents === undefined) {
+        throw new BadRequestException("请填写实际入库单价，或明确清空为待补价");
+      }
+      const actualUnitCostCents = dto.actualUnitCostCents;
+      const differenceCents = actualUnitCostCents == null || record.plannedUnitCostCents == null
+        ? null
+        : actualUnitCostCents - record.plannedUnitCostCents;
+      const differenceReason = normalizeOptionalText(dto.costDifferenceReason);
+      if (differenceCents !== null && differenceCents !== 0 && !differenceReason) {
+        throw new BadRequestException("实际入库价与采购单价不一致时，请填写成本差异原因");
+      }
+      const baseQuantity = decimalToNumber(record.baseQuantity);
+      const receivedQuantity = decimalToNumber(record.receivedQuantity);
+      const baseUnitCostCents = actualUnitCostCents == null
+        ? null
+        : Math.round((actualUnitCostCents * receivedQuantity) / baseQuantity);
+      if (baseUnitCostCents != null) {
+        const conflictingRecord = await tx.purchaseReceiptCostRecord.findFirst({
+          where: {
+            inventoryBatchId: record.inventoryBatchId,
+            id: { not: record.id },
+            baseUnitCostCents: { not: baseUnitCostCents }
+          },
+          select: { id: true }
+        });
+        if (conflictingRecord) {
+          throw new BadRequestException("同一批次只能保留一个实际入库成本；价格不同请使用新的批次号入库");
+        }
+      }
+      const hasOutbound = decimalToNumber(record.inventoryBatch.outboundQuantity) > 0;
+      if (hasOutbound && actualUnitCostCents == null && record.baseUnitCostCents != null) {
+        throw new BadRequestException("该批次已有出库记录，不能清空已确认的实际入库价；如需更正请填写新的实际价格和差异原因");
+      }
+      const updated = await tx.purchaseReceiptCostRecord.update({
+        where: { id: record.id },
+        data: {
+          actualUnitCostCents,
+          baseUnitCostCents,
+          differenceCents,
+          differenceReason,
+          updatedById: actor.id
+        }
+      });
+      // 当前批次的真实单位成本始终以最近确认的实际入库价为准。已经出库
+      // 的部分由下面的订单成本闭环处理，避免把历史已结算订单直接覆盖。
+      await tx.inventoryBatch.update({
+        where: { id: record.inventoryBatchId },
+        data: { unitCostCents: baseUnitCostCents }
+      });
+
+      const unitCostDeltaCents = (baseUnitCostCents ?? 0) - (record.baseUnitCostCents ?? 0);
+      let recalculatedUnsettledOrderCount = 0;
+      let createdSettledDifferenceCount = 0;
+      if (hasOutbound && unitCostDeltaCents !== 0) {
+        const movements = await tx.inventoryMovement.findMany({
+          where: {
+            batchId: record.inventoryBatchId,
+            orderId: { not: null },
+            movementType: { in: [InventoryMovementType.ORDER_OUT, InventoryMovementType.DAMAGE_OUT] }
+          },
+          select: { orderId: true, quantity: true }
+        });
+        const quantityByOrder = new Map<string, number>();
+        for (const movement of movements) {
+          if (!movement.orderId) continue;
+          quantityByOrder.set(movement.orderId, (quantityByOrder.get(movement.orderId) ?? 0) + decimalToNumber(movement.quantity));
+        }
+        if (quantityByOrder.size) {
+          const settlements = await tx.constructionCostSettlement.findMany({
+            where: { orderId: { in: [...quantityByOrder.keys()] } },
+            include: { order: { include: { amount: true } } }
+          });
+          for (const settlement of settlements) {
+            const materialDeltaCents = Math.round((quantityByOrder.get(settlement.orderId) ?? 0) * unitCostDeltaCents);
+            if (!materialDeltaCents) continue;
+            if (settlement.status === ConstructionCostSettlementStatus.CONFIRMED) {
+              const actualMaterialCostCents = settlement.actualMaterialCostCents + materialDeltaCents;
+              const actualTotalCostCents = actualMaterialCostCents + settlement.actualConstructionCostCents;
+              const revenue = settlement.order.amount?.totalAmountCents ?? 0;
+              await tx.constructionCostSettlement.update({
+                where: { id: settlement.id },
+                data: {
+                  actualMaterialCostCents,
+                  actualTotalCostCents,
+                  actualGrossProfitCents: revenue - actualTotalCostCents,
+                  actualGrossMarginBps: revenue > 0 ? Math.floor(((revenue - actualTotalCostCents) * 10000) / revenue) : -10000
+                }
+              });
+              recalculatedUnsettledOrderCount += 1;
+              await tx.auditEvent.create({
+                data: {
+                  action: "ORDER_MATERIAL_COST_RECALCULATED",
+                  actorId: actor.id,
+                  storeId: record.storeId,
+                  targetType: "ConstructionCostSettlement",
+                  targetId: settlement.id,
+                  metadata: { purchaseReceiptCostRecordId: record.id, materialDeltaCents, reason: differenceReason }
+                }
+              });
+            } else if (settlement.status === ConstructionCostSettlementStatus.SETTLED) {
+              await tx.constructionCostAdjustment.create({
+                data: {
+                  settlementId: settlement.id,
+                  adjustmentType: "MATERIAL_RECEIPT_COST_DIFFERENCE",
+                  amountCents: materialDeltaCents,
+                  reasonCode: "PURCHASE_RECEIPT_PRICE_DIFFERENCE",
+                  reasonText: `采购实际入库价补录：${record.purchaseOrderItem.purchaseOrder.orderNo}，${differenceReason ?? "实际入库价变化"}`,
+                  requestedById: actor.id
+                }
+              });
+              createdSettledDifferenceCount += 1;
+              await tx.auditEvent.create({
+                data: {
+                  action: "SETTLED_ORDER_MATERIAL_COST_DIFFERENCE_CREATED",
+                  actorId: actor.id,
+                  storeId: record.storeId,
+                  targetType: "ConstructionCostSettlement",
+                  targetId: settlement.id,
+                  metadata: { purchaseReceiptCostRecordId: record.id, materialDeltaCents, reason: differenceReason }
+                }
+              });
+            }
+          }
+        }
+      }
+      await tx.auditEvent.create({
+        data: {
+          action: "PURCHASE_RECEIPT_COST_UPDATED",
+          actorId: actor.id,
+          storeId: record.storeId,
+          targetType: "PurchaseReceiptCostRecord",
+          targetId: record.id,
+          metadata: {
+            purchaseOrderNo: record.purchaseOrderItem.purchaseOrder.orderNo,
+            plannedUnitCostCents: record.plannedUnitCostCents,
+            actualUnitCostCents,
+            differenceCents,
+            differenceReason,
+            affectsFutureInventoryCost: true,
+            recalculatedUnsettledOrderCount,
+            createdSettledDifferenceCount
+          }
+        }
+      });
+      return {
+        ...updated,
+        affectsFutureInventoryCost: true,
+        recalculatedUnsettledOrderCount,
+        createdSettledDifferenceCount
+      };
     });
   }
 
@@ -1394,12 +1653,13 @@ export class InventoryService {
           throw new BadRequestException("出库明细不存在或未锁定");
         }
         const remainingLocked = decimalToNumber(allocation.lockedQuantity) - decimalToNumber(allocation.outboundQuantity);
-        const quantity = convertToBaseQuantity({
+        const quantity = this.convertInventoryQuantityOrReject({
           quantity: line.quantity,
           fromUnit: line.unit,
           baseUnit: allocation.batch.unit,
           packageUnit: allocation.batch.packageUnit,
-          baseQuantityPerPackage: decimalToNumber(allocation.batch.baseQuantityPerPackage ?? 1)
+          baseQuantityPerPackage: decimalToNumber(allocation.batch.baseQuantityPerPackage ?? 1),
+          action: "出库"
         });
         if (quantity <= 0) continue;
         if (quantity > remainingLocked) {
@@ -1599,6 +1859,34 @@ export class InventoryService {
         }
       });
     });
+  }
+
+  private async assertActiveSupplier(
+    storeId: string,
+    supplierName: string,
+    client: Pick<PrismaService, "supplier"> = this.prisma
+  ) {
+    const normalizedName = normalizeRequiredText(supplierName, "供应商名称");
+    const supplier = await client.supplier.findFirst({
+      where: { storeId, name: normalizedName },
+      select: { id: true, isActive: true }
+    });
+    if (!supplier) {
+      throw new BadRequestException("供应商不存在，请先在供应商档案中维护");
+    }
+    if (!supplier.isActive) {
+      throw new BadRequestException("供应商已暂停，不能创建新的采购订单");
+    }
+    return normalizedName;
+  }
+
+  private convertInventoryQuantityOrReject(input: Parameters<typeof convertToBaseQuantity>[0] & { action: string }) {
+    const { action, ...conversionInput } = input;
+    try {
+      return convertToBaseQuantity(conversionInput);
+    } catch {
+      throw new BadRequestException(`${action}单位与当前批次库存单位不匹配；卷材零散出库请先在“库存调整 - 卷材拆分”中拆出米制子批次后再操作`);
+    }
   }
 
   private async withStoreMember(user: AuthenticatedInventoryUser): Promise<UserWithStoreMember> {

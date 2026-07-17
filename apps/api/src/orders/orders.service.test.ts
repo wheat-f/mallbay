@@ -748,6 +748,8 @@ test("OrdersService updates order commercial fields and records audit trail", as
         data: {
           productAmountCents: 1000,
           laborCostCents: 400,
+          constructionChargeCents: 400,
+          constructionChargeAdjustmentReason: "客户调整施工产品",
           totalAmountCents: 1400,
           outstandingCents: 1100,
           profitCents: 1250
@@ -968,7 +970,7 @@ test("OrdersService lists payment account audit events with payment management v
   ]);
 });
 
-test("OrdersService updates unpaid active order commercials without returning to pending dispatch", async () => {
+test("OrdersService updates unpaid warrantied order commercials without returning to pending dispatch", async () => {
   const operations: unknown[] = [];
   const auditEvents: unknown[] = [];
   const tx = {
@@ -977,7 +979,7 @@ test("OrdersService updates unpaid active order commercials without returning to
         id: "order-1",
         storeId: "store-1",
         salesPersonId: "sales-1",
-        status: OrderStatus.DISPATCHED,
+        status: OrderStatus.WARRANTIED,
         remark: "旧备注",
         items: [
           {

@@ -1,7 +1,7 @@
 "use client";
 
 import type { DailyCapacitySummary, ProductUnit } from "@mallbay/shared";
-import { Alert, App, Button, Card, DatePicker, Drawer, Form, Input, InputNumber, Select, Space, Switch, Tag, TimePicker, Typography } from "antd";
+import { Alert, App, Button, Card, DatePicker, Drawer, Form, Input, InputNumber, Radio, Select, Space, Switch, Tag, TimePicker, Typography } from "antd";
 import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -30,6 +30,7 @@ import {
 import type { PaymentAccountOption, PaymentAccountPayload } from "../../../src/features/orders/api";
 import type { PricingCalculationResponse } from "../../../src/features/pricing/api";
 import { salesQuoteApi } from "../../../src/features/sales-quotes/api";
+import { dictionaryApi } from "../../../src/features/settings/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { getStoreWorkbenchHref } from "../../../src/features/workbench/navigation";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
@@ -54,7 +55,13 @@ type ProductOption = {
   unit?: ProductUnit | null;
   salesUnit?: ProductUnit | null;
   inventoryUnit?: ProductUnit | null;
+  metersPerRoll?: number | null;
   quantityPrecision?: number;
+  unitSuggestedPrices?: Array<{
+    salesUnit: ProductUnit;
+    suggestedPriceCents: number;
+    isActive: boolean;
+  }>;
 };
 
 type NewOrderCustomerFormValues = CreateCustomerFormValues & {
@@ -63,6 +70,7 @@ type NewOrderCustomerFormValues = CreateCustomerFormValues & {
   carModel: string;
   carColor?: string;
   photoUrl?: string;
+  vehicleTypeCode: "SMALL_CAR" | "STANDARD_CAR" | "LUXURY_LARGE_CAR";
 };
 
 type NewPaymentAccountFormValues = Omit<PaymentAccountPayload, "storeId">;
@@ -108,13 +116,14 @@ function CreateOrderContent() {
   const initialCustomerId = params.get("customerId") ?? undefined;
   const selectedCustomerId = Form.useWatch("customerId", form) ?? initialCustomerId;
   const selectedVehicleId = Form.useWatch("vehicleId", form);
-  const selectedVehicleClassCode = Form.useWatch("vehicleClassCode", form);
+  const selectedVehicleTypeCode = Form.useWatch("vehicleTypeCode", form);
   const selectedAppointmentDate = Form.useWatch("appointmentDate", form);
   const selectedConstructionLocation = Form.useWatch("constructionLocation", form) ?? "IN_STORE";
   const selectedConstructionType = Form.useWatch("constructionType", form) ?? "PPF";
   const selectedItems = Form.useWatch("items", form);
   const selectedConstructionChargeYuan = Form.useWatch("constructionChargeYuan", form);
   const selectedSuggestedConstructionChargeYuan = Form.useWatch("suggestedConstructionChargeYuan", form);
+  const selectedConstructionChargeMode = Form.useWatch("constructionChargeMode", form) ?? "MANUAL";
   const selectedTemporaryCostYuan = Form.useWatch("temporaryCostYuan", form);
   const selectedDeposit = Form.useWatch("deposit", form);
   const shouldRecordDeposit = Form.useWatch("shouldRecordDeposit", form);
@@ -167,9 +176,13 @@ function CreateOrderContent() {
     enabled: Boolean(storeId)
   });
 
-  const selectedCustomer = selectedCustomerQuery.data as OrderCustomer | undefined;
+  const searchedCustomers = (customersQuery.data ?? []) as OrderCustomer[];
+  // 客户详情请求尚未返回或偶发失败时，先使用搜索结果中的客户和车辆，不能把
+  // 已选客户误判为“未选择”。详情返回后会自动补齐全部车辆与历史信息。
+  const selectedCustomer = (selectedCustomerQuery.data as OrderCustomer | undefined)
+    ?? searchedCustomers.find((customer) => customer.id === selectedCustomerId);
   const customerOptions = buildOrderCustomerOptions(
-    (customersQuery.data ?? []) as OrderCustomer[],
+    searchedCustomers,
     selectedCustomer
   );
   const referrerOptions = ((referrersQuery.data ?? []) as OrderCustomer[]).map((customer) => ({
@@ -183,16 +196,18 @@ function CreateOrderContent() {
     product
   }));
   const selectedVehicle = selectedCustomer?.vehicles?.find((vehicle) => vehicle.id === selectedVehicleId);
-  const vehicleClassesQuery = useQuery({
-    queryKey: ["pricing-vehicle-classes", storeId],
-    queryFn: () => pricingApi.vehicleClasses(storeId!),
-    enabled: Boolean(storeId)
+  const vehicleTypesQuery = useQuery({
+    queryKey: ["system-dictionary", storeId, "VEHICLE_TYPE"],
+    queryFn: () => dictionaryApi.list(storeId!),
+    enabled: Boolean(storeId),
+    staleTime: 60_000
   });
-  const vehicleClassificationQuery = useQuery({
-    queryKey: ["pricing-vehicle-classify", storeId, selectedVehicle?.carModel],
-    queryFn: () => pricingApi.resolveVehicleClass({ storeId: storeId!, model: selectedVehicle?.carModel ?? "" }),
-    enabled: Boolean(storeId && selectedVehicle?.carModel)
-  });
+  const vehicleTypeOptions = useMemo(() => {
+    const dictionary = vehicleTypesQuery.data?.find((item) => item.code === "VEHICLE_TYPE");
+    return (dictionary?.dictionaryItems ?? [])
+      .filter((item) => item.status === "ACTIVE")
+      .map((item) => ({ value: item.code, label: item.name }));
+  }, [vehicleTypesQuery.data]);
   const costLines = useMemo(() => (selectedItems ?? []).filter((item) => item?.productId && item?.quantity).map((item) => ({ productId: item.productId, quantity: Number(item.quantity) })), [selectedItems]);
   const costEstimateQuery = useQuery({
     queryKey: ["pricing-cost-estimate", storeId, costLines],
@@ -204,6 +219,9 @@ function CreateOrderContent() {
   const systemSuggestedConstructionChargeYuan = serverPricing?.constructionChargeAvailable
     ? centsToYuan(serverPricing.calculation.suggestedLaborCostCents)
     : undefined;
+  const constructionChargeHint = systemSuggestedConstructionChargeYuan === undefined
+    ? (serverPricing?.constructionChargeReason ?? "等待服务端按已发布施工标准试算；未匹配标准时不会生成建议收费")
+    : `服务端建议 ¥${systemSuggestedConstructionChargeYuan.toFixed(2)}，由已发布施工标准计算，不可直接修改`;
   const now = Date.now();
   const publishedRuleSet = pricingRuleSetsQuery.data?.find((item) => {
     const starts = new Date(item.effectiveFrom).getTime() <= now;
@@ -212,13 +230,13 @@ function CreateOrderContent() {
   });
   useEffect(() => {
     if (!selectedVehicleId) {
-      form.setFieldValue("vehicleClassCode", undefined);
+      form.setFieldValue("vehicleTypeCode", undefined);
       return;
     }
-    if (!selectedVehicleClassCode && vehicleClassificationQuery.data?.vehiclePriceClass?.code) {
-      form.setFieldValue("vehicleClassCode", vehicleClassificationQuery.data.vehiclePriceClass.code);
+    if (selectedVehicle?.vehicleTypeCode) {
+      form.setFieldValue("vehicleTypeCode", selectedVehicle.vehicleTypeCode);
     }
-  }, [form, selectedVehicleId, selectedVehicleClassCode, vehicleClassificationQuery.data?.vehiclePriceClass?.code]);
+  }, [form, selectedVehicle?.vehicleTypeCode, selectedVehicleId]);
 
   const pricingInput = useMemo(() => {
     if (!storeId || !publishedRuleSet || !selectedItems?.length) return undefined;
@@ -231,9 +249,9 @@ function CreateOrderContent() {
         category: product.category,
         brand: product.brand,
         model: product.model,
-        salesUnit: resolveProductSalesUnit(product),
+        salesUnit: item.salesUnit ?? resolveProductSalesUnit(product),
         quantity: Number(item.quantity),
-        baseUnitPriceCents: product.basePriceCents
+        baseUnitPriceCents: getDefaultUnitPriceCents(product, item.salesUnit ?? resolveProductSalesUnit(product))
       };
     });
     if (lines.some((line) => !line)) return undefined;
@@ -243,7 +261,7 @@ function CreateOrderContent() {
       input: {
         ruleSetVersion: publishedRuleSet.version,
         vehicleId: selectedVehicleId || undefined,
-        vehicleClassCode: selectedVehicleClassCode || undefined,
+        vehicleTypeCode: selectedVehicleTypeCode || undefined,
         constructionType: selectedConstructionType,
         constructionLocation: selectedConstructionLocation,
         effectiveAt: new Date().toISOString(),
@@ -252,7 +270,7 @@ function CreateOrderContent() {
         lines: lines as NonNullable<typeof lines[number]>[]
       }
     };
-  }, [productsQuery.data?.items, publishedRuleSet, selectedConstructionLocation, selectedConstructionType, selectedItems, selectedVehicleClassCode, selectedVehicleId, storeId]);
+  }, [productsQuery.data?.items, publishedRuleSet, selectedConstructionLocation, selectedConstructionType, selectedItems, selectedVehicleId, selectedVehicleTypeCode, storeId]);
 
   const pricingCalculationMutation = useMutation({
     mutationFn: () => {
@@ -266,7 +284,10 @@ function CreateOrderContent() {
         ? centsToYuan(result.calculation.suggestedLaborCostCents)
         : undefined;
       form.setFieldValue("suggestedConstructionChargeYuan", suggestedConstructionCharge);
-      if (!constructionChargeTouchedRef.current) form.setFieldValue("constructionChargeYuan", suggestedConstructionCharge);
+      if (!constructionChargeTouchedRef.current) {
+        form.setFieldValue("constructionChargeYuan", suggestedConstructionCharge);
+        form.setFieldValue("constructionChargeMode", "SUGGESTED");
+      }
     },
     onError: (error: Error) => message.error(`价格试算失败：${error.message}`)
   });
@@ -365,7 +386,7 @@ function CreateOrderContent() {
   const createCustomerMutation = useMutation({
     mutationFn: async (values: NewOrderCustomerFormValues) => {
       if (!storeId) throw new Error("当前账号尚未加入门店");
-      const { carPlate, vin, carModel, carColor, photoUrl, ...customerValues } = values;
+      const { carPlate, vin, carModel, carColor, photoUrl, vehicleTypeCode, ...customerValues } = values;
       const customer = await customerApi.create(toCreateCustomerPayload(storeId, customerValues));
       try {
         await customerApi.createVehicle({
@@ -373,6 +394,7 @@ function CreateOrderContent() {
           carPlate: trimOptional(carPlate),
           vin: trimOptional(vin),
           carModel: carModel.trim(),
+          vehicleTypeCode,
           carColor: trimOptional(carColor),
           photoUrl: trimOptional(photoUrl)
         });
@@ -512,6 +534,7 @@ function CreateOrderContent() {
     form.setFieldValue("suggestedConstructionChargeYuan", systemSuggestedConstructionChargeYuan);
     if (!constructionChargeTouchedRef.current) {
       form.setFieldValue("constructionChargeYuan", systemSuggestedConstructionChargeYuan);
+      form.setFieldValue("constructionChargeMode", "SUGGESTED");
     }
   }, [form, systemSuggestedConstructionChargeYuan]);
 
@@ -567,6 +590,7 @@ function CreateOrderContent() {
             constructionType: "PPF",
             constructionLocation: "IN_STORE",
             constructionChargeYuan: 0,
+            constructionChargeMode: "MANUAL",
             shouldRecordDeposit: false,
             items: defaultItems
           }}
@@ -581,8 +605,10 @@ function CreateOrderContent() {
                       showSearch
                       filterOption={false}
                       onSearch={setCustomerKeyword}
-                      onChange={() => {
+                      onChange={(customerId) => {
+                        form.setFieldValue("customerId", customerId);
                         form.setFieldValue("vehicleId", undefined);
+                        form.setFieldValue("vehicleTypeCode", undefined);
                         setCustomerKeyword("");
                       }}
                       options={customerOptions}
@@ -602,19 +628,18 @@ function CreateOrderContent() {
                     disabled={!selectedCustomer}
                     loading={selectedCustomerQuery.isLoading}
                     options={vehicleOptions}
-                    onChange={() => form.setFieldValue("vehicleClassCode", undefined)}
+                    onChange={() => form.setFieldValue("vehicleTypeCode", undefined)}
                     placeholder={selectedCustomer ? "选择客户车辆" : "请先选择客户"}
                   />
                 </Form.Item>
 
 
-                <Form.Item name="vehicleClassCode" label="车辆价格级别" extra={vehicleClassificationQuery.data?.source === "UNMATCHED" ? "未匹配车型，请手动选择级别" : vehicleClassificationQuery.data?.source === "AUTO_DEFAULT" ? "当前使用门店默认级别，可手动修正" : "已根据车型关键词自动匹配，可在本单修正"}>
+                <Form.Item name="vehicleTypeCode" label="车辆类型" rules={[{ required: Boolean(selectedVehicle), message: "请选择车辆类型" }]} extra={selectedVehicle?.vehicleTypeCode ? "已从车辆档案自动带出；本单可按实际情况修正。" : selectedVehicle ? "该历史车辆尚未维护车辆类型，请为本单选择。" : "请先选择车辆。"}>
                   <Select
-                    allowClear
                     disabled={!selectedVehicle}
-                    loading={vehicleClassesQuery.isLoading || vehicleClassificationQuery.isLoading}
-                    options={(vehicleClassesQuery.data ?? []).filter((item) => item.status === "ACTIVE").map((item) => ({ label: item.name + "（" + item.code + "）", value: item.code }))}
-                    placeholder={selectedVehicle ? "自动匹配，可手动修正" : "请先选择车辆"}
+                    loading={vehicleTypesQuery.isLoading}
+                    options={vehicleTypeOptions}
+                    placeholder={selectedVehicle ? "选择车辆类型" : "请先选择车辆"}
                   />
                 </Form.Item>              </Card>
 
@@ -692,6 +717,7 @@ function CreateOrderContent() {
                                 const items = form.getFieldValue("items") as Array<Record<string, unknown>>;
                                 items[field.name] = {
                                   ...items[field.name],
+                                  salesUnit: resolveProductSalesUnit(product),
                                   unitPriceYuan: centsToYuan(product.basePriceCents)
                                 };
                                 form.setFieldValue("items", items);
@@ -702,18 +728,32 @@ function CreateOrderContent() {
                             <InputNumber
                               min={0.001}
                               step={0.001}
-                              precision={selectedItems?.[field.name]?.productId ? (productOptions.find((item) => item.value === selectedItems?.[field.name]?.productId)?.product.quantityPrecision ?? 3) : 3}
+                              precision={getSelectedProductQuantityPrecision(
+                                selectedItems?.[field.name]?.productId,
+                                selectedItems?.[field.name]?.salesUnit,
+                                productOptions
+                              )}
                               placeholder="数量"
                               className="w-full"
                             />
                           </Form.Item>
-                          <Form.Item label="单位">
-                            <Input
-                              readOnly
-                              value={getSelectedProductUnitLabel(
+                          <Form.Item {...field} name={[field.name, "salesUnit"]} label="单位">
+                            <Select
+                              placeholder="选择单位"
+                              options={getAvailableSalesUnitOptions(
                                 selectedItems?.[field.name]?.productId,
                                 productOptions
                               )}
+                              onChange={(salesUnit) => {
+                                const product = productOptions.find((item) => item.value === selectedItems?.[field.name]?.productId)?.product;
+                                if (!product) return;
+                                setServerPricing(null);
+                                form.setFieldValue("pricingCalculationId", undefined);
+                                form.setFieldValue(
+                                  ["items", field.name, "unitPriceYuan"],
+                                  centsToYuan(getDefaultUnitPriceCents(product, salesUnit))
+                                );
+                              }}
                             />
                           </Form.Item>
                           <Form.Item {...field} name={[field.name, "unitPriceYuan"]} label="单价（元）">
@@ -728,6 +768,7 @@ function CreateOrderContent() {
                             <Space size={4} className="create-order-price-suggestion">
                               <Typography.Text type="secondary">
                                 建议 ¥{(serverPricing.calculation.lines[field.name].suggestedUnitPriceCents / 100).toFixed(2)}
+                                {getSuggestedPriceSourceLabel(serverPricing.calculation.lines[field.name].basePriceSource)}
                               </Typography.Text>
                               <Button
                                 size="small"
@@ -753,60 +794,53 @@ function CreateOrderContent() {
                 </Form.List>
 
                 <div className="create-order-labor-grid mt-4">
-                  <Form.Item
-                    label="系统建议施工收费（元）"
-                    extra={systemSuggestedConstructionChargeYuan === undefined
-                      ? "等待服务端按已发布施工标准试算；未匹配标准时不会生成建议收费"
-                      : `服务端建议 ¥${systemSuggestedConstructionChargeYuan.toFixed(2)}，由已发布施工标准计算，不可直接修改`}
-                  >
-                    <Space.Compact className="w-full">
-                      <Form.Item name="suggestedConstructionChargeYuan" noStyle>
-                        <InputNumber
-                          className="!w-full"
-                          min={0}
-                          precision={2}
-                          readOnly
-                          placeholder="待服务端试算"
-                        />
-                      </Form.Item>
-                      <Button
-                        onClick={() => {
-                          if (systemSuggestedConstructionChargeYuan === undefined) return;
-                          form.setFieldValue("suggestedConstructionChargeYuan", systemSuggestedConstructionChargeYuan);
-                          if (!constructionChargeTouchedRef.current) {
-                            form.setFieldValue("constructionChargeYuan", systemSuggestedConstructionChargeYuan);
+                  <Form.Item label="系统建议施工收费（元）" extra={constructionChargeHint}>
+                    <Form.Item name="suggestedConstructionChargeYuan" noStyle>
+                      <InputNumber
+                        className="!w-full"
+                        min={0}
+                        precision={2}
+                        readOnly
+                        placeholder="待服务端试算"
+                      />
+                    </Form.Item>
+                  </Form.Item>
+                  <Form.Item label="本单施工收费方式">
+                    <Form.Item name="constructionChargeMode" noStyle>
+                      <Radio.Group
+                        onChange={(event) => {
+                          const mode = event.target.value as CreateOrderFormValues["constructionChargeMode"];
+                          if (mode === "SUGGESTED") {
+                            const suggestedCharge = suggestedConstructionChargeYuan ?? systemSuggestedConstructionChargeYuan;
+                            form.setFieldValue("constructionChargeYuan", suggestedCharge);
+                            form.setFieldValue("constructionChargeAdjustmentReason", undefined);
+                            constructionChargeTouchedRef.current = false;
+                          } else {
+                            constructionChargeTouchedRef.current = true;
                           }
                         }}
-                        disabled={systemSuggestedConstructionChargeYuan === undefined}
                       >
-                        使用系统建议
-                      </Button>
-                    </Space.Compact>
+                        <Radio value="SUGGESTED" disabled={systemSuggestedConstructionChargeYuan === undefined}>采用系统建议</Radio>
+                        <Radio value="MANUAL">手动输入</Radio>
+                      </Radio.Group>
+                    </Form.Item>
                   </Form.Item>
-                  <Form.Item label="本单施工收费（元）">
-                    <Space.Compact className="w-full">
-                      <Form.Item name="constructionChargeYuan" noStyle>
-                        <InputNumber
-                          className="!w-full"
-                          min={0}
-                          precision={2}
-                          onChange={() => {
-                            constructionChargeTouchedRef.current = true;
-                          }}
-                        />
-                      </Form.Item>
-                      <Button
-                        onClick={() => {
-                          if (suggestedConstructionChargeYuan === undefined) return;
-                          form.setFieldValue("constructionChargeYuan", suggestedConstructionChargeYuan);
-                          form.setFieldValue("constructionChargeAdjustmentReason", undefined);
-                          constructionChargeTouchedRef.current = false;
+                  <Form.Item
+                    label="本单施工收费（元）"
+                    extra={selectedConstructionChargeMode === "SUGGESTED" ? "已采用系统建议；切换为手动输入后可修改。" : "手动收费与系统建议不一致时，必须填写调整原因。"}
+                  >
+                    <Form.Item name="constructionChargeYuan" noStyle>
+                      <InputNumber
+                        className="!w-full"
+                        min={0}
+                        precision={2}
+                        readOnly={selectedConstructionChargeMode !== "MANUAL"}
+                        onChange={() => {
+                          constructionChargeTouchedRef.current = true;
+                          form.setFieldValue("constructionChargeMode", "MANUAL");
                         }}
-                        disabled={suggestedConstructionChargeYuan === undefined}
-                      >
-                        采用建议价
-                      </Button>
-                    </Space.Compact>
+                      />
+                    </Form.Item>
                   </Form.Item>
                 </div>
                 {hasConstructionChargeAdjustment ? (
@@ -829,6 +863,7 @@ function CreateOrderContent() {
                   <Typography.Text type="secondary">
                     {serverPricing?.costEstimate?.reason ?? (costEstimateQuery.data?.hasMissingCost ? "部分产品成本待维护，暂不能形成完整预计成本" : "施工成本标准待配置，暂不能形成完整预计成本")}
                   </Typography.Text>
+                  {hasMissingMaterialCost ? <div><Button type="link" size="small" href="/products">去产品管理维护材料成本</Button></div> : null}
                   {canManageTemporaryCost && serverPricing?.costEstimate?.costCompleteness === "MISSING" ? <>
                     <Form.Item
                       name="temporaryCostYuan"
@@ -901,7 +936,7 @@ function CreateOrderContent() {
                         label="定金金额（元）"
                         rules={[{ required: true, message: "请输入定金金额" }]}
                       >
-                        <InputNumber min={0.01} precision={2} placeholder="定金金额" className="w-full" />
+                        <InputNumber min={0} precision={2} placeholder="定金金额" className="w-full" />
                       </Form.Item>
                       <Form.Item
                         name={["deposit", "paymentType"]}
@@ -1104,6 +1139,9 @@ function CreateOrderContent() {
             >
               <Input maxLength={80} placeholder="例如：宝马 5 系" />
             </Form.Item>
+            <Form.Item name="vehicleTypeCode" label="车辆类型" rules={[{ required: true, message: "请选择车辆类型" }]}>
+              <Select loading={vehicleTypesQuery.isLoading} options={vehicleTypeOptions} placeholder="请选择小车、常规车或豪车/大车" />
+            </Form.Item>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Form.Item name="carPlate" label="车牌号">
                 <Input maxLength={20} placeholder="湘A12345" />
@@ -1190,13 +1228,51 @@ function resolveProductSalesUnit(product: ProductOption): ProductUnit {
   return product.salesUnit ?? product.unit ?? "PIECE";
 }
 
-function getSelectedProductUnitLabel(
+function getAvailableProductSalesUnits(product: ProductOption) {
+  const defaultUnit = resolveProductSalesUnit(product);
+  const units = [defaultUnit];
+  const isRollMeterProduct = (defaultUnit === "ROLL" || defaultUnit === "METER") && Number(product.metersPerRoll ?? 0) > 0;
+  if (isRollMeterProduct) units.push(defaultUnit === "ROLL" ? "METER" : "ROLL");
+  return units;
+}
+
+function getAvailableSalesUnitOptions(
   productId: string | undefined,
   productOptions: ProductSelectOption[]
 ) {
-  if (!productId) return "-";
+  if (!productId) return [];
   const product = productOptions.find((option) => option.value === productId)?.product;
-  return product ? getProductUnitLabel(resolveProductSalesUnit(product)) : "单位待确认";
+  return product
+    ? getAvailableProductSalesUnits(product).map((unit) => ({ value: unit, label: getProductUnitLabel(unit) }))
+    : [];
+}
+
+function getSelectedProductQuantityPrecision(
+  productId: string | undefined,
+  salesUnit: ProductUnit | undefined,
+  productOptions: ProductSelectOption[]
+) {
+  const product = productOptions.find((option) => option.value === productId)?.product;
+  const selectedUnit = salesUnit ?? (product ? resolveProductSalesUnit(product) : undefined);
+  return selectedUnit === "METER" ? 3 : product?.quantityPrecision ?? 3;
+}
+
+function getDefaultUnitPriceCents(product: ProductOption, selectedUnit: ProductUnit) {
+  const defaultUnit = resolveProductSalesUnit(product);
+  if (selectedUnit === defaultUnit) return product.basePriceCents;
+  const explicitPrice = product.unitSuggestedPrices?.find((price) => price.salesUnit === selectedUnit && price.isActive);
+  if (explicitPrice) return explicitPrice.suggestedPriceCents;
+  const metersPerRoll = Number(product.metersPerRoll ?? 0);
+  if (metersPerRoll <= 0) return product.basePriceCents;
+  if (defaultUnit === "ROLL" && selectedUnit === "METER") return Math.round(product.basePriceCents / metersPerRoll);
+  if (defaultUnit === "METER" && selectedUnit === "ROLL") return Math.round(product.basePriceCents * metersPerRoll);
+  return product.basePriceCents;
+}
+
+function getSuggestedPriceSourceLabel(source?: "DEFAULT_UNIT" | "UNIT_OVERRIDE" | "UNIT_CONVERTED") {
+  if (source === "UNIT_OVERRIDE") return "（单位专属建议价）";
+  if (source === "UNIT_CONVERTED") return "（按产品换算）";
+  return "（产品默认建议价）";
 }
 
 function CustomerHistoryPanel({

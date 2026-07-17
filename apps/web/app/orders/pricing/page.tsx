@@ -38,8 +38,7 @@ import {
   pricingApi,
   type PricingRule,
   type PricingRuleSetPayload,
-  type PricingRuleSetSummary,
-  type VehiclePriceClass
+  type PricingRuleSetSummary
 } from "../../../src/features/pricing/api";
 import {
   ACTION_OPTIONS,
@@ -100,11 +99,12 @@ function dictionaryCodeForField(field: string) {
   if (field === "constructionType") return "CONSTRUCTION_TYPE";
   if (field === "constructionLocation") return "CONSTRUCTION_LOCATION";
   if (field === "salesUnit") return "PRODUCT_UNIT";
+  if (field === "vehicleTypeCode") return "VEHICLE_TYPE";
   return null;
 }
 
 function groupForField(field: string) {
-  if (field === "vehicleClassCode") return "VEHICLE";
+  if (field === "vehicleTypeCode" || field === "vehicleClassCode") return "VEHICLE";
   if (field.startsWith("construction")) return "CONSTRUCTION";
   return "PRODUCT";
 }
@@ -176,11 +176,6 @@ export default function PricingRulesPage() {
     queryFn: () => pricingApi.rollout(storeId!),
     enabled: Boolean(storeId)
   });
-  const classesQuery = useQuery({
-    queryKey: ["vehicle-price-classes", storeId],
-    queryFn: () => pricingApi.vehicleClasses(storeId!),
-    enabled: Boolean(storeId)
-  });
   const dictionariesQuery = useQuery({
     queryKey: ["store-dictionaries", storeId],
     queryFn: () => dictionaryApi.list(storeId!),
@@ -202,7 +197,7 @@ export default function PricingRulesPage() {
     [ruleSets]
   );
   const dictionaries = useMemo(() => dictionariesQuery.data ?? [], [dictionariesQuery.data]);
-  const vehicleClasses = useMemo(() => classesQuery.data ?? [], [classesQuery.data]);
+  const vehicleTypes = useMemo(() => getDictionaryOptions(dictionaries, "VEHICLE_TYPE"), [dictionaries]);
   const products = useMemo(
     () => (productsQuery.data?.items ?? []) as PricingProduct[],
     [productsQuery.data]
@@ -358,7 +353,6 @@ export default function PricingRulesPage() {
     const field = rule.conditions[0]?.field;
     const dictionaryCode = dictionaryCodeForField(field);
     if (dictionaryCode) return getDictionaryOptions(dictionaries, dictionaryCode);
-    if (field === "vehicleClassCode") return vehicleClasses.map((item) => ({ value: item.code, label: item.name }));
     if (field === "productId") return products.map((item) => ({ value: item.id, label: `${item.brand} / ${item.name} / ${item.model}` }));
     if (field === "productBrand") return [...new Set(products.map((item) => item.brand).filter(Boolean))].map((value) => ({ value, label: value }));
     if (field === "productModel") return [...new Set(products.map((item) => item.model).filter(Boolean))].map((value) => ({ value, label: value }));
@@ -395,14 +389,14 @@ export default function PricingRulesPage() {
   const activeStep = activeView === "protection" ? 2 : activeView === "versions" ? 3 : 0;
 
   const navigateStep = (step: number) => {
-    if (step === 1) return router.push("/orders/pricing/vehicles");
+    if (step === 1) return router.push("/customers");
     if (step === 2) setActiveView("protection");
     else if (step === 3) setActiveView("versions");
     else setActiveView("price");
   };
 
   const navigateTab = (key: "overview" | "price" | "vehicle" | "protection" | "versions") => {
-    if (key === "vehicle") return router.push("/orders/pricing/vehicles");
+    if (key === "vehicle") return router.push("/customers");
     setActiveView(key);
   };
 
@@ -412,7 +406,7 @@ export default function PricingRulesPage() {
       return;
     }
     saveDraft(true);
-    if (activeView === "price" || activeView === "overview") router.push("/orders/pricing/vehicles");
+    if (activeView === "price" || activeView === "overview") setActiveView("protection");
     else if (activeView === "protection") setActiveView("versions");
   };
 
@@ -454,7 +448,7 @@ export default function PricingRulesPage() {
             <div className="pricing-start-summary">
               <span>当前规则</span>
               <strong>{publishedRuleSet?.rules?.length ?? 0} 条</strong>
-              <span>产品基础价</span>
+              <span>产品建议价</span>
               <Link href="/products">前往产品档案查看 <ArrowRightOutlined /></Link>
             </div>
           </div>
@@ -465,7 +459,7 @@ export default function PricingRulesPage() {
             <section className="pricing-overview-primary">
               <Tag color="processing">草稿 v{draftRuleSet.version}</Tag>
               <Typography.Title level={3}>这份方案有 {rules.length} 条价格规则</Typography.Title>
-              <Typography.Paragraph>按步骤完成价格、车型和保护设置，再统一试算发布。</Typography.Paragraph>
+              <Typography.Paragraph>按步骤完成价格、车辆类型和保护设置，再统一试算发布。</Typography.Paragraph>
               <div className="pricing-overview-actions">
                 <Button type="primary" onClick={() => setActiveView("price")}>继续设置价格</Button>
                 <Button onClick={() => router.push("/orders/pricing/simulator")}>打开试算工具</Button>
@@ -474,7 +468,7 @@ export default function PricingRulesPage() {
             <section className="pricing-overview-checklist">
               <div><CheckCircleFilled /><span>产品建议价规则</span><Button type="link" onClick={() => setActiveView("price")}>查看</Button></div>
               <div><CheckCircleFilled /><span>施工收费与成本标准</span><Link href="/orders/pricing/construction-costs">维护</Link></div>
-              <div><CheckCircleFilled /><span>车型级别与匹配</span><Button type="link" onClick={() => router.push("/orders/pricing/vehicles")}>查看</Button></div>
+              <div><CheckCircleFilled /><span>车辆类型</span><Button type="link" onClick={() => router.push("/customers")}>前往车辆档案维护</Button></div>
               <div><SafetyCertificateOutlined /><span>改价审批与保护</span><Button type="link" onClick={() => setActiveView("protection")}>查看</Button></div>
               <div><EyeOutlined /><span>试算并发布</span><Button type="link" onClick={() => setActiveView("versions")}>查看</Button></div>
             </section>
@@ -611,7 +605,7 @@ export default function PricingRulesPage() {
                 </div>
                 <div className="pricing-base-price-lock">
                   <LockOutlined />
-                  <span>产品基础价由产品档案统一维护</span>
+                  <span>产品建议价由产品档案统一维护</span>
                   <Link href="/products">前往产品档案修改</Link>
                 </div>
               </div>
@@ -678,7 +672,7 @@ export default function PricingRulesPage() {
               </div>
               <div className="pricing-preview-block">
                 <span>影响范围</span>
-                <strong>{rules.length} 条价格规则 · {vehicleClasses.length} 个车型级别</strong>
+                <strong>{rules.length} 条价格规则 · {vehicleTypes.length} 个车辆类型</strong>
               </div>
               <div className="pricing-preview-block">
                 <span>冲突检查</span>
@@ -735,7 +729,7 @@ export default function PricingRulesPage() {
               <Typography.Paragraph type="secondary">先检查规则冲突和生效时间，再将草稿发布为门店的新建议价方案。</Typography.Paragraph>
               <div className="pricing-publish-checks">
                 <div><span>规则数量</span><strong>{rules.length} 条</strong></div>
-                <div><span>车型级别</span><strong>{vehicleClasses.length} 个</strong></div>
+                <div><span>车辆类型</span><strong>{vehicleTypes.length} 个</strong></div>
                 <div><span>生效时间</span><DatePicker value={effectiveFrom} showTime onChange={(value) => { if (value) { setEffectiveFrom(value); markDirty(); } }} /></div>
                 <div><span>检查结果</span><strong className={validation?.valid ? "is-success" : ""}>{validation?.valid ? "已通过" : "尚未检查"}</strong></div>
               </div>

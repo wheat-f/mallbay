@@ -17,6 +17,13 @@ export type CreateProductPayload = {
   quantityPrecision?: number;
   warrantyYears?: number;
   basePriceCents: number;
+  standardCostCents?: number | null;
+};
+
+export type ProductUnitSuggestedPrice = {
+  salesUnit: ProductUnit;
+  suggestedPriceCents: number;
+  isActive: boolean;
 };
 
 export type ProductListQuery = {
@@ -30,7 +37,7 @@ export type ProductListQuery = {
 
 export const productApi = {
   create: (payload: CreateProductPayload) =>
-    request<unknown>("/products", {
+    request<{ id: string }>("/products", {
       method: "POST",
       body: JSON.stringify(payload)
     }),
@@ -43,9 +50,21 @@ export const productApi = {
   detail: (id: string) => request<unknown>(`/products/${id}`),
 
   update: (id: string, payload: Partial<CreateProductPayload> & { status?: ProductStatus }) =>
-    request<unknown>(`/products/${id}`, {
+    request<{ id: string }>(`/products/${id}`, {
       method: "PATCH",
       body: JSON.stringify(payload)
+    }),
+
+  updateStandardCost: (id: string, standardCostCents: number) =>
+    request<unknown>(`/products/${id}/standard-cost`, {
+      method: "PATCH",
+      body: JSON.stringify({ standardCostCents })
+    }),
+
+  updateUnitSuggestedPrices: (id: string, prices: ProductUnitSuggestedPrice[]) =>
+    request<unknown>(`/products/${id}/unit-suggested-prices`, {
+      method: "PATCH",
+      body: JSON.stringify({ prices })
     }),
 
   remove: (id: string) => request<unknown>(`/products/${id}`, { method: "DELETE" })

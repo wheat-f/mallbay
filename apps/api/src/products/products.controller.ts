@@ -5,6 +5,8 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CreateProductDto } from "./dto/create-product.dto";
 import { ListProductsDto } from "./dto/list-products.dto";
 import { UpdateProductDto } from "./dto/update-product.dto";
+import { UpdateProductStandardCostDto } from "./dto/update-product-standard-cost.dto";
+import { UpdateProductUnitSuggestedPricesDto } from "./dto/update-product-unit-suggested-prices.dto";
 import { ProductsService, type AuthenticatedProductUser } from "./products.service";
 
 type AuthRequest = Request & {
@@ -29,6 +31,16 @@ export class ProductsController {
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.products.detail(req.user, id);
+  }
+
+  @Patch(":id/standard-cost")
+  updateStandardCost(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateProductStandardCostDto) {
+    return this.products.updateStandardCost(req.user, id, dto.standardCostCents);
+  }
+
+  @Patch(":id/unit-suggested-prices")
+  updateUnitSuggestedPrices(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateProductUnitSuggestedPricesDto) {
+    return this.products.updateUnitSuggestedPrices(req.user, id, dto.prices);
   }
 
   @Patch(":id")

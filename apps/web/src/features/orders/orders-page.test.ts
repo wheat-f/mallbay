@@ -137,3 +137,9 @@ test("orders page formats appointment dates for table scanning", () => {
   assert.doesNotMatch(pageSource, /row\.appointmentDate \?\? row\.createdAt\?\.slice/);
   assert.doesNotMatch(pageSource, /match\?\.\[1\] \?\? value/);
 });
+
+test("orders page shows warrantied orders as fulfilled instead of pending dispatch", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+
+  assert.match(pageSource, /case "WARRANTIED":\s*return \{ label: "已质保", percent: 100, status: "success" \}/);
+});

@@ -1,4 +1,5 @@
-import { IsOptional, IsString, MaxLength } from "class-validator";
+import { IsIn, IsOptional, IsString, MaxLength } from "class-validator";
+import { VEHICLE_TYPE_CODES } from "../../settings/dictionaries.service";
 
 export class CreateVehicleDto {
   @IsString()
@@ -17,6 +18,10 @@ export class CreateVehicleDto {
   @IsString()
   @MaxLength(100)
   carModel!: string;
+
+  @IsString()
+  @IsIn(VEHICLE_TYPE_CODES)
+  vehicleTypeCode!: string;
 
   @IsOptional()
   @IsString()

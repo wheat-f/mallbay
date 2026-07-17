@@ -39,8 +39,8 @@ const HEADER_ALIASES = {
   metersPerRoll: ["每卷米数", "1卷米数", "metersperroll"],
   quantityPrecision: ["数量精度", "小数精度", "quantityprecision"],
   warrantyYears: ["质保年限", "质保年份", "warrantyyears"],
-  basePriceYuan: ["基础价", "基础价(元)", "基础价（元）", "售价", "价格", "basepriceyuan"],
-  basePriceCents: ["基础价(分)", "基础价（分）", "basepricecents"]
+  basePriceYuan: ["产品建议价", "产品建议价(元)", "产品建议价（元）", "基础价", "基础价(元)", "基础价（元）", "售价", "价格", "basepriceyuan"],
+  basePriceCents: ["产品建议价(分)", "产品建议价（分）", "基础价(分)", "基础价（分）", "basepricecents"]
 } as const;
 
 export async function parseProductWorkbook(file: File, storeId: string): Promise<ProductImportResult> {
@@ -63,7 +63,7 @@ export function parseProductMatrix(matrix: unknown[][], storeId: string): Produc
     return {
       products: [],
       validRows: [],
-      errors: [{ rowNumber: 0, message: "未找到产品表头，请确认文件包含品牌、产品名称、型号、单位和基础价列" }]
+      errors: [{ rowNumber: 0, message: "未找到产品表头，请确认文件包含品牌、产品名称、型号、单位和产品建议价列" }]
     };
   }
 
@@ -99,7 +99,7 @@ export function parseProductRows(
     if (!brand || !name || !model || basePriceCents === undefined || !unit) {
       errors.push({
         rowNumber,
-        message: "品牌、产品名称、型号、单位、基础价均为必填，单位支持卷、米、件"
+        message: "品牌、产品名称、型号、单位、产品建议价均为必填，单位支持卷、米、件"
       });
       return;
     }
@@ -108,7 +108,7 @@ export function parseProductRows(
       return;
     }
     if (basePriceCents < 0) {
-      errors.push({ rowNumber, message: "基础价不能小于 0" });
+      errors.push({ rowNumber, message: "产品建议价不能小于 0" });
       return;
     }
 

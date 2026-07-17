@@ -1,5 +1,5 @@
 import type { CreateOrderPayload } from "../../lib/api";
-import type { DailyCapacitySummary } from "@mallbay/shared";
+import type { DailyCapacitySummary, ProductUnit } from "@mallbay/shared";
 import { getConstructionTypeLabel, getOrderStatusLabel } from "./order-display";
 
 export type OrderCustomer = {
@@ -18,6 +18,7 @@ export type OrderVehicle = {
   carPlate?: string | null;
   carModel?: string | null;
   carColor?: string | null;
+  vehicleTypeCode?: "SMALL_CAR" | "STANDARD_CAR" | "LUXURY_LARGE_CAR" | null;
 };
 
 export type OrderCustomerArchiveSummary = {
@@ -77,15 +78,19 @@ export type OrderProduct = {
 export type CreateOrderFormValues = {
   customerId: string;
   vehicleId?: string;
+  vehicleTypeCode?: "SMALL_CAR" | "STANDARD_CAR" | "LUXURY_LARGE_CAR";
+  /** @deprecated historical compatibility only. */
   vehicleClassCode?: string;
   constructionType: CreateOrderPayload["constructionType"];
   constructionLocation: CreateOrderPayload["constructionLocation"];
   constructionAddress?: string;
   appointmentDate?: string | PickerValue;
   appointmentTimeSlot?: string | TimeRangePickerValue;
-  items: { productId: string; quantity: number; unitPriceYuan: number }[];
+  items: { productId: string; salesUnit?: ProductUnit; quantity: number; unitPriceYuan: number }[];
   constructionChargeYuan?: number;
   suggestedConstructionChargeYuan?: number;
+  /** 本单施工收费采用系统建议，或由业务人员手动输入。仅用于页面交互，不单独落库。 */
+  constructionChargeMode?: "SUGGESTED" | "MANUAL";
   constructionChargeAdjustmentReason?: string;
   /** @deprecated local-draft compatibility fields. */
   laborCostYuan?: number;
@@ -246,6 +251,7 @@ export function toCreateOrderPayload(values: CreateOrderFormValues, storeId: str
   const {
     constructionChargeYuan,
     suggestedConstructionChargeYuan,
+    constructionChargeMode: _constructionChargeMode,
     constructionChargeAdjustmentReason,
     laborCostYuan,
     suggestedLaborCostYuan,
@@ -265,7 +271,8 @@ export function toCreateOrderPayload(values: CreateOrderFormValues, storeId: str
   const appointmentTimeSlot = trimOptionalText(formatOrderTimeSlotValue(values.appointmentTimeSlot));
   const constructionAddress = trimOptionalText(values.constructionAddress);
   const remark = trimOptionalText(values.remark);
-  const normalizedDeposit = shouldRecordDeposit && deposit?.accountId && deposit.amountYuan && deposit.paymentType && deposit.paidAt
+  // 允许业务员明确录入 0 元定金；0 不创建一笔无意义的收款记录，也不会计入已收金额。
+  const normalizedDeposit = shouldRecordDeposit && deposit?.accountId && (deposit.amountYuan ?? 0) > 0 && deposit.paymentType && deposit.paidAt
     ? {
         accountId: deposit.accountId,
         amountCents: yuanToCents(deposit.amountYuan),

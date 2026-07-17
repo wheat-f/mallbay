@@ -31,9 +31,17 @@ export class UpdateOrderCommercialsDto {
   items!: UpdateOrderCommercialsItemDto[];
 
   @Type(() => Number)
+  @IsOptional()
   @IsInt()
   @Min(0)
-  laborCostCents!: number;
+  laborCostCents?: number;
+
+  /** Customer-facing construction charge. Accept the old laborCostCents field for historic clients. */
+  @Type(() => Number)
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  constructionChargeCents?: number;
 
   @IsOptional()
   @IsString()

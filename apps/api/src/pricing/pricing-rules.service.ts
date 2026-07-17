@@ -530,7 +530,7 @@ function canonicalConditions(conditions: unknown) {
 
 export function validateRuleDefinitions(rules: CreatePricingRuleSetDto["rules"]) {
   const operators = new Set(["EQ", "IN", "BETWEEN", "GTE", "LTE"]);
-  const fields = new Set(["productId", "productCategory", "productBrand", "productModel", "salesUnit", "quantity", "vehicleClassCode", "constructionType", "constructionLocation", "lineCount", "totalQuantity", "effectiveAt"]);
+  const fields = new Set(["productId", "productCategory", "productBrand", "productModel", "salesUnit", "quantity", "vehicleTypeCode", "vehicleClassCode", "constructionType", "constructionLocation", "lineCount", "totalQuantity", "effectiveAt"]);
   const numericFields = new Set(["quantity", "lineCount", "totalQuantity"]);
   for (const rule of rules) {
     if (!rule.name.trim()) throw new BadRequestException("规则名称不能为空");

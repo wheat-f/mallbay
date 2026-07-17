@@ -707,6 +707,8 @@ function getConstructionProgress(status: string): {
   switch (status) {
     case "COMPLETED":
       return { label: "已完工", percent: 100, status: "success" };
+    case "WARRANTIED":
+      return { label: "已质保", percent: 100, status: "success" };
     case "IN_CONSTRUCTION":
       return { label: "施工中", percent: 65, status: "active" };
     case "DISPATCHED":

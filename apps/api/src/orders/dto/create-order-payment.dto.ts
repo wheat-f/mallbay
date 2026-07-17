@@ -11,7 +11,7 @@ export class CreateOrderPaymentDto {
 
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   amountCents!: number;
 
   @IsDateString()

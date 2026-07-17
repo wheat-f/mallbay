@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   ArrayNotEmpty,
   ArrayMinSize,
@@ -366,6 +366,13 @@ export class CreatePurchaseOrderSupplierAllocationItemDto {
   @IsNumber()
   @Min(0.001)
   quantity!: number;
+
+  /** 采购订单计划含税单价（分），允许暂不填写。 */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  unitCostCents?: number;
 }
 
 export class CreatePurchaseOrderSupplierAllocationDto {
@@ -433,6 +440,20 @@ export class ReceivePurchaseItemDto {
   @IsString()
   @MaxLength(120)
   warehouseName?: string;
+
+  /**
+   * 实际入库含税单价（分）。未传时沿用采购订单计划单价；显式传 null 表示待采购员后补。
+   */
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined ? undefined : value === null || value === "" ? null : Number(value)))
+  @IsInt()
+  @Min(0)
+  actualUnitCostCents?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  costDifferenceReason?: string;
 }
 
 export class ReceivePurchaseItemBatchesDto {
@@ -500,6 +521,20 @@ export class CreateOrderInventoryAllocationItemDto {
   @IsOptional()
   @IsEnum(ProductUnit)
   unit?: ProductUnit;
+}
+
+export class UpdatePurchaseReceiptCostDto {
+  /** 实际入库含税单价（分）；允许清空，后续再补录。 */
+  @Transform(({ value }) => (value === undefined ? undefined : value === null || value === "" ? null : Number(value)))
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  actualUnitCostCents?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  costDifferenceReason?: string;
 }
 
 export class CreateOrderInventoryAllocationsDto {

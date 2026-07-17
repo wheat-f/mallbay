@@ -55,7 +55,7 @@ test("parseProductRows reports row numbers for incomplete product rows", () => {
   assert.deepEqual(result.errors, [
     {
       rowNumber: 2,
-      message: "品牌、产品名称、型号、单位、基础价均为必填，单位支持卷、米、件"
+      message: "品牌、产品名称、型号、单位、产品建议价均为必填，单位支持卷、米、件"
     }
   ]);
 });

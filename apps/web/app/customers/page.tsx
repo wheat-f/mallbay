@@ -24,6 +24,7 @@ import type { UpdateVehiclePayload } from "../../src/features/customers/api";
 import { getCustomerAutoArchiveMetrics, type CustomerArchiveLike } from "../../src/features/customers/display";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
+import { dictionaryApi } from "../../src/features/settings/api";
 
 type CustomerRow = CustomerArchiveLike & {
   id: string;
@@ -56,6 +57,7 @@ type CustomerVehicle = {
   carPlate?: string | null;
   vin?: string | null;
   carModel?: string | null;
+  vehicleTypeCode?: "SMALL_CAR" | "STANDARD_CAR" | "LUXURY_LARGE_CAR" | null;
   carColor?: string | null;
   photoUrl?: string | null;
 };
@@ -179,6 +181,16 @@ export default function CustomersPage() {
     },
     onError: (error: Error) => message.error(error.message)
   });
+  const vehicleTypesQuery = useQuery({
+    queryKey: ["system-dictionary", storeId, "VEHICLE_TYPE"],
+    queryFn: () => dictionaryApi.list(storeId!),
+    enabled: Boolean(storeId),
+    staleTime: 60_000
+  });
+  const vehicleTypeOptions = useMemo(() => {
+    const dictionary = vehicleTypesQuery.data?.find((item) => item.code === "VEHICLE_TYPE");
+    return (dictionary?.dictionaryItems ?? []).map((item) => ({ value: item.code, label: item.name }));
+  }, [vehicleTypesQuery.data]);
 
   const updateMutation = useMutation({
     mutationFn: (values: EditCustomerFormValues) => {
@@ -206,9 +218,11 @@ export default function CustomersPage() {
       if (editingVehicle) {
         return customerApi.updateVehicle(editingVehicle.id, payload);
       }
+      if (!payload.vehicleTypeCode) throw new Error("请选择车辆类型");
       return customerApi.createVehicle({
         customerId: vehicleCustomer.id,
         carModel: payload.carModel ?? "",
+        vehicleTypeCode: payload.vehicleTypeCode,
         carPlate: payload.carPlate,
         vin: payload.vin,
         carColor: payload.carColor,
@@ -262,6 +276,7 @@ export default function CustomersPage() {
     vehicleForm.resetFields();
     vehicleForm.setFieldsValue({
       carModel: vehicle?.carModel ?? undefined,
+      vehicleTypeCode: vehicle?.vehicleTypeCode ?? undefined,
       carPlate: vehicle?.carPlate ?? undefined,
       vin: vehicle?.vin ?? undefined,
       carColor: vehicle?.carColor ?? undefined,
@@ -867,7 +882,7 @@ export default function CustomersPage() {
                     <article key={vehicle.id} className="customers-vehicle-list-item">
                       <div>
                         <strong>{vehicle.carPlate ?? "未录车牌"}</strong>
-                        <span>{[vehicle.carModel, vehicle.carColor].filter(Boolean).join(" / ") || "车辆信息待完善"}</span>
+                        <span>{[vehicle.carModel, vehicleTypeOptions.find((item) => item.value === vehicle.vehicleTypeCode)?.label, vehicle.carColor].filter(Boolean).join(" / ") || "车辆信息待完善"}</span>
                       </div>
                       <Button size="small" onClick={() => openVehicleDrawer(vehicleCustomer, vehicle)}>
                         编辑车辆
@@ -890,6 +905,9 @@ export default function CustomersPage() {
                 rules={[{ required: true, whitespace: true, message: "请输入车型" }]}
               >
                 <Input maxLength={100} placeholder="例如 宝马 5 系" />
+              </Form.Item>
+              <Form.Item name="vehicleTypeCode" label="车辆类型" rules={[{ required: true, message: "请选择车辆类型" }]}>
+                <Select options={vehicleTypeOptions} placeholder="请选择小车、常规车或豪车/大车" />
               </Form.Item>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Form.Item name="carPlate" label="车牌号">
@@ -1126,6 +1144,9 @@ export default function CustomersPage() {
                             rules={[{ required: true, whitespace: true, message: "请输入车型" }]}
                           >
                             <Input maxLength={100} placeholder="例如 宝马 5 系" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, "vehicleTypeCode"]} label="车辆类型" rules={[{ required: true, message: "请选择车辆类型" }]}>
+                            <Select options={vehicleTypeOptions} placeholder="请选择车辆类型" />
                           </Form.Item>
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <Form.Item name={[field.name, "carPlate"]} label="车牌号">
@@ -1411,6 +1432,7 @@ function compactPayload<T extends Record<string, unknown>>(payload: T) {
 function normalizeVehiclePayload(values: VehicleFormValues) {
   return compactPayload({
     carModel: trimOptional(values.carModel),
+    vehicleTypeCode: values.vehicleTypeCode,
     carPlate: trimOptional(values.carPlate),
     vin: trimOptional(values.vin),
     carColor: trimOptional(values.carColor),

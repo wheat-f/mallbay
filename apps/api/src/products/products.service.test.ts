@@ -106,7 +106,7 @@ test("ProductsService persists structured inventory conversion fields", async ()
   });
 });
 
-test("ProductsService allows purchasing to manage products", async () => {
+test("ProductsService prevents purchasing from creating a product with a suggested price", async () => {
   const writes: unknown[] = [];
   const service = new ProductsService({
     product: {
@@ -117,25 +117,26 @@ test("ProductsService allows purchasing to manage products", async () => {
     }
   } as never);
 
-  const result = await service.create(
-    {
-      id: "purchasing-1",
-      isAuditor: false,
-      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
-    },
-    {
-      storeId: "store-1",
-      brand: "龙膜",
-      name: "漆面保护膜",
-      model: "L-100",
-      category: ProductCategory.PPF,
-      unit: ProductUnit.ROLL,
-      basePriceCents: 4200000
-    }
+  await assert.rejects(
+    () => service.create(
+      {
+        id: "purchasing-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+      },
+      {
+        storeId: "store-1",
+        brand: "龙膜",
+        name: "漆面保护膜",
+        model: "L-100",
+        category: ProductCategory.PPF,
+        unit: ProductUnit.ROLL,
+        basePriceCents: 4200000
+      }
+    ),
+    { name: "ForbiddenException" }
   );
-
-  assert.deepEqual(result, { id: "product-1" });
-  assert.equal((writes[0] as { data: { storeId: string } }).data.storeId, "store-1");
+  assert.equal(writes.length, 0);
 });
 
 test("ProductsService rejects product updates from sales", async () => {

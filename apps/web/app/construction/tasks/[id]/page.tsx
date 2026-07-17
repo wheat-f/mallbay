@@ -20,6 +20,7 @@ import { constructionApi } from "../../../../src/lib/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
 import { dictionaryApi, type DictionaryItem } from "../../../../src/features/settings/api";
+import { getProductUnitLabel } from "../../../../src/features/products/display";
 
 type PhotoStage = "BEFORE" | "DURING" | "AFTER";
 
@@ -282,8 +283,19 @@ export default function ConstructionTaskDetailPage() {
                       )
                     },
                     {
-                      title: "批次状态",
-                      render: (_, row) => `${row.pickedQuantity}/${row.allocatedQuantity} ${row.unit}`
+                      title: "施工批次",
+                      render: (_, row) =>
+                        row.batches.length ? (
+                          <Space direction="vertical" size={2}>
+                            {row.batches.map((batch) => (
+                              <span key={batch.allocationId}>
+                                {batch.batchNo}（{batch.pickedUp ? "已领取" : "待领取"} {batch.lockedQuantity} {getProductUnitLabel(batch.unit)}）
+                              </span>
+                            ))}
+                          </Space>
+                        ) : (
+                          "未锁定"
+                        )
                     },
                     {
                       title: "待领取",

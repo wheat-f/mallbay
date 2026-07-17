@@ -62,9 +62,14 @@ export class ConstructionCostConfigService {
     this.assertCanViewCost(actor, storeId);
     const versions = await this.prisma.positionCostRateVersion.findMany({ where: { storeId }, include: { rates: { orderBy: { positionTypeCode: "asc" } } }, orderBy: { version: "desc" } });
     // 店长需要选择已发布版本以编制施工标准，但岗位小时成本金额属于财务成本口径。
-    // 因此仅财务和管理员能看到费率明细，店长只取得版本号、状态和生效日期。
-    if (this.canViewRateDetails(actor, storeId)) return versions;
-    return versions.map(({ rates: _rates, ...version }) => ({ ...version, rates: [] }));
+    // 非财务仍需知道版本是否已配置，避免空白列表被误判为成本丢失。
+    const versionsWithRateCount = versions.map(({ rates, ...version }) => ({
+      ...version,
+      rates,
+      rateCount: rates.length
+    }));
+    if (this.canViewRateDetails(actor, storeId)) return versionsWithRateCount;
+    return versionsWithRateCount.map(({ rates: _rates, ...version }) => ({ ...version, rates: [] }));
   }
 
   async createRateVersion(user: PricingAuthenticatedUser, dto: CreatePositionCostRateVersionDto) {

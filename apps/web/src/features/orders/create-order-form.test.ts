@@ -214,6 +214,28 @@ test("toCreateOrderPayload converts yuan form values to cents API payload", () =
   );
 });
 
+test("toCreateOrderPayload preserves the sales unit selected for each product line", () => {
+  assert.deepEqual(
+    toCreateOrderPayload(
+      {
+        customerId: "customer-1",
+        constructionType: "PPF",
+        constructionLocation: "IN_STORE",
+        items: [{ productId: "product-1", salesUnit: "METER", quantity: 2.5, unitPriceYuan: 99.9 }]
+      },
+      "store-1"
+    ),
+    {
+      storeId: "store-1",
+      customerId: "customer-1",
+      constructionType: "PPF",
+      constructionLocation: "IN_STORE",
+      items: [{ productId: "product-1", salesUnit: "METER", quantity: 2.5, unitPriceCents: 9990 }],
+      constructionChargeCents: 0
+    }
+  );
+});
+
 test("toCreateOrderPayload formats appointment date picker values before submit", () => {
   assert.deepEqual(
     toCreateOrderPayload(
@@ -308,6 +330,24 @@ test("toCreateOrderPayload includes deposit with yuan converted to cents", () =>
   );
 });
 
+test("toCreateOrderPayload accepts a zero deposit without creating a zero payment record", () => {
+  assert.equal(
+    toCreateOrderPayload(
+      {
+        customerId: "customer-1",
+        constructionType: "PPF",
+        constructionLocation: "IN_STORE",
+        items: [{ productId: "product-1", quantity: 1, unitPriceYuan: 100 }],
+        laborCostYuan: 0,
+        shouldRecordDeposit: true,
+        deposit: { accountId: "account-1", amountYuan: 0, paymentType: "DEPOSIT", paidAt: "2026-06-05" }
+      },
+      "store-1"
+    ).deposit,
+    undefined
+  );
+});
+
 test("toCreateOrderPayload includes labor suggestion snapshot and adjustment reason", () => {
   assert.deepEqual(
     toCreateOrderPayload(
@@ -333,6 +373,23 @@ test("toCreateOrderPayload includes labor suggestion snapshot and adjustment rea
       constructionChargeAdjustmentReason: "外出距离远，需要增加人工费"
     }
   );
+});
+
+test("toCreateOrderPayload keeps construction charge mode as a page-only interaction state", () => {
+  const payload = toCreateOrderPayload(
+    {
+      customerId: "customer-1",
+      constructionType: "PPF",
+      constructionLocation: "IN_STORE",
+      constructionChargeMode: "MANUAL",
+      constructionChargeYuan: 100,
+      items: [{ productId: "product-1", quantity: 1, unitPriceYuan: 100 }]
+    },
+    "store-1"
+  );
+
+  assert.equal("constructionChargeMode" in payload, false);
+  assert.equal(payload.constructionChargeCents, 10000);
 });
 
 test("getOrderAmountSummary totals products labor deposit and outstanding amount", () => {

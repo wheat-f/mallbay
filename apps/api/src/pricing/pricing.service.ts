@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
-import { Prisma, PricingRolloutMode, type ProductUnit } from "@prisma/client";
+import { Prisma, PricingRolloutMode, ProductUnit } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -17,6 +17,7 @@ import { compareShadowPricing } from "./domain/shadow-comparison";
 import { resolveBaseLaborCost } from "./domain/labor-cost";
 import { CostEstimatorService } from "./cost-estimator.service";
 import { estimateConstructionCost } from "./domain/construction-cost";
+import { VEHICLE_TYPE_CODES } from "../settings/dictionaries.service";
 
 export type PricingAuthenticatedUser = UserWithStoreMember & { username?: string };
 
@@ -58,6 +59,7 @@ export class PricingService {
     let shadowComparison;
     let costEstimate: CostEstimateSnapshot;
     let constructionChargeAvailable = false;
+    let constructionChargeReason: string | undefined;
     const store = await this.prisma.store.findUnique({ where: { id: dto.storeId }, select: { pricingRolloutMode: true } });
     // Missing rollout state must be fail-safe.  ACTIVE is available only after
     // the explicit store precheck succeeds; it must never be a fallback.
@@ -110,6 +112,7 @@ export class PricingService {
         })), persistedRuleSet.positionCostRateVersion?.rates ?? [])
         : { complete: false, reason: "施工成本标准尚未配置", matchedStandardIds: [] };
       constructionChargeAvailable = constructionEstimate.complete;
+      constructionChargeReason = constructionEstimate.reason;
       if (constructionEstimate.complete) {
         input = { ...input, baseLaborCostCents: constructionEstimate.suggestedConstructionChargeCents! };
       }
@@ -212,6 +215,7 @@ export class PricingService {
       shadowComparison: shadowComparison ?? null,
       // 对客施工收费也必须来自匹配的已发布施工标准；该标记不含内部金额，销售可安全读取。
       constructionChargeAvailable,
+      constructionChargeReason,
       calculation,
       costEstimate: PermissionPolicy.canManageFinance(actor, dto.storeId)
         ? costEstimate
@@ -224,20 +228,37 @@ export class PricingService {
     const productIds = [...new Set(input.lines.map((line) => line.productId))];
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, storeId },
-      select: { id: true, name: true, category: true, brand: true, model: true, salesUnit: true, basePriceCents: true, quantityPrecision: true }
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        brand: true,
+        model: true,
+        salesUnit: true,
+        basePriceCents: true,
+        metersPerRoll: true,
+        quantityPrecision: true,
+        unitSuggestedPrices: { where: { isActive: true }, select: { salesUnit: true, suggestedPriceCents: true } }
+      }
     });
     if (products.length !== productIds.length) throw new BadRequestException("价格试算包含不存在或不属于当前门店的产品");
     const productById = new Map(products.map((product) => [product.id, product]));
+    let vehicleTypeCode = input.vehicleTypeCode;
     let vehicleClassCode = input.vehicleClassCode;
-    if (input.vehicleId && !vehicleClassCode) {
+    if (input.vehicleId) {
       const vehicle = await this.prisma.customerVehicle.findFirst({
         where: { id: input.vehicleId, customer: { storeId } },
-        select: { carModel: true, vehiclePriceClass: { select: { code: true, status: true } } }
+        select: { vehicleTypeCode: true, carModel: true, vehiclePriceClass: { select: { code: true, status: true } } }
       });
       if (!vehicle) throw new BadRequestException("车辆不存在或不属于当前门店");
-      if (vehicle.vehiclePriceClass?.status === "ACTIVE") {
+      if (!vehicleTypeCode) {
+        vehicleTypeCode = vehicle.vehicleTypeCode ?? undefined;
+      }
+      // Retain legacy class only for historical inputs. New pricing rules use
+      // the stable system dictionary vehicleTypeCode.
+      if (!vehicleClassCode && vehicle.vehiclePriceClass?.status === "ACTIVE") {
         vehicleClassCode = vehicle.vehiclePriceClass.code;
-      } else {
+      } else if (!vehicleClassCode) {
         const mappings = await this.prisma.vehicleModelMapping.findMany({
           where: { storeId, status: "ACTIVE", vehiclePriceClass: { status: "ACTIVE" } },
           orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
@@ -252,6 +273,9 @@ export class PricingService {
         }
       }
     }
+    if (vehicleTypeCode && !VEHICLE_TYPE_CODES.includes(vehicleTypeCode as (typeof VEHICLE_TYPE_CODES)[number])) {
+      throw new BadRequestException("车辆类型不存在或已停用");
+    }
     if (vehicleClassCode) {
       const vehicleClass = await this.prisma.vehiclePriceClass.findFirst({
         where: { storeId, code: vehicleClassCode, status: "ACTIVE" }
@@ -260,6 +284,7 @@ export class PricingService {
     }
     return {
       ...input,
+      vehicleTypeCode,
       vehicleClassCode,
       lines: input.lines.map((line) => {
         const product = productById.get(line.productId)!;
@@ -267,13 +292,19 @@ export class PricingService {
         if (countDecimalPlaces(line.quantity) > precision) {
           throw new BadRequestException("产品 " + product.name + " 数量最多支持 " + precision + " 位小数");
         }
+        const salesUnit = line.salesUnit || product.salesUnit;
+        const price = resolveProductSuggestedPrice(product, salesUnit as ProductUnit);
+        if (!price) {
+          throw new BadRequestException(`产品 ${product.name} 未维护 ${salesUnit} 销售单位建议价或有效换算关系`);
+        }
         return {
           ...line,
           category: product.category,
           brand: product.brand,
           model: product.model,
-          salesUnit: product.salesUnit,
-          baseUnitPriceCents: product.basePriceCents,
+          salesUnit,
+          baseUnitPriceCents: price.cents,
+          basePriceSource: price.source,
           minimumPriceCents: undefined
         };
       })
@@ -412,4 +443,30 @@ function countDecimalPlaces(value: number) {
     : 0;
   const exponent = exponentText ? Number(exponentText) : 0;
   return exponent < 0 ? Math.max(0, decimalLength + exponent * -1) : Math.max(0, decimalLength - exponent);
+}
+
+function resolveProductSuggestedPrice(
+  product: {
+    salesUnit: ProductUnit;
+    basePriceCents: number;
+    metersPerRoll: Prisma.Decimal | null;
+    unitSuggestedPrices: Array<{ salesUnit: ProductUnit; suggestedPriceCents: number }>;
+  },
+  selectedUnit: ProductUnit
+) {
+  if (selectedUnit === product.salesUnit) {
+    return { cents: product.basePriceCents, source: "DEFAULT_UNIT" as const };
+  }
+  const override = product.unitSuggestedPrices.find((item) => item.salesUnit === selectedUnit);
+  if (override) return { cents: override.suggestedPriceCents, source: "UNIT_OVERRIDE" as const };
+
+  const metersPerRoll = Number(product.metersPerRoll ?? 0);
+  if (metersPerRoll <= 0) return null;
+  if (product.salesUnit === ProductUnit.ROLL && selectedUnit === ProductUnit.METER) {
+    return { cents: Math.round(product.basePriceCents / metersPerRoll), source: "UNIT_CONVERTED" as const };
+  }
+  if (product.salesUnit === ProductUnit.METER && selectedUnit === ProductUnit.ROLL) {
+    return { cents: Math.round(product.basePriceCents * metersPerRoll), source: "UNIT_CONVERTED" as const };
+  }
+  return null;
 }

@@ -330,6 +330,7 @@ export default function AfterSaleDetailPage() {
                 selectedResponsibility={selectedResponsibility}
                 hasAssignments={hasAssignments}
                 hasJudgedResponsibility={hasJudgedResponsibility}
+                hasPersistedConstructionPhoto={hasPersistedConstructionPhoto}
                 assignPending={assignMutation.isPending}
                 judgePending={judgeMutation.isPending}
                 evidencePending={evidenceMutation.isPending}
@@ -462,6 +463,7 @@ type AfterSaleActionPanelProps = {
   selectedResponsibility?: AfterSaleResponsibility;
   hasAssignments: boolean;
   hasJudgedResponsibility: boolean;
+  hasPersistedConstructionPhoto: boolean;
   assignPending: boolean;
   judgePending: boolean;
   evidencePending: boolean;
@@ -487,6 +489,7 @@ function AfterSaleActionPanel({
   selectedResponsibility,
   hasAssignments,
   hasJudgedResponsibility,
+  hasPersistedConstructionPhoto,
   assignPending,
   judgePending,
   evidencePending,
@@ -570,7 +573,7 @@ function AfterSaleActionPanel({
               label="施工后照片"
               valuePropName="fileList"
               getValueFromEvent={normalizeUploadFileList}
-              rules={[{ validator: validateRequiredUpload("请上传至少一张施工后照片") }]}
+              extra={hasPersistedConstructionPhoto ? "已归档施工后照片，可直接提交处理证据。" : "请先上传至少一张施工后照片。"}
             >
               <AfterSaleEvidenceUploader afterSaleId={afterSale.id} stage="CONSTRUCTION_AFTER" disabled={!canSubmitEvidence || hasJudgedResponsibility} emptyText="上传施工后照片" />
             </Form.Item>
@@ -862,13 +865,6 @@ function isAfterSalesWorkerPosition(position?: StorePosition) {
 
 function normalizeUploadFileList(event: { fileList?: UploadFile[] } | UploadFile[]) {
   return Array.isArray(event) ? event.slice(-12) : event?.fileList?.slice(-12) ?? [];
-}
-
-function validateRequiredUpload(message: string) {
-  return async (_: unknown, fileList?: UploadFile[]) => {
-    if ((fileList ?? []).length > 0) return;
-    throw new Error(message);
-  };
 }
 
 function getAfterSaleDetailTimeline(afterSale?: AfterSaleSummary): AfterSaleTimelineItem[] {

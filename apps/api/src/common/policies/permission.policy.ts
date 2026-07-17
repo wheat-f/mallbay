@@ -28,7 +28,7 @@ export class PermissionPolicy {
   private static readonly constructionWorkers: StorePosition[] = [StorePosition.CONSTRUCTION, StorePosition.APPRENTICE];
   private static readonly inventoryViewers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING, CUSTOMER_SERVICE];
   private static readonly inventoryManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING];
-  private static readonly purchaseViewers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING, CUSTOMER_SERVICE];
+  private static readonly purchaseViewers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING, StorePosition.FINANCE, CUSTOMER_SERVICE];
   private static readonly purchaseManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING];
   private static readonly productManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.PURCHASING];
   private static readonly warrantyCreators: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER, CUSTOMER_SERVICE];

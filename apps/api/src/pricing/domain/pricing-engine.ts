@@ -48,6 +48,7 @@ export type PricingProductLineInput = {
   salesUnit: string;
   quantity: number;
   baseUnitPriceCents: number;
+  basePriceSource?: "DEFAULT_UNIT" | "UNIT_OVERRIDE" | "UNIT_CONVERTED";
   minimumPriceCents?: number;
 };
 
@@ -55,6 +56,9 @@ export type PricingCalculationInput = {
   ruleSetVersion: number;
   lines: PricingProductLineInput[];
   vehicleId?: string;
+  /** Stable system dictionary value: SMALL_CAR / STANDARD_CAR / LUXURY_LARGE_CAR. */
+  vehicleTypeCode?: string;
+  /** @deprecated historical vehicle-price-class compatibility only. */
   vehicleClassCode?: string;
   constructionType: string;
   constructionLocation: string;
@@ -404,6 +408,7 @@ function applyAction(currentCents: number, actionType: PricingActionType, action
 
 function buildOrderContext(input: PricingCalculationInput) {
   return {
+    vehicleTypeCode: input.vehicleTypeCode,
     vehicleClassCode: input.vehicleClassCode,
     constructionType: input.constructionType,
     constructionLocation: input.constructionLocation,

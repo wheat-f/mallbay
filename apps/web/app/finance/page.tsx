@@ -25,7 +25,7 @@ export default function FinanceOverviewPage() {
       </Row>
       <Card title="财务工作区" className="finance-overview-workspaces">
         <Row gutter={[16, 16]}>
-          {[{ href: "/finance/expenses", title: "费用申请", text: "新建、查询、撤回和审批费用申请。", icon: <FileTextOutlined /> }, { href: "/finance/reimbursements", title: "报销审核", text: "查看报销单、审核结果并登记付款。", icon: <AuditOutlined /> }, { href: "/finance/accounts", title: "收款账户", text: "维护可用收款和付款账户。", icon: <BankOutlined /> }, { href: "/finance/ledger", title: "财务流水", text: "按收支方向、账户和日期查询流水。", icon: <TransactionOutlined /> }].map((item) => <Col xs={24} md={12} key={item.href}><Link href={item.href}><Card hoverable><Typography.Title level={4}>{item.icon} {item.title}</Typography.Title><Typography.Text type="secondary">{item.text}</Typography.Text><div><Button type="link">进入工作区</Button></div></Card></Link></Col>)}
+          {[{ href: "/finance/expenses", title: "费用申请", text: "新建、查询、撤回和审批费用申请。", icon: <FileTextOutlined /> }, { href: "/finance/reimbursements", title: "报销审核", text: "查看报销单、审核结果并登记付款。", icon: <AuditOutlined /> }, { href: "/finance/accounts", title: "收款账户", text: "维护可用收款和付款账户。", icon: <BankOutlined /> }, { href: "/finance/material-costs", title: "材料成本标准", text: "维护产品标准材料成本，供订单成本试算兜底使用。", icon: <DollarOutlined /> }, { href: "/finance/ledger", title: "财务流水", text: "按收支方向、账户和日期查询流水。", icon: <TransactionOutlined /> }].map((item) => <Col xs={24} md={12} key={item.href}><Link href={item.href}><Card hoverable><Typography.Title level={4}>{item.icon} {item.title}</Typography.Title><Typography.Text type="secondary">{item.text}</Typography.Text><div><Button type="link">进入工作区</Button></div></Card></Link></Col>)}
         </Row>
       </Card>
     </>}

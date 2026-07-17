@@ -19,6 +19,7 @@ export type CreateCustomerFormValues = {
   carPlate?: string;
   vin?: string;
   carModel?: string;
+  vehicleTypeCode?: CreateVehiclePayload["vehicleTypeCode"];
   carColor?: string;
   photoUrl?: string;
   companyUsers?: Array<{
@@ -30,6 +31,7 @@ export type CreateCustomerFormValues = {
     carPlate?: string;
     vin?: string;
     carModel?: string;
+    vehicleTypeCode?: CreateVehiclePayload["vehicleTypeCode"];
     carColor?: string;
     photoUrl?: string;
   }>;
@@ -62,10 +64,12 @@ export function toCreateVehiclePayload(
 ): CreateVehiclePayload | undefined {
   const carModel = trimOptional(values.carModel);
   if (!carModel) return undefined;
+  if (!values.vehicleTypeCode) throw new Error("请选择车辆类型");
 
   return compactVehiclePayload({
     customerId,
     carModel,
+    vehicleTypeCode: values.vehicleTypeCode,
     carPlate: trimOptional(values.carPlate),
     vin: trimOptional(values.vin),
     carColor: trimOptional(values.carColor),

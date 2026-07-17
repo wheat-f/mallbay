@@ -158,6 +158,14 @@ export type ReceivePurchaseItemPayload = {
   supplierName?: string;
   warehouseId?: string;
   warehouseName?: string;
+  /** 未传时沿用采购单计划价；传 null 表示待采购员后补实际入库价。 */
+  actualUnitCostCents?: number | null;
+  costDifferenceReason?: string;
+};
+
+export type UpdatePurchaseReceiptCostPayload = {
+  actualUnitCostCents?: number | null;
+  costDifferenceReason?: string;
 };
 
 export type OutboundOrderInventoryPayload = {
@@ -191,8 +199,8 @@ export type PurchaseOrderExportDetail = {
   quantity: number;
   receivedQuantity: number;
   pendingQuantity: number;
-  unitCostCents: number;
-  itemAmountCents: number;
+  plannedUnitCostCents?: number | null;
+  itemAmountCents?: number | null;
 };
 
 export const inventoryApi = {
@@ -393,6 +401,12 @@ export const purchaseApi = {
     request<ReceivePurchaseItemBatchesResult>(`/purchases/orders/items/${id}/receive-batches`, {
       method: "POST",
       body: JSON.stringify({ batches: payloads })
+    }),
+
+  updateReceiptCost: (id: string, payload: UpdatePurchaseReceiptCostPayload) =>
+    request<unknown>(`/purchases/receipt-costs/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
     }),
 
   warehouses: (storeId: string) =>

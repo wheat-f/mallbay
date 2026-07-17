@@ -139,13 +139,15 @@ test("create order customer history card shows latest order status", () => {
   assert.match(pageSource, /最近订单：/);
 });
 
-test("create order product rows show the selected sales unit as a dedicated column", () => {
+test("create order product rows let users select a permitted sales unit", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
   assert.match(pageSource, /label="单位"/);
-  assert.match(pageSource, /getSelectedProductUnitLabel/);
-  assert.match(pageSource, /getProductUnitLabel\(resolveProductSalesUnit\(product\)\)/);
+  assert.match(pageSource, /name=\{\[field\.name, "salesUnit"\]\}/);
+  assert.match(pageSource, /getAvailableSalesUnitOptions/);
+  assert.match(pageSource, /getAvailableProductSalesUnits/);
+  assert.match(pageSource, /getDefaultUnitPriceCents/);
   assert.match(cssSource, /grid-template-columns: minmax\(280px, 1fr\) 88px 72px 132px auto/);
 });
 
@@ -176,19 +178,33 @@ test("create order page records construction charge adjustment reason when final
   assert.match(pageSource, /系统建议施工收费/);
 });
 
-test("create order page keeps suggested construction charge read-only and allows adopting it", () => {
+test("create order page separates system suggested construction charge from manual charge choice", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
   assert.match(pageSource, /name="suggestedConstructionChargeYuan"/);
   assert.match(pageSource, /label="系统建议施工收费（元）"/);
   assert.match(pageSource, /等待服务端按已发布施工标准试算/);
+  assert.match(pageSource, /constructionChargeReason/);
   assert.match(pageSource, /constructionChargeAvailable/);
-  assert.match(pageSource, /使用系统建议/);
+  assert.match(pageSource, /name="constructionChargeMode"/);
+  assert.match(pageSource, /采用系统建议/);
+  assert.match(pageSource, /手动输入/);
   assert.match(pageSource, /readOnly/);
   assert.match(pageSource, /label="本单施工收费（元）"/);
-  assert.match(pageSource, /采用建议价/);
+  assert.doesNotMatch(pageSource, /使用系统建议/);
+  assert.doesNotMatch(pageSource, /采用建议价/);
   assert.match(pageSource, /onFinish=\{\(values\) => createMutation\.mutate\(values\)\}/);
   assert.doesNotMatch(pageSource, /createMutation\.mutate\(\{ \.\.\.values, suggestedConstructionChargeYuan \}\)/);
+});
+
+test("create order page defaults the product unit, permits configured conversion, and permits a zero deposit", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /salesUnit: resolveProductSalesUnit\(product\)/);
+  assert.match(pageSource, /getAvailableProductSalesUnits/);
+  assert.match(pageSource, /getDefaultUnitPriceCents\(product, salesUnit\)/);
+  assert.match(pageSource, /name=\{\["deposit", "amountYuan"\]\}/);
+  assert.match(pageSource, /min=\{0\}/);
 });
 
 test("create order page does not present missing material cost as zero", () => {

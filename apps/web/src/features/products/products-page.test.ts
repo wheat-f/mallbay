@@ -32,7 +32,7 @@ test("products page follows the prototype product catalog layout", () => {
   assert.match(pageSource, /产品信息/);
   assert.match(pageSource, /规格与换算/);
   assert.match(pageSource, /质保年限/);
-  assert.match(pageSource, /基础价/);
+  assert.match(pageSource, /产品建议价/);
 });
 
 test("products page avoids implementation-phase import copy", () => {

@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, ProductStatus } from "@prisma/client";
+import { Prisma, ProductStatus, ProductUnit } from "@prisma/client";
 import { normalizePagination } from "../common/pagination";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import { persistAuditEvent } from "../observability/persist-audit-event";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProductDto } from "./dto/create-product.dto";
 import { ListProductsDto } from "./dto/list-products.dto";
@@ -19,8 +20,12 @@ export class ProductsService {
   async create(user: AuthenticatedProductUser, dto: CreateProductDto) {
     const actor = await this.withStoreMember(user);
     this.assertCanManageProducts(actor, dto.storeId);
+    this.assertCanManageSuggestedPrices(actor, dto.storeId);
+    if (dto.standardCostCents !== undefined && !PermissionPolicy.canManageFinance(actor, dto.storeId)) {
+      throw new ForbiddenException("仅财务或店长可维护材料成本");
+    }
 
-    return this.prisma.product.create({
+    const product = await this.prisma.product.create({
       data: {
         storeId: dto.storeId,
         brand: dto.brand,
@@ -41,6 +46,20 @@ export class ProductsService {
         status: ProductStatus.ACTIVE
       }
     });
+    await persistAuditEvent(this.prisma, {
+      action: "product_created",
+      actorId: actor.id,
+      targetType: "Product",
+      targetId: product.id,
+      metadata: {
+        storeId: dto.storeId,
+        suggestedPrice: { unit: dto.salesUnit ?? dto.unit, previousCents: null, nextCents: dto.basePriceCents },
+        ...(dto.standardCostCents !== undefined
+          ? { standardMaterialCost: { unit: dto.inventoryUnit ?? dto.unit, previousCents: null, nextCents: dto.standardCostCents } }
+          : {})
+      }
+    });
+    return product;
   }
 
   async list(user: AuthenticatedProductUser, dto: ListProductsDto) {
@@ -71,21 +90,37 @@ export class ProductsService {
         where,
         skip,
         take: pageSize,
-        orderBy: { updatedAt: "desc" }
+        orderBy: { updatedAt: "desc" },
+        include: { unitSuggestedPrices: { where: { isActive: true }, orderBy: { salesUnit: "asc" } } }
       })
     ]);
 
-    return { total, page, pageSize, items };
+    const canViewInternalCost = PermissionPolicy.canManageFinance(actor, dto.storeId);
+    return {
+      total,
+      page,
+      pageSize,
+      items: canViewInternalCost
+        ? items
+        : items.map(({ standardCostCents: _standardCostCents, ...product }) => product)
+    };
   }
 
   async detail(user: AuthenticatedProductUser, id: string) {
     const actor = await this.withStoreMember(user);
-    const product = await this.prisma.product.findUnique({ where: { id } });
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: { unitSuggestedPrices: { orderBy: { salesUnit: "asc" } } }
+    });
     if (!product) {
       throw new NotFoundException("产品不存在");
     }
     if (!PermissionPolicy.canViewStoreData(actor, product.storeId)) {
       throw new ForbiddenException("无权限");
+    }
+    if (!PermissionPolicy.canManageFinance(actor, product.storeId)) {
+      const { standardCostCents: _standardCostCents, ...safeProduct } = product;
+      return safeProduct;
     }
     return product;
   }
@@ -97,10 +132,154 @@ export class ProductsService {
       throw new NotFoundException("产品不存在");
     }
     this.assertCanManageProducts(actor, product.storeId);
+    const changesSuggestedPriceBasis = (
+      (dto.basePriceCents !== undefined && dto.basePriceCents !== product.basePriceCents) ||
+      (dto.salesUnit !== undefined && dto.salesUnit !== product.salesUnit) ||
+      (dto.unit !== undefined && dto.unit !== product.unit) ||
+      (dto.metersPerRoll !== undefined && Number(dto.metersPerRoll) !== Number(product.metersPerRoll ?? 0))
+    );
+    if (changesSuggestedPriceBasis) this.assertCanManageSuggestedPrices(actor, product.storeId);
+    if (dto.standardCostCents !== undefined && !PermissionPolicy.canManageFinance(actor, product.storeId)) {
+      throw new ForbiddenException("仅财务或店长可维护材料成本");
+    }
 
-    return this.prisma.product.update({
+    const updated = await this.prisma.product.update({
       where: { id },
       data: dto
+    });
+    if (dto.basePriceCents !== undefined && dto.basePriceCents !== product.basePriceCents) {
+      await persistAuditEvent(this.prisma, {
+        action: "product_suggested_price_updated",
+        actorId: actor.id,
+        targetType: "Product",
+        targetId: product.id,
+        metadata: {
+          storeId: product.storeId,
+          unit: dto.salesUnit ?? product.salesUnit,
+          previousCents: product.basePriceCents,
+          nextCents: dto.basePriceCents
+        }
+      });
+    }
+    if (dto.standardCostCents !== undefined && dto.standardCostCents !== product.standardCostCents) {
+      await persistAuditEvent(this.prisma, {
+        action: "product_standard_material_cost_updated",
+        actorId: actor.id,
+        targetType: "Product",
+        targetId: product.id,
+        metadata: {
+          storeId: product.storeId,
+          unit: dto.inventoryUnit ?? product.inventoryUnit ?? product.unit,
+          previousCents: product.standardCostCents,
+          nextCents: dto.standardCostCents
+        }
+      });
+    }
+    return updated;
+  }
+
+  /**
+   * Material standard cost is finance-owned. Keeping this narrow endpoint
+   * prevents cost maintenance from changing the customer-facing product data.
+   */
+  async updateStandardCost(user: AuthenticatedProductUser, id: string, standardCostCents: number) {
+    const actor = await this.withStoreMember(user);
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: { unitSuggestedPrices: { orderBy: { salesUnit: "asc" } } }
+    });
+    if (!product) throw new NotFoundException("产品不存在");
+    if (!PermissionPolicy.canManageFinance(actor, product.storeId)) {
+      throw new ForbiddenException("仅财务或店长可维护材料成本");
+    }
+    const updated = await this.prisma.product.update({ where: { id }, data: { standardCostCents } });
+    if (standardCostCents !== product.standardCostCents) {
+      await persistAuditEvent(this.prisma, {
+        action: "product_standard_material_cost_updated",
+        actorId: actor.id,
+        targetType: "Product",
+        targetId: product.id,
+        metadata: {
+          storeId: product.storeId,
+          unit: product.inventoryUnit ?? product.unit,
+          previousCents: product.standardCostCents,
+          nextCents: standardCostCents
+        }
+      });
+    }
+    return updated;
+  }
+
+  /**
+   * Product.basePriceCents remains the default-sales-unit suggested price for
+   * compatibility. This endpoint owns only explicit alternate-unit prices.
+   */
+  async updateUnitSuggestedPrices(
+    user: AuthenticatedProductUser,
+    id: string,
+    prices: Array<{ salesUnit: ProductUnit; suggestedPriceCents: number; isActive?: boolean }>
+  ) {
+    const actor = await this.withStoreMember(user);
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: { unitSuggestedPrices: true }
+    });
+    if (!product) throw new NotFoundException("产品不存在");
+    this.assertCanManageSuggestedPrices(actor, product.storeId);
+
+    const supportedUnits = this.supportedSalesUnits(product);
+    const seen = new Set<ProductUnit>();
+    for (const price of prices) {
+      if (price.salesUnit === product.salesUnit) {
+        throw new ForbiddenException("默认销售单位建议价请在产品档案中维护");
+      }
+      if (!supportedUnits.includes(price.salesUnit)) {
+        throw new ForbiddenException("该产品未配置此销售单位或有效换算关系");
+      }
+      if (seen.has(price.salesUnit)) throw new ForbiddenException("同一销售单位只能维护一条建议价");
+      seen.add(price.salesUnit);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const price of prices) {
+        await tx.productUnitSuggestedPrice.upsert({
+          where: { productId_salesUnit: { productId: product.id, salesUnit: price.salesUnit } },
+          create: {
+            productId: product.id,
+            salesUnit: price.salesUnit,
+            suggestedPriceCents: price.suggestedPriceCents,
+            isActive: price.isActive ?? true
+          },
+          update: {
+            suggestedPriceCents: price.suggestedPriceCents,
+            isActive: price.isActive ?? true
+          }
+        });
+      }
+    });
+    for (const price of prices) {
+      const previous = product.unitSuggestedPrices.find((item) => item.salesUnit === price.salesUnit);
+      const nextActive = price.isActive ?? true;
+      if (previous?.suggestedPriceCents === price.suggestedPriceCents && previous.isActive === nextActive) continue;
+      await persistAuditEvent(this.prisma, {
+        action: "product_unit_suggested_price_updated",
+        actorId: actor.id,
+        targetType: "Product",
+        targetId: product.id,
+        metadata: {
+          storeId: product.storeId,
+          unit: price.salesUnit,
+          previousCents: previous?.suggestedPriceCents ?? null,
+          nextCents: price.suggestedPriceCents,
+          previousActive: previous?.isActive ?? null,
+          nextActive
+        }
+      });
+    }
+
+    return this.prisma.product.findUnique({
+      where: { id: product.id },
+      include: { unitSuggestedPrices: { orderBy: { salesUnit: "asc" } } }
     });
   }
 
@@ -122,6 +301,21 @@ export class ProductsService {
     if (!PermissionPolicy.canManageProduct(user, storeId)) {
       throw new ForbiddenException("无权限");
     }
+  }
+
+  private assertCanManageSuggestedPrices(user: UserWithStoreMember, storeId: string) {
+    if (!PermissionPolicy.isStoreManager(user, storeId)) {
+      throw new ForbiddenException("仅店长可维护产品建议价");
+    }
+  }
+
+  private supportedSalesUnits(product: { salesUnit: ProductUnit; metersPerRoll: Prisma.Decimal | null }) {
+    const units = [product.salesUnit];
+    if (Number(product.metersPerRoll ?? 0) > 0) {
+      if (product.salesUnit === ProductUnit.ROLL) units.push(ProductUnit.METER);
+      if (product.salesUnit === ProductUnit.METER) units.push(ProductUnit.ROLL);
+    }
+    return units;
   }
 
   private async withStoreMember(user: AuthenticatedProductUser): Promise<UserWithStoreMember> {

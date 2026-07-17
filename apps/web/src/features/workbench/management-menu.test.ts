@@ -55,9 +55,11 @@ test("management menu scopes sales users to sales workflow", () => {
   assert.deepEqual(labels, ["工作台", "客户管理", "销售订单", "报价审批", "报表分析"]);
 });
 
-test("management menu routes finance to the independent role-cost page", () => {
+test("management menu routes finance to role cost, product material cost and purchase review", () => {
   const items = getManagementMenuItems({ position: "FINANCE", storeId: "store-1" });
   assert.equal(items.find((item) => item.label === "岗位成本标准")?.href, "/orders/pricing/construction-costs/rates");
+  assert.equal(items.find((item) => item.label === "产品管理")?.href, "/products");
+  assert.equal(items.find((item) => item.label === "采购管理")?.href, "/purchases");
   assert.equal(items.find((item) => item.label === "施工成本结算")?.href, "/construction/cost-settlements");
   assert.equal(items.some((item) => item.label === "施工收费标准"), false);
 });

@@ -38,9 +38,22 @@ import {
 import { exportRowsToExcel } from "../../../../src/lib/export-excel";
 import { PRODUCT_UNIT_OPTIONS } from "../../../../src/features/products/display";
 
-type PurchaseOrderItemRow = PurchaseInboundItemLike & {
+type PurchaseOrderItemRow = Omit<PurchaseInboundItemLike, "receiptCostRecords"> & {
   id: string;
   productId?: string | null;
+  unitCostCents?: number | null;
+  receiptCostRecords?: PurchaseReceiptCostRecord[];
+};
+
+type PurchaseReceiptCostRecord = {
+  id: string;
+  inventoryBatchId: string;
+  actualUnitCostCents?: number | null;
+  plannedUnitCostCents?: number | null;
+  differenceCents?: number | null;
+  differenceReason?: string | null;
+  createdAt: string;
+  inventoryBatch?: { batchNo?: string | null } | null;
 };
 
 type PurchaseOrderDetail = {
@@ -60,6 +73,9 @@ type ReceiveBatchFormRow = {
   baseUnit?: ProductUnit;
   baseQuantityPerPackage?: number;
   supplierName?: string;
+  actualCostMode?: "PLANNED" | "ACTUAL" | "PENDING";
+  actualUnitCostYuan?: number;
+  costDifferenceReason?: string;
 };
 
 type ScanImportMode = "append" | "replace";
@@ -78,6 +94,7 @@ export default function PurchaseOrderDetailPage() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const [receiveForm] = Form.useForm();
+  const [receiptCostForm] = Form.useForm();
   const params = useParams<{ id: string }>();
   const purchaseOrderId = params.id;
   const user = useAuthStore((state) => state.user);
@@ -95,6 +112,7 @@ export default function PurchaseOrderDetailPage() {
   const [scanImportFileName, setScanImportFileName] = useState("");
   const [scanImportRecognizing, setScanImportRecognizing] = useState(false);
   const [receiveActionMode, setReceiveActionMode] = useState<ReceiveActionMode>("receive");
+  const [editingReceiptCost, setEditingReceiptCost] = useState<PurchaseReceiptCostRecord | null>(null);
 
   const purchaseOrderQuery = useQuery({
     queryKey: ["purchase-order", purchaseOrderId],
@@ -125,6 +143,8 @@ export default function PurchaseOrderDetailPage() {
         supplierName?: string;
         warehouseId?: string;
         warehouseName?: string;
+        actualUnitCostCents?: number | null;
+        costDifferenceReason?: string;
       }>;
     }) =>
       purchaseApi.receiveOrderItemBatches(values.itemId, values.batches),
@@ -232,7 +252,20 @@ export default function PurchaseOrderDetailPage() {
     batchNo: "",
     quantity: selectedReceiveItem ? Math.min(1, remainingReceiveQuantity || 1) : 1,
     ...getReceiveConversionDefaults(selectedReceiveItem),
-    supplierName: getDefaultSupplierName()
+    supplierName: getDefaultSupplierName(),
+    actualCostMode: "PLANNED",
+    actualUnitCostYuan: selectedReceiveItem?.unitCostCents == null ? undefined : selectedReceiveItem.unitCostCents / 100
+  });
+
+  const updateReceiptCost = useMutation({
+    mutationFn: (values: { id: string; actualUnitCostCents: number | null; costDifferenceReason?: string }) =>
+      purchaseApi.updateReceiptCost(values.id, values),
+    onSuccess: async () => {
+      message.success("实际入库价已更新");
+      setEditingReceiptCost(null);
+      await queryClient.invalidateQueries({ queryKey: ["purchase-order", purchaseOrderId] });
+    },
+    onError: (error: Error) => message.error(error.message)
   });
   const ensureReceiveItemSelected = () => {
     if (!selectedReceiveItem) {
@@ -257,7 +290,9 @@ export default function PurchaseOrderDetailPage() {
         batchNo: "",
         quantity: index === rowCount - 1 ? Number((remaining - (rowCount - 1)).toFixed(3)) : 1,
         ...conversionDefaults,
-        supplierName: defaultSupplierName || purchaseOrder?.supplierName || undefined
+        supplierName: defaultSupplierName || purchaseOrder?.supplierName || undefined,
+        actualCostMode: "PLANNED",
+        actualUnitCostYuan: selectedReceiveItem?.unitCostCents == null ? undefined : selectedReceiveItem.unitCostCents / 100
       }))
     });
   };
@@ -341,7 +376,9 @@ export default function PurchaseOrderDetailPage() {
     const importedBatches = parsed.batches.map((batch) => ({
       ...batch,
       ...conversionDefaults,
-      supplierName: batch.supplierName || defaultSupplierName
+      supplierName: batch.supplierName || defaultSupplierName,
+      actualCostMode: "PLANNED",
+      actualUnitCostYuan: selectedReceiveItem?.unitCostCents == null ? undefined : selectedReceiveItem.unitCostCents / 100
     }));
     const existingBatches = ((receiveForm.getFieldValue("batches") ?? []) as ReceiveBatchFormRow[]).filter(Boolean);
     const nextBatches = scanImportMode === "replace" ? importedBatches : [...existingBatches, ...importedBatches];
@@ -494,7 +531,47 @@ export default function PurchaseOrderDetailPage() {
                     { title: "规格", render: (_, row) => getPurchaseInboundItemDetails(row).specification },
                     { title: "质保", render: (_, row) => getPurchaseInboundItemDetails(row).warranty },
                     { title: "数量", render: (_, row) => getPurchaseInboundItemDetails(row).quantity },
-                    { title: "入库批次", render: (_, row) => getPurchaseInboundItemDetails(row).batches }
+                    {
+                      title: "采购含税单价",
+                      render: (_, row) => row.unitCostCents == null ? "未填写" : `¥${(row.unitCostCents / 100).toFixed(2)}`
+                    },
+                    { title: "入库批次", render: (_, row) => getPurchaseInboundItemDetails(row).batches },
+                    {
+                      title: "实际入库价 / 差异",
+                      render: (_, row) => {
+                        const records = row.receiptCostRecords ?? [];
+                        if (records.length === 0) return "尚未入库";
+                        return (
+                          <div className="purchase-receipt-cost-summary">
+                            {records.map((record) => (
+                              <div key={record.id}>
+                                <span>{record.inventoryBatch?.batchNo ?? "批次"}</span>
+                                <strong>{record.actualUnitCostCents == null ? "待补价" : `¥${(record.actualUnitCostCents / 100).toFixed(2)}`}</strong>
+                                {record.differenceCents == null || record.differenceCents === 0
+                                  ? <em>无差异</em>
+                                  : <em>{record.differenceCents > 0 ? "+" : ""}¥{(record.differenceCents / 100).toFixed(2)}</em>}
+                                {canManagePurchase ? (
+                                  <Button
+                                    type="link"
+                                    size="small"
+                                    onClick={() => {
+                                      setEditingReceiptCost(record);
+                                      receiptCostForm.setFieldsValue({
+                                        actualUnitCostYuan: record.actualUnitCostCents == null ? undefined : record.actualUnitCostCents / 100,
+                                        costDifferenceReason: record.differenceReason ?? "",
+                                        costMode: record.actualUnitCostCents == null ? "PENDING" : "ACTUAL"
+                                      });
+                                    }}
+                                  >
+                                    修改
+                                  </Button>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }
+                    }
                   ]}
                 />
               </Card>
@@ -558,7 +635,12 @@ export default function PurchaseOrderDetailPage() {
                       message.error("请选择存放仓库");
                       return;
                     }
-                    const batches = (values.batches ?? [])
+                    const rawBatches = values.batches ?? [];
+                    if (rawBatches.some((batch) => batch.actualCostMode === "ACTUAL" && !Number.isFinite(Number(batch.actualUnitCostYuan)))) {
+                      message.error("选择录入实际入库价时，请填写不小于 0 的金额");
+                      return;
+                    }
+                    const batches = rawBatches
                       .map((batch) => ({
                         batchNo: batch.batchNo?.trim() ?? "",
                         quantity: Number(batch.quantity ?? 0),
@@ -567,7 +649,13 @@ export default function PurchaseOrderDetailPage() {
                         baseQuantityPerPackage: Number(batch.baseQuantityPerPackage ?? 1),
                         supplierName: batch.supplierName?.trim() || values.supplierName?.trim() || purchaseOrder.supplierName || undefined,
                         warehouseId: values.warehouseId,
-                        warehouseName: selectedWarehouse?.label
+                        warehouseName: selectedWarehouse?.label,
+                        actualUnitCostCents: batch.actualCostMode === "PENDING"
+                          ? null
+                          : batch.actualCostMode === "ACTUAL"
+                            ? Math.round(Number(batch.actualUnitCostYuan ?? 0) * 100)
+                            : undefined,
+                        costDifferenceReason: batch.costDifferenceReason?.trim() || undefined
                       }))
                       .filter((batch) => batch.batchNo && batch.quantity > 0);
                     if (batches.length === 0) {
@@ -576,6 +664,10 @@ export default function PurchaseOrderDetailPage() {
                     }
                     if (batches.some((batch) => !batch.supplierName)) {
                       message.error("请选择或填写供应商");
+                      return;
+                    }
+                    if (batches.some((batch) => batch.actualUnitCostCents !== null && batch.actualUnitCostCents !== undefined && batch.actualUnitCostCents < 0)) {
+                      message.error("实际入库单价不能为负数");
                       return;
                     }
                     if (hasDuplicateBatchNo(batches)) {
@@ -706,6 +798,34 @@ export default function PurchaseOrderDetailPage() {
                               </Form.Item>
                               <Form.Item
                                 {...restField}
+                                name={[field.name, "actualCostMode"]}
+                                label={index === 0 ? "实际价处理" : " "}
+                                initialValue="PLANNED"
+                              >
+                                <Select
+                                  options={[
+                                    { value: "PLANNED", label: "默认采用采购单价" },
+                                    { value: "ACTUAL", label: "录入实际入库价" },
+                                    { value: "PENDING", label: "暂不录入，后补" }
+                                  ]}
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                {...restField}
+                                name={[field.name, "actualUnitCostYuan"]}
+                                label={index === 0 ? "实际含税单价（元）" : " "}
+                              >
+                                <InputNumber className="w-full" min={0} precision={2} placeholder="选择后录入" />
+                              </Form.Item>
+                              <Form.Item
+                                {...restField}
+                                name={[field.name, "costDifferenceReason"]}
+                                label={index === 0 ? "成本差异原因" : " "}
+                              >
+                                <Input placeholder="实际价不同于采购单价时必填" />
+                              </Form.Item>
+                              <Form.Item
+                                {...restField}
                                 name={[field.name, "supplierName"]}
                                 label={index === 0 ? "供应商" : " "}
                               >
@@ -769,6 +889,53 @@ export default function PurchaseOrderDetailPage() {
               </div>
             </aside>
           </section>
+          <Modal
+            title="补录或修改实际入库价"
+            open={Boolean(editingReceiptCost)}
+            okText="保存实际入库价"
+            cancelText="取消"
+            confirmLoading={updateReceiptCost.isPending}
+            onCancel={() => setEditingReceiptCost(null)}
+            onOk={() => receiptCostForm.submit()}
+            destroyOnHidden
+          >
+            <Alert
+              type="info"
+              showIcon
+              message="实际价用于材料成本核算"
+              description="不录入时可标记为待补价；若与采购订单含税单价不同，必须写明原因。已有出库的批次不会被直接改写，系统将保留差异记录。"
+            />
+            <Form
+              form={receiptCostForm}
+              layout="vertical"
+              onFinish={(values: { costMode?: "ACTUAL" | "PENDING"; actualUnitCostYuan?: number; costDifferenceReason?: string }) => {
+                const costMode = values.costMode ?? "ACTUAL";
+                if (costMode === "ACTUAL" && !Number.isFinite(Number(values.actualUnitCostYuan))) {
+                  message.error("请填写不小于 0 的实际入库单价");
+                  return;
+                }
+                if (!editingReceiptCost) return;
+                updateReceiptCost.mutate({
+                  id: editingReceiptCost.id,
+                  actualUnitCostCents: costMode === "PENDING" ? null : Math.round(Number(values.actualUnitCostYuan) * 100),
+                  costDifferenceReason: values.costDifferenceReason?.trim() || undefined
+                });
+              }}
+            >
+              <Form.Item name="costMode" label="实际价状态" initialValue="ACTUAL">
+                <Radio.Group optionType="button" buttonStyle="solid">
+                  <Radio.Button value="ACTUAL">录入实际入库价</Radio.Button>
+                  <Radio.Button value="PENDING">暂不录入，后补</Radio.Button>
+                </Radio.Group>
+              </Form.Item>
+              <Form.Item name="actualUnitCostYuan" label="实际含税单价（元）">
+                <InputNumber className="w-full" min={0} precision={2} placeholder="如 1280.00" />
+              </Form.Item>
+              <Form.Item name="costDifferenceReason" label="成本差异原因">
+                <Input.TextArea rows={2} placeholder="实际入库价与采购订单含税单价不一致时必填" />
+              </Form.Item>
+            </Form>
+          </Modal>
           <Modal
             title="批次导入"
             open={scanImportOpen}

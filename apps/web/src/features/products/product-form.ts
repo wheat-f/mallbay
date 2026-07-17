@@ -1,5 +1,5 @@
 import type { ProductCategory, ProductUnit } from "@mallbay/shared";
-import type { CreateProductPayload } from "./api";
+import type { CreateProductPayload, ProductUnitSuggestedPrice } from "./api";
 
 export type ProductFormValues = {
   brand?: string;
@@ -16,10 +16,13 @@ export type ProductFormValues = {
   quantityPrecision?: number;
   warrantyYears?: number;
   basePriceYuan?: number;
+  alternateUnitSuggestedPriceYuan?: number;
+  standardCostYuan?: number;
 };
 
 export type ProductPayloadLike = Partial<CreateProductPayload> & {
   basePriceCents?: number;
+  unitSuggestedPrices?: ProductUnitSuggestedPrice[];
 };
 
 export function toProductPayload(storeId: string, values: ProductFormValues): CreateProductPayload {
@@ -38,11 +41,17 @@ export function toProductPayload(storeId: string, values: ProductFormValues): Cr
     metersPerRoll: values.metersPerRoll,
     quantityPrecision: values.quantityPrecision,
     warrantyYears: values.warrantyYears,
-    basePriceCents: yuanToCents(values.basePriceYuan ?? 0)
+    basePriceCents: yuanToCents(values.basePriceYuan ?? 0),
+    ...(values.standardCostYuan === undefined ? {} : { standardCostCents: yuanToCents(values.standardCostYuan) })
   }) as CreateProductPayload;
 }
 
 export function toProductFormValues(product: ProductPayloadLike): ProductFormValues {
+  const salesUnit = product.salesUnit ?? product.unit;
+  const alternateUnit = salesUnit === "ROLL" ? "METER" : salesUnit === "METER" ? "ROLL" : undefined;
+  const alternatePrice = alternateUnit
+    ? product.unitSuggestedPrices?.find((price) => price.salesUnit === alternateUnit && price.isActive)
+    : undefined;
   return {
     brand: product.brand,
     name: product.name,
@@ -57,7 +66,9 @@ export function toProductFormValues(product: ProductPayloadLike): ProductFormVal
     metersPerRoll: product.metersPerRoll,
     quantityPrecision: product.quantityPrecision,
     warrantyYears: product.warrantyYears,
-    basePriceYuan: centsToYuan(product.basePriceCents ?? 0)
+    basePriceYuan: centsToYuan(product.basePriceCents ?? 0),
+    ...(alternatePrice ? { alternateUnitSuggestedPriceYuan: centsToYuan(alternatePrice.suggestedPriceCents) } : {}),
+    ...(product.standardCostCents === undefined || product.standardCostCents === null ? {} : { standardCostYuan: centsToYuan(product.standardCostCents) })
   };
 }
 

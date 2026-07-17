@@ -6,11 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { purchaseApi } from "../../../../src/lib/api";
-import {
-  getPurchaseRequirementItemsSummary,
-  getPurchaseRequirementSourceOrderLabel,
-  getPurchaseRequirementStatusLabel
-} from "../../../../src/features/inventory/display";
+import { getPurchaseRequirementSourceOrderLabel, getPurchaseRequirementStatusLabel } from "../../../../src/features/inventory/display";
 import { PurchaseModuleNav } from "../../../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../../src/stores/auth-store";
@@ -18,6 +14,7 @@ import { useAuthStore } from "../../../../src/stores/auth-store";
 type SupplierOption = {
   id?: string;
   name?: string | null;
+  isActive?: boolean;
 };
 
 type RequirementItemRow = {
@@ -25,6 +22,12 @@ type RequirementItemRow = {
   productId?: string | null;
   requiredQuantity?: number | string | null;
   requiredUnit?: string | null;
+  product?: {
+    brand?: string | null;
+    name?: string | null;
+    model?: string | null;
+    specification?: string | null;
+  } | null;
 };
 
 type PurchaseRequirementRow = {
@@ -48,6 +51,7 @@ type SupplierAllocationFormRow = {
   supplierName?: string;
   expectedAt?: string;
   items?: Record<string, number | undefined>;
+  unitCostYuan?: Record<string, number | undefined>;
 };
 
 type CreateOrderValues = {
@@ -84,7 +88,6 @@ export default function PurchaseOrderCreatePage() {
   const unorderedRequirements = rows.filter((row) => row.status === "OPEN" || row.status === "PARTIAL_ORDERED");
   const displayRequirements = rows.filter((row) => row.status !== "CANCELLED");
   const selectedRequirement = unorderedRequirements.find((row) => row.id === selectedRequirementId);
-  const productLookup = useMemo(() => new Map(), []);
   const remainingItems = useMemo(() => getRemainingRequirementItems(selectedRequirement), [selectedRequirement]);
   const remainingQuantity = remainingItems.reduce((sum, item) => sum + item.remainingQuantity, 0);
   const supplierAllocations = Form.useWatch("supplierAllocations", form) ?? [];
@@ -95,7 +98,7 @@ export default function PurchaseOrderCreatePage() {
     return allocated > item.remainingQuantity;
   });
   const supplierOptions = ((suppliersQuery.data ?? []) as SupplierOption[])
-    .filter((supplier) => Boolean(supplier.name))
+    .filter((supplier) => Boolean(supplier.name) && supplier.isActive !== false)
     .map((supplier) => ({
       value: supplier.name as string,
       label: supplier.name as string
@@ -188,7 +191,12 @@ export default function PurchaseOrderCreatePage() {
                     )
                   },
                   { title: "状态", render: (_, row) => <Tag color={canSelectRequirement(row) ? "blue" : "default"}>{getPurchaseRequirementStatusLabel(row.status)}</Tag> },
-                  { title: "需求明细", render: (_, row) => getPurchaseRequirementItemsSummary(row, productLookup) },
+                  {
+                    title: "需求明细",
+                    render: (_, row) => (row.items ?? [])
+                      .map((item) => `${getRequirementItemLabel(item)} × ${item.requiredQuantity ?? 0} ${item.requiredUnit ?? ""}`)
+                      .join("；") || "暂无需求明细"
+                  },
                   { title: "选择状态", render: (_, row) => canSelectRequirement(row) ? "可生成采购单" : "已完成，不可选择" }
                 ]}
               />
@@ -197,7 +205,7 @@ export default function PurchaseOrderCreatePage() {
             <Card className="purchase-order-create-panel" title="生成采购订单">
               <Space className="purchase-order-create-selected" orientation="vertical" size={6}>
                 <span>已选择需求</span>
-                <strong>{selectedRequirement ? getPurchaseRequirementItemsSummary(selectedRequirement, productLookup) : "尚未选择"}</strong>
+                <strong>{selectedRequirement ? (selectedRequirement.items ?? []).map((item) => `${getRequirementItemLabel(item)} × ${item.requiredQuantity ?? 0} ${item.requiredUnit ?? ""}`).join("；") : "尚未选择"}</strong>
                 <small>{selectedRequirement ? getPurchaseRequirementSourceOrderLabel(selectedRequirement) : "请先在左侧列表选择需求"}</small>
               </Space>
 
@@ -246,13 +254,20 @@ export default function PurchaseOrderCreatePage() {
                           {remainingItems.map((item) => {
                             const itemId = item.id ?? "";
                             return (
-                              <Form.Item
-                                key={itemId}
-                                name={[field.name, "items", itemId]}
-                                label={`${getPurchaseRequirementItemsSummary({ items: [item] }, productLookup)}（剩余 ${item.remainingQuantity}）`}
-                              >
-                                <InputNumber className="w-full" min={0} max={item.remainingQuantity} placeholder="采购数量" />
-                              </Form.Item>
+                              <div key={itemId} className="purchase-allocation-item-price-fields">
+                                <Form.Item
+                                  name={[field.name, "items", itemId]}
+                                  label={`${getRequirementItemLabel(item)}（剩余 ${item.remainingQuantity} ${item.requiredUnit ?? ""}）`}
+                                >
+                                  <InputNumber className="w-full" min={0} max={item.remainingQuantity} placeholder="采购数量" />
+                                </Form.Item>
+                                <Form.Item
+                                  name={[field.name, "unitCostYuan", itemId]}
+                                  label="采购含税单价（元）"
+                                >
+                                  <InputNumber className="w-full" min={0} precision={2} placeholder="可留空，入库时可补录" />
+                                </Form.Item>
+                              </div>
                             );
                           })}
                         </div>
@@ -325,7 +340,8 @@ function buildSupplierAllocationsPayload(
       items: remainingItems
         .map((item) => ({
           purchaseRequirementItemId: item.id ?? "",
-          quantity: toNumber(allocation.items?.[item.id ?? ""])
+          quantity: toNumber(allocation.items?.[item.id ?? ""]),
+          unitCostCents: toOptionalMoneyCents(allocation.unitCostYuan?.[item.id ?? ""])
         }))
         .filter((item) => item.purchaseRequirementItemId && item.quantity > 0)
     }))
@@ -335,4 +351,17 @@ function buildSupplierAllocationsPayload(
 function toNumber(value?: number | string | null) {
   if (value === undefined || value === null || value === "") return 0;
   return Number(value);
+}
+
+function toOptionalMoneyCents(value?: number | string | null) {
+  if (value === undefined || value === null || value === "") return undefined;
+  return Math.round(Number(value) * 100);
+}
+
+function getRequirementItemLabel(item: RequirementItemRow) {
+  const product = item.product;
+  const label = [product?.brand, product?.name, product?.model, product?.specification]
+    .filter(Boolean)
+    .join(" / ");
+  return label || "产品信息待确认";
 }

@@ -117,7 +117,7 @@ function CostAdjustmentPanel({ settlement, adjustmentReasonOptions, canCreate, c
   const idempotencyKeyRef = useRef<string | undefined>(undefined);
   if (settlement.status === "PENDING_CONFIRMATION") return null;
   return <Card size="small" title="确认后成本调整">
-    <Typography.Paragraph type="secondary">确认后不能直接覆盖成本。店长可发起调整单，财务审批后会在结算时计入实际施工成本；已结算记录不可再调整。</Typography.Paragraph>
+    <Typography.Paragraph type="secondary">确认后不能直接覆盖成本。店长可发起人工成本调整，财务批准后在结算时计入实际成本；采购实际入库价补录形成的材料成本差异会自动生成待财务处理的差异单。</Typography.Paragraph>
     {canCreate && settlement.status === "CONFIRMED" ? <Space direction="vertical" style={{ width: "100%" }}><Select value={reasonCode} onChange={setReasonCode} options={adjustmentReasonOptions} placeholder="选择调整原因（来自系统字典）" /><InputNumber value={amountYuan} onChange={(value) => setAmountYuan(Number(value ?? 0))} prefix="¥" addonAfter="元，可负数冲减" style={{ width: "100%" }} /><Input value={reasonText} onChange={(event) => setReasonText(event.target.value)} placeholder="补充说明（可选，填写凭据或具体原因）" /><Button disabled={!reasonCode || !amountYuan} loading={creating} onClick={() => { idempotencyKeyRef.current ??= createAdjustmentIdempotencyKey(); onCreate(amountYuan, reasonCode!, reasonText, idempotencyKeyRef.current); }}>提交调整单</Button></Space> : null}
     {settlement.adjustments.length ? <Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>{settlement.adjustments.map((item) => <div key={item.id}><Tag color={item.status === "APPROVED" ? "success" : item.status === "REJECTED" ? "error" : item.status === "SETTLED" ? "default" : "processing"}>{item.status === "PENDING" ? "待财务审批" : item.status === "APPROVED" ? "已批准" : item.status === "REJECTED" ? "已拒绝" : "已结算"}</Tag> {adjustmentTypeLabel(item.adjustmentType)} ¥{(item.amountCents / 100).toFixed(2)} {item.reasonText ?? item.reasonCode} {canApprove && item.status === "PENDING" ? <Space size="small"><Button size="small" type="primary" loading={approving} onClick={() => onApprove(item.id, "APPROVED")}>批准</Button><Button size="small" danger loading={approving} onClick={() => onApprove(item.id, "REJECTED")}>拒绝</Button></Space> : null}</div>)}</Space> : <Typography.Text type="secondary">暂无调整单。</Typography.Text>}
   </Card>;
@@ -130,7 +130,8 @@ function createAdjustmentIdempotencyKey() {
 }
 
 function adjustmentTypeLabel(type: string) {
-  return type === "OUTSOURCE" ? "外包费用" : type === "REWORK" ? "返工人工成本" : type === "ALLOWANCE" ? "额外补贴" : type === "COMMISSION" ? "提成修正" : "人工成本调整";
+  return type === "MATERIAL_RECEIPT_COST_DIFFERENCE" ? "采购实际入库价差异"
+    : type === "OUTSOURCE" ? "外包费用" : type === "REWORK" ? "返工人工成本" : type === "ALLOWANCE" ? "额外补贴" : type === "COMMISSION" ? "提成修正" : "人工成本调整";
 }
 
 type DictionaryOption = { value: string; label: string };

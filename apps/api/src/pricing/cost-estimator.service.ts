@@ -19,6 +19,7 @@ export class CostEstimatorService {
       select: {
         id: true,
         standardCostCents: true,
+        inventoryUnit: true,
         salesUnit: true,
         rollWidthMeters: true,
         rollLengthMeters: true,
@@ -36,7 +37,8 @@ export class CostEstimatorService {
     for (const line of dto.lines) {
       const product = productById.get(line.productId)!;
       const targetUnit = line.salesUnit ?? product.salesUnit;
-      const standardFactor = unitConversionFactor(product.salesUnit, targetUnit, product);
+      // 标准材料成本按库存基础单位维护；卷入库、米销售时不能从销售单位折算。
+      const standardFactor = unitConversionFactor(product.inventoryUnit, targetUnit, product);
       costs[line.productId] = {
         standardCents: product.standardCostCents == null || standardFactor == null
           ? undefined

@@ -29,7 +29,7 @@ type PricingProduct = {
 type SimulationLine = { id: string; productId?: string; quantity: number };
 
 const STAGE_LABELS: Record<string, string> = {
-  BASE: "基础价格",
+  BASE: "产品建议价",
   PRODUCT: "产品规则",
   PRODUCT_RULE: "产品规则",
   VEHICLE: "车型规则",
@@ -61,8 +61,7 @@ export default function PricingSimulatorPage() {
   const storeId = useAuthStore((state) => state.user?.storeMember?.store.id);
   const [constructionType, setConstructionType] = useState<string>();
   const [constructionLocation, setConstructionLocation] = useState<string>();
-  const [vehicleClassCode, setVehicleClassCode] = useState<string>();
-  const [baseLaborYuan, setBaseLaborYuan] = useState(0);
+  const [vehicleTypeCode, setVehicleTypeCode] = useState<string>();
   const [lines, setLines] = useState<SimulationLine[]>([newLine(0)]);
   const [result, setResult] = useState<PricingCalculationResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,17 +81,19 @@ export default function PricingSimulatorPage() {
     queryFn: () => dictionaryApi.list(storeId!),
     enabled: Boolean(storeId)
   });
-  const classesQuery = useQuery({
-    queryKey: ["vehicle-price-classes", storeId],
-    queryFn: () => pricingApi.vehicleClasses(storeId!),
-    enabled: Boolean(storeId)
-  });
-
   const products = useMemo(() => (productsQuery.data?.items ?? []) as PricingProduct[], [productsQuery.data]);
   const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const dictionaries = useMemo(() => dictionariesQuery.data ?? [], [dictionariesQuery.data]);
   const constructionTypes = useMemo(() => dictionaryOptions(dictionaries, "CONSTRUCTION_TYPE"), [dictionaries]);
   const constructionLocations = useMemo(() => dictionaryOptions(dictionaries, "CONSTRUCTION_LOCATION"), [dictionaries]);
+  const vehicleTypes = useMemo(() => {
+    const fromDictionary = dictionaryOptions(dictionaries, "VEHICLE_TYPE");
+    return fromDictionary.length ? fromDictionary : [
+      { value: "SMALL_CAR", label: "小车" },
+      { value: "STANDARD_CAR", label: "常规车" },
+      { value: "LUXURY_LARGE_CAR", label: "豪车/大车" }
+    ];
+  }, [dictionaries]);
   const unitLabels = useMemo(() => new Map(dictionaryOptions(dictionaries, "PRODUCT_UNIT").map((item) => [item.value, item.label])), [dictionaries]);
   const publishedRuleSet = useMemo(
     () => (rulesQuery.data ?? []).find((item) => item.status === "PUBLISHED") ?? null,
@@ -123,8 +124,9 @@ export default function PricingSimulatorPage() {
           ruleSetVersion: publishedRuleSet.version,
           constructionType,
           constructionLocation,
-          vehicleClassCode,
-          baseLaborCostCents: Math.round(baseLaborYuan * 100),
+          vehicleTypeCode,
+          // 施工收费由已发布的施工收费标准计算；试算页不再提供可手填的基础人工费。
+          baseLaborCostCents: 0,
           lines: lines.map((line) => {
             const product = productMap.get(line.productId!)!;
             return {
@@ -162,15 +164,14 @@ export default function PricingSimulatorPage() {
         type="info"
         showIcon
         title={publishedRuleSet ? `本次使用当前生效方案 v${publishedRuleSet.version}` : "当前门店还没有已发布的建议价方案"}
-        description="产品基础价、产品单位和规则参数均由系统读取，店长只需按实际订单选择业务条件。"
+        description="产品建议价、销售单位和规则参数均由系统读取，店长只需按实际订单选择业务条件。施工收费由施工收费标准另行计算。"
       />
 
       <Card className="pricing-simulator-card" title="1. 选择订单条件">
         <div className="pricing-simulator-condition-grid">
           <label>施工项目<Select value={constructionType} onChange={(value) => { setConstructionType(value); setResult(null); }} options={constructionTypes} placeholder="选择施工项目" /></label>
           <label>施工地点<Select value={constructionLocation} onChange={(value) => { setConstructionLocation(value); setResult(null); }} options={constructionLocations} placeholder="选择施工地点" /></label>
-          <label>车型级别（选填）<Select allowClear value={vehicleClassCode} onChange={(value) => { setVehicleClassCode(value); setResult(null); }} options={(classesQuery.data ?? []).map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }))} placeholder="未选择时不套用车型规则" /></label>
-          <label>基础人工费<InputNumber min={0} precision={2} prefix="¥" value={baseLaborYuan} onChange={(value) => { setBaseLaborYuan(value ?? 0); setResult(null); }} /></label>
+          <label>车辆类型（选填）<Select allowClear value={vehicleTypeCode} onChange={(value) => { setVehicleTypeCode(value); setResult(null); }} options={vehicleTypes} placeholder="未选择时不套用车辆类型规则" /></label>
         </div>
       </Card>
 
@@ -188,14 +189,14 @@ export default function PricingSimulatorPage() {
                 <label>产品<Select showSearch optionFilterProp="label" value={line.productId} onChange={(value) => updateLine(line.id, { productId: value })} options={products.map((item) => ({ value: item.id, label: `${item.brand} / ${item.name} / ${item.model}` }))} placeholder="选择产品" /></label>
                 <label>数量<InputNumber min={0.001} value={line.quantity} onChange={(value) => updateLine(line.id, { quantity: value ?? 1 })} /></label>
                 <div className="pricing-simulator-unit"><span>单位</span><strong>{product ? unitLabels.get(product.salesUnit) ?? product.salesUnit : "—"}</strong></div>
-                <div className="pricing-simulator-base"><span>产品基础价</span><strong>{product ? yuan(product.basePriceCents) : "—"}</strong></div>
+                <div className="pricing-simulator-base"><span>产品建议价</span><strong>{product ? yuan(product.basePriceCents) : "—"}</strong></div>
                 <Button aria-label={`删除第 ${index + 1} 个产品`} icon={<DeleteOutlined />} danger disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((item) => item.id !== line.id))} />
               </div>
             );
           })}
         </div>
         <div className="pricing-simulator-submit">
-          <Typography.Text type="secondary">系统会依次套用产品、车型、施工和整单规则。</Typography.Text>
+          <Typography.Text type="secondary">系统会在产品建议价基础上，按车辆类型和订单条件套用已发布的补充规则。</Typography.Text>
           <Button type="primary" size="large" loading={loading} disabled={!publishedRuleSet} onClick={simulate}>开始试算</Button>
         </div>
       </Card>
@@ -228,7 +229,7 @@ export default function PricingSimulatorPage() {
             locale={{ emptyText: "本次没有命中额外价格规则" }}
             columns={[
               { title: "调整阶段", dataIndex: "stage", render: (value: string) => STAGE_LABELS[value] ?? "价格调整" },
-              { title: "命中规则", dataIndex: "ruleName", render: (value: string) => value || "系统基础价格" },
+              { title: "命中规则", dataIndex: "ruleName", render: (value: string) => value || "产品建议价" },
               { title: "调整前", dataIndex: "beforeCents", render: yuan },
               { title: "调整后", dataIndex: "afterCents", render: yuan }
             ]}

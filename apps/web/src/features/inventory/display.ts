@@ -12,6 +12,7 @@ export const INVENTORY_PRODUCT_MISSING_LABEL = "产品信息待确认";
 export const INVENTORY_BATCH_MISSING_LABEL = "批次信息待确认";
 
 export type PurchaseInboundItemLike = {
+  unitCostCents?: number | null;
   product?: {
     brand?: string | null;
     name?: string | null;
@@ -33,6 +34,14 @@ export type PurchaseInboundItemLike = {
     batchNo?: string | null;
     quantity?: number | string | null;
     receivedAt?: string | Date | null;
+  }>;
+  receiptCostRecords?: Array<{
+    id: string;
+    actualUnitCostCents?: number | null;
+    plannedUnitCostCents?: number | null;
+    differenceCents?: number | null;
+    differenceReason?: string | null;
+    batchNo?: string | null;
   }>;
 };
 

@@ -14,6 +14,7 @@ import {
   ListPurchaseOrderExportDetailsDto,
   ReceivePurchaseItemBatchesDto,
   ReceivePurchaseItemDto,
+  UpdatePurchaseReceiptCostDto,
   UpdateSupplierDto
 } from "../inventory/dto/inventory.dto";
 import { InventoryService, type AuthenticatedInventoryUser } from "../inventory/inventory.service";
@@ -93,6 +94,11 @@ export class PurchasesController {
     @Body() dto: ReceivePurchaseItemBatchesDto
   ) {
     return this.inventory.receivePurchaseItemBatches(req.user, id, dto);
+  }
+
+  @Patch("receipt-costs/:id")
+  updateReceiptCost(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdatePurchaseReceiptCostDto) {
+    return this.inventory.updatePurchaseReceiptCost(req.user, id, dto);
   }
 
   @Get("warehouses")

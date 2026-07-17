@@ -6,7 +6,7 @@ import type { PricingRule } from "./api";
 
 export const PRICING_STEPS = [
   { title: "产品建议价规则", description: "设置产品建议价调整" },
-  { title: "车型级别与匹配", description: "处理待归类车型" },
+  { title: "车辆类型", description: "从车辆档案带入车型类型" },
   { title: "改价审批与保护", description: "设置偏差和毛利底线" },
   { title: "试算并发布", description: "检查影响后正式生效" }
 ] as const;
@@ -18,7 +18,7 @@ export const CONDITION_FIELD_OPTIONS = [
   { value: "productId", label: "指定产品" },
   { value: "salesUnit", label: "销售单位" },
   { value: "quantity", label: "购买数量" },
-  { value: "vehicleClassCode", label: "车型级别" },
+  { value: "vehicleTypeCode", label: "车辆类型" },
   { value: "constructionType", label: "施工项目" },
   { value: "constructionLocation", label: "施工地点" },
   { value: "lineCount", label: "产品种类数" },
@@ -36,7 +36,7 @@ export const OPERATOR_OPTIONS = [
 const NUMERIC_CONDITION_FIELDS = new Set(["quantity", "lineCount", "totalQuantity"]);
 
 /**
- * 条件字段不是都可以比较大小：车型级别、产品类别等都是字典枚举，
+ * 条件字段不是都可以比较大小：车辆类型、产品类别等都是字典枚举，
  * 只有数量类字段才有可比较的数值含义。
  */
 const ENUM_CONDITION_OPERATORS = new Set(["EQ", "IN"]);
@@ -132,7 +132,7 @@ export function PricingWorkspaceTabs({
   const items = [
     { key: "overview" as const, label: "概览" },
     { key: "price" as const, label: "产品建议价规则" },
-    { key: "vehicle" as const, label: "车型级别与匹配" },
+    { key: "vehicle" as const, label: "车辆类型" },
     { key: "protection" as const, label: "改价审批与保护" },
     { key: "versions" as const, label: "草稿及版本" }
   ];

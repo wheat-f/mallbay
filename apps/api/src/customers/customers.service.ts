@@ -301,6 +301,7 @@ export class CustomersService {
         vinEncrypted: dto.vin ? this.codec.encrypt(dto.vin) : undefined,
         vinHash: dto.vin ? this.codec.hash(dto.vin) : undefined,
         carModel: dto.carModel,
+        vehicleTypeCode: dto.vehicleTypeCode,
         carColor: dto.carColor,
         photoUrl: dto.photoUrl
       }
@@ -325,6 +326,7 @@ export class CustomersService {
         vinEncrypted: dto.vin ? this.codec.encrypt(dto.vin) : undefined,
         vinHash: dto.vin ? this.codec.hash(dto.vin) : undefined,
         carModel: dto.carModel,
+        vehicleTypeCode: dto.vehicleTypeCode,
         carColor: dto.carColor,
         photoUrl: dto.photoUrl
       }

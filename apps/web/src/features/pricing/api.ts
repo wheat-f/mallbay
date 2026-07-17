@@ -52,6 +52,8 @@ export type PositionCostRateVersion = {
   status: "DRAFT" | "PUBLISHED" | "RETIRED";
   effectiveFrom: string;
   effectiveTo?: string | null;
+  /** Non-finance roles receive this count without individual hourly cost amounts. */
+  rateCount?: number;
   rates: PositionCostRate[];
 };
 
@@ -117,6 +119,8 @@ export type PricingCalculationPayload = {
   input: {
     ruleSetVersion: number;
     vehicleId?: string;
+    vehicleTypeCode?: string;
+    /** @deprecated historical compatibility only. */
     vehicleClassCode?: string;
     constructionType: string;
     constructionLocation: string;
@@ -147,12 +151,16 @@ export type PricingCalculationResponse = {
   ruleSetId: string | null;
   pricingCalculationId: string | null;
   constructionChargeAvailable?: boolean;
+  /** Safe-to-display reason explaining why no published construction charge matched. */
+  constructionChargeReason?: string;
   calculation: {
     ruleSetVersion: number;
     lines: Array<{
       id: string;
       productId: string;
       quantity: number;
+      salesUnit?: string;
+      basePriceSource?: "DEFAULT_UNIT" | "UNIT_OVERRIDE" | "UNIT_CONVERTED";
       suggestedUnitPriceCents: number;
       suggestedAmountCents: number;
     }>;

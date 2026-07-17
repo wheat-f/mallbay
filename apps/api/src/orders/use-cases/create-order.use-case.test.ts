@@ -102,7 +102,7 @@ test("CreateOrderUseCase creates order items amount and deposit payment in one t
   ]);
 });
 
-test("CreateOrderUseCase snapshots order item base inventory demand", async () => {
+test("CreateOrderUseCase snapshots the selected meter sales unit and its base inventory demand", async () => {
   const orderItemCreates: unknown[] = [];
   const tx = {
     dailyCapacity: { findUnique: async () => null },
@@ -117,8 +117,8 @@ test("CreateOrderUseCase snapshots order item base inventory demand", async () =
           status: "ACTIVE",
           unit: ProductUnit.ROLL,
           salesUnit: ProductUnit.ROLL,
-          inventoryUnit: ProductUnit.METER,
-          metersPerRoll: 18
+          inventoryUnit: ProductUnit.ROLL,
+          metersPerRoll: 10
         }
       ]
     },
@@ -145,16 +145,16 @@ test("CreateOrderUseCase snapshots order item base inventory demand", async () =
       customerId: "customer-1",
       constructionType: ConstructionType.PPF,
       constructionLocation: ConstructionLocation.IN_STORE,
-      items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
+      items: [{ productId: "product-1", salesUnit: ProductUnit.METER, quantity: 2, unitPriceCents: 500000 }],
       laborCostCents: 200000
     }
   );
 
   const serialized = JSON.stringify(orderItemCreates);
-  assert.match(serialized, /"salesUnit":"ROLL"/);
-  assert.match(serialized, /"baseUnit":"METER"/);
-  assert.match(serialized, /"baseQuantityPerSalesUnit":18/);
-  assert.match(serialized, /"requiredBaseQuantity":18/);
+  assert.match(serialized, /"salesUnit":"METER"/);
+  assert.match(serialized, /"baseUnit":"ROLL"/);
+  assert.match(serialized, /"baseQuantityPerSalesUnit":0\.1/);
+  assert.match(serialized, /"requiredBaseQuantity":0\.2/);
 });
 
 test("CreateOrderUseCase reserves daily capacity for scheduled in store orders", async () => {

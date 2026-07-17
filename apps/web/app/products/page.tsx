@@ -1,6 +1,7 @@
 "use client";
 
 import type { CreateProductPayload } from "../../src/lib/api";
+import type { ProductUnitSuggestedPrice } from "../../src/features/products/api";
 import type { ProductCategory, ProductStatus, ProductUnit } from "@mallbay/shared";
 import { Alert, App, Button, Card, Drawer, Form, Input, InputNumber, Select, Space, Table, Tag, Tooltip } from "antd";
 import { EditOutlined, PlusOutlined, SearchOutlined, StopOutlined, UploadOutlined } from "@ant-design/icons";
@@ -33,6 +34,7 @@ import {
 type ProductRow = CreateProductPayload & {
   id: string;
   status: "ACTIVE" | "INACTIVE";
+  unitSuggestedPrices?: ProductUnitSuggestedPrice[];
 };
 
 export default function ProductsPage() {
@@ -40,6 +42,10 @@ export default function ProductsPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
+  const position = user?.storeMember?.position;
+  const canManageProductDetails = Boolean(user?.isAuditor || position === "MANAGER" || position === "PURCHASING");
+  const canManageSuggestedPrice = Boolean(user?.isAuditor || position === "MANAGER");
+  const canManageMaterialCost = Boolean(user?.isAuditor || position === "MANAGER" || position === "FINANCE");
   const [editing, setEditing] = useState<ProductRow | null>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -68,10 +74,32 @@ export default function ProductsPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (values: ProductFormValues) => {
+    mutationFn: async (values: ProductFormValues) => {
       if (!storeId) throw new Error("当前账号未加入门店");
+      if (editing && !canManageProductDetails) {
+        if (!canManageMaterialCost || values.standardCostYuan === undefined) {
+          throw new Error("请填写材料成本标准");
+        }
+        return productApi.updateStandardCost(editing.id, Math.round(values.standardCostYuan * 100)) as Promise<{ id: string }>;
+      }
+      if (!canManageProductDetails) throw new Error("当前角色仅可维护材料成本标准");
+      if (!editing && !canManageSuggestedPrice) throw new Error("仅店长可新建包含产品建议价的产品档案");
       const payload = toProductPayload(storeId, values);
-      return editing ? productApi.update(editing.id, payload) : productApi.create(payload);
+      const product = editing ? await productApi.update(editing.id, payload) : await productApi.create(payload);
+      const defaultUnit = values.salesUnit ?? values.unit ?? "PIECE";
+      const alternateUnit = defaultUnit === "ROLL" ? "METER" : defaultUnit === "METER" ? "ROLL" : undefined;
+      if (alternateUnit && canManageSuggestedPrice) {
+        const previous = editing?.unitSuggestedPrices?.find((price) => price.salesUnit === alternateUnit);
+        const alternatePrice = values.alternateUnitSuggestedPriceYuan;
+        if (alternatePrice !== undefined || previous) {
+          await productApi.updateUnitSuggestedPrices(product.id, [{
+            salesUnit: alternateUnit,
+            suggestedPriceCents: Math.round((alternatePrice ?? previous?.suggestedPriceCents ?? 0) * (alternatePrice === undefined ? 1 : 100)),
+            isActive: alternatePrice !== undefined
+          }]);
+        }
+      }
+      return product;
     },
     onSuccess: async () => {
       message.success("产品已保存");
@@ -174,7 +202,7 @@ export default function ProductsPage() {
         <StorePageHeader title="产品档案管理" description="管理并维护车膜产品的核心参数、规格及换算规则。">
           <Button
             icon={<UploadOutlined />}
-            disabled={!storeId || parseImportMutation.isPending || importMutation.isPending}
+            disabled={!storeId || !canManageSuggestedPrice || parseImportMutation.isPending || importMutation.isPending}
             loading={parseImportMutation.isPending}
             onClick={() => importInputRef.current?.click()}
           >
@@ -190,7 +218,7 @@ export default function ProductsPage() {
           <Button
             type="primary"
             icon={<PlusOutlined />}
-            disabled={!storeId}
+            disabled={!storeId || !canManageSuggestedPrice}
             onClick={() => {
               setEditing(null);
               form.resetFields();
@@ -304,7 +332,7 @@ export default function ProductsPage() {
                       <dd>{getProductWarrantyLabel(row.warrantyYears)}</dd>
                     </div>
                     <div>
-                      <dt>基础价</dt>
+                      <dt>产品建议价</dt>
                       <dd><strong>{formatProductPrice(row.basePriceCents)}</strong></dd>
                     </div>
                   </dl>
@@ -318,12 +346,13 @@ export default function ProductsPage() {
                         setOpen(true);
                       }}
                     >
-                      编辑
+                      {canManageProductDetails ? "编辑" : "维护材料成本"}
                     </Button>
                     <Button
                       size="small"
                       danger
                       icon={<StopOutlined />}
+                      disabled={!canManageProductDetails}
                       onClick={() => disableMutation.mutate(row.id)}
                     >
                       停用
@@ -380,7 +409,7 @@ export default function ProductsPage() {
                 render: (_, row) => getProductWarrantyLabel(row.warrantyYears)
               },
               {
-                title: "基础价",
+                title: "产品建议价",
                 width: 110,
                 align: "right",
                 render: (_, row) => <strong>{formatProductPrice(row.basePriceCents)}</strong>
@@ -400,7 +429,7 @@ export default function ProductsPage() {
                 align: "center",
                 render: (_, row) => (
                   <Space size={4}>
-                    <Tooltip title="编辑产品">
+                      <Tooltip title={canManageProductDetails ? "编辑产品" : "维护材料成本"}>
                       <Button
                         aria-label="编辑产品"
                         type="text"
@@ -417,6 +446,7 @@ export default function ProductsPage() {
                         aria-label="停用产品"
                         type="text"
                         danger
+                        disabled={!canManageProductDetails}
                         icon={<StopOutlined />}
                         onClick={() => disableMutation.mutate(row.id)}
                       />
@@ -432,61 +462,79 @@ export default function ProductsPage() {
         <Drawer
           className="products-form-drawer"
           open={open}
-          title={editing ? "编辑产品" : "新建产品"}
+          title={editing ? (canManageProductDetails ? "编辑产品" : "维护材料成本") : "新建产品"}
           onClose={() => setOpen(false)}
           destroyOnHidden
           footer={
             <div className="products-form-drawer-footer">
               <Button onClick={() => setOpen(false)}>取消</Button>
               <Button type="primary" loading={saveMutation.isPending} onClick={() => form.submit()}>
-                保存产品
+                {canManageProductDetails ? "保存产品" : "保存材料成本"}
               </Button>
             </div>
           }
         >
           <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
             <Form.Item name="brand" label="品牌" rules={[{ required: true, message: "请输入品牌" }]}>
-              <Input />
+              <Input disabled={!canManageProductDetails} />
             </Form.Item>
             <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
-              <Input />
+              <Input disabled={!canManageProductDetails} />
             </Form.Item>
             <Form.Item name="model" label="型号" rules={[{ required: true, message: "请输入型号" }]}>
-              <Input />
+              <Input disabled={!canManageProductDetails} />
             </Form.Item>
             <Form.Item name="category" label="类别" rules={[{ required: true, message: "请选择类别" }]}>
-              <Select options={PRODUCT_CATEGORY_OPTIONS} />
+              <Select disabled={!canManageProductDetails} options={PRODUCT_CATEGORY_OPTIONS} />
             </Form.Item>
             <Form.Item name="specification" label="规格">
-              <Input />
+              <Input disabled={!canManageProductDetails} />
             </Form.Item>
             <Form.Item name="unit" label="单位" rules={[{ required: true, message: "请选择单位" }]}>
-              <Select options={PRODUCT_UNIT_OPTIONS} />
+              <Select disabled={!canManageSuggestedPrice} options={PRODUCT_UNIT_OPTIONS} />
             </Form.Item>
             <Form.Item name="inventoryUnit" label="库存单位">
-              <Select options={PRODUCT_UNIT_OPTIONS} allowClear />
+              <Select disabled={!canManageProductDetails} options={PRODUCT_UNIT_OPTIONS} allowClear />
             </Form.Item>
             <Form.Item name="salesUnit" label="销售单位">
-              <Select options={PRODUCT_UNIT_OPTIONS} allowClear />
+              <Select disabled={!canManageSuggestedPrice} options={PRODUCT_UNIT_OPTIONS} allowClear />
             </Form.Item>
             <Form.Item name="rollWidthMeters" label="卷宽（米）">
-              <InputNumber className="w-full" min={0} precision={3} />
+              <InputNumber disabled={!canManageProductDetails} className="w-full" min={0} precision={3} />
             </Form.Item>
             <Form.Item name="rollLengthMeters" label="卷长（米）">
-              <InputNumber className="w-full" min={0} precision={3} />
+              <InputNumber disabled={!canManageProductDetails} className="w-full" min={0} precision={3} />
             </Form.Item>
             <Form.Item name="metersPerRoll" label="每卷米数">
-              <InputNumber className="w-full" min={0} precision={3} />
+              <InputNumber disabled={!canManageSuggestedPrice} className="w-full" min={0} precision={3} />
             </Form.Item>
             <Form.Item name="quantityPrecision" label="数量精度">
-              <InputNumber className="w-full" min={0} max={6} />
+              <InputNumber disabled={!canManageProductDetails} className="w-full" min={0} max={6} />
             </Form.Item>
             <Form.Item name="warrantyYears" label="质保年限">
-              <InputNumber className="w-full" min={0} />
+              <InputNumber disabled={!canManageProductDetails} className="w-full" min={0} />
             </Form.Item>
-            <Form.Item name="basePriceYuan" label="基础价（元）" rules={[{ required: true, message: "请输入基础价" }]}>
-              <InputNumber className="w-full" min={0} precision={2} />
+            <Form.Item name="basePriceYuan" label="产品建议价（默认销售单位，元）" rules={[{ required: true, message: "请输入产品建议价" }]}>
+              <InputNumber disabled={!canManageSuggestedPrice} className="w-full" min={0} precision={2} />
             </Form.Item>
+            <Form.Item noStyle shouldUpdate={(previous, current) => previous.salesUnit !== current.salesUnit || previous.unit !== current.unit || previous.metersPerRoll !== current.metersPerRoll}>
+              {({ getFieldValue }) => {
+                const salesUnit = getFieldValue("salesUnit") ?? getFieldValue("unit");
+                const alternateUnit = salesUnit === "ROLL" ? "METER" : salesUnit === "METER" ? "ROLL" : undefined;
+                const canConvert = Number(getFieldValue("metersPerRoll") ?? 0) > 0;
+                if (!alternateUnit || !canConvert) return null;
+                return (
+                  <Form.Item name="alternateUnitSuggestedPriceYuan" label={`${getProductUnitLabel(alternateUnit)}建议价（可选，元）`} extra="不填写时，订单将按默认销售单位建议价和卷米换算自动计算。">
+                    <InputNumber disabled={!canManageSuggestedPrice} className="w-full" min={0} precision={2} />
+                  </Form.Item>
+                );
+              }}
+            </Form.Item>
+            {canManageMaterialCost ? (
+              <Form.Item name="standardCostYuan" label="材料成本标准（库存基础单位，元）" extra="内部经营成本。缺少可靠批次成本时用于预计成本兜底，不影响客户建议价。">
+                <InputNumber className="w-full" min={0} precision={2} />
+              </Form.Item>
+            ) : null}
           </Form>
         </Drawer>
 
@@ -552,7 +600,7 @@ export default function ProductsPage() {
                     render: (_, row) => getProductUnitLabel(row.product.unit)
                   },
                   {
-                    title: "基础价",
+                    title: "产品建议价",
                     align: "right",
                     width: 110,
                     render: (_, row) => formatProductPrice(row.product.basePriceCents)

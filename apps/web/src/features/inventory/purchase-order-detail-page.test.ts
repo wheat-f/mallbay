@@ -13,6 +13,8 @@ test("purchase order detail page keeps arrival review and inbound actions togeth
   const detailSource = readFileSync("app/purchases/orders/[id]/page.tsx", "utf8");
 
   assert.match(detailSource, /采购订单详情/);
+  assert.match(detailSource, /采购员/);
+  assert.match(detailSource, /getPurchaserName/);
   assert.match(detailSource, /exportRowsToExcel/);
   assert.match(detailSource, /purchase-order-\$\{purchaseOrder\.orderNo\}\.xlsx/);
   assert.match(detailSource, /导出 Excel/);

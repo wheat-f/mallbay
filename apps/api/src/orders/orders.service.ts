@@ -1,7 +1,15 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { createHash } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { OrderAmendmentStatus, OrderStatus, Prisma, ProductStatus, StorePosition } from "@prisma/client";
+import {
+  OrderAmendmentStatus,
+  OrderStatus,
+  PaymentDirection,
+  PaymentRecordType,
+  Prisma,
+  ProductStatus,
+  StorePosition
+} from "@prisma/client";
 import { normalizePagination } from "../common/pagination";
 import {
   PermissionPolicy,
@@ -179,6 +187,7 @@ export class OrdersService {
       include: {
         customer: { select: { id: true, name: true, companyName: true, contactPerson: true } },
         vehicle: { select: { id: true, carPlate: true, carModel: true, carColor: true } },
+        salesPerson: { select: { id: true, username: true, nickname: true } },
         items: { include: { product: true, inventoryAllocations: true } },
         amount: true,
         payments: { orderBy: { paidAt: "desc" }, include: { account: true } },
@@ -227,6 +236,22 @@ export class OrdersService {
           amountCents: dto.amountCents,
           paidAt: new Date(dto.paidAt),
           createdById: actor.id
+        }
+      });
+
+      // 订单收款既是订单维度的收款记录，也是已经发生的资金收入。
+      // 用订单收款 ID 作为来源，支持一张订单的多笔收款且保证幂等。
+      await tx.paymentRecord.create({
+        data: {
+          storeId: order.storeId,
+          accountId: dto.accountId,
+          type: PaymentRecordType.ORDER_PAYMENT,
+          direction: PaymentDirection.INCOME,
+          amountCents: dto.amountCents,
+          sourceId: payment.id,
+          note: "订单收款",
+          createdById: actor.id,
+          occurredAt: new Date(dto.paidAt)
         }
       });
 
@@ -280,7 +305,7 @@ export class OrdersService {
       if (!order?.amount) {
         throw new NotFoundException("订单不存在");
       }
-      const hasApprovedAmendment = order.amendmentRequests.length > 0;
+      const hasApprovedAmendment = (order.amendmentRequests?.length ?? 0) > 0;
       if (order.amount.pricingCalculationId && !hasApprovedAmendment) {
         throw new BadRequestException("正式订单价格快照已冻结，不能修改产品清单或成交价");
       }

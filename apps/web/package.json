@@ -14,7 +14,7 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "test": "tsx --tsconfig tsconfig.json --test --test-concurrency=8 \"src/**/*.test.ts\"",
+    "test": "node scripts/run-tests.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

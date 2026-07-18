@@ -179,7 +179,7 @@ test("未指定规则集时自动使用当前生效版本并返回实际规则�
         category: "客户端伪造类别",
         brand: "客户端伪造品牌",
         model: "客户端伪造型号",
-        salesUnit: "ROLL",
+        salesUnit: "METER",
         quantity: 5,
         baseUnitPriceCents: 1
       }]
@@ -215,7 +215,7 @@ test("缺少门店运行模式时按 LEGACY 处理，不能意外启用新价格
       constructionType: "PPF",
       constructionLocation: "IN_STORE",
       baseLaborCostCents: 0,
-      lines: [{ id: "line-1", productId: "product-1", category: "", brand: "", model: "", salesUnit: "ROLL", quantity: 1, baseUnitPriceCents: 0 }]
+      lines: [{ id: "line-1", productId: "product-1", category: "", brand: "", model: "", salesUnit: "METER", quantity: 1, baseUnitPriceCents: 0 }]
     }
   } as never);
 

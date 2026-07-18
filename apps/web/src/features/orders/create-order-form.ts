@@ -78,6 +78,7 @@ export type OrderProduct = {
 export type CreateOrderFormValues = {
   customerId: string;
   vehicleId?: string;
+  salesPersonId?: string;
   vehicleTypeCode?: "SMALL_CAR" | "STANDARD_CAR" | "LUXURY_LARGE_CAR";
   /** @deprecated historical compatibility only. */
   vehicleClassCode?: string;

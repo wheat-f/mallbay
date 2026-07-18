@@ -6,7 +6,6 @@ import type { PricingRule } from "./api";
 
 export const PRICING_STEPS = [
   { title: "产品建议价规则", description: "设置产品建议价调整" },
-  { title: "车辆类型", description: "从车辆档案带入车型类型" },
   { title: "改价审批与保护", description: "设置偏差和毛利底线" },
   { title: "试算并发布", description: "检查影响后正式生效" }
 ] as const;
@@ -126,13 +125,12 @@ export function PricingWorkspaceTabs({
   active,
   onChange
 }: {
-  active: "overview" | "price" | "vehicle" | "protection" | "versions";
-  onChange: (key: "overview" | "price" | "vehicle" | "protection" | "versions") => void;
+  active: "overview" | "price" | "protection" | "versions";
+  onChange: (key: "overview" | "price" | "protection" | "versions") => void;
 }) {
   const items = [
     { key: "overview" as const, label: "概览" },
     { key: "price" as const, label: "产品建议价规则" },
-    { key: "vehicle" as const, label: "车辆类型" },
     { key: "protection" as const, label: "改价审批与保护" },
     { key: "versions" as const, label: "草稿及版本" }
   ];

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { purchaseApi } from "../../../../src/lib/api";
+import { storeApi } from "../../../../src/features/stores/api";
 import { getPurchaseRequirementSourceOrderLabel, getPurchaseRequirementStatusLabel } from "../../../../src/features/inventory/display";
 import { PurchaseModuleNav } from "../../../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
@@ -55,6 +56,7 @@ type SupplierAllocationFormRow = {
 };
 
 type CreateOrderValues = {
+  purchaserId?: string;
   supplierAllocations?: SupplierAllocationFormRow[];
 };
 
@@ -72,6 +74,7 @@ export default function PurchaseOrderCreatePage() {
   const canManagePurchase = user?.isAuditor === true ||
     user?.storeMember?.position === "MANAGER" ||
     user?.storeMember?.position === "PURCHASING";
+  const canAssignPurchaser = user?.storeMember?.position === "MANAGER";
 
   const requirementsQuery = useQuery({
     queryKey: ["purchase-requirements", storeId],
@@ -82,6 +85,11 @@ export default function PurchaseOrderCreatePage() {
     queryKey: ["purchase-suppliers", storeId],
     queryFn: () => purchaseApi.suppliers(storeId!),
     enabled: Boolean(storeId) && canManagePurchase
+  });
+  const storeMembersQuery = useQuery({
+    queryKey: ["purchase-order-members", storeId],
+    queryFn: () => storeApi.myStore(storeId!),
+    enabled: Boolean(storeId)
   });
 
   const rows = (requirementsQuery.data ?? []) as PurchaseRequirementRow[];
@@ -103,6 +111,15 @@ export default function PurchaseOrderCreatePage() {
       value: supplier.name as string,
       label: supplier.name as string
     }));
+  const purchaserOptions = useMemo(() => {
+    const eligible = (storeMembersQuery.data?.members ?? [])
+      .filter((member) => ["MANAGER", "PURCHASING"].includes(member.position))
+      .map((member) => ({ value: member.user.id, label: member.user.nickname ?? member.user.username }));
+    if (user?.id && !eligible.some((option) => option.value === user.id)) {
+      eligible.unshift({ value: user.id, label: user.nickname ?? user.username ?? "当前登录人" });
+    }
+    return eligible;
+  }, [storeMembersQuery.data?.members, user?.id, user?.nickname, user?.username]);
   const canSubmit = canManagePurchase &&
     Boolean(selectedRequirementId) &&
     remainingItems.length > 0 &&
@@ -116,8 +133,8 @@ export default function PurchaseOrderCreatePage() {
   }, []);
 
   useEffect(() => {
-    form.setFieldsValue({ supplierAllocations: [{}] });
-  }, [form, selectedRequirementId]);
+    form.setFieldsValue({ purchaserId: user?.id, supplierAllocations: [{}] });
+  }, [form, selectedRequirementId, user?.id]);
 
   const createOrderFromRequirement = useMutation({
     mutationFn: (values: CreateOrderValues) => {
@@ -126,6 +143,7 @@ export default function PurchaseOrderCreatePage() {
       if (supplierAllocationsPayload.length === 0) throw new Error("请填写供应商和采购数量");
       if (allocationTotal > remainingQuantity || hasOverAllocatedItem) throw new Error("采购数量不能超过需求剩余数量");
       return purchaseApi.createPurchaseOrderFromRequirement(selectedRequirementId, {
+        purchaserId: values.purchaserId,
         supplierAllocations: supplierAllocationsPayload
       });
     },
@@ -218,9 +236,22 @@ export default function PurchaseOrderCreatePage() {
               <Form
                 form={form}
                 layout="vertical"
-                initialValues={{ supplierAllocations: [{}] }}
+                initialValues={{ purchaserId: user?.id, supplierAllocations: [{}] }}
                 onFinish={(values) => createOrderFromRequirement.mutate(values)}
               >
+                <Form.Item
+                  name="purchaserId"
+                  label="采购员"
+                  rules={[{ required: true, message: "请选择采购员" }]}
+                  extra={canAssignPurchaser ? "默认当前登录人；店长可调整为本店采购员。" : "默认当前登录人。"}
+                >
+                  <Select
+                    loading={storeMembersQuery.isLoading}
+                    disabled={!canAssignPurchaser}
+                    options={purchaserOptions}
+                    placeholder="选择采购员"
+                  />
+                </Form.Item>
                 <Form.List name="supplierAllocations">
                   {(fields, { add, remove }) => (
                     <div className="purchase-order-supplier-allocations">

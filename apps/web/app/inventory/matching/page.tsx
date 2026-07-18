@@ -21,6 +21,10 @@ import {
 import {
   buildInventoryAllocationRows,
   buildInventoryMatchRows,
+  buildInventoryQuantityUnitOptions,
+  convertInventoryQuantity,
+  getInventoryQuantityMax,
+  getInventoryQuantityStep,
   buildPurchaseRequirementFromShortages,
   type InventoryMatchInput
 } from "../../../src/features/inventory/matching";
@@ -447,8 +451,6 @@ function InventoryMatchingContent() {
                       {lockableRows.length > 0 ? (
                         lockableRows.map((row, index) => {
                           const pendingLockQuantity = row.pendingQuantity;
-                          const maxLockQuantity = Math.min(row.availableQuantity, pendingLockQuantity || row.availableQuantity);
-                          const unitOptions = buildUnitOptions(row.unit, row.salesUnit);
                           const rowStatus = row.shortageQuantity > 0
                             ? { label: "需补货", color: "error" as const }
                             : row.lockedQuantity > 0
@@ -507,6 +509,13 @@ function InventoryMatchingContent() {
                                     optionFilterProp="label"
                                     placeholder={row.availableBatches.length > 0 ? "选择可出库批次" : "暂无可用批次"}
                                     disabled={!canManageInventory || row.availableBatches.length === 0 || pendingLockQuantity <= 0}
+                                    onChange={(batchId) => {
+                                      const batch = row.availableBatches.find((candidate) => candidate.id === batchId);
+                                      allocationForm.setFields([
+                                        { name: ["allocations", index, "unit"], value: batch?.unit ?? row.unit },
+                                        { name: ["allocations", index, "quantity"], value: undefined }
+                                      ]);
+                                    }}
                                     options={row.availableBatches.map((batch) => ({
                                       value: batch.id,
                                       label: [
@@ -517,30 +526,75 @@ function InventoryMatchingContent() {
                                     }))}
                                   />
                                 </Form.Item>
-                                <Form.Item
-                                  label="锁定数量"
-                                  name={["allocations", index, "quantity"]}
-                                  rules={[{ required: true, message: "请输入数量" }]}
-                                  className="!mb-0"
-                                >
-                                  <InputNumber
-                                    min={0.001}
-                                    max={maxLockQuantity || undefined}
-                                    placeholder="输入本次锁定数量"
-                                    disabled={!canManageInventory || row.availableQuantity <= 0 || pendingLockQuantity <= 0}
-                                  />
-                                </Form.Item>
-                                <Form.Item
-                                  label="锁定单位"
-                                  name={["allocations", index, "unit"]}
-                                  initialValue={row.unit}
-                                  rules={[{ required: true, message: "请选择单位" }]}
-                                  className="!mb-0"
-                                >
-                                  <Select
-                                    disabled={!canManageInventory || row.availableQuantity <= 0 || pendingLockQuantity <= 0}
-                                    options={unitOptions}
-                                  />
+                                <Form.Item noStyle shouldUpdate>
+                                  {({ getFieldValue }) => {
+                                    const batchId = getFieldValue(["allocations", index, "batchId"]);
+                                    const batch = row.availableBatches.find((candidate) => candidate.id === batchId);
+                                    const unit = getFieldValue(["allocations", index, "unit"]) ?? batch?.unit ?? row.unit;
+                                    const pendingInBatchUnit = batch
+                                      ? convertInventoryQuantity(
+                                        pendingLockQuantity,
+                                        row.unit,
+                                        batch.unit,
+                                        { baseUnit: row.unit, metersPerRoll: row.metersPerRoll, precision: row.quantityPrecision }
+                                      )
+                                      : pendingLockQuantity;
+                                    const maxLockQuantity = batch
+                                      ? getInventoryQuantityMax({
+                                        availableBaseQuantity: batch.availableQuantity,
+                                        requiredBaseQuantity: pendingInBatchUnit,
+                                        baseUnit: batch.unit,
+                                        targetUnit: unit,
+                                        packageUnit: batch.packageUnit,
+                                        baseQuantityPerPackage: batch.baseQuantityPerPackage,
+                                        metersPerRoll: row.metersPerRoll,
+                                        quantityPrecision: row.quantityPrecision
+                                      })
+                                      : undefined;
+                                    const unitOptions = batch
+                                      ? buildInventoryQuantityUnitOptions({
+                                        unit: batch.unit,
+                                        packageUnit: batch.packageUnit,
+                                        baseQuantityPerPackage: batch.baseQuantityPerPackage,
+                                        metersPerRoll: row.metersPerRoll,
+                                        salesUnit: row.salesUnit
+                                      })
+                                      : buildInventoryQuantityUnitOptions({
+                                        unit: row.unit,
+                                        metersPerRoll: row.metersPerRoll,
+                                        salesUnit: row.salesUnit
+                                      });
+                                    return <>
+                                      <Form.Item
+                                        label="锁定数量"
+                                        name={["allocations", index, "quantity"]}
+                                        rules={[{ required: true, message: "请输入数量" }]}
+                                        className="!mb-0"
+                                      >
+                                        <InputNumber
+                                          min={getInventoryQuantityStep(row.quantityPrecision)}
+                                          precision={row.quantityPrecision}
+                                          step={getInventoryQuantityStep(row.quantityPrecision)}
+                                          max={maxLockQuantity || undefined}
+                                          placeholder={batch ? `最多 ${maxLockQuantity ?? 0} ${getProductUnitLabel(unit)}` : "请先选择批次"}
+                                          disabled={!canManageInventory || !batch || maxLockQuantity === undefined || maxLockQuantity <= 0}
+                                        />
+                                      </Form.Item>
+                                      <Form.Item
+                                        label="锁定单位"
+                                        name={["allocations", index, "unit"]}
+                                        initialValue={row.unit}
+                                        rules={[{ required: true, message: "请选择单位" }]}
+                                        className="!mb-0"
+                                      >
+                                        <Select
+                                          disabled={!canManageInventory || !batch || maxLockQuantity === undefined || maxLockQuantity <= 0}
+                                          options={unitOptions}
+                                          onChange={() => allocationForm.setFieldValue(["allocations", index, "quantity"], undefined)}
+                                        />
+                                      </Form.Item>
+                                    </>;
+                                  }}
                                 </Form.Item>
                               </div>
                             </div>
@@ -655,30 +709,55 @@ function InventoryMatchingContent() {
                             <Tag>{getInventoryAllocationStatusLabel(row.status)}</Tag>
                           </div>
                           <div className="inventory-allocation-editor-grid">
-                            <Form.Item
-                              label="本次出库数量"
-                              name={["lines", index, "quantity"]}
-                              rules={[{ required: true, message: "请输入出库数量" }]}
-                              className="!mb-0"
-                            >
-                              <InputNumber
-                                min={0.001}
-                                max={row.remainingQuantity || undefined}
-                                placeholder="输入本次出库数量"
-                                disabled={!canManageInventory || row.remainingQuantity <= 0}
-                              />
-                            </Form.Item>
-                            <Form.Item
-                              label="出库单位"
-                              name={["lines", index, "unit"]}
-                              initialValue={row.unit}
-                              rules={[{ required: true, message: "请选择单位" }]}
-                              className="!mb-0"
-                            >
-                              <Select
-                                disabled={!canManageInventory || row.remainingQuantity <= 0}
-                                options={buildUnitOptions(row.unit, row.salesUnit)}
-                              />
+                            <Form.Item noStyle shouldUpdate>
+                              {({ getFieldValue }) => {
+                                const unit = getFieldValue(["lines", index, "unit"]) ?? row.unit;
+                                const maxOutboundQuantity = getInventoryQuantityMax({
+                                  availableBaseQuantity: row.remainingQuantity,
+                                  baseUnit: row.unit,
+                                  targetUnit: unit,
+                                  packageUnit: row.packageUnit,
+                                  baseQuantityPerPackage: row.baseQuantityPerPackage,
+                                  metersPerRoll: row.metersPerRoll,
+                                  quantityPrecision: row.quantityPrecision
+                                });
+                                return <>
+                                  <Form.Item
+                                    label="本次出库数量"
+                                    name={["lines", index, "quantity"]}
+                                    rules={[{ required: true, message: "请输入出库数量" }]}
+                                    className="!mb-0"
+                                  >
+                                    <InputNumber
+                                      min={getInventoryQuantityStep(row.quantityPrecision)}
+                                      precision={row.quantityPrecision}
+                                      step={getInventoryQuantityStep(row.quantityPrecision)}
+                                      max={maxOutboundQuantity || undefined}
+                                      placeholder={`最多 ${maxOutboundQuantity ?? 0} ${getProductUnitLabel(unit)}`}
+                                      disabled={!canManageInventory || !maxOutboundQuantity || maxOutboundQuantity <= 0}
+                                    />
+                                  </Form.Item>
+                                  <Form.Item
+                                    label="出库单位"
+                                    name={["lines", index, "unit"]}
+                                    initialValue={row.unit}
+                                    rules={[{ required: true, message: "请选择单位" }]}
+                                    className="!mb-0"
+                                  >
+                                    <Select
+                                      disabled={!canManageInventory || row.remainingQuantity <= 0}
+                                      options={buildInventoryQuantityUnitOptions({
+                                        unit: row.unit,
+                                        packageUnit: row.packageUnit,
+                                        baseQuantityPerPackage: row.baseQuantityPerPackage,
+                                        metersPerRoll: row.metersPerRoll,
+                                        salesUnit: row.salesUnit
+                                      })}
+                                      onChange={() => outboundForm.setFieldValue(["lines", index, "quantity"], undefined)}
+                                    />
+                                  </Form.Item>
+                                </>;
+                              }}
                             </Form.Item>
                           </div>
                         </div>
@@ -738,21 +817,10 @@ function InventoryMatchingContent() {
                 <strong>查看库存流水</strong>
                 <span>批次追溯、入库出库和异常追踪</span>
               </Link>
-              <Link href="/inventory/adjustments" className="inventory-shortcut">
-                <strong>进入库存调整工作台</strong>
-                <span>单位转换、盘点报损和调拨</span>
-              </Link>
             </div>
           </Card>
         </div>
       </section>
     </div>
   );
-}
-
-function buildUnitOptions(...units: Array<ProductUnit | undefined>) {
-  return Array.from(new Set(units.filter(Boolean) as ProductUnit[])).map((unit) => ({
-    value: unit,
-    label: getProductUnitLabel(unit)
-  }));
 }

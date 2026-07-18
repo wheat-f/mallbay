@@ -36,6 +36,9 @@ test("pricing workspace uses system dictionaries and autosaves structured busine
   assert.match(page, /产品建议价规则/);
   assert.match(page, /施工收费不在本页维护/);
   assert.match(workspace, /title: "产品建议价规则"/);
+  assert.equal(workspace.includes('title: "车辆类型"'), false);
+  assert.equal(workspace.includes('{ key: "vehicle" as const, label: "车辆类型" }'), false);
+  assert.match(workspace, /value: "vehicleTypeCode", label: "车辆类型"/);
   assert.match(workspace, /function conditionOperatorOptions/);
   assert.match(workspace, /NUMERIC_CONDITION_FIELDS/);
   assert.match(workspace, /conditionOperatorHelp/);

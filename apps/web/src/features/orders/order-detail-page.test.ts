@@ -48,6 +48,14 @@ test("order detail exposes pending dispatch confirmation and fulfillment links",
   assert.doesNotMatch(pageSource, /<Button[^>]*>进入施工派工<\/Button>/);
 });
 
+test("order detail shows the responsible salesperson", () => {
+  const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /销售员/);
+  assert.match(pageSource, /getSalesPersonName/);
+  assert.match(pageSource, /salesPerson\?:/);
+});
+
 test("order detail confirmation flow uses the prototype right-side drawer", () => {
   const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");

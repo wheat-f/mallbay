@@ -438,7 +438,12 @@ test("InventoryService locks selected batch by base unit quantity", async () => 
             id: "item-1",
             productId: "product-1",
             quantity: 1,
-            product: { unit: ProductUnit.ROLL }
+            salesUnit: ProductUnit.ROLL,
+            baseUnit: ProductUnit.METER,
+            baseQuantityPerSalesUnit: 18,
+            requiredBaseQuantity: 18,
+            product: { unit: ProductUnit.ROLL, inventoryUnit: ProductUnit.METER, salesUnit: ProductUnit.ROLL, metersPerRoll: 18 },
+            inventoryAllocations: []
           }
         ]
       })
@@ -490,6 +495,51 @@ test("InventoryService locks selected batch by base unit quantity", async () => 
   assert.match(serialized, /"unit":"METER"/);
 });
 
+test("InventoryService rejects a fractional lock that exceeds the remaining order quantity", async () => {
+  const tx = {
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        storeId: "store-1",
+        items: [{
+          id: "item-1",
+          productId: "product-1",
+          quantity: 1.2,
+          salesUnit: ProductUnit.ROLL,
+          baseUnit: ProductUnit.ROLL,
+          requiredBaseQuantity: 1.2,
+          product: { unit: ProductUnit.ROLL, inventoryUnit: ProductUnit.ROLL, salesUnit: ProductUnit.ROLL, quantityPrecision: 3 },
+          inventoryAllocations: []
+        }]
+      })
+    },
+    inventoryBatch: {
+      findUnique: async () => ({
+        id: "batch-1",
+        storeId: "store-1",
+        productId: "product-1",
+        unit: ProductUnit.ROLL,
+        packageUnit: ProductUnit.ROLL,
+        baseQuantityPerPackage: 1,
+        availableQuantity: 6
+      })
+    }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  await assert.rejects(
+    () => service.createOrderInventoryAllocations(
+      { id: "purchasing-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.PURCHASING } },
+      "order-1",
+      { allocations: [{ orderItemId: "item-1", batchId: "batch-1", quantity: 1.201, unit: ProductUnit.ROLL }] } as never
+    ),
+    /锁库数量不能超过订单待锁数量/
+  );
+});
+
 test("InventoryService creates purchase order from purchase requirement items", async () => {
   const writes: unknown[] = [];
   const tx = {
@@ -513,7 +563,8 @@ test("InventoryService creates purchase order from purchase requirement items", 
         writes.push(args);
         return { id: "po-1", items: [{ id: "poi-1" }] };
       }
-    }
+    },
+    supplier: { findFirst: async () => ({ id: "supplier-1", isActive: true }) }
   };
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
@@ -534,7 +585,41 @@ test("InventoryService creates purchase order from purchase requirement items", 
   const serialized = JSON.stringify(writes);
   assert.equal(serialized.includes("\"purchaseRequirementId\":\"pr-1\""), true);
   assert.equal(serialized.includes("\"purchaseRequirementItemId\":\"pri-1\""), true);
+  assert.equal(serialized.includes("\"purchaserId\":\"purchasing-1\""), true);
   assert.equal(serialized.includes("\"status\":\"ORDERED\""), true);
+});
+
+test("InventoryService assigns the purchase order purchaser from the request or current purchaser", async () => {
+  const writes: unknown[] = [];
+  const tx = {
+    purchaseRequirement: {
+      findUnique: async () => ({
+        id: "pr-purchaser",
+        storeId: "store-1",
+        items: [{ id: "pri-purchaser", productId: "product-1", requiredQuantity: 1, fulfilledQuantity: 0 }]
+      }),
+      update: async (args: unknown) => writes.push(args)
+    },
+    supplier: { findFirst: async () => ({ id: "supplier-1", isActive: true }) },
+    purchaseOrder: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "po-purchaser", items: [] };
+      }
+    }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => ({ position: StorePosition.PURCHASING }) },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  await service.createPurchaseOrderFromRequirement(
+    { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
+    "pr-purchaser",
+    { supplierName: "供应商A", purchaserId: "purchaser-1" }
+  );
+
+  assert.match(JSON.stringify(writes), /"purchaserId":"purchaser-1"/);
 });
 
 test("InventoryService returns related purchase orders with purchase requirements", async () => {
@@ -595,7 +680,8 @@ test("InventoryService creates purchase orders only for un-ordered requirement q
         writes.push(args);
         return { id: "po-1", items: [{ id: "poi-1" }] };
       }
-    }
+    },
+    supplier: { findFirst: async () => ({ id: "supplier-1", isActive: true }) }
   };
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
@@ -642,7 +728,8 @@ test("InventoryService splits a purchase requirement across multiple suppliers",
         writes.push(args);
         return { id: `po-${writes.length}`, items: [] };
       }
-    }
+    },
+    supplier: { findFirst: async () => ({ id: "supplier-1", isActive: true }) }
   };
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
@@ -1057,10 +1144,9 @@ test("InventoryService list purchase orders includes product details and receive
     "store-1"
   );
 
-  assert.deepEqual(
-    (findManyCalls[0] as { include: { items: { include: { product: boolean } } } }).include.items.include,
-    { product: true }
-  );
+  const purchaseOrderInclude = (findManyCalls[0] as { include: { purchaser: unknown; items: { include: { product: boolean } } } }).include;
+  assert.deepEqual(purchaseOrderInclude.items.include, { product: true });
+  assert.ok(purchaseOrderInclude.purchaser);
   assert.equal(
     (findManyCalls[1] as { where: { sourceType: string; sourceId: { in: string[] } } }).where.sourceType,
     "PURCHASE_ORDER_ITEM"
@@ -1250,6 +1336,7 @@ test("InventoryService exports every purchase product row without pagination", a
   assert.equal("take" in (findManyArgs ?? {}), false);
   assert.equal(result.length, 2);
   assert.deepEqual(result.map((row) => row.productName), ["A膜", "B膜"]);
+  assert.equal(result[0].purchaserName, "");
   assert.equal(result[0].pendingQuantity, 2);
   assert.equal(result[0].itemAmountCents, 30000);
 });
@@ -1386,6 +1473,7 @@ test("InventoryService receive purchase item updates purchase requirement fulfil
       findMany: async () => [{ id: "poi-1", quantity: 2, receivedQuantity: 0 }]
     },
     inventoryBatch: {
+      findUnique: async () => null,
       upsert: async (args: unknown) => {
         writes.push(args);
         return { id: "batch-1" };
@@ -1394,6 +1482,13 @@ test("InventoryService receive purchase item updates purchase requirement fulfil
     inventoryMovement: {
       create: async (args: unknown) => writes.push(args)
     },
+    purchaseReceiptCostRecord: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "receipt-cost-1" };
+      }
+    },
+    auditEvent: { create: async (args: unknown) => writes.push(args) },
     purchaseRequirementItem: {
       update: async (args: unknown) => writes.push(args),
       findMany: async () => [{ fulfilledQuantity: 2, requiredQuantity: 2, purchaseRequirementId: "pr-1" }]
@@ -1448,6 +1543,7 @@ test("InventoryService receives purchase item package quantity as base stock", a
       findMany: async () => [{ id: "poi-1", quantity: 1, receivedQuantity: 0 }]
     },
     inventoryBatch: {
+      findUnique: async () => null,
       upsert: async (args: unknown) => {
         writes.push(args);
         return { id: "batch-1" };
@@ -1456,6 +1552,13 @@ test("InventoryService receives purchase item package quantity as base stock", a
     inventoryMovement: {
       create: async (args: unknown) => writes.push(args)
     },
+    purchaseReceiptCostRecord: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "receipt-cost-1" };
+      }
+    },
+    auditEvent: { create: async (args: unknown) => writes.push(args) },
     purchaseOrder: {
       update: async (args: unknown) => writes.push(args)
     }
@@ -1504,9 +1607,12 @@ test("InventoryService receives purchase item batches with per-line failures", a
       findMany: async () => [purchaseItem]
     },
     inventoryBatch: {
+      findUnique: async () => null,
       upsert: async (args: { create: { batchNo: string } }) => ({ id: `batch-${args.create.batchNo}` })
     },
     inventoryMovement: { create: async () => undefined },
+    purchaseReceiptCostRecord: { create: async () => ({ id: "receipt-cost-1" }) },
+    auditEvent: { create: async () => undefined },
     purchaseOrder: { update: async () => undefined }
   };
   const service = new InventoryService({
@@ -1559,12 +1665,20 @@ test("InventoryService stores receiving warehouse on purchase-in batch and movem
       findMany: async () => [purchaseItem]
     },
     inventoryBatch: {
+      findUnique: async () => null,
       upsert: async (args: unknown) => {
         writes.push(args);
         return { id: "batch-1" };
       }
     },
     inventoryMovement: { create: async (args: unknown) => writes.push(args) },
+    purchaseReceiptCostRecord: {
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "receipt-cost-1" };
+      }
+    },
+    auditEvent: { create: async (args: unknown) => writes.push(args) },
     purchaseOrder: { update: async (args: unknown) => writes.push(args) }
   };
   const service = new InventoryService({

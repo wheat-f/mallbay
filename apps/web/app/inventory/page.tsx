@@ -2,7 +2,7 @@
 
 import type { InventoryBatchSummary, InventoryMovementType } from "@mallbay/shared";
 import { Alert, Button, Card, Table, Tag, Typography } from "antd";
-import { AppstoreOutlined, ArrowRightOutlined, FileSearchOutlined, SwapOutlined } from "@ant-design/icons";
+import { ArrowRightOutlined, FileSearchOutlined, SwapOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -99,11 +99,6 @@ export default function InventoryOverviewPage() {
         <Button icon={<FileSearchOutlined />} href="/inventory/matching">
           库存匹配
         </Button>
-        {canManageInventory ? (
-          <Button type="primary" icon={<AppstoreOutlined />} href="/inventory/adjustments">
-            库存调整工作台
-          </Button>
-        ) : null}
       </StorePageHeader>
 
       {!canManageInventory ? (
@@ -204,9 +199,6 @@ export default function InventoryOverviewPage() {
           <Card className="inventory-prototype-card" title="库存流程入口">
             <div className="inventory-overview-shortcuts">
               <Link href="/inventory/matching"><strong>订单库存匹配</strong><span>查看匹配建议、锁库结果和待出库订单</span><ArrowRightOutlined /></Link>
-              {canManageInventory ? (
-                <Link href="/inventory/adjustments"><strong>库存调整工作台</strong><span>单位转换、盘点、报损、调拨和退货</span><ArrowRightOutlined /></Link>
-              ) : null}
               {canManageInventory ? (
                 <Link href="/inventory/warehouses"><strong>仓库管理</strong><span>配置门店仓库、库区和启用状态</span><ArrowRightOutlined /></Link>
               ) : null}

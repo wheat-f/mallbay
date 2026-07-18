@@ -143,7 +143,6 @@ export default function WarehouseManagementPage() {
           <div className="warehouse-guide-list">
             <Link href="/purchases/orders"><strong>采购到货验收</strong><span>验收入库时选择仓库并写入批次、流水</span></Link>
             <Link href="/inventory/movements"><strong>库存流水</strong><span>按批次查看入库、锁库、出库和调整记录</span></Link>
-            <Link href="/inventory/adjustments"><strong>库存调整</strong><span>盘点、报损、调拨会继续使用仓库主数据</span></Link>
           </div>
         </Card>
       </section>

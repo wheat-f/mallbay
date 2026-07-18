@@ -139,6 +139,17 @@ test("create order customer history card shows latest order status", () => {
   assert.match(pageSource, /最近订单：/);
 });
 
+test("create order page defaults the salesperson and lets only the manager assign another eligible employee", () => {
+  const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
+
+  assert.match(pageSource, /name="salesPersonId"/);
+  assert.match(pageSource, /label="销售员"/);
+  assert.match(pageSource, /salesPersonId: user\?\.id/);
+  assert.match(pageSource, /\["MANAGER", "SALES", "CUSTOMER_SERVICE"\]/);
+  assert.match(pageSource, /const canAssignSalesPerson = user\?\.storeMember\?\.position === "MANAGER"/);
+  assert.match(pageSource, /disabled=\{!canAssignSalesPerson\}/);
+});
+
 test("create order product rows let users select a permitted sales unit", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
@@ -192,7 +203,6 @@ test("create order page separates system suggested construction charge from manu
   assert.match(pageSource, /readOnly/);
   assert.match(pageSource, /label="本单施工收费（元）"/);
   assert.doesNotMatch(pageSource, /使用系统建议/);
-  assert.doesNotMatch(pageSource, /采用建议价/);
   assert.match(pageSource, /onFinish=\{\(values\) => createMutation\.mutate\(values\)\}/);
   assert.doesNotMatch(pageSource, /createMutation\.mutate\(\{ \.\.\.values, suggestedConstructionChargeYuan \}\)/);
 });
@@ -207,11 +217,14 @@ test("create order page defaults the product unit, permits configured conversion
   assert.match(pageSource, /min=\{0\}/);
 });
 
-test("create order page does not present missing material cost as zero", () => {
+test("create order page keeps internal cost and margin information out of the sales form", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
-  assert.match(pageSource, /hasMissingMaterialCost/);
-  assert.match(pageSource, /待维护材料成本/);
+  assert.doesNotMatch(pageSource, /内部成本与毛利/);
+  assert.doesNotMatch(pageSource, /本单临时预计成本/);
+  assert.doesNotMatch(pageSource, /预计材料成本/);
+  assert.doesNotMatch(pageSource, /预计施工成本/);
+  assert.doesNotMatch(pageSource, /预计毛利/);
 });
 
 test("create order page uses a time range picker for appointment time slot instead of free text input", () => {

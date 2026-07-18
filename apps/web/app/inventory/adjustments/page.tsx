@@ -52,7 +52,28 @@ type TransferFormValues = {
   toWarehouse?: string;
 };
 
+// 暂不开放盘点、报损、调拨等人工调整入口；订单锁库和出库不受影响。
+const INVENTORY_ADJUSTMENT_WORKSPACE_ENABLED = false;
+
 export default function InventoryAdjustmentsPage() {
+  return INVENTORY_ADJUSTMENT_WORKSPACE_ENABLED
+    ? <InventoryAdjustmentsWorkspace />
+    : <InventoryAdjustmentsUnavailable />;
+}
+
+function InventoryAdjustmentsUnavailable() {
+  return (
+    <div className="management-page adjustment-workspace-page">
+      <Card className="inventory-prototype-card" title="库存调整工作台暂未开放">
+        <p>单位转换、盘点、报损和调拨功能正在调整中，当前暂不提供人工库存调整操作。</p>
+        <p>订单库存匹配、锁库、出库和库存流水查询可继续正常使用。</p>
+        <Button type="primary" href="/inventory">返回库存总览</Button>
+      </Card>
+    </div>
+  );
+}
+
+function InventoryAdjustmentsWorkspace() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);

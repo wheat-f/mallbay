@@ -5,7 +5,8 @@ import {
   InventoryMovementType,
   ProductUnit,
   PurchaseRequirementStatus,
-  PurchaseOrderStatus
+  PurchaseOrderStatus,
+  StorePosition
 } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
@@ -36,6 +37,7 @@ export type AuthenticatedInventoryUser = UserWithStoreMember & {
 };
 
 type CreatePurchaseOrderFromRequirementInput = {
+  purchaserId?: string;
   supplierName?: string;
   expectedAt?: string;
   supplierAllocations?: Array<{
@@ -464,6 +466,7 @@ export class InventoryService {
     if (!PermissionPolicy.canManagePurchase(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
+    const purchaserId = await this.resolvePurchaseOrderPurchaser(actor, dto.storeId, dto.purchaserId);
     if (dto.supplierName) {
       await this.assertActiveSupplier(dto.storeId, dto.supplierName);
     }
@@ -474,6 +477,7 @@ export class InventoryService {
         supplierName: dto.supplierName,
         expectedAt: dto.expectedAt ? new Date(dto.expectedAt) : undefined,
         createdById: actor.id,
+        purchaserId,
         items: {
           create: dto.items.map((item) => ({
             productId: item.productId,
@@ -546,7 +550,10 @@ export class InventoryService {
     const purchaseOrders = await this.prisma.purchaseOrder.findMany({
       where: { storeId },
       orderBy: { createdAt: "desc" },
-      include: { items: { include: { product: true } } }
+      include: {
+        purchaser: { select: { id: true, username: true, nickname: true } },
+        items: { include: { product: true } }
+      }
     });
     const itemIds = purchaseOrders.flatMap((order) => order.items.map((item) => item.id));
     if (itemIds.length === 0) {
@@ -603,6 +610,7 @@ export class InventoryService {
       where: { storeId: dto.storeId },
       orderBy: { createdAt: "desc" },
       include: {
+        purchaser: { select: { id: true, username: true, nickname: true } },
         items: {
           include: {
             product: true,
@@ -618,6 +626,7 @@ export class InventoryService {
         purchaseOrderId: order.id,
         orderNo: order.orderNo,
         supplierName: order.supplierName ?? "",
+        purchaserName: order.purchaser?.nickname ?? order.purchaser?.username ?? "",
         status: order.status,
         expectedAt: order.expectedAt,
         createdAt: order.createdAt,
@@ -673,6 +682,7 @@ export class InventoryService {
     const purchaseOrder = await this.prisma.purchaseOrder.findUnique({
       where: { id: purchaseOrderId },
       include: {
+        purchaser: { select: { id: true, username: true, nickname: true } },
         items: {
           include: {
             product: true,
@@ -802,7 +812,7 @@ export class InventoryService {
       include: {
         customer: true,
         vehicle: true,
-        items: { include: { product: true, inventoryAllocations: true } }
+        items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } }
       }
     });
     return orders.filter((order) => isPendingInventoryMatchOrder(order));
@@ -842,22 +852,29 @@ export class InventoryService {
       throw new BadRequestException("锁库明细不能为空");
     }
     return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: { include: { product: true } } } });
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: { items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } } }
+      });
       if (!order) throw new NotFoundException("订单不存在");
       if (!PermissionPolicy.canManageInventory(actor, order.storeId)) {
         throw new ForbiddenException("无权限");
       }
       const locked: Array<{ batchId: string; orderItemId: string; quantity: number }> = [];
       for (const allocation of dto.allocations) {
+        if (!Number.isFinite(allocation.quantity) || allocation.quantity <= 0) {
+          throw new BadRequestException("锁定数量必须大于 0");
+        }
         const orderItem = order.items.find((item) => item.id === allocation.orderItemId);
         if (!orderItem) throw new BadRequestException("订单明细不存在");
         const batch = await tx.inventoryBatch.findUnique({ where: { id: allocation.batchId } });
         if (!batch || batch.storeId !== order.storeId || batch.productId !== orderItem.productId) {
           throw new BadRequestException("库存批次与订单明细不匹配");
         }
+        const allocationUnit = allocation.unit ?? batch.unit;
         const lockBaseQuantity = this.convertInventoryQuantityOrReject({
           quantity: allocation.quantity,
-          fromUnit: allocation.unit ?? batch.unit,
+          fromUnit: allocationUnit,
           baseUnit: batch.unit,
           packageUnit: batch.packageUnit,
           baseQuantityPerPackage: decimalToNumber(batch.baseQuantityPerPackage ?? 1),
@@ -866,6 +883,35 @@ export class InventoryService {
         if (lockBaseQuantity > decimalToNumber(batch.availableQuantity)) {
           throw new BadRequestException("锁库数量超出可用库存");
         }
+        const orderBaseUnit = orderItem.baseUnit ?? orderItem.product.inventoryUnit ?? batch.unit;
+        const lockOrderBaseQuantity = this.convertProductQuantityOrReject({
+          quantity: allocation.quantity,
+          fromUnit: allocationUnit,
+          toUnit: orderBaseUnit,
+          product: orderItem.product,
+          packageUnit: batch.packageUnit,
+          baseQuantityPerPackage: decimalToNumber(batch.baseQuantityPerPackage ?? 1),
+          action: "锁库"
+        });
+        const requiredOrderBaseQuantity = decimalToNumber(orderItem.requiredBaseQuantity ?? orderItem.quantity);
+        const coveredOrderBaseQuantity = (orderItem.inventoryAllocations ?? []).reduce((sum, existing) => {
+          const storedQuantity = existing.status === "RELEASED"
+            ? decimalToNumber(existing.outboundQuantity)
+            : decimalToNumber(existing.lockedQuantity);
+          return sum + this.convertProductQuantityOrReject({
+            quantity: storedQuantity,
+            fromUnit: existing.batch?.unit ?? orderBaseUnit,
+            toUnit: orderBaseUnit,
+            product: orderItem.product,
+            packageUnit: existing.batch?.packageUnit,
+            baseQuantityPerPackage: decimalToNumber(existing.batch?.baseQuantityPerPackage ?? 1),
+            action: "锁库"
+          });
+        }, 0);
+        if (coveredOrderBaseQuantity + lockOrderBaseQuantity > requiredOrderBaseQuantity + 0.0001) {
+          throw new BadRequestException("锁库数量不能超过订单待锁数量");
+        }
+        const existingAllocation = (orderItem.inventoryAllocations ?? []).find((existing) => existing.batchId === batch.id);
         await tx.inventoryBatch.update({
           where: { id: batch.id },
           data: {
@@ -873,17 +919,31 @@ export class InventoryService {
             lockedQuantity: { increment: lockBaseQuantity }
           }
         });
-        const row = await tx.orderInventoryAllocation.create({
-          data: {
-            storeId: order.storeId,
-            orderId,
-            orderItemId: orderItem.id,
-            productId: orderItem.productId,
-            batchId: batch.id,
-            lockedQuantity: lockBaseQuantity,
-            lockedById: actor.id
-          }
-        });
+        const row = existingAllocation
+          ? await tx.orderInventoryAllocation.update({
+            where: { id: existingAllocation.id },
+            data: {
+              lockedQuantity: existingAllocation.status === "RELEASED"
+                ? decimalToNumber(existingAllocation.outboundQuantity) + lockBaseQuantity
+                : { increment: lockBaseQuantity },
+              status: "LOCKED",
+              lockedById: actor.id,
+              lockedAt: new Date(),
+              outboundById: existingAllocation.status === "RELEASED" ? null : undefined,
+              outboundAt: existingAllocation.status === "RELEASED" ? null : undefined
+            }
+          })
+          : await tx.orderInventoryAllocation.create({
+            data: {
+              storeId: order.storeId,
+              orderId,
+              orderItemId: orderItem.id,
+              productId: orderItem.productId,
+              batchId: batch.id,
+              lockedQuantity: lockBaseQuantity,
+              lockedById: actor.id
+            }
+          });
         await tx.inventoryMovement.create({
           data: {
             storeId: order.storeId,
@@ -893,7 +953,7 @@ export class InventoryService {
             movementType: InventoryMovementType.ORDER_LOCK,
             quantity: lockBaseQuantity,
             unit: batch.unit,
-            fromUnit: allocation.unit ?? batch.unit,
+            fromUnit: allocationUnit,
             toUnit: batch.unit,
             conversionRate: decimalToNumber(batch.baseQuantityPerPackage ?? 1),
             sourceType: "ORDER_INVENTORY_ALLOCATION",
@@ -973,6 +1033,7 @@ export class InventoryService {
       if (!PermissionPolicy.canManagePurchase(actor, requirement.storeId)) {
         throw new ForbiddenException("无权限");
       }
+      const purchaserId = await this.resolvePurchaseOrderPurchaser(actor, requirement.storeId, dto.purchaserId);
       const openItems = requirement.items
         .map((item) => {
           const orderedQuantity = (item.purchaseOrderItems ?? [])
@@ -1039,6 +1100,7 @@ export class InventoryService {
               status: PurchaseOrderStatus.ORDERED,
               expectedAt: expectedAt ? new Date(expectedAt) : undefined,
               createdById: actor.id,
+              purchaserId,
               items: {
                 create: allocation.items
               }
@@ -1073,6 +1135,7 @@ export class InventoryService {
           status: PurchaseOrderStatus.ORDERED,
           expectedAt: dto.expectedAt ? new Date(dto.expectedAt) : undefined,
           createdById: actor.id,
+          purchaserId,
           items: {
             create: openItems.map((item) => ({
               purchaseRequirementItemId: item.id,
@@ -1636,7 +1699,7 @@ export class InventoryService {
           status: "LOCKED",
           ...(dto?.lines?.length ? { id: { in: dto.lines.map((line) => line.allocationId) } } : {})
         },
-        include: { batch: true }
+        include: { batch: true, product: true }
       });
       const allocationsById = new Map(allocations.map((allocation) => [allocation.id, allocation]));
       const outboundLines = dto?.lines?.length
@@ -1653,10 +1716,11 @@ export class InventoryService {
           throw new BadRequestException("出库明细不存在或未锁定");
         }
         const remainingLocked = decimalToNumber(allocation.lockedQuantity) - decimalToNumber(allocation.outboundQuantity);
-        const quantity = this.convertInventoryQuantityOrReject({
+        const quantity = this.convertProductQuantityOrReject({
           quantity: line.quantity,
           fromUnit: line.unit,
-          baseUnit: allocation.batch.unit,
+          toUnit: allocation.batch.unit,
+          product: allocation.product,
           packageUnit: allocation.batch.packageUnit,
           baseQuantityPerPackage: decimalToNumber(allocation.batch.baseQuantityPerPackage ?? 1),
           action: "出库"
@@ -1885,8 +1949,63 @@ export class InventoryService {
     try {
       return convertToBaseQuantity(conversionInput);
     } catch {
-      throw new BadRequestException(`${action}单位与当前批次库存单位不匹配；卷材零散出库请先在“库存调整 - 卷材拆分”中拆出米制子批次后再操作`);
+      throw new BadRequestException(`${action}单位与当前批次库存单位不匹配；请检查产品的每卷米数和入库批次换算关系`);
     }
+  }
+
+  private convertProductQuantityOrReject(input: {
+    quantity: number;
+    fromUnit: ProductUnit;
+    toUnit: ProductUnit;
+    product?: {
+      metersPerRoll?: number | { toNumber?: () => number; toString: () => string } | null;
+      quantityPrecision?: number | null;
+    } | null;
+    packageUnit?: ProductUnit | null;
+    baseQuantityPerPackage?: number | null;
+    action: string;
+  }) {
+    if (!Number.isFinite(input.quantity) || input.quantity < 0) {
+      throw new BadRequestException(`${input.action}数量格式不正确`);
+    }
+    const precision = Math.min(3, Math.max(0, input.product?.quantityPrecision ?? 3));
+    if (input.fromUnit === input.toUnit) return Number(input.quantity.toFixed(precision));
+    const metersPerRoll = input.product?.metersPerRoll ? decimalToNumber(input.product.metersPerRoll) : 0;
+    if (metersPerRoll > 0 && [input.fromUnit, input.toUnit].every((unit) => unit === ProductUnit.ROLL || unit === ProductUnit.METER)) {
+      const quantity = input.fromUnit === ProductUnit.ROLL
+        ? input.quantity * metersPerRoll
+        : input.quantity / metersPerRoll;
+      return Number(quantity.toFixed(precision));
+    }
+    return this.convertInventoryQuantityOrReject({
+      quantity: input.quantity,
+      fromUnit: input.fromUnit,
+      baseUnit: input.toUnit,
+      packageUnit: input.packageUnit,
+      baseQuantityPerPackage: input.baseQuantityPerPackage,
+      precision,
+      action: input.action
+    });
+  }
+
+  private async resolvePurchaseOrderPurchaser(
+    actor: UserWithStoreMember,
+    storeId: string,
+    requestedPurchaserId?: string
+  ) {
+    const purchaserId = requestedPurchaserId ?? actor.id;
+    if (purchaserId === actor.id) return purchaserId;
+    if (!PermissionPolicy.isStoreManager(actor, storeId)) {
+      throw new ForbiddenException("仅店长可指定其他采购员");
+    }
+    const member = await this.prisma.storeMember.findUnique({
+      where: { storeId_userId: { storeId, userId: purchaserId } },
+      select: { position: true }
+    });
+    if (!member || (member.position !== StorePosition.MANAGER && member.position !== StorePosition.PURCHASING)) {
+      throw new BadRequestException("采购员必须是本店店长或采购人员");
+    }
+    return purchaserId;
   }
 
   private async withStoreMember(user: AuthenticatedInventoryUser): Promise<UserWithStoreMember> {
@@ -1923,28 +2042,51 @@ function decimalToNumber(value: number | { toNumber?: () => number; toString: ()
 function isPendingInventoryMatchOrder(order: {
   items?: Array<{
     quantity: number | { toNumber?: () => number; toString: () => string };
+    requiredBaseQuantity?: number | { toNumber?: () => number; toString: () => string } | null;
+    baseUnit?: ProductUnit | null;
+    product?: {
+      unit?: ProductUnit | null;
+      inventoryUnit?: ProductUnit | null;
+      metersPerRoll?: number | { toNumber?: () => number; toString: () => string } | null;
+    } | null;
     inventoryAllocations?: Array<{
       status?: string | null;
       lockedQuantity?: number | { toNumber?: () => number; toString: () => string } | null;
       outboundQuantity?: number | { toNumber?: () => number; toString: () => string } | null;
+      batch?: { unit?: ProductUnit | null } | null;
     }>;
   }>;
 }) {
   return (order.items ?? []).some((item) => {
-    const requiredQuantity = decimalToNumber(item.quantity);
+    const requiredQuantity = decimalToNumber(item.requiredBaseQuantity ?? item.quantity);
     if (requiredQuantity <= 0) return false;
     const outboundQuantity = (item.inventoryAllocations ?? [])
-      .filter((allocation) => allocation.status === "OUTBOUND")
       .reduce(
         (sum, allocation) =>
-          sum + Math.max(
+          sum + convertOrderAllocationQuantity(
             toNullableDecimalNumber(allocation.outboundQuantity),
-            toNullableDecimalNumber(allocation.lockedQuantity)
+            allocation.batch?.unit ?? item.baseUnit ?? item.product?.inventoryUnit ?? item.product?.unit ?? ProductUnit.PIECE,
+            item.baseUnit ?? item.product?.inventoryUnit ?? item.product?.unit ?? ProductUnit.PIECE,
+            item.product?.metersPerRoll
           ),
         0
       );
     return outboundQuantity < requiredQuantity;
   });
+}
+
+function convertOrderAllocationQuantity(
+  quantity: number,
+  fromUnit: ProductUnit,
+  toUnit: ProductUnit,
+  metersPerRoll?: number | { toNumber?: () => number; toString: () => string } | null
+) {
+  if (fromUnit === toUnit) return quantity;
+  const rate = metersPerRoll ? decimalToNumber(metersPerRoll) : 0;
+  if (rate > 0 && [fromUnit, toUnit].every((unit) => unit === ProductUnit.ROLL || unit === ProductUnit.METER)) {
+    return fromUnit === ProductUnit.ROLL ? quantity * rate : quantity / rate;
+  }
+  return quantity;
 }
 
 function toNullableDecimalNumber(value?: number | { toNumber?: () => number; toString: () => string } | null) {

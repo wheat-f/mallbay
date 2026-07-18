@@ -308,6 +308,11 @@ export class CreatePurchaseOrderDto {
   @IsString()
   storeId!: string;
 
+  /** 未传时由当前采购操作人担任采购员；仅店长可指定其他采购员。 */
+  @IsOptional()
+  @IsString()
+  purchaserId?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(120)
@@ -390,6 +395,11 @@ export class CreatePurchaseOrderSupplierAllocationDto {
 }
 
 export class CreatePurchaseOrderFromRequirementDto {
+  /** 所有按供应商拆分生成的采购单共用该采购员。 */
+  @IsOptional()
+  @IsString()
+  purchaserId?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(120)

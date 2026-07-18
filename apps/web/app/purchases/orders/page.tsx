@@ -18,6 +18,7 @@ type PurchaseOrderRow = {
   orderNo?: string;
   status?: string;
   supplierName?: string | null;
+  purchaser?: { username?: string | null; nickname?: string | null } | null;
   expectedAt?: string | null;
   items?: unknown[];
 };
@@ -52,6 +53,7 @@ export default function PurchasesOrdersPage() {
         exportRows.map((row) => ({
           采购单号: row.orderNo,
           供应商: row.supplierName,
+          采购员: row.purchaserName,
           产品品牌: row.productBrand,
           产品名称: row.productName,
           产品型号: row.productModel,
@@ -120,6 +122,7 @@ export default function PurchasesOrdersPage() {
               columns={[
                 { title: "采购单", render: (_, row) => row.orderNo ?? "未编号采购单" },
                 { title: "供应商", render: (_, row) => row.supplierName ?? "供应商待确认" },
+                { title: "采购员", render: (_, row) => row.purchaser?.nickname ?? row.purchaser?.username ?? "采购员待确认" },
                 { title: "状态", render: (_, row) => <Tag>{getPurchaseOrderStatusLabel(row.status)}</Tag> },
                 { title: "采购明细", render: (_, row) => (row.items ?? []).map((item) => getPurchaseInboundItemDetails(item as never).product).join(" / ") || "明细待确认" },
                 { title: "到货验收", render: (_, row) => getPurchaseOrderArrivalReminder(row as never) },

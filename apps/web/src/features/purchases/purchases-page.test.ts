@@ -50,6 +50,8 @@ test("purchases order list and detail use purchaseApi instead of inventoryApi", 
   assert.match(ordersSource, /router\.push\("\/purchases\/orders\/create"\)/);
   assert.match(ordersSource, /router\.push\(`\/purchases\/orders\/\$\{row\.id\}`\)/);
   assert.match(ordersSource, /查看\/处理/);
+  assert.match(ordersSource, /采购员/);
+  assert.match(ordersSource, /row\.purchaser\?\.nickname/);
   assert.doesNotMatch(ordersSource, /inventoryApi\./);
   assert.match(detailSource, /purchaseApi\.order\(purchaseOrderId\)/);
   assert.match(detailSource, /purchaseApi\.receiveOrderItemBatches/);
@@ -105,6 +107,9 @@ test("purchase order create page selects unordered requirements", () => {
 
   assert.match(createSource, /purchaseApi\.requirements/);
   assert.match(createSource, /purchaseApi\.createPurchaseOrderFromRequirement/);
+  assert.match(createSource, /name="purchaserId"/);
+  assert.match(createSource, /purchaserId: values\.purchaserId/);
+  assert.match(createSource, /默认当前登录人；店长可调整为本店采购员。/);
   assert.match(createSource, /unorderedRequirements/);
   assert.match(createSource, /row\.status === "OPEN" \|\| row\.status === "PARTIAL_ORDERED"/);
   assert.match(createSource, /selectedRequirementId/);

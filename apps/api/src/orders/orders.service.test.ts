@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { ConstructionType, OrderStatus, PaymentAccountType, PaymentType, ProductUnit, StorePosition } from "@prisma/client";
+import { ConstructionType, OrderStatus, PaymentAccountType, PaymentDirection, PaymentRecordType, PaymentType, ProductUnit, StorePosition } from "@prisma/client";
 import { OrdersService, redactOrderAmount } from "./orders.service";
 
 test("销售订单读取会移除内部成本、毛利、提成和成本快照字段", () => {
@@ -67,6 +67,7 @@ test("OrdersService detail includes item inventory allocations for fulfillment p
 
 test("OrdersService recalculates paid and outstanding amount after payment", async () => {
   const updates: unknown[] = [];
+  const paymentRecords: unknown[] = [];
   const tx = {
     order: {
       findUnique: async () => ({
@@ -81,6 +82,11 @@ test("OrdersService recalculates paid and outstanding amount after payment", asy
     orderPayment: {
       create: async () => ({ id: "payment-1" }),
       aggregate: async () => ({ _sum: { amountCents: 1500000 } })
+    },
+    paymentRecord: {
+      create: async (args: unknown) => {
+        paymentRecords.push(args);
+      }
     },
     orderAmount: {
       update: async (args: unknown) => {
@@ -116,6 +122,21 @@ test("OrdersService recalculates paid and outstanding amount after payment", asy
       data: {
         paidAmountCents: 1500000,
         outstandingCents: 3500000
+      }
+    }
+  ]);
+  assert.deepEqual(paymentRecords, [
+    {
+      data: {
+        storeId: "store-1",
+        accountId: "account-1",
+        type: PaymentRecordType.ORDER_PAYMENT,
+        direction: PaymentDirection.INCOME,
+        amountCents: 1500000,
+        sourceId: "payment-1",
+        note: "订单收款",
+        createdById: "finance-1",
+        occurredAt: new Date("2026-05-31T12:00:00.000Z")
       }
     }
   ]);
@@ -752,6 +773,7 @@ test("OrdersService updates order commercial fields and records audit trail", as
           constructionChargeAdjustmentReason: "客户调整施工产品",
           totalAmountCents: 1400,
           outstandingCents: 1100,
+          settlementDifferenceCents: 1100,
           profitCents: 1250
         }
       }
@@ -795,6 +817,7 @@ test("OrdersService updates order commercial fields and records audit trail", as
                 totalAmountCents: 1400,
                 paidAmountCents: 300,
                 outstandingCents: 1100,
+                settlementDifferenceCents: 1100,
                 materialCostCents: 100,
                 salesCommissionCents: 50,
                 profitCents: 1250
@@ -837,6 +860,7 @@ test("OrdersService updates order commercial fields and records audit trail", as
             totalAmountCents: 1400,
             paidAmountCents: 300,
             outstandingCents: 1100,
+            settlementDifferenceCents: 1100,
             materialCostCents: 100,
             salesCommissionCents: 50,
             profitCents: 1250

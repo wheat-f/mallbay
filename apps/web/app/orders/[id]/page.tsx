@@ -41,6 +41,7 @@ type OrderDetail = {
   id: string;
   storeId: string;
   salesPersonId: string;
+  salesPerson?: { id: string; username?: string | null; nickname?: string | null } | null;
   orderNo: string;
   status: string;
   constructionType: string;
@@ -409,6 +410,7 @@ export default function OrderDetailPage() {
                 <Card className="order-detail-card order-customer-card" title={<><UserOutlined />客户信息</>}>
                   <div className="order-info-grid">
                     <span>客户</span><strong>{getCustomerName(order)}</strong>
+                    <span>销售员</span><strong>{getSalesPersonName(order)}</strong>
                     <span>车辆</span><strong>{getVehicleLabel(order)}</strong>
                     <span>施工类型</span><strong>{getConstructionTypeLabel(order?.constructionType)}</strong>
                     <span>施工地点</span><strong>{getConstructionLocationLabel(order?.constructionLocation)}</strong>
@@ -1014,6 +1016,10 @@ function getSelectedCommercialProductUnitLabel(
 
 function getCustomerName(order?: OrderDetail) {
   return order?.customer?.companyName ?? order?.customer?.name ?? order?.customer?.contactPerson ?? "-";
+}
+
+function getSalesPersonName(order?: OrderDetail) {
+  return order?.salesPerson?.nickname ?? order?.salesPerson?.username ?? "销售员待确认";
 }
 
 function getVehicleLabel(order?: OrderDetail) {

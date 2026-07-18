@@ -197,7 +197,6 @@ export default function PricingRulesPage() {
     [ruleSets]
   );
   const dictionaries = useMemo(() => dictionariesQuery.data ?? [], [dictionariesQuery.data]);
-  const vehicleTypes = useMemo(() => getDictionaryOptions(dictionaries, "VEHICLE_TYPE"), [dictionaries]);
   const products = useMemo(
     () => (productsQuery.data?.items ?? []) as PricingProduct[],
     [productsQuery.data]
@@ -386,17 +385,15 @@ export default function PricingRulesPage() {
   };
 
   const activeRule = rules[activeRuleIndex] ?? rules[0];
-  const activeStep = activeView === "protection" ? 2 : activeView === "versions" ? 3 : 0;
+  const activeStep = activeView === "protection" ? 1 : activeView === "versions" ? 2 : 0;
 
   const navigateStep = (step: number) => {
-    if (step === 1) return router.push("/customers");
-    if (step === 2) setActiveView("protection");
-    else if (step === 3) setActiveView("versions");
+    if (step === 1) setActiveView("protection");
+    else if (step === 2) setActiveView("versions");
     else setActiveView("price");
   };
 
-  const navigateTab = (key: "overview" | "price" | "vehicle" | "protection" | "versions") => {
-    if (key === "vehicle") return router.push("/customers");
+  const navigateTab = (key: "overview" | "price" | "protection" | "versions") => {
     setActiveView(key);
   };
 
@@ -459,7 +456,7 @@ export default function PricingRulesPage() {
             <section className="pricing-overview-primary">
               <Tag color="processing">草稿 v{draftRuleSet.version}</Tag>
               <Typography.Title level={3}>这份方案有 {rules.length} 条价格规则</Typography.Title>
-              <Typography.Paragraph>按步骤完成价格、车辆类型和保护设置，再统一试算发布。</Typography.Paragraph>
+              <Typography.Paragraph>按步骤完成价格规则和保护设置，再统一试算发布。</Typography.Paragraph>
               <div className="pricing-overview-actions">
                 <Button type="primary" onClick={() => setActiveView("price")}>继续设置价格</Button>
                 <Button onClick={() => router.push("/orders/pricing/simulator")}>打开试算工具</Button>
@@ -468,7 +465,6 @@ export default function PricingRulesPage() {
             <section className="pricing-overview-checklist">
               <div><CheckCircleFilled /><span>产品建议价规则</span><Button type="link" onClick={() => setActiveView("price")}>查看</Button></div>
               <div><CheckCircleFilled /><span>施工收费与成本标准</span><Link href="/orders/pricing/construction-costs">维护</Link></div>
-              <div><CheckCircleFilled /><span>车辆类型</span><Button type="link" onClick={() => router.push("/customers")}>前往车辆档案维护</Button></div>
               <div><SafetyCertificateOutlined /><span>改价审批与保护</span><Button type="link" onClick={() => setActiveView("protection")}>查看</Button></div>
               <div><EyeOutlined /><span>试算并发布</span><Button type="link" onClick={() => setActiveView("versions")}>查看</Button></div>
             </section>
@@ -672,7 +668,7 @@ export default function PricingRulesPage() {
               </div>
               <div className="pricing-preview-block">
                 <span>影响范围</span>
-                <strong>{rules.length} 条价格规则 · {vehicleTypes.length} 个车辆类型</strong>
+                <strong>{rules.length} 条价格规则</strong>
               </div>
               <div className="pricing-preview-block">
                 <span>冲突检查</span>
@@ -729,7 +725,6 @@ export default function PricingRulesPage() {
               <Typography.Paragraph type="secondary">先检查规则冲突和生效时间，再将草稿发布为门店的新建议价方案。</Typography.Paragraph>
               <div className="pricing-publish-checks">
                 <div><span>规则数量</span><strong>{rules.length} 条</strong></div>
-                <div><span>车辆类型</span><strong>{vehicleTypes.length} 个</strong></div>
                 <div><span>生效时间</span><DatePicker value={effectiveFrom} showTime onChange={(value) => { if (value) { setEffectiveFrom(value); markDirty(); } }} /></div>
                 <div><span>检查结果</span><strong className={validation?.valid ? "is-success" : ""}>{validation?.valid ? "已通过" : "尚未检查"}</strong></div>
               </div>

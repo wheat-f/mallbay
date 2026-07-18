@@ -14,6 +14,7 @@ export type CreateOrderPayload = {
   storeId: string;
   customerId: string;
   vehicleId?: string;
+  salesPersonId?: string;
   constructionType: ConstructionType;
   constructionLocation: ConstructionLocation;
   constructionAddress?: string;

@@ -74,6 +74,7 @@ test("toCreateVehiclePayload builds a vehicle payload when vehicle info is provi
       name: "小明",
       phone: "13800138000",
       carModel: "  宝马 5 系  ",
+      vehicleTypeCode: "LUXURY_LARGE_CAR",
       carPlate: " 京A12345 ",
       vin: " LSVNV2182E2123456 ",
       carColor: " 白色 "
@@ -81,6 +82,7 @@ test("toCreateVehiclePayload builds a vehicle payload when vehicle info is provi
     {
       customerId: "customer-1",
       carModel: "宝马 5 系",
+      vehicleTypeCode: "LUXURY_LARGE_CAR",
       carPlate: "京A12345",
       vin: "LSVNV2182E2123456",
       carColor: "白色"
@@ -106,15 +108,16 @@ test("toCreateVehiclePayloads builds multiple vehicle payloads and skips empty d
       name: "小明",
       phone: "13800138000",
       vehicles: [
-        { carModel: " 宝马 5 系 ", carPlate: " 京A12345 ", vin: " LSVNV2182E2123456 ", carColor: " 白色 " },
+        { carModel: " 宝马 5 系 ", vehicleTypeCode: "LUXURY_LARGE_CAR", carPlate: " 京A12345 ", vin: " LSVNV2182E2123456 ", carColor: " 白色 " },
         { carModel: "   ", carPlate: "   " },
-        { carModel: " 奥迪 A6 ", photoUrl: " https://example.com/car.jpg " }
+        { carModel: " 奥迪 A6 ", vehicleTypeCode: "STANDARD_CAR", photoUrl: " https://example.com/car.jpg " }
       ]
     }),
     [
       {
         customerId: "customer-1",
         carModel: "宝马 5 系",
+        vehicleTypeCode: "LUXURY_LARGE_CAR",
         carPlate: "京A12345",
         vin: "LSVNV2182E2123456",
         carColor: "白色"
@@ -122,6 +125,7 @@ test("toCreateVehiclePayloads builds multiple vehicle payloads and skips empty d
       {
         customerId: "customer-1",
         carModel: "奥迪 A6",
+        vehicleTypeCode: "STANDARD_CAR",
         photoUrl: "https://example.com/car.jpg"
       }
     ]

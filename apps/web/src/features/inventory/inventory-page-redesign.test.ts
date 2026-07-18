@@ -89,7 +89,7 @@ test("inventory matching page focuses on the order matching workflow", () => {
   assert.match(matchingPageSource, /相关工作区/);
   assert.match(matchingPageSource, /href="\/purchases\/requirements"/);
   assert.match(matchingPageSource, /href="\/inventory\/movements"/);
-  assert.match(matchingPageSource, /href="\/inventory\/adjustments"/);
+  assert.doesNotMatch(matchingPageSource, /href="\/inventory\/adjustments"/);
 });
 
 test("inventory matching page integrates lock and allocation results into the primary workspace", () => {
@@ -155,7 +155,7 @@ test("inventory matching page treats outbound products as completed instead of s
 test("inventory matching page keeps only essential related workspace links", () => {
   assert.match(matchingPageSource, /href="\/purchases\/requirements"/);
   assert.match(matchingPageSource, /href="\/inventory\/movements"/);
-  assert.match(matchingPageSource, /href="\/inventory\/adjustments"/);
+  assert.doesNotMatch(matchingPageSource, /href="\/inventory\/adjustments"/);
   assert.doesNotMatch(matchingPageSource, /href="\/purchases"/);
   assert.doesNotMatch(matchingPageSource, /href="\/purchases\/suppliers"/);
   assert.doesNotMatch(matchingPageSource, /采购管理/);
@@ -180,7 +180,7 @@ test("inventory matching page does not embed purchase supplier or adjustment man
 
 test("inventory overview links only to inventory workspaces and purchases boundary", () => {
   assert.match(pageSource, /href="\/inventory\/matching"/);
-  assert.match(pageSource, /href="\/inventory\/adjustments"/);
+  assert.doesNotMatch(pageSource, /href="\/inventory\/adjustments"/);
   assert.match(pageSource, /href="\/inventory\/warehouses"/);
   assert.match(pageSource, /href="\/inventory\/movements"/);
   assert.match(pageSource, /href="\/purchases"/);
@@ -268,9 +268,9 @@ test("inventory selected order operations guard selection with business-safe cop
   assert.doesNotMatch(pageSource, /createOrderAllocations\(activeSelectedOrderId!/);
 });
 
-test("inventory page links to the dedicated adjustment workspace", () => {
-  assert.match(pageSource, /href="\/inventory\/adjustments"/);
-  assert.match(pageSource, /库存调整工作台/);
+test("inventory page temporarily hides the adjustment workspace", () => {
+  assert.doesNotMatch(pageSource, /href="\/inventory\/adjustments"/);
+  assert.doesNotMatch(pageSource, /库存调整工作台/);
 });
 
 test("inventory page links to the dedicated movement ledger workspace", () => {
@@ -298,41 +298,24 @@ test("legacy inventory supplier route redirects to purchases suppliers", () => {
   assert.match(suppliersSource, /redirect\("\/purchases\/suppliers"\)/);
 });
 
-test("inventory adjustment page follows the prototype stock adjustment layout", () => {
+test("inventory adjustment page is temporarily unavailable while retaining the legacy implementation", () => {
   const adjustmentPath = "app/inventory/adjustments/page.tsx";
 
   assert.equal(existsSync(adjustmentPath), true);
 
   const adjustmentSource = readFileSync(adjustmentPath, "utf8");
 
+  assert.match(adjustmentSource, /const INVENTORY_ADJUSTMENT_WORKSPACE_ENABLED = false/);
+  assert.match(adjustmentSource, /库存调整工作台暂未开放/);
+  assert.match(adjustmentSource, /当前暂不提供人工库存调整操作/);
+  assert.match(adjustmentSource, /订单库存匹配、锁库、出库和库存流水查询可继续正常使用/);
+  assert.match(adjustmentSource, /function InventoryAdjustmentsWorkspace/);
   assert.match(adjustmentSource, /inventoryApi\.batches/);
   assert.match(adjustmentSource, /inventoryApi\.convertBatch/);
   assert.match(adjustmentSource, /inventoryApi\.splitBatch/);
   assert.match(adjustmentSource, /inventoryApi\.createStockOperation/);
-  assert.match(adjustmentSource, /const canManageInventory =/);
-  assert.match(adjustmentSource, /库存调整操作/);
-  assert.match(adjustmentSource, /库存管理 \/ 单位转换与调整/);
-  assert.doesNotMatch(adjustmentSource, /库存管理 \/ 库存调整与单位转换/);
-  assert.match(adjustmentSource, /aria-label="返回库存总览"/);
   assert.match(adjustmentSource, /返回库存总览/);
-  assert.doesNotMatch(adjustmentSource, /aria-label="返回库存首页"/);
-  assert.doesNotMatch(adjustmentSource, /aria-label="返回库存管理"/);
-  assert.doesNotMatch(adjustmentSource, /取消操作/);
-  assert.match(adjustmentSource, /单位转换与拆分/);
-  assert.match(adjustmentSource, /库存盘点与报损/);
-  assert.match(adjustmentSource, /调拨管理/);
-  assert.match(adjustmentSource, /确认提交/);
-  assert.match(adjustmentSource, /disabled=\{!canManageInventory\}/);
   assert.match(adjustmentSource, /adjustment-workspace-page/);
-  assert.match(adjustmentSource, /management-page adjustment-workspace-page/);
-  assert.match(adjustmentSource, /adjustment-conversion-panel/);
-  assert.match(adjustmentSource, /adjustment-count-table/);
-  assert.match(adjustmentSource, /adjustment-transfer-panel/);
-  assert.match(adjustmentSource, /adjustment-unit-input/);
-  assert.match(adjustmentSource, /step=\{0\.001\}/);
-  assert.match(adjustmentSource, /precision=\{3\}/);
-  assert.match(adjustmentSource, /支持零散米数/);
-  assert.doesNotMatch(adjustmentSource, /addonAfter=/);
 
   assert.match(cssSource, /\.adjustment-workspace-page/);
   assert.match(cssSource, /\.adjustment-conversion-panel/);

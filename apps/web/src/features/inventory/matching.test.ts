@@ -3,6 +3,9 @@ import { test } from "node:test";
 import {
   buildInventoryAllocationRows,
   buildInventoryMatchRows,
+  buildInventoryQuantityUnitOptions,
+  getInventoryQuantityMax,
+  getInventoryQuantityStep,
   buildPurchaseRequirementFromShortages,
   filterInventoryBatches
 } from "./matching";
@@ -79,6 +82,27 @@ test("buildInventoryMatchRows uses base demand snapshots for roll products", () 
   assert.equal(rows[0]?.outboundQuantity, 12);
   assert.equal(rows[0]?.pendingQuantity, 0);
   assert.equal(rows[0]?.shortageQuantity, 0);
+});
+
+test("roll inventory supports fractional lock and outbound quantities in meters", () => {
+  const options = buildInventoryQuantityUnitOptions({
+    unit: "ROLL",
+    metersPerRoll: 15,
+    salesUnit: "ROLL"
+  });
+  assert.deepEqual(options, [
+    { value: "ROLL", label: "卷" },
+    { value: "METER", label: "米" }
+  ]);
+  assert.equal(getInventoryQuantityMax({
+    availableBaseQuantity: 1,
+    requiredBaseQuantity: 0.2,
+    baseUnit: "ROLL",
+    targetUnit: "METER",
+    metersPerRoll: 15,
+    quantityPrecision: 3
+  }), 3);
+  assert.equal(getInventoryQuantityStep(3), 0.001);
 });
 
 test("buildInventoryMatchRows treats outbound allocations as fulfilled demand", () => {

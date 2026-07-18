@@ -31,6 +31,7 @@ import type { PaymentAccountOption, PaymentAccountPayload } from "../../../src/f
 import type { PricingCalculationResponse } from "../../../src/features/pricing/api";
 import { salesQuoteApi } from "../../../src/features/sales-quotes/api";
 import { dictionaryApi } from "../../../src/features/settings/api";
+import { storeApi } from "../../../src/features/stores/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { getStoreWorkbenchHref } from "../../../src/features/workbench/navigation";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
@@ -96,10 +97,7 @@ function CreateOrderContent() {
   const params = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canViewInternalCost = Boolean(
-    user?.isAuditor || ["MANAGER", "FINANCE"].includes(user?.storeMember?.position ?? "")
-  );
-  const canManageTemporaryCost = Boolean(user?.isAuditor || user?.storeMember?.position === "MANAGER");
+  const canAssignSalesPerson = user?.storeMember?.position === "MANAGER";
   const [customerKeyword, setCustomerKeyword] = useState("");
   const [referrerKeyword, setReferrerKeyword] = useState("");
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
@@ -124,7 +122,6 @@ function CreateOrderContent() {
   const selectedConstructionChargeYuan = Form.useWatch("constructionChargeYuan", form);
   const selectedSuggestedConstructionChargeYuan = Form.useWatch("suggestedConstructionChargeYuan", form);
   const selectedConstructionChargeMode = Form.useWatch("constructionChargeMode", form) ?? "MANUAL";
-  const selectedTemporaryCostYuan = Form.useWatch("temporaryCostYuan", form);
   const selectedDeposit = Form.useWatch("deposit", form);
   const shouldRecordDeposit = Form.useWatch("shouldRecordDeposit", form);
   const selectedAppointmentDateValue = formatOrderDateValue(selectedAppointmentDate);
@@ -176,6 +173,12 @@ function CreateOrderContent() {
     enabled: Boolean(storeId)
   });
 
+  const storeMembersQuery = useQuery({
+    queryKey: ["order-sales-members", storeId],
+    queryFn: () => storeApi.myStore(storeId!),
+    enabled: Boolean(storeId)
+  });
+
   const searchedCustomers = (customersQuery.data ?? []) as OrderCustomer[];
   // 客户详情请求尚未返回或偶发失败时，先使用搜索结果中的客户和车辆，不能把
   // 已选客户误判为“未选择”。详情返回后会自动补齐全部车辆与历史信息。
@@ -190,6 +193,18 @@ function CreateOrderContent() {
     value: customer.id
   }));
   const vehicleOptions = buildOrderVehicleOptions(selectedCustomer);
+  const salesPersonOptions = useMemo(() => {
+    const eligible = (storeMembersQuery.data?.members ?? [])
+      .filter((member) => ["MANAGER", "SALES", "CUSTOMER_SERVICE"].includes(member.position))
+      .map((member) => ({
+        value: member.user.id,
+        label: member.user.nickname ?? member.user.username
+      }));
+    if (user?.id && !eligible.some((option) => option.value === user.id)) {
+      eligible.unshift({ value: user.id, label: user.nickname ?? user.username ?? "当前登录人" });
+    }
+    return eligible;
+  }, [storeMembersQuery.data?.members, user?.id, user?.nickname, user?.username]);
   const productOptions = ((productsQuery.data?.items ?? []) as ProductOption[]).map((product) => ({
     label: `${getOrderProductLabel(product)}（销售单位：${getProductUnitLabel(resolveProductSalesUnit(product))}）`,
     value: product.id,
@@ -208,12 +223,6 @@ function CreateOrderContent() {
       .filter((item) => item.status === "ACTIVE")
       .map((item) => ({ value: item.code, label: item.name }));
   }, [vehicleTypesQuery.data]);
-  const costLines = useMemo(() => (selectedItems ?? []).filter((item) => item?.productId && item?.quantity).map((item) => ({ productId: item.productId, quantity: Number(item.quantity) })), [selectedItems]);
-  const costEstimateQuery = useQuery({
-    queryKey: ["pricing-cost-estimate", storeId, costLines],
-    queryFn: () => pricingApi.estimateCost({ storeId: storeId!, lines: costLines }),
-    enabled: Boolean(storeId && costLines.length)
-  });
   // 施工收费只能由服务端根据当前发布的施工标准试算；页面不能再用车型/施工类别
   // 的本地默认值冒充“系统建议”，否则收费和成本会落到不同口径。
   const systemSuggestedConstructionChargeYuan = serverPricing?.constructionChargeAvailable
@@ -228,6 +237,12 @@ function CreateOrderContent() {
     const ends = !item.effectiveTo || new Date(item.effectiveTo).getTime() > now;
     return item.status === "PUBLISHED" && starts && ends;
   });
+  useEffect(() => {
+    if (user?.id && !form.getFieldValue("salesPersonId")) {
+      form.setFieldValue("salesPersonId", user.id);
+    }
+  }, [form, user?.id]);
+
   useEffect(() => {
     if (!selectedVehicleId) {
       form.setFieldValue("vehicleTypeCode", undefined);
@@ -321,15 +336,6 @@ function CreateOrderContent() {
   const customerHistory = selectedCustomer ? getOrderCustomerHistorySummary(selectedCustomer) : undefined;
   const suggestedConstructionChargeYuan = selectedSuggestedConstructionChargeYuan ?? systemSuggestedConstructionChargeYuan;
   const hasConstructionChargeAdjustment = suggestedConstructionChargeYuan !== undefined && selectedConstructionChargeYuan !== undefined && selectedConstructionChargeYuan !== suggestedConstructionChargeYuan;
-  const estimateMaterialCents = serverPricing?.costEstimate?.estimatedMaterialCostCents ?? costEstimateQuery.data?.estimatedMaterialCostCents ?? 0;
-  const hasMissingMaterialCost = Boolean(serverPricing?.costEstimate?.hasMissingCost ?? costEstimateQuery.data?.hasMissingCost);
-  const estimateConstructionCents = serverPricing?.costEstimate?.estimatedConstructionCostCents ?? 0;
-  const systemEstimatedTotalCents = serverPricing?.costEstimate?.estimatedTotalCostCents;
-  const displayedEstimatedTotalCents = systemEstimatedTotalCents ?? (selectedTemporaryCostYuan === undefined ? undefined : yuanToCents(selectedTemporaryCostYuan));
-  const displayedEstimatedGrossCents = displayedEstimatedTotalCents === undefined ? undefined : Math.round(amountSummary.totalAmountYuan * 100) - displayedEstimatedTotalCents;
-  const displayedEstimatedMargin = displayedEstimatedGrossCents === undefined || amountSummary.totalAmountYuan <= 0
-    ? undefined
-    : displayedEstimatedGrossCents / Math.round(amountSummary.totalAmountYuan * 100);
 
   const createQuoteMutation = useMutation({
     mutationFn: (values: CreateOrderFormValues) => {
@@ -370,14 +376,6 @@ function CreateOrderContent() {
         message.info("当前成交价需要审批，正在创建报价单");
         createQuoteMutation.mutate(form.getFieldsValue(true) as CreateOrderFormValues);
         return;
-      }
-      if (error.message.includes("临时成本报价审批") && canManageTemporaryCost) {
-        const values = form.getFieldsValue(true) as CreateOrderFormValues;
-        if (values.temporaryCostYuan !== undefined && trimOptional(values.temporaryCostReason)) {
-          message.info("预计成本暂不完整，正在按本单临时成本提交报价审批");
-          createQuoteMutation.mutate(values);
-          return;
-        }
       }
       message.error(error.message);
     }
@@ -587,6 +585,7 @@ function CreateOrderContent() {
             layout="vertical"
           initialValues={{
             customerId: initialCustomerId,
+            salesPersonId: user?.id,
             constructionType: "PPF",
             constructionLocation: "IN_STORE",
             constructionChargeYuan: 0,
@@ -641,7 +640,22 @@ function CreateOrderContent() {
                     options={vehicleTypeOptions}
                     placeholder={selectedVehicle ? "选择车辆类型" : "请先选择车辆"}
                   />
-                </Form.Item>              </Card>
+                </Form.Item>
+
+                <Form.Item
+                  name="salesPersonId"
+                  label="销售员"
+                  rules={[{ required: true, message: "请选择销售员" }]}
+                  extra={canAssignSalesPerson ? "默认当前登录人；店长可调整为本店销售或客服人员。" : "默认当前登录人。"}
+                >
+                  <Select
+                    loading={storeMembersQuery.isLoading}
+                    disabled={!canAssignSalesPerson}
+                    options={salesPersonOptions}
+                    placeholder="选择销售员"
+                  />
+                </Form.Item>
+              </Card>
 
               <Card title={<OrderStepTitle step={2} title="施工预约" />} className="create-order-card">
                 <div className="create-order-field-grid">
@@ -853,35 +867,6 @@ function CreateOrderContent() {
                     <Input.TextArea rows={2} placeholder="说明调整原因，例如车型复杂、外出距离、追加施工项目等" />
                   </Form.Item>
                 ) : null}
-                {canViewInternalCost ? <div className="create-order-cost-preview" aria-live="polite">
-                  <Typography.Text strong>内部成本与毛利</Typography.Text>
-                  <div>预计材料成本：{hasMissingMaterialCost ? "待维护材料成本" : `¥${(estimateMaterialCents / 100).toFixed(2)}`}</div>
-                  <div>预计施工成本：{serverPricing?.costEstimate?.estimatedConstructionCostCents == null ? "待维护施工标准" : `¥${(estimateConstructionCents / 100).toFixed(2)}`}</div>
-                  <div>预计总成本：{displayedEstimatedTotalCents === undefined ? "暂无法完整计算" : `¥${(displayedEstimatedTotalCents / 100).toFixed(2)}`}</div>
-                  <div>预计毛利：{displayedEstimatedGrossCents === undefined ? "暂无法完整计算" : `¥${(displayedEstimatedGrossCents / 100).toFixed(2)}（${((displayedEstimatedMargin ?? 0) * 100).toFixed(2)}%）`}</div>
-                  <div>成本状态：{serverPricing?.costEstimate?.costCompleteness === "COMPLETE" ? "完整" : serverPricing?.costEstimate?.costCompleteness === "TEMPORARY" ? "临时成本，需审批" : "待补齐"}</div>
-                  <Typography.Text type="secondary">
-                    {serverPricing?.costEstimate?.reason ?? (costEstimateQuery.data?.hasMissingCost ? "部分产品成本待维护，暂不能形成完整预计成本" : "施工成本标准待配置，暂不能形成完整预计成本")}
-                  </Typography.Text>
-                  {hasMissingMaterialCost ? <div><Button type="link" size="small" href="/products">去产品管理维护材料成本</Button></div> : null}
-                  {canManageTemporaryCost && serverPricing?.costEstimate?.costCompleteness === "MISSING" ? <>
-                    <Form.Item
-                      name="temporaryCostYuan"
-                      label="本单临时预计成本（元）"
-                      rules={[{ required: true, message: "预计成本缺失时，请填写本单临时成本或补齐成本标准" }]}
-                      extra="仅店长可填写。填写后必须随报价单审批，批准后冻结为本单预计成本。"
-                    >
-                      <InputNumber min={0} precision={2} className="w-full" placeholder="填写经核实的总成本" />
-                    </Form.Item>
-                    <Form.Item
-                      name="temporaryCostReason"
-                      label="临时成本依据"
-                      rules={[{ required: true, whitespace: true, message: "请说明临时成本依据" }]}
-                    >
-                      <Input.TextArea rows={2} placeholder="例如：供应商报价、近期批次成本或外包核价" />
-                    </Form.Item>
-                  </> : null}
-                </div> : null}
               </Card>
 
               <Card title={<OrderStepTitle step={4} title="收款与备注" />} className="create-order-card">

@@ -60,6 +60,7 @@ const PAYMENT_STATUS_LABEL: Record<OrderPaymentStatus, string> = {
 const QUICK_STATUS_OPTIONS: Array<{ label: string; value?: OrderStatus; tone: string }> = [
   { label: "全部订单", value: undefined, tone: "default" },
   { label: "待派工", value: "PENDING_DISPATCH", tone: "warning" },
+  { label: "已派工", value: "DISPATCHED", tone: "processing" },
   { label: "施工中", value: "IN_CONSTRUCTION", tone: "processing" },
   { label: "已完工", value: "COMPLETED", tone: "success" },
   { label: "已取消", value: "CANCELLED", tone: "default" }
@@ -224,19 +225,7 @@ function OrdersContent() {
           施工类型: getConstructionTypeLabel(row.constructionType),
           预约日期: formatOrderListDate(row.appointmentDate),
           预约时段: row.appointmentTimeSlot ?? "",
-           创建时间: formatOrderListDate(row.createdAt),
-           ...(row.estimatedTotalCostCents === undefined ? {} : {
-             预计材料成本: (row.estimatedMaterialCostCents ?? 0) / 100,
-             预计施工成本: (row.estimatedConstructionCostCents ?? 0) / 100,
-             预计总成本: (row.estimatedTotalCostCents ?? 0) / 100,
-             成本完整性: row.costCompleteness ?? "未计算",
-             实际材料成本: row.actualMaterialCostCents == null ? "待确认" : row.actualMaterialCostCents / 100,
-             实际施工成本: row.actualConstructionCostCents == null ? "待确认" : row.actualConstructionCostCents / 100,
-             实际总成本: row.actualTotalCostCents == null ? "待确认" : row.actualTotalCostCents / 100,
-             实际毛利: row.actualGrossProfitCents == null ? "待确认" : row.actualGrossProfitCents / 100,
-             实际毛利率: row.actualGrossMarginBps == null ? "待确认" : row.actualGrossMarginBps / 10000,
-             成本结算状态: row.costSettlementStatus ?? "未生成"
-           })
+          创建时间: formatOrderListDate(row.createdAt)
         })),
         { title: "销售订单产品明细", subtitle: `按${exportDimension === "customer" ? "客户" : exportDimension === "date" ? "日期" : "产品"}维度导出，逐产品行展示` }
       );

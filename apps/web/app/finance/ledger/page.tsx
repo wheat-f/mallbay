@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, DatePicker, Select, Space, Table, Tag } from "antd";
+import { Alert, Card, DatePicker, Select, Space, Table, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { PaymentDirection, PaymentRecordType } from "@mallbay/shared";
@@ -67,9 +67,10 @@ export default function FinanceLedgerPage() {
             value={filters.type}
             onChange={(type) => setFilters((current) => ({ ...current, type }))}
             options={[
-              { value: "REIMBURSEMENT", label: "报销" },
-              { value: "SALE", label: "销售收款" },
-              { value: "PURCHASE", label: "采购付款" },
+              { value: "ORDER_PAYMENT", label: "订单收款" },
+              { value: "EXPENSE", label: "费用付款" },
+              { value: "REIMBURSEMENT", label: "报销打款" },
+              { value: "REBATE", label: "返利打款" },
               { value: "OTHER", label: "其他" },
             ]}
           />
@@ -104,12 +105,21 @@ export default function FinanceLedgerPage() {
             }
           />
         </Space>
-        <Table
-          style={{ marginTop: 20 }}
-          rowKey="id"
-          loading={query.isLoading}
-          dataSource={query.data?.items ?? []}
-          columns={[
+        {query.isError ? (
+          <Alert
+            style={{ marginTop: 20 }}
+            type="error"
+            showIcon
+            message="财务流水加载失败"
+            description={query.error instanceof Error ? query.error.message : "请稍后重试"}
+          />
+        ) : (
+          <Table
+            style={{ marginTop: 20 }}
+            rowKey="id"
+            loading={query.isLoading}
+            dataSource={query.data?.items ?? []}
+            columns={[
             {
               title: "发生时间",
               dataIndex: "occurredAt",
@@ -149,9 +159,10 @@ export default function FinanceLedgerPage() {
               dataIndex: "note",
               render: (value) => value || "-",
             },
-          ]}
-          pagination={false}
-        />
+            ]}
+            pagination={false}
+          />
+        )}
       </Card>
     </div>
   );

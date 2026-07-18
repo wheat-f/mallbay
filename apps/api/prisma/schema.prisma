@@ -68,6 +68,7 @@ model User {
   inventoryAllocationsOut        OrderInventoryAllocation[]   @relation("InventoryAllocationOutboundBy")
   purchaseRequirements           PurchaseRequirement[]        @relation("PurchaseRequirementCreatedBy")
   purchaseOrders                 PurchaseOrder[]              @relation("PurchaseOrderCreatedBy")
+  purchaseOrdersResponsible      PurchaseOrder[]              @relation("PurchaseOrderPurchaser")
   orderAmendmentRequests         OrderAmendmentRequest[]      @relation("OrderAmendmentRequestedBy")
   orderAmendmentReviews          OrderAmendmentRequest[]      @relation("OrderAmendmentReviewedBy")
   suppliersCreated               Supplier[]                   @relation("SupplierCreatedBy")
@@ -1849,17 +1850,20 @@ model PurchaseOrder {
   status                PurchaseOrderStatus @default(DRAFT)
   expectedAt            DateTime?
   createdById           String
+  purchaserId           String
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
   store               Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
   purchaseRequirement PurchaseRequirement? @relation(fields: [purchaseRequirementId], references: [id], onDelete: SetNull)
   createdBy           User                 @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
+  purchaser           User                 @relation("PurchaseOrderPurchaser", fields: [purchaserId], references: [id])
   items               PurchaseOrderItem[]
 
   @@index([storeId, status])
   @@index([purchaseRequirementId])
   @@index([createdById])
+  @@index([storeId, purchaserId])
 }
 
 model PurchaseOrderItem {

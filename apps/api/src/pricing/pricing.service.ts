@@ -450,14 +450,14 @@ function resolveProductSuggestedPrice(
     salesUnit: ProductUnit;
     basePriceCents: number;
     metersPerRoll: Prisma.Decimal | null;
-    unitSuggestedPrices: Array<{ salesUnit: ProductUnit; suggestedPriceCents: number }>;
+    unitSuggestedPrices?: Array<{ salesUnit: ProductUnit; suggestedPriceCents: number }>;
   },
   selectedUnit: ProductUnit
 ) {
   if (selectedUnit === product.salesUnit) {
     return { cents: product.basePriceCents, source: "DEFAULT_UNIT" as const };
   }
-  const override = product.unitSuggestedPrices.find((item) => item.salesUnit === selectedUnit);
+  const override = (product.unitSuggestedPrices ?? []).find((item) => item.salesUnit === selectedUnit);
   if (override) return { cents: override.suggestedPriceCents, source: "UNIT_OVERRIDE" as const };
 
   const metersPerRoll = Number(product.metersPerRoll ?? 0);

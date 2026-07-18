@@ -49,6 +49,12 @@ test("orders page follows the prototype operations-list structure", () => {
   assert.match(pageSource, /导出产品明细/);
 });
 
+test("orders page provides a quick filter for dispatched orders", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+
+  assert.match(pageSource, /\{ label: "已派工", value: "DISPATCHED", tone: "processing" \}/);
+});
+
 test("orders page exports all filtered sales product rows through the server", () => {
   const pageSource = readFileSync("app/orders/page.tsx", "utf8");
 
@@ -58,6 +64,17 @@ test("orders page exports all filtered sales product rows through the server", (
   assert.match(pageSource, /产品行金额/);
   assert.match(pageSource, /整单金额_每行重复/);
   assert.doesNotMatch(pageSource, /const exportRows = \[\.\.\.rows\]/);
+});
+
+test("orders page export keeps internal cost and margin columns out of sales order details", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+
+  assert.doesNotMatch(pageSource, /预计材料成本/);
+  assert.doesNotMatch(pageSource, /预计施工成本/);
+  assert.doesNotMatch(pageSource, /预计总成本/);
+  assert.doesNotMatch(pageSource, /实际材料成本/);
+  assert.doesNotMatch(pageSource, /实际施工成本/);
+  assert.doesNotMatch(pageSource, /实际毛利/);
 });
 
 test("orders page exposes saved local drafts with continue and delete actions", () => {

@@ -61,6 +61,7 @@ type PurchaseOrderDetail = {
   orderNo: string;
   status: string;
   supplierName?: string | null;
+  purchaser?: { id: string; username?: string | null; nickname?: string | null } | null;
   expectedAt?: string | null;
   createdAt?: string | null;
   items?: PurchaseOrderItemRow[];
@@ -401,6 +402,7 @@ export default function PurchaseOrderDetailPage() {
         return {
           采购单号: purchaseOrder.orderNo,
           供应商: purchaseOrder.supplierName ?? "",
+          采购员: getPurchaserName(purchaseOrder),
           状态: getPurchaseOrderStatusLabel(effectivePurchaseOrderStatus),
           预计到货: formatDate(purchaseOrder.expectedAt),
           产品: details.product,
@@ -433,7 +435,7 @@ export default function PurchaseOrderDetailPage() {
                 {purchaseOrder.orderNo}
                 <Tag>{getPurchaseOrderStatusLabel(effectivePurchaseOrderStatus)}</Tag>
               </h1>
-              <p>{`创建时间：${formatDateTime(purchaseOrder.createdAt)} / 预计到货：${formatDate(purchaseOrder.expectedAt)}`}</p>
+              <p>{`采购员：${getPurchaserName(purchaseOrder)} / 创建时间：${formatDateTime(purchaseOrder.createdAt)} / 预计到货：${formatDate(purchaseOrder.expectedAt)}`}</p>
             </div>
             <div className="purchase-detail-actions">
               <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/purchases/orders")}>
@@ -477,6 +479,7 @@ export default function PurchaseOrderDetailPage() {
                   <span>采购单号</span><strong>{purchaseOrder.orderNo}</strong>
                   <span>状态</span><strong>{getPurchaseOrderStatusLabel(effectivePurchaseOrderStatus)}</strong>
                   <span>供应商</span><strong>{purchaseOrder.supplierName ?? "-"}</strong>
+                  <span>采购员</span><strong>{getPurchaserName(purchaseOrder)}</strong>
                   <span>预计到货</span><strong>{formatDate(purchaseOrder.expectedAt)}</strong>
                 </div>
               </Card>
@@ -1129,4 +1132,8 @@ function formatDate(value?: string | null) {
 
 function formatDateTime(value?: string | null) {
   return value ? value.slice(0, 19).replace("T", " ") : "-";
+}
+
+function getPurchaserName(order?: PurchaseOrderDetail) {
+  return order?.purchaser?.nickname ?? order?.purchaser?.username ?? "采购员待确认";
 }

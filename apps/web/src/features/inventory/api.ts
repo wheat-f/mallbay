@@ -85,6 +85,7 @@ export type CreateSupplierRatingHistoryPayload = {
 
 export type CreatePurchaseOrderPayload = {
   storeId: string;
+  purchaserId?: string;
   supplierName?: string;
   expectedAt?: string;
   items: Array<{
@@ -117,6 +118,7 @@ export type CreatePurchaseRequirementPayload = {
 };
 
 export type CreatePurchaseOrderFromRequirementPayload = {
+  purchaserId?: string;
   supplierName?: string;
   expectedAt?: string;
   supplierAllocations?: Array<{
@@ -187,6 +189,7 @@ export type PurchaseOrderExportDetail = {
   purchaseOrderId: string;
   orderNo: string;
   supplierName: string;
+  purchaserName: string;
   status: string;
   expectedAt?: string | null;
   createdAt: string;

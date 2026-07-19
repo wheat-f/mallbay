@@ -194,7 +194,7 @@ export default function ConstructionSchedulesPage() {
                   render: (_, item) => (
                     <Button type={item.workerId === workerId ? "primary" : "default"} onClick={() => {
                       if (canManageSchedules) {
-                        form.setFieldsValue({ workerId: item.workerId, date, status: item.status ?? "WORKING", note: item.note });
+                        form.setFieldsValue({ workerId: item.workerId, date, status: item.status ?? "WORKING", note: item.note ?? undefined });
                         return;
                       }
                       router.push("/construction/tasks");

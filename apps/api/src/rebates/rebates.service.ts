@@ -19,7 +19,10 @@ export class RebatesService {
     if (!PermissionPolicy.canApplyRebateForOrder(actor, order.storeId, order.salesPersonId)) {
       throw new ForbiddenException("无权限");
     }
-    const isFulfilled = [OrderStatus.COMPLETED, OrderStatus.WARRANTIED].includes(order.status) || order.constructionRecord?.status === ConstructionTaskStatus.COMPLETED;
+    const isFulfilled =
+      order.status === OrderStatus.COMPLETED ||
+      order.status === OrderStatus.WARRANTIED ||
+      order.constructionRecord?.status === ConstructionTaskStatus.COMPLETED;
     if (!isFulfilled) {
       throw new BadRequestException("已完工订单才能申请返利");
     }

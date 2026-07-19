@@ -222,7 +222,7 @@ export const orderApi = {
     request<unknown>(`/payment-accounts/${id}`, { method: "DELETE" })
 };
 
-function toQueryString(query: Record<string, string | number | undefined>) {
+function toQueryString(query: Record<string, string | number | boolean | undefined>) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== "") {

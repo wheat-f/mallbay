@@ -212,9 +212,11 @@ export default function AfterSaleDetailPage() {
   const costMutation = useMutation({
     mutationFn: (values: AfterSaleCostFormValues) => {
       if (!afterSale) throw new Error("售后工单未加载");
+      const amountCents = yuanToCents(values.amountYuan);
+      if (amountCents === undefined) throw new Error("请填写费用金额");
       return afterSalesApi.recordCost(afterSale.id, {
         category: values.category,
-        amountCents: yuanToCents(values.amountYuan),
+        amountCents,
         reason: values.reason,
         paymentRecordId: values.paymentRecordId?.trim() || undefined
       });

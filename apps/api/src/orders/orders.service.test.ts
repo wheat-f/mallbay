@@ -267,12 +267,10 @@ test("OrdersService invoiceable filter includes completed construction records",
     storeId: "store-1",
     status: undefined,
     constructionType: undefined,
-    AND: [{
-      OR: [
-        { status: { in: [OrderStatus.COMPLETED, OrderStatus.WARRANTIED] } },
-        { constructionRecord: { is: { status: ConstructionTaskStatus.COMPLETED } } }
-      ]
-    }]
+    OR: [
+      { status: { in: [OrderStatus.COMPLETED, OrderStatus.WARRANTIED] } },
+      { constructionRecord: { is: { status: ConstructionTaskStatus.COMPLETED } } }
+    ]
   });
 });
 

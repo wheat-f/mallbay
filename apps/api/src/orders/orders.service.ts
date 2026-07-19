@@ -698,21 +698,20 @@ export class OrdersService {
     if (!user.isAuditor && user.storeMember?.position === "SALES") {
       where.salesPersonId = user.id;
     }
-    const andFilters: Prisma.OrderWhereInput[] = [];
-    if (dto.invoiceable) {
-      andFilters.push({
-        OR: [
-          { status: { in: [OrderStatus.COMPLETED, OrderStatus.WARRANTIED] } },
-          { constructionRecord: { is: { status: ConstructionTaskStatus.COMPLETED } } }
-        ]
-      });
-    }
+    const invoiceableFilter: Prisma.OrderWhereInput | undefined = dto.invoiceable ? {
+      OR: [
+        { status: { in: [OrderStatus.COMPLETED, OrderStatus.WARRANTIED] } },
+        { constructionRecord: { is: { status: ConstructionTaskStatus.COMPLETED } } }
+      ]
+    } : undefined;
     const q = dto.q?.trim();
-    if (q) {
-      andFilters.push({ OR: this.buildSearchConditions(q) });
-    }
-    if (andFilters.length > 0) {
-      where.AND = andFilters;
+    const searchFilter: Prisma.OrderWhereInput | undefined = q ? { OR: this.buildSearchConditions(q) } : undefined;
+    if (invoiceableFilter && searchFilter) {
+      where.AND = [invoiceableFilter, searchFilter];
+    } else if (invoiceableFilter) {
+      where.OR = invoiceableFilter.OR;
+    } else if (searchFilter) {
+      where.OR = searchFilter.OR;
     }
     return where;
   }

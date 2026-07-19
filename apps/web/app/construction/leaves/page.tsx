@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { App, Button, Card, DatePicker, Empty, Form, Input, Select, Statistic, Table, Tag } from "antd";
+import { App, Button, Card, DatePicker, Descriptions, Empty, Form, Input, Select, Statistic, Table, Tag } from "antd";
 import { CalendarOutlined, InfoCircleOutlined, SendOutlined } from "@ant-design/icons";
 import { getWorkerLeaveStatusLabel } from "@mallbay/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,10 +9,11 @@ import dayjs, { type Dayjs } from "dayjs";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
+import { dictionaryApi } from "../../../src/features/settings/api";
 
 type LeaveFormValues = {
   dateRange?: [Dayjs, Dayjs];
-  leaveType: "PERSONAL" | "SICK" | "ANNUAL" | "OTHER";
+  leaveType: string;
   reason?: string;
 };
 
@@ -22,17 +23,19 @@ type LeaveRequestRow = {
   startDate: string;
   endDate: string;
   status?: string;
+  leaveType?: string | null;
   reason?: string | null;
+  reviewNote?: string | null;
   createdAt?: string;
   worker?: { id: string; username: string; nickname?: string | null } | null;
 };
 
-const leaveTypeOptions = [
+const defaultLeaveTypeOptions = [
   { value: "PERSONAL", label: "事假" },
   { value: "SICK", label: "病假" },
-  { value: "ANNUAL", label: "年假" },
+  { value: "COMP_TIME", label: "调休" },
   { value: "OTHER", label: "其他" }
-] satisfies Array<{ value: LeaveFormValues["leaveType"]; label: string }>;
+];
 
 export default function ConstructionLeavesPage() {
   const { message } = App.useApp();
@@ -41,6 +44,19 @@ export default function ConstructionLeavesPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const workerId = user?.id;
+  const currentMember = user?.storeMember;
+
+  const dictionariesQuery = useQuery({
+    queryKey: ["settings-dictionaries", storeId],
+    queryFn: () => dictionaryApi.list(storeId!),
+    enabled: Boolean(storeId),
+    staleTime: 60_000
+  });
+  const leaveTypeOptions = useMemo(() => {
+    const dictionary = dictionariesQuery.data?.find((item) => item.code === "LEAVE_TYPE");
+    const normalized = dictionary?.dictionaryItems?.map((item) => ({ value: item.code, label: item.name })) ?? [];
+    return normalized.length > 0 ? normalized : defaultLeaveTypeOptions;
+  }, [dictionariesQuery.data]);
 
   const leavesQuery = useQuery({
     queryKey: ["construction-leaves", storeId],
@@ -58,13 +74,15 @@ export default function ConstructionLeavesPage() {
         workerId,
         startDate: startDate.startOf("day").toISOString(),
         endDate: endDate.endOf("day").toISOString(),
-        reason: formatLeaveReason(values)
+        leaveType: values.leaveType,
+        reason: values.reason?.trim() || undefined
       });
     },
     onSuccess: async () => {
       message.success("请假申请已提交");
       form.resetFields();
       await queryClient.invalidateQueries({ queryKey: ["construction-leaves", storeId] });
+      document.getElementById("leave-history")?.scrollIntoView({ behavior: "smooth", block: "start" });
     },
     onError: (error: Error) => message.error(error.message)
   });
@@ -96,17 +114,21 @@ export default function ConstructionLeavesPage() {
       <section className="worker-leave-grid">
         <Card className="construction-leave-application-panel worker-leave-form-card" title="提交请假申请">
           <p className="worker-leave-card-desc">审批通过后，请假日期会自动锁定为不可派单。</p>
+          <Descriptions size="small" column={1} className="worker-leave-applicant-card" title="申请人信息">
+            <Descriptions.Item label="申请人">{user?.nickname ?? user?.username ?? "当前登录人员"}</Descriptions.Item>
+            <Descriptions.Item label="岗位">{getPositionLabel(currentMember?.position)}</Descriptions.Item>
+          </Descriptions>
           <Form
             form={form}
             layout="vertical"
-            initialValues={{ leaveType: "PERSONAL" }}
+            initialValues={{ leaveType: leaveTypeOptions[0]?.value ?? "PERSONAL" }}
             onFinish={(values) => createLeaveMutation.mutate(values)}
           >
             <Form.Item name="dateRange" label="请假时间" rules={[{ required: true, message: "请选择时间范围" }]}>
               <DatePicker.RangePicker className="worker-leave-range-picker" />
             </Form.Item>
             <Form.Item name="leaveType" label="请假类型" rules={[{ required: true, message: "请选择请假类型" }]}>
-              <Select options={leaveTypeOptions} />
+              <Select loading={dictionariesQuery.isLoading} options={leaveTypeOptions} />
             </Form.Item>
             <Form.Item name="reason" label="请假事由">
               <Input.TextArea rows={5} placeholder="请输入详细原因..." />
@@ -121,7 +143,7 @@ export default function ConstructionLeavesPage() {
           </Form>
         </Card>
 
-        <Card className="construction-leave-history-card worker-leave-history-card" title="申请记录">
+        <Card id="leave-history" className="construction-leave-history-card worker-leave-history-card" title="申请记录">
           <Table<LeaveRequestRow>
             rowKey="id"
             loading={leavesQuery.isLoading}
@@ -129,6 +151,16 @@ export default function ConstructionLeavesPage() {
             pagination={false}
             locale={{ emptyText: <Empty description="暂无请假申请" /> }}
             columns={[
+              {
+                title: "申请人",
+                key: "worker",
+                render: (_, row) => row.worker?.nickname ?? row.worker?.username ?? "当前登录人员"
+              },
+              {
+                title: "类型",
+                dataIndex: "leaveType",
+                render: (leaveType?: string | null) => getLeaveTypeLabel(leaveType, leaveTypeOptions)
+              },
               {
                 title: "请假时间",
                 key: "dateRange",
@@ -138,6 +170,11 @@ export default function ConstructionLeavesPage() {
                 title: "审批状态",
                 dataIndex: "status",
                 render: (status?: string) => <Tag color={getLeaveStatusColor(status)}>{getWorkerLeaveStatusLabel(status ?? "PENDING")}</Tag>
+              },
+              {
+                title: "审批意见",
+                dataIndex: "reviewNote",
+                render: (reviewNote?: string | null) => reviewNote || "—"
               },
               {
                 title: "请假事由",
@@ -165,12 +202,6 @@ export default function ConstructionLeavesPage() {
   );
 }
 
-function formatLeaveReason(values: LeaveFormValues) {
-  const typeLabel = leaveTypeOptions.find((item) => item.value === values.leaveType)?.label ?? "休息";
-  const note = values.reason?.trim();
-  return note ? `${typeLabel}: ${note}` : typeLabel;
-}
-
 function formatLeaveDateRange(startDate: string, endDate: string) {
   return `${dayjs(startDate).format("MM月DD日")} - ${dayjs(endDate).format("MM月DD日")}`;
 }
@@ -183,4 +214,15 @@ function getLeaveStatusColor(status?: string) {
   if (status === "APPROVED") return "success";
   if (status === "REJECTED") return "error";
   return "processing";
+}
+
+function getPositionLabel(position?: string) {
+  if (position === "CONSTRUCTION") return "施工员";
+  if (position === "APPRENTICE") return "施工学徒";
+  if (position === "SCHEDULER") return "施工主管";
+  return "施工团队成员";
+}
+
+function getLeaveTypeLabel(value: string | null | undefined, options: Array<{ value: string; label: string }>) {
+  return options.find((item) => item.value === value)?.label ?? value ?? "其他";
 }

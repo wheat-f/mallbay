@@ -1,6 +1,6 @@
 "use client";
 
-import { App, Avatar, Button, Card, Empty, Input, Space, Table, Tag } from "antd";
+import { App, Avatar, Button, Card, Empty, Input, Modal, Space, Table, Tag } from "antd";
 import { CheckCircleOutlined, CloseCircleOutlined, SearchOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -32,6 +32,8 @@ export default function ConstructionLeaveApprovalsPage() {
   const storeId = user?.storeMember?.store.id;
   const [activeQueue, setActiveQueue] = useState<LeaveApprovalQueue>("pending");
   const [keyword, setKeyword] = useState("");
+  const [reviewing, setReviewing] = useState<{ row: LeaveRequestSummary; status: "APPROVED" | "REJECTED" }>();
+  const [reviewNote, setReviewNote] = useState("");
 
   const leavesQuery = useQuery({
     queryKey: ["construction-leave-approvals", storeId],
@@ -40,8 +42,8 @@ export default function ConstructionLeaveApprovalsPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (payload: { id: string; status: LeaveRequestSummary["status"] }) =>
-      constructionApi.updateLeave(payload.id, payload.status),
+    mutationFn: (payload: { id: string; status: "APPROVED" | "REJECTED"; reviewNote?: string }) =>
+      constructionApi.updateLeave(payload.id, { status: payload.status, reviewNote: payload.reviewNote }),
     onSuccess: async (_, payload) => {
       message.success(payload.status === "APPROVED" ? "请假申请已批准" : "请假申请已驳回");
       await queryClient.invalidateQueries({ queryKey: ["construction-leave-approvals", storeId] });
@@ -53,8 +55,20 @@ export default function ConstructionLeaveApprovalsPage() {
   const counts = useMemo(() => buildLeaveApprovalCounts(rows), [rows]);
   const visibleRows = useMemo(() => getLeaveApprovalRows(rows, activeQueue, keyword), [activeQueue, keyword, rows]);
 
-  const approveLeave = (record: LeaveRequestSummary) => updateMutation.mutate({ id: record.id, status: "APPROVED" });
-  const rejectLeave = (record: LeaveRequestSummary) => updateMutation.mutate({ id: record.id, status: "REJECTED" });
+  const openReview = (row: LeaveRequestSummary, status: "APPROVED" | "REJECTED") => {
+    setReviewNote("");
+    setReviewing({ row, status });
+  };
+  const submitReview = () => {
+    if (!reviewing) return;
+    if (reviewing.status === "REJECTED" && !reviewNote.trim()) {
+      message.warning("驳回时请填写审批意见");
+      return;
+    }
+    updateMutation.mutate({ id: reviewing.row.id, status: reviewing.status, reviewNote: reviewNote.trim() || undefined }, {
+      onSuccess: () => setReviewing(undefined)
+    });
+  };
 
   return (
     <div className="management-page construction-leave-approval-page">
@@ -119,7 +133,7 @@ export default function ConstructionLeaveApprovalsPage() {
                     icon={<CheckCircleOutlined />}
                     disabled={row.status !== "PENDING" || updateMutation.isPending}
                     loading={updateMutation.isPending}
-                    onClick={() => approveLeave(row)}
+                    onClick={() => openReview(row, "APPROVED")}
                   >
                     批准
                   </Button>
@@ -128,7 +142,7 @@ export default function ConstructionLeaveApprovalsPage() {
                     danger
                     icon={<CloseCircleOutlined />}
                     disabled={row.status !== "PENDING" || updateMutation.isPending}
-                    onClick={() => rejectLeave(row)}
+                    onClick={() => openReview(row, "REJECTED")}
                   >
                     驳回
                   </Button>
@@ -172,6 +186,11 @@ export default function ConstructionLeaveApprovalsPage() {
               render: (reason?: string | null) => reason || "未填写请假事由"
             },
             {
+              title: "审批意见",
+              dataIndex: "reviewNote",
+              render: (note?: string | null) => note || "—"
+            },
+            {
               title: "状态",
               dataIndex: "status",
               render: (status: LeaveRequestSummary["status"]) => (
@@ -188,7 +207,7 @@ export default function ConstructionLeaveApprovalsPage() {
                     icon={<CheckCircleOutlined />}
                     disabled={record.status !== "PENDING" || updateMutation.isPending}
                     loading={updateMutation.isPending}
-                    onClick={() => approveLeave(record)}
+                    onClick={() => openReview(record, "APPROVED")}
                   >
                     批准
                   </Button>
@@ -197,7 +216,7 @@ export default function ConstructionLeaveApprovalsPage() {
                     danger
                     icon={<CloseCircleOutlined />}
                     disabled={record.status !== "PENDING" || updateMutation.isPending}
-                    onClick={() => rejectLeave(record)}
+                    onClick={() => openReview(record, "REJECTED")}
                   >
                     驳回
                   </Button>
@@ -207,6 +226,24 @@ export default function ConstructionLeaveApprovalsPage() {
           ]}
         />
       </Card>
+
+      <Modal
+        open={Boolean(reviewing)}
+        title={reviewing?.status === "APPROVED" ? "批准请假申请" : "驳回请假申请"}
+        okText={reviewing?.status === "APPROVED" ? "确认批准" : "确认驳回"}
+        cancelText="取消"
+        okButtonProps={{ danger: reviewing?.status === "REJECTED", loading: updateMutation.isPending }}
+        onCancel={() => setReviewing(undefined)}
+        onOk={submitReview}
+      >
+        <p>{reviewing ? `${getLeaveWorkerLabel(reviewing.row)}：${formatLeaveDateRange(reviewing.row.startDate, reviewing.row.endDate)}` : ""}</p>
+        <Input.TextArea
+          value={reviewNote}
+          onChange={(event) => setReviewNote(event.target.value)}
+          rows={4}
+          placeholder={reviewing?.status === "REJECTED" ? "请填写驳回原因（必填）" : "可填写批准说明"}
+        />
+      </Modal>
 
       <section className="construction-leave-approval-note-panel">
         <UserSwitchOutlined />

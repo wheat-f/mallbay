@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { InvoiceStatus, OrderStatus, StorePosition } from "@prisma/client";
+import { ConstructionTaskStatus, InvoiceStatus, OrderStatus, StorePosition } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { ApplyInvoiceDto, InvoiceActionDto, IssueInvoiceDto, ListInvoicesDto, SendInvoiceDto } from "./dto/invoice.dto";
@@ -17,13 +17,17 @@ export class InvoicesService {
 
   async apply(user: AuthenticatedInvoiceUser, dto: ApplyInvoiceDto) {
     const actor = await this.withStoreMember(user);
-    const order = await this.prisma.order.findUnique({ where: { id: dto.orderId }, include: { amount: true } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: dto.orderId },
+      include: { amount: true, constructionRecord: { select: { status: true } } }
+    });
     if (!order) throw new NotFoundException("订单不存在");
     if (!PermissionPolicy.canApplyInvoiceForOrder(actor, order.storeId, order.salesPersonId)) {
       throw new ForbiddenException("无权限");
     }
     const invoiceableStatuses: OrderStatus[] = [OrderStatus.COMPLETED, OrderStatus.WARRANTIED];
-    if (!invoiceableStatuses.includes(order.status)) {
+    const constructionCompleted = order.constructionRecord?.status === ConstructionTaskStatus.COMPLETED;
+    if (!invoiceableStatuses.includes(order.status) && !constructionCompleted) {
       throw new BadRequestException("已完工订单才能申请发票");
     }
     if ((order.amount?.outstandingCents ?? 1) > 0) {

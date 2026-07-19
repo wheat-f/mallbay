@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { OrderStatus, PaymentRecordType, RebateStatus, StorePosition } from "@prisma/client";
+import { ConstructionTaskStatus, OrderStatus, PaymentRecordType, RebateStatus, StorePosition } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { ApplyRebateDto, ListRebatesDto, PayRebateDto, ReviewRebateDto } from "./dto/rebate.dto";
@@ -14,13 +14,13 @@ export class RebatesService {
 
   async apply(user: AuthenticatedRebateUser, dto: ApplyRebateDto) {
     const actor = await this.withStoreMember(user);
-    const order = await this.prisma.order.findUnique({ where: { id: dto.orderId }, include: { amount: true } });
+    const order = await this.prisma.order.findUnique({ where: { id: dto.orderId }, include: { amount: true, constructionRecord: { select: { status: true } } } });
     if (!order) throw new NotFoundException("订单不存在");
     if (!PermissionPolicy.canApplyRebateForOrder(actor, order.storeId, order.salesPersonId)) {
       throw new ForbiddenException("无权限");
     }
-    const rebateableStatuses: OrderStatus[] = [OrderStatus.COMPLETED, OrderStatus.WARRANTIED];
-    if (!rebateableStatuses.includes(order.status)) {
+    const isFulfilled = [OrderStatus.COMPLETED, OrderStatus.WARRANTIED].includes(order.status) || order.constructionRecord?.status === ConstructionTaskStatus.COMPLETED;
+    if (!isFulfilled) {
       throw new BadRequestException("已完工订单才能申请返利");
     }
     if ((order.amount?.outstandingCents ?? 1) > 0) {

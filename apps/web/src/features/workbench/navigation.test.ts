@@ -77,7 +77,7 @@ test("scheduler workbench exposes construction management actions", () => {
   const labels = getWorkbenchSections("SCHEDULER", "store-1")
     .flatMap((section) => section.items.map((item) => item.label));
 
-  assert.deepEqual(labels, ["施工容量", "施工派单", "售后管理", "质保管理"]);
+  assert.deepEqual(labels, ["施工容量", "施工派单", "施工排班", "请假审批", "请假申请", "售后管理", "质保管理"]);
 });
 
 test("purchasing workbench exposes separate product inventory purchase and expense actions", () => {

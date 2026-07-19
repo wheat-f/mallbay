@@ -730,7 +730,8 @@ test("ConstructionService lists leave requests with worker summaries for manager
 
   assert.equal(JSON.stringify(calls[0] ?? {}).includes("\"worker\""), true);
   assert.deepEqual((calls[0] as { include: unknown }).include, {
-    worker: { select: { id: true, username: true, nickname: true, avatarUrl: true } }
+    worker: { select: { id: true, username: true, nickname: true, avatarUrl: true } },
+    reviewedBy: { select: { id: true, username: true, nickname: true } }
   });
   assert.equal(result[0].worker.nickname, "施工师傅");
 });

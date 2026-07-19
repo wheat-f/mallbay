@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { ConstructionType, OrderStatus, PaymentAccountType, PaymentDirection, PaymentRecordType, PaymentType, ProductUnit, StorePosition } from "@prisma/client";
+import { ConstructionTaskStatus, ConstructionType, OrderStatus, PaymentAccountType, PaymentDirection, PaymentRecordType, PaymentType, ProductUnit, StorePosition } from "@prisma/client";
 import { OrdersService, redactOrderAmount } from "./orders.service";
 
 test("销售订单读取会移除内部成本、毛利、提成和成本快照字段", () => {
@@ -241,6 +241,38 @@ test("OrdersService list includes vehicle amount and sales person summaries for 
     salesPerson: { select: { id: true, username: true, nickname: true } },
     constructionRecord: { select: { status: true } },
     amount: true
+  });
+});
+
+test("OrdersService invoiceable filter includes completed construction records", async () => {
+  const capturedWhere: unknown[] = [];
+  const prisma = {
+    order: {
+      count: async (args: { where: unknown }) => {
+        capturedWhere.push(args.where);
+        return 0;
+      },
+      findMany: async () => []
+    },
+    storeMember: { findUnique: async () => null }
+  };
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+
+  await service.list(
+    { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
+    { storeId: "store-1", invoiceable: true, page: 1, pageSize: 20 }
+  );
+
+  assert.deepEqual(capturedWhere[0], {
+    storeId: "store-1",
+    status: undefined,
+    constructionType: undefined,
+    AND: [{
+      OR: [
+        { status: { in: [OrderStatus.COMPLETED, OrderStatus.WARRANTIED] } },
+        { constructionRecord: { is: { status: ConstructionTaskStatus.COMPLETED } } }
+      ]
+    }]
   });
 });
 

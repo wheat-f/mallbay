@@ -62,7 +62,7 @@ export default function RebatesPage() {
   });
   const rebateOrdersQuery = useQuery({
     queryKey: ["rebates", "orders", storeId],
-    queryFn: () => orderApi.list({ storeId: storeId!, status: "COMPLETED", paymentStatus: "PAID", page: 1, pageSize: 100 }),
+    queryFn: () => orderApi.list({ storeId: storeId!, invoiceable: true, paymentStatus: "PAID", page: 1, pageSize: 100 }),
     enabled: Boolean(storeId)
   });
   const rebateOrderOptions = ((rebateOrdersQuery.data?.items ?? []) as RebateOrderOption[]).map((order) => ({

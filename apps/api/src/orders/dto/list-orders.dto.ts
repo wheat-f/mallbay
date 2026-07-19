@@ -1,5 +1,5 @@
-import { Type } from "class-transformer";
-import { IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { Transform, Type } from "class-transformer";
+import { IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, Min } from "class-validator";
 import { ConstructionType, OrderStatus } from "@prisma/client";
 
 export const ORDER_PAYMENT_STATUSES = ["UNPAID", "PARTIAL", "PAID"] as const;
@@ -26,6 +26,12 @@ export class ListOrdersDto {
   @IsOptional()
   @IsIn(ORDER_PAYMENT_STATUSES)
   paymentStatus?: OrderPaymentStatus;
+
+  /** 已完工或已质保、允许进入开票流程的订单。 */
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  invoiceable?: boolean;
 
   @IsOptional()
   @IsDateString()

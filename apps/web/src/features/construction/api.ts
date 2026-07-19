@@ -54,6 +54,7 @@ export type LeaveRequestPayload = {
   workerId: string;
   startDate: string;
   endDate: string;
+  leaveType: string;
   reason?: string;
 };
 
@@ -63,8 +64,12 @@ export type LeaveRequestSummary = {
   workerId: string;
   startDate: string;
   endDate: string;
+  leaveType?: string | null;
   reason?: string | null;
   status: "PENDING" | "APPROVED" | "REJECTED";
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
+  reviewNote?: string | null;
   createdAt?: string;
   updatedAt?: string;
   worker?: {
@@ -72,6 +77,11 @@ export type LeaveRequestSummary = {
     username: string;
     nickname?: string | null;
     avatarUrl?: string | null;
+  } | null;
+  reviewedBy?: {
+    id: string;
+    username: string;
+    nickname?: string | null;
   } | null;
 };
 
@@ -263,10 +273,10 @@ export const constructionApi = {
       body: JSON.stringify(payload)
     }),
 
-  updateLeave: (id: string, status: LeaveRequestSummary["status"]) =>
+  updateLeave: (id: string, payload: { status: LeaveRequestSummary["status"]; reviewNote?: string }) =>
     request<LeaveRequestSummary>(`/construction/leaves/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ status })
+      body: JSON.stringify(payload)
     }),
 
   schedules: (query: ConstructionListQuery) =>

@@ -58,6 +58,7 @@ test("ConstructionService syncs offline photo status and leave operations in ord
           workerId: "worker-1",
           startDate: "2026-06-03T00:00:00.000Z",
           endDate: "2026-06-03T23:59:59.000Z",
+          leaveType: "PERSONAL",
           reason: "事假"
         }
       }
@@ -107,7 +108,8 @@ test("ConstructionService marks failed offline operations without stopping later
           storeId: "store-1",
           workerId: "worker-1",
           startDate: "2026-06-04T00:00:00.000Z",
-          endDate: "2026-06-04T23:59:59.000Z"
+          endDate: "2026-06-04T23:59:59.000Z",
+          leaveType: "PERSONAL"
         }
       }
     ]

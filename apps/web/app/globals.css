@@ -12825,6 +12825,7 @@ body {
 
 .invoice-application-drawer .ant-drawer-body {
   padding: 22px;
+  overflow-x: hidden;
 }
 
 .invoice-drawer-order-note {
@@ -12849,7 +12850,10 @@ body {
   line-height: 18px;
 }
 
-.invoice-drawer-form {
+.invoice-application-drawer .invoice-drawer-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 0;
 }
 
@@ -12875,7 +12879,7 @@ body {
 
 .invoice-recipient-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 

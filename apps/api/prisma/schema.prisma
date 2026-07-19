@@ -59,6 +59,7 @@ model User {
   constructionCostWorkerLines    ConstructionCostWorkerLine[]
   qualityChecks                  ConstructionRecord[]         @relation("ConstructionQualityCheckedBy")
   leaveRequests                  LeaveRequest[]               @relation("LeaveRequestWorker")
+  reviewedLeaveRequests          LeaveRequest[]               @relation("LeaveRequestReviewedBy")
   schedules                      Schedule[]                   @relation("ScheduleWorker")
   commissionSnapshots            WorkerCommissionSnapshot[]   @relation("WorkerCommissionWorker")
   createdCommissionSnapshots     WorkerCommissionSnapshot[]   @relation("WorkerCommissionCreatedBy")
@@ -1644,13 +1645,18 @@ model LeaveRequest {
   workerId  String
   startDate DateTime           @db.Date
   endDate   DateTime           @db.Date
+  leaveType String?
   reason    String?
   status    LeaveRequestStatus @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNote   String?
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 
   store  Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   worker User  @relation("LeaveRequestWorker", fields: [workerId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("LeaveRequestReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   @@index([storeId, startDate, endDate])
   @@index([workerId, status])
@@ -2476,6 +2482,9 @@ enum NotificationType {
   STORE_UNFROZEN // 门店解冻
   REMOVED_FROM_STORE // 被移出门店（开除或店长变更）
   PASSWORD_RESET // 密码被审核员重置
+  LEAVE_APPROVAL_REQUIRED // 施工请假待审批
+  LEAVE_APPROVED // 施工请假已批准
+  LEAVE_REJECTED // 施工请假已驳回
 }
 
 model Notification {

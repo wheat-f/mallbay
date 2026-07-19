@@ -46,7 +46,7 @@ export const managementMenuItems: ManagementMenuItem[] = [
   { key: "workbench", label: "工作台", href: "/workbench", icon: <AppstoreOutlined />, positions: storePositions },
   { key: "construction-tasks", label: "我的施工任务", href: "/construction/tasks", icon: <ToolOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
   { key: "construction-schedules", label: "我的排班", href: "/construction/schedules", icon: <CalendarOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
-  { key: "construction-leaves", label: "请假申请", href: "/construction/leaves", icon: <FormOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
+  { key: "construction-leaves", label: "请假申请", href: "/construction/leaves", icon: <FormOutlined />, positions: ["CONSTRUCTION", "APPRENTICE", "SCHEDULER"] },
   { key: "construction-materials", label: "施工物料", href: "/construction/materials", icon: <AppstoreOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
   { key: "construction-profile", label: "施工档案", href: "/construction/profile", icon: <IdcardOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
   { key: "after-sales-tasks", label: "售后任务", href: "/after-sales/tasks", icon: <ReconciliationOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
@@ -58,6 +58,8 @@ export const managementMenuItems: ManagementMenuItem[] = [
   { key: "sales-quotes", label: "报价审批", href: "/orders/quotes", icon: <AuditOutlined />, positions: ["MANAGER", "SALES"] },
   { key: "products", label: "产品管理", href: "/products", icon: <ShopOutlined />, positions: ["MANAGER", "PURCHASING", "FINANCE"] },
   { key: "construction", label: "施工管理", href: "/construction/assignments", icon: <ToolOutlined />, positions: ["MANAGER", "SCHEDULER"] },
+  { key: "construction-schedules", label: "施工排班", href: "/construction/schedules", icon: <CalendarOutlined />, positions: ["MANAGER", "SCHEDULER"] },
+  { key: "construction-leave-approvals", label: "请假审批", href: "/construction/leave-approvals", icon: <FormOutlined />, positions: ["MANAGER", "SCHEDULER"] },
   { key: "construction-cost-settlements", label: "施工成本确认", href: "/construction/cost-settlements", icon: <WalletOutlined />, positions: ["MANAGER"] },
   { key: "construction-cost-settlements", label: "施工成本结算", href: "/construction/cost-settlements", icon: <WalletOutlined />, positions: ["FINANCE"] },
   { key: "inventory", label: "库存管理", href: "/inventory", icon: <AppstoreOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "PURCHASING"] },
@@ -97,6 +99,7 @@ export function getActiveManagementMenuKey(pathname: string) {
   if (pathname.startsWith("/orders/pricing/construction-costs")) return "construction-charge-standards";
   if (pathname.startsWith("/workbench")) return "workbench";
   if (pathname.startsWith("/construction/tasks")) return "construction-tasks";
+  if (pathname.startsWith("/construction/leave-approvals")) return "construction-leave-approvals";
   if (pathname.startsWith("/construction/schedules")) return "construction-schedules";
   if (pathname.startsWith("/construction/leaves")) return "construction-leaves";
   if (pathname.startsWith("/construction/materials")) return "construction-materials";

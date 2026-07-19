@@ -6,9 +6,10 @@ import { ConstructionService } from "./construction.service";
 import { CapacityReservationService } from "./capacity-reservation.service";
 import { ConstructionCostSettlementService } from "./construction-cost-settlement.service";
 import { ObservabilityModule } from "../observability/observability.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
-  imports: [PrismaModule, UsersModule, ObservabilityModule],
+  imports: [PrismaModule, UsersModule, ObservabilityModule, NotificationsModule],
   controllers: [ConstructionController],
   providers: [ConstructionService, CapacityReservationService, ConstructionCostSettlementService],
   exports: [ConstructionService, CapacityReservationService, ConstructionCostSettlementService]

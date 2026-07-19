@@ -64,6 +64,8 @@ export type OrderListQuery = {
   status?: OrderStatus;
   constructionType?: ConstructionType;
   paymentStatus?: OrderPaymentStatus;
+  /** 已完工或已质保且可进入开票流程的订单。 */
+  invoiceable?: boolean;
   createdFrom?: string;
   createdTo?: string;
   q?: string;

@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import {
+  ConstructionTaskStatus,
   OrderAmendmentStatus,
   OrderStatus,
   PaymentDirection,
@@ -697,9 +698,21 @@ export class OrdersService {
     if (!user.isAuditor && user.storeMember?.position === "SALES") {
       where.salesPersonId = user.id;
     }
+    const andFilters: Prisma.OrderWhereInput[] = [];
+    if (dto.invoiceable) {
+      andFilters.push({
+        OR: [
+          { status: { in: [OrderStatus.COMPLETED, OrderStatus.WARRANTIED] } },
+          { constructionRecord: { is: { status: ConstructionTaskStatus.COMPLETED } } }
+        ]
+      });
+    }
     const q = dto.q?.trim();
     if (q) {
-      where.OR = this.buildSearchConditions(q);
+      andFilters.push({ OR: this.buildSearchConditions(q) });
+    }
+    if (andFilters.length > 0) {
+      where.AND = andFilters;
     }
     return where;
   }

@@ -6,6 +6,7 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -204,6 +205,10 @@ export class LeaveRequestDto {
   @IsDateString()
   endDate!: string;
 
+  @IsString()
+  @MaxLength(80)
+  leaveType!: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -211,9 +216,13 @@ export class LeaveRequestDto {
 }
 
 export class UpdateLeaveRequestDto {
+  @IsIn(["APPROVED", "REJECTED"])
+  status!: "APPROVED" | "REJECTED";
+
   @IsOptional()
   @IsString()
-  status?: string;
+  @MaxLength(500)
+  reviewNote?: string;
 }
 
 export class UpsertScheduleDto {
@@ -280,6 +289,10 @@ export class OfflineLeavePayloadDto {
 
   @IsDateString()
   endDate!: string;
+
+  @IsString()
+  @MaxLength(80)
+  leaveType!: string;
 
   @IsOptional()
   @IsString()

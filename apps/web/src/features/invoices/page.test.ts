@@ -16,6 +16,7 @@ test("invoices page uses business selectors instead of manual ids", () => {
   const pageSource = readFileSync("app/invoices/page.tsx", "utf8");
 
   assert.match(pageSource, /orderApi\.list\(\{/);
+  assert.match(pageSource, /invoiceable: true/);
   assert.match(pageSource, /paymentStatus: "PAID"/);
   assert.match(pageSource, /const invoiceOrderOptions =/);
   assert.match(pageSource, /const invoiceOptions =/);
@@ -90,6 +91,8 @@ test("invoices application drawer includes the prototype recipient information s
   assert.match(pageSource, /备注/);
   assert.doesNotMatch(pageSource, /invoiceType: values\.invoiceType/);
   assert.match(cssSource, /\.invoice-drawer-section/);
+  assert.match(cssSource, /\.invoice-application-drawer \.invoice-drawer-form\s*\{\r?\n\s*display: grid;\r?\n\s*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(cssSource, /\.invoice-application-drawer \.ant-drawer-body\s*\{[\s\S]*overflow-x: hidden;/);
 });
 
 test("invoices page uses issued status wording in process success messages", () => {

@@ -87,7 +87,7 @@ function InvoicesContent() {
   });
   const invoiceOrdersQuery = useQuery({
     queryKey: ["invoices", "orders", storeId],
-    queryFn: () => orderApi.list({ storeId: storeId!, status: "COMPLETED", paymentStatus: "PAID", page: 1, pageSize: 100 }),
+    queryFn: () => orderApi.list({ storeId: storeId!, invoiceable: true, paymentStatus: "PAID", page: 1, pageSize: 100 }),
     enabled: Boolean(storeId)
   });
 
@@ -552,7 +552,7 @@ function InvoicesContent() {
       >
         <div className="invoice-drawer-order-note">
           <strong>关联订单</strong>
-          <span>选择已完成且可开票订单，系统将保留订单与发票的追溯关系。</span>
+          <span>选择已完工或已质保且已收齐的可开票订单，系统将保留订单与发票的追溯关系。</span>
         </div>
         <Form
           form={applyForm}

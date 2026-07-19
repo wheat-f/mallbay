@@ -21,12 +21,15 @@ const NOTIF_LABEL: Record<string, string> = {
   AUDIT_REJECTED: "审核驳回",
   STORE_FROZEN: "门店已冻结",
   STORE_UNFROZEN: "门店已解冻",
-  REMOVED_FROM_STORE: "已被移出门店"
+  REMOVED_FROM_STORE: "已被移出门店",
+  LEAVE_APPROVAL_REQUIRED: "请假待审批",
+  LEAVE_APPROVED: "请假已批准",
+  LEAVE_REJECTED: "请假已驳回"
 };
 
 const POSITION_LABEL: Record<string, string> = {
   SALES: "销售", PURCHASING: "采购", FINANCE: "财务",
-  SCHEDULER: "排班员", CONSTRUCTION: "施工员", APPRENTICE: "学徒"
+  SCHEDULER: "施工主管", CONSTRUCTION: "施工员", APPRENTICE: "学徒"
 };
 
 function notifSummary(type: string, payload: Record<string, unknown>): string {
@@ -47,6 +50,12 @@ function notifSummary(type: string, payload: Record<string, unknown>): string {
       return `「${payload.storeName}」已解除冻结`;
     case "REMOVED_FROM_STORE":
       return `你已被移出「${payload.storeName}」`;
+    case "LEAVE_APPROVAL_REQUIRED":
+      return `有一条施工请假申请待你审批（${String(payload.startDate ?? "")}-${String(payload.endDate ?? "")}）`;
+    case "LEAVE_APPROVED":
+      return `你的请假申请已批准${payload.reviewNote ? `：${payload.reviewNote}` : ""}`;
+    case "LEAVE_REJECTED":
+      return `你的请假申请已驳回${payload.reviewNote ? `：${payload.reviewNote}` : ""}`;
     default:
       return type;
   }

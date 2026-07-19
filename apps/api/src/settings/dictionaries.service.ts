@@ -17,6 +17,7 @@ const DEFAULT_DICTIONARIES: readonly DefaultDictionaryDefinition[] = [
   { name: "施工类型", code: "CONSTRUCTION_TYPE", items: ["漆面保护膜", "改色膜", "隔热膜", "改装", "检查"], itemCodes: ["PPF", "COLOR_FILM", "HEAT_FILM", "MODIFICATION", "INSPECTION"] },
   { name: "施工地点", code: "CONSTRUCTION_LOCATION", items: ["到店", "外出"], itemCodes: ["IN_STORE", "OUTSIDE"] },
   { name: "施工岗位类型", code: "CONSTRUCTION_POSITION_TYPE", items: ["施工师傅", "施工学徒"], itemCodes: ["CONSTRUCTION", "APPRENTICE"] },
+  { name: "请假类型", code: "LEAVE_TYPE", items: ["事假", "病假", "调休", "其他"], itemCodes: ["PERSONAL", "SICK", "COMP_TIME", "OTHER"] },
   { name: "工时偏差原因", code: "CONSTRUCTION_TIME_VARIANCE_REASON", items: ["客户临时追加", "车辆实际状况", "返工处理", "外出等待", "其他"], itemCodes: ["CUSTOMER_ADDON", "VEHICLE_CONDITION", "REWORK", "OUTSIDE_WAITING", "OTHER"] },
   { name: "成本调整原因", code: "CONSTRUCTION_COST_ADJUSTMENT_REASON", items: ["外包费用", "返工人工", "额外补贴", "提成修正", "其他"], itemCodes: ["OUTSOURCING", "REWORK_LABOR", "ALLOWANCE", "COMMISSION", "OTHER"] },
   { name: "成本异常原因", code: "CONSTRUCTION_COST_EXCEPTION_REASON", items: ["实际成本超预计", "实际毛利低于底线", "材料成本缺失", "工时偏差", "其他"], itemCodes: ["ACTUAL_COST_OVER_ESTIMATE", "ACTUAL_MARGIN_BELOW_THRESHOLD", "MATERIAL_COST_MISSING", "TIME_VARIANCE", "OTHER"] },
@@ -96,12 +97,16 @@ export class DictionariesService {
 
   private async ensureDefaults(storeId: string) {
     for (const item of DEFAULT_DICTIONARIES) {
+      const existing = await this.prisma.dictionary.findUnique({ where: { storeId_code: { storeId, code: item.code } } });
       const dictionary = await this.prisma.dictionary.upsert({
         where: { storeId_code: { storeId, code: item.code } },
         create: { storeId, name: item.name, code: item.code, items: [...item.items] },
         update: {}
       });
-      await this.syncItems(dictionary.id, item.items, FIXED_DICTIONARY_CODES.has(item.code), item.itemCodes);
+      // 非固定字典只在首次创建时写入初始项，后续由门店按业务自行增减。
+      if (!existing || FIXED_DICTIONARY_CODES.has(item.code)) {
+        await this.syncItems(dictionary.id, item.items, FIXED_DICTIONARY_CODES.has(item.code), item.itemCodes);
+      }
     }
   }
 

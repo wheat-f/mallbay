@@ -310,7 +310,7 @@ test("construction camera and leave pages expose prototype quick actions in web 
   assert.match(leavesPageSource, /请假事由/);
   assert.match(leavesPageSource, /事假/);
   assert.match(leavesPageSource, /病假/);
-  assert.match(leavesPageSource, /年假/);
+  assert.match(leavesPageSource, /调休/);
   assert.match(leavesPageSource, /其他/);
   assert.match(leavesPageSource, /审批通过后/);
   assert.match(leavesPageSource, /item\.workerId === workerId \|\| item\.worker\?\.id === workerId/);

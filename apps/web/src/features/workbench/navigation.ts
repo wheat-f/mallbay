@@ -84,6 +84,9 @@ export function getWorkbenchSections(position: StorePosition, storeId: string): 
       items: [
         { label: "施工容量", description: "维护每日施工容量和预约上限", href: "/construction/capacities", primary: true },
         { label: "施工派单", description: "处理待派工订单和施工进度", href: "/construction/assignments" },
+        { label: "施工排班", description: "查看施工团队并设置每日排班", href: "/construction/schedules" },
+        { label: "请假审批", description: "审核施工人员的请假申请", href: "/construction/leave-approvals" },
+        { label: "请假申请", description: "提交本人请假申请并查看审批进度", href: "/construction/leaves" },
         { label: "售后管理", description: "售后派单和责任判断", href: "/after-sales" },
         { label: "质保管理", description: "查看施工质保记录", href: "/warranties" }
       ]

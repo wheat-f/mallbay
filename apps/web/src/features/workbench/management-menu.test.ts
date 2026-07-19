@@ -35,7 +35,7 @@ test("management menu maps manager role to full prototype sidebar", () => {
   assert.equal(membersItem?.href, "/members");
   assert.deepEqual(
     labels,
-    ["工作台", "客户管理", "销售订单", "建议价设置", "施工收费标准", "报价审批", "产品管理", "施工管理", "施工成本确认", "库存管理", "采购管理", "质保管理", "售后管理", "人员管理", "费用申请", "财务管理", "报表分析", "发票管理", "返利管理", "系统设置"]
+    ["工作台", "客户管理", "销售订单", "建议价设置", "施工收费标准", "报价审批", "产品管理", "施工管理", "施工排班", "请假审批", "施工成本确认", "库存管理", "采购管理", "质保管理", "售后管理", "人员管理", "费用申请", "财务管理", "报表分析", "发票管理", "返利管理", "系统设置"]
   );
 });
 
@@ -97,6 +97,7 @@ test("active management menu key follows route groups", () => {
   assert.equal(getActiveManagementMenuKey("/construction/tasks"), "construction-tasks");
   assert.equal(getActiveManagementMenuKey("/construction/schedules"), "construction-schedules");
   assert.equal(getActiveManagementMenuKey("/construction/leaves"), "construction-leaves");
+  assert.equal(getActiveManagementMenuKey("/construction/leave-approvals"), "construction-leave-approvals");
   assert.equal(getActiveManagementMenuKey("/construction/materials"), "construction-materials");
   assert.equal(getActiveManagementMenuKey("/construction/profile"), "construction-profile");
   assert.equal(getActiveManagementMenuKey("/after-sales/tasks"), "after-sales-tasks");

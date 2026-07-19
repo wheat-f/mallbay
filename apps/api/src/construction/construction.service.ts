@@ -15,6 +15,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { MulterFile } from "../users/multer-file.type";
 import { OssService } from "../users/oss.service";
 import { ConstructionCostSettlementService } from "./construction-cost-settlement.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import {
   AssignOrderDto,
   CompleteConstructionDto,
@@ -47,7 +48,8 @@ export class ConstructionService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional() @Inject(OssService) private readonly oss?: OssService,
-    @Optional() private readonly costSettlements?: ConstructionCostSettlementService
+    @Optional() private readonly costSettlements?: ConstructionCostSettlementService,
+    @Optional() private readonly notifications?: NotificationsService
   ) {}
 
   async listCapacities(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
@@ -569,7 +571,6 @@ export class ConstructionService {
       orderBy: { updatedAt: "desc" },
       include: { user: { select: { username: true, nickname: true } } }
     });
-    const profileUserIds = new Set(profiles.map((profile) => profile.userId));
     const constructionMembers = await this.prisma.storeMember.findMany({
       where: {
         storeId,
@@ -578,37 +579,77 @@ export class ConstructionService {
       orderBy: { updatedAt: "desc" },
       include: { user: { select: { username: true, nickname: true } } }
     });
+    const memberPositions = new Map(constructionMembers.map((member) => [member.userId, member.position]));
+    const profiledWorkers = profiles
+      .filter((profile) => memberPositions.has(profile.userId))
+      .map((profile) => ({ ...profile, position: memberPositions.get(profile.userId)! }));
+    const profiledWorkerUserIds = new Set(profiledWorkers.map((profile) => profile.userId));
     const profilelessMembers = constructionMembers
-      .filter((member) => !profileUserIds.has(member.userId))
+      .filter((member) => !profiledWorkerUserIds.has(member.userId))
       .map((member) => ({
         storeId,
         userId: member.userId,
         canWorkOutside: false,
         skillTags: [],
         isActive: true,
+        position: member.position,
         user: member.user
       }));
 
-    return [...profiles, ...profilelessMembers];
+    return [...profiledWorkers, ...profilelessMembers];
   }
 
   async createLeave(user: AuthenticatedConstructionUser, dto: LeaveRequestDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canDispatchConstruction(actor, dto.storeId) && actor.id !== dto.workerId) {
+    if (actor.id !== dto.workerId) {
       throw new ForbiddenException("无权限");
     }
-    return this.prisma.leaveRequest.create({
+    const worker = await this.prisma.storeMember.findFirst({
+      where: {
+        storeId: dto.storeId,
+        userId: dto.workerId,
+        position: { in: [StorePosition.CONSTRUCTION, StorePosition.APPRENTICE, StorePosition.SCHEDULER] }
+      },
+      select: { position: true }
+    });
+    if (!worker) throw new BadRequestException("请假申请人必须是本门店施工团队成员");
+    const leaveType = await this.prisma.dictionaryItem.findFirst({
+      where: {
+        code: dto.leaveType.trim(),
+        status: "ACTIVE",
+        dictionary: { storeId: dto.storeId, code: "LEAVE_TYPE", status: "ACTIVE" }
+      },
+      select: { code: true }
+    });
+    if (!leaveType) throw new BadRequestException("请假类型无效或已停用，请从当前有效类型中选择");
+    const leave = await this.prisma.leaveRequest.create({
       data: {
         storeId: dto.storeId,
         workerId: dto.workerId,
         startDate: normalizeDate(dto.startDate),
         endDate: normalizeDate(dto.endDate),
+        leaveType: leaveType.code,
         reason: dto.reason,
-        status: PermissionPolicy.canDispatchConstruction(actor, dto.storeId)
-          ? LeaveRequestStatus.APPROVED
-          : LeaveRequestStatus.PENDING
+        status: LeaveRequestStatus.PENDING
       }
     });
+    const approvers = await this.prisma.storeMember.findMany({
+      where: {
+        storeId: dto.storeId,
+        position: worker.position === StorePosition.SCHEDULER ? StorePosition.MANAGER : StorePosition.SCHEDULER
+      },
+      select: { userId: true }
+    });
+    await Promise.all(approvers.map((approver) => this.notifications?.send(approver.userId, "LEAVE_APPROVAL_REQUIRED", {
+      storeId: dto.storeId,
+      leaveId: leave.id,
+      workerId: dto.workerId,
+      leaveType: dto.leaveType.trim(),
+      startDate: leave.startDate.toISOString(),
+      endDate: leave.endDate.toISOString(),
+      approvalPath: worker.position === StorePosition.SCHEDULER ? "MANAGER" : "SCHEDULER"
+    })));
+    return leave;
   }
 
   async listLeaves(user: AuthenticatedConstructionUser, storeId: string) {
@@ -616,11 +657,13 @@ export class ConstructionService {
     if (!PermissionPolicy.canViewStoreData(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
+    const canReviewLeaves = actor.isAuditor || actor.storeMember?.position === StorePosition.MANAGER || actor.storeMember?.position === StorePosition.SCHEDULER;
     return this.prisma.leaveRequest.findMany({
-      where: { storeId },
+      where: { storeId, ...(canReviewLeaves ? {} : { workerId: actor.id }) },
       orderBy: { createdAt: "desc" },
       include: {
-        worker: { select: { id: true, username: true, nickname: true, avatarUrl: true } }
+        worker: { select: { id: true, username: true, nickname: true, avatarUrl: true } },
+        reviewedBy: { select: { id: true, username: true, nickname: true } }
       }
     });
   }
@@ -631,16 +674,40 @@ export class ConstructionService {
     if (!leave) {
       throw new NotFoundException("请假记录不存在");
     }
-    if (!PermissionPolicy.canDispatchConstruction(actor, leave.storeId)) {
+    if (leave.status !== LeaveRequestStatus.PENDING) {
+      throw new BadRequestException("该请假申请已处理，不能重复审批");
+    }
+    if (dto.status === "REJECTED" && !dto.reviewNote?.trim()) {
+      throw new BadRequestException("驳回请填写审批意见");
+    }
+    const applicantMember = await this.prisma.storeMember.findFirst({ where: { storeId: leave.storeId, userId: leave.workerId }, select: { position: true } });
+    const isApplicantSupervisor = applicantMember?.position === StorePosition.SCHEDULER;
+    const canReview = isApplicantSupervisor
+      ? PermissionPolicy.isStoreManager(actor, leave.storeId)
+      : actor.isAuditor || (actor.storeMember?.storeId === leave.storeId && actor.storeMember?.position === StorePosition.SCHEDULER);
+    if (!canReview || actor.id === leave.workerId) {
       throw new ForbiddenException("无权限");
     }
-    return this.prisma.leaveRequest.update({
+    const updated = await this.prisma.leaveRequest.update({
       where: { id },
-      data: { status: dto.status as LeaveRequestStatus | undefined },
+      data: {
+        status: dto.status as LeaveRequestStatus,
+        reviewedById: actor.id,
+        reviewedAt: new Date(),
+        reviewNote: dto.reviewNote?.trim() || undefined
+      },
       include: {
-        worker: { select: { id: true, username: true, nickname: true, avatarUrl: true } }
+        worker: { select: { id: true, username: true, nickname: true, avatarUrl: true } },
+        reviewedBy: { select: { id: true, username: true, nickname: true } }
       }
     });
+    await this.notifications?.send(leave.workerId, dto.status === "APPROVED" ? "LEAVE_APPROVED" : "LEAVE_REJECTED", {
+      storeId: leave.storeId,
+      leaveId: leave.id,
+      reviewNote: dto.reviewNote?.trim() || "",
+      reviewedById: actor.id
+    });
+    return updated;
   }
 
   async upsertSchedule(user: AuthenticatedConstructionUser, dto: UpsertScheduleDto) {
@@ -728,6 +795,7 @@ export class ConstructionService {
         workerId: payload.workerId ?? user.id,
         startDate: payload.startDate,
         endDate: payload.endDate,
+        leaveType: payload.leaveType,
         reason: payload.reason
       });
     }

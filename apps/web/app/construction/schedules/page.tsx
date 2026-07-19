@@ -20,15 +20,25 @@ const scheduleStatusOptions = [
 
 const weekLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
+type ScheduleFormValues = { date: dayjs.Dayjs; status: ScheduleStatus; note?: string; workerId?: string };
+type TeamWorker = {
+  userId: string;
+  position?: "CONSTRUCTION" | "APPRENTICE";
+  user?: { username?: string; nickname?: string | null };
+};
+type TeamScheduleRow = Omit<ScheduleSummary, "status"> & { status?: ScheduleStatus };
+
 export default function ConstructionSchedulesPage() {
   const { message } = App.useApp();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [date, setDate] = useState(dayjs());
-  const [form] = Form.useForm<{ date: dayjs.Dayjs; status: ScheduleStatus; note?: string }>();
+  const [form] = Form.useForm<ScheduleFormValues>();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const workerId = user?.id;
+  const position = user?.storeMember?.position;
+  const canManageSchedules = Boolean(user?.isAuditor || position === "MANAGER" || position === "SCHEDULER");
   const dateValue = date.format("YYYY-MM-DD");
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, index) => date.startOf("week").add(index, "day")),
@@ -41,13 +51,19 @@ export default function ConstructionSchedulesPage() {
     queryFn: () => constructionApi.schedules({ storeId: storeId!, from: dateValue, to: dateValue }),
     enabled: Boolean(storeId)
   });
+  const workersQuery = useQuery({
+    queryKey: ["construction-workers", storeId],
+    queryFn: () => constructionApi.workers(storeId!),
+    enabled: Boolean(storeId && canManageSchedules)
+  });
 
   const upsertMutation = useMutation({
-    mutationFn: (values: { date: dayjs.Dayjs; status: ScheduleStatus; note?: string }) => {
-      if (!storeId || !workerId) throw new Error("缺少门店或施工人员信息");
+    mutationFn: (values: ScheduleFormValues) => {
+      const targetWorkerId = canManageSchedules ? values.workerId : workerId;
+      if (!storeId || !targetWorkerId) throw new Error(canManageSchedules ? "请选择施工人员" : "缺少门店或施工人员信息");
       return constructionApi.upsertSchedule({
         storeId,
-        workerId,
+        workerId: targetWorkerId,
         date: values.date.format("YYYY-MM-DD"),
         status: values.status,
         note: values.note
@@ -61,10 +77,28 @@ export default function ConstructionSchedulesPage() {
   });
 
   const rows = useMemo(() => (schedulesQuery.data ?? []) as ScheduleSummary[], [schedulesQuery.data]);
+  const teamRows = useMemo(() => {
+    if (!canManageSchedules) return [] as TeamScheduleRow[];
+    const existing = new Map(rows.map((item) => [item.workerId, item]));
+    return ((workersQuery.data ?? []) as TeamWorker[]).map((worker) => {
+      const scheduled = existing.get(worker.userId);
+      if (scheduled) return scheduled;
+      return {
+        id: `unscheduled-${worker.userId}-${dateValue}`,
+        storeId: storeId ?? "",
+        workerId: worker.userId,
+        date: dateValue,
+        status: undefined,
+        note: undefined,
+        worker: worker.user
+      } as TeamScheduleRow;
+    });
+  }, [canManageSchedules, dateValue, rows, storeId, workersQuery.data]);
+  const displayRows = canManageSchedules ? teamRows : rows;
   const myRows = useMemo(() => rows.filter((item) => item.workerId === workerId), [rows, workerId]);
-  const workingCount = rows.filter((item) => item.status === "WORKING").length;
-  const outsideCount = rows.filter((item) => item.status === "OUTSIDE").length;
-  const restCount = rows.filter((item) => item.status === "REST").length;
+  const workingCount = displayRows.filter((item) => item.status === "WORKING").length;
+  const outsideCount = displayRows.filter((item) => item.status === "OUTSIDE").length;
+  const restCount = displayRows.filter((item) => item.status === "REST").length;
 
   const handleDateSelect = (value: dayjs.Dayjs) => {
     setDate(value);
@@ -73,15 +107,21 @@ export default function ConstructionSchedulesPage() {
 
   return (
     <div className="management-page worker-schedule-page">
-      <StorePageHeader title="我的排班" description="查看周排班、当日安排和本人出勤状态">
+      <StorePageHeader title={canManageSchedules ? "施工排班" : "我的排班"} description={canManageSchedules ? "统一查看施工团队，并为未排班人员设置当日状态。" : "查看周排班、当日安排和本人出勤状态"}>
         <Space wrap>
-          <Button onClick={() => router.push("/construction/leaves")}>提交请假申请</Button>
-          <Button type="primary" onClick={() => router.push("/construction/tasks")}>查看我的任务</Button>
+          {canManageSchedules ? (
+            <Button type="primary" onClick={() => router.push("/construction/leave-approvals")}>处理请假审批</Button>
+          ) : (
+            <>
+              <Button onClick={() => router.push("/construction/leaves")}>提交请假申请</Button>
+              <Button type="primary" onClick={() => router.push("/construction/tasks")}>查看我的任务</Button>
+            </>
+          )}
         </Space>
       </StorePageHeader>
 
       <section className="worker-schedule-summary">
-        <Card><Statistic title="当日排班" value={rows.length} suffix="条" /></Card>
+        <Card><Statistic title={canManageSchedules ? "团队人员" : "当日排班"} value={displayRows.length} suffix={canManageSchedules ? "人" : "条"} /></Card>
         <Card><Statistic title="店内施工" value={workingCount} suffix="人" /></Card>
         <Card><Statistic title="外出施工" value={outsideCount} suffix="人" /></Card>
         <Card><Statistic title="休息/请假" value={restCount} suffix="人" /></Card>
@@ -120,20 +160,20 @@ export default function ConstructionSchedulesPage() {
             </div>
           </Card>
 
-          <Card className="construction-schedule-task-section" title={`当日排班 (${rows.length})`} extra={<Tag>{dateValue}</Tag>}>
-            <Table<ScheduleSummary>
+          <Card className="construction-schedule-task-section" title={canManageSchedules ? `施工团队 (${displayRows.length} 人)` : `当日排班 (${rows.length})`} extra={<Tag>{dateValue}</Tag>}>
+            <Table<TeamScheduleRow>
               rowKey="id"
               loading={schedulesQuery.isLoading}
-              dataSource={rows}
+              dataSource={displayRows}
               pagination={false}
               locale={{ emptyText: <Empty description="暂无排班" /> }}
               columns={[
                 {
                   title: "状态",
                   dataIndex: "status",
-                  render: (status: ScheduleStatus) => (
+                  render: (status?: ScheduleStatus) => (
                     <Tag className={`construction-schedule-status ${getScheduleStatusClassName(status)}`}>
-                      {getWorkerScheduleStatusLabel(status)}
+                      {status ? getWorkerScheduleStatusLabel(status) : "未设置"}
                     </Tag>
                   )
                 },
@@ -152,8 +192,14 @@ export default function ConstructionSchedulesPage() {
                 {
                   title: "操作",
                   render: (_, item) => (
-                    <Button type={item.workerId === workerId ? "primary" : "default"} onClick={() => router.push("/construction/tasks")}>
-                      {item.workerId === workerId ? "查看任务" : "查看排班"}
+                    <Button type={item.workerId === workerId ? "primary" : "default"} onClick={() => {
+                      if (canManageSchedules) {
+                        form.setFieldsValue({ workerId: item.workerId, date, status: item.status ?? "WORKING", note: item.note });
+                        return;
+                      }
+                      router.push("/construction/tasks");
+                    }}>
+                      {canManageSchedules ? "设置排班" : item.workerId === workerId ? "查看任务" : "查看排班"}
                     </Button>
                   )
                 }
@@ -161,14 +207,14 @@ export default function ConstructionSchedulesPage() {
             />
 
             <div className="construction-schedule-card-list worker-schedule-mobile-cards">
-              {rows.map((item) => {
+              {displayRows.map((item) => {
                 const taskMeta = getScheduleTaskMeta(item, workerId);
                 return (
                   <article key={item.id} className="construction-schedule-card construction-schedule-task-card">
                     <div className="construction-schedule-card-head construction-schedule-task-main">
                       <div>
                         <Tag className={`construction-schedule-status ${getScheduleStatusClassName(item.status)}`}>
-                          {getWorkerScheduleStatusLabel(item.status)}
+                          {item.status ? getWorkerScheduleStatusLabel(item.status) : "未设置"}
                         </Tag>
                         <Typography.Title level={3}>{getScheduleTaskTitle(item)}</Typography.Title>
                       </div>
@@ -187,14 +233,26 @@ export default function ConstructionSchedulesPage() {
         </div>
 
         <aside className="worker-schedule-side">
-          <Card className="construction-schedule-form-panel" title="登记我的状态">
-            <p className="worker-schedule-side-copy">用于补充外出、休息或店内可施工状态。正式请假请走请假申请。</p>
+          <Card className="construction-schedule-form-panel" title={canManageSchedules ? "设置施工人员排班" : "登记我的状态"}>
+            <p className="worker-schedule-side-copy">{canManageSchedules ? "人员来自门店人员管理；未设置排班的人员会直接显示在团队列表中。" : "用于补充外出、休息或店内可施工状态。正式请假请走请假申请。"}</p>
             <Form
               form={form}
               layout="vertical"
               initialValues={{ date, status: "WORKING" }}
               onFinish={(values) => upsertMutation.mutate(values)}
             >
+              {canManageSchedules ? (
+                <Form.Item name="workerId" label="施工人员" rules={[{ required: true, message: "请选择施工人员" }]}>
+                  <Select
+                    loading={workersQuery.isLoading}
+                    placeholder="选择施工人员"
+                    options={((workersQuery.data ?? []) as TeamWorker[]).map((worker) => ({
+                      value: worker.userId,
+                      label: `${worker.user?.nickname ?? worker.user?.username ?? "施工人员"}${worker.position === "APPRENTICE" ? "（学徒）" : ""}`
+                    }))}
+                  />
+                </Form.Item>
+              ) : null}
               <Form.Item name="date" label="日期" rules={[{ required: true, message: "请选择日期" }]}>
                 <DatePicker className="w-full" allowClear={false} />
               </Form.Item>
@@ -205,23 +263,23 @@ export default function ConstructionSchedulesPage() {
                 <Input.TextArea rows={4} placeholder="例如外出地址、休息原因或排班说明" />
               </Form.Item>
               <Button type="primary" htmlType="submit" loading={upsertMutation.isPending} block>
-                保存排班状态
+                {canManageSchedules ? "保存人员排班" : "保存排班状态"}
               </Button>
             </Form>
           </Card>
 
-          <Card title="我的当日记录">
-            {myRows.length === 0 ? (
-              <Empty description="暂无我的排班" />
+          <Card title={canManageSchedules ? "待设置排班" : "我的当日记录"}>
+            {(canManageSchedules ? displayRows.filter((item) => !item.status) : myRows).length === 0 ? (
+              <Empty description={canManageSchedules ? "全部人员已设置排班" : "暂无我的排班"} />
             ) : (
               <div className="operation-queue-list">
-                {myRows.map((item) => (
+                {(canManageSchedules ? displayRows.filter((item) => !item.status) : myRows).map((item) => (
                   <div key={item.id} className="operation-queue-item detail-list-item">
                     <div>
                       <Typography.Text strong>{item.date}</Typography.Text>
                       <div className="management-kpi-desc">{item.note ?? getScheduleStatusFallbackNote(item.status)}</div>
                     </div>
-                    <Tag>{getWorkerScheduleStatusLabel(item.status)}</Tag>
+                    <Tag>{item.status ? getWorkerScheduleStatusLabel(item.status) : "未设置"}</Tag>
                   </div>
                 ))}
               </div>
@@ -233,27 +291,27 @@ export default function ConstructionSchedulesPage() {
   );
 }
 
-function getScheduleStatusClassName(status: ScheduleStatus) {
+function getScheduleStatusClassName(status?: ScheduleStatus) {
   if (status === "WORKING") return "is-working";
   if (status === "OUTSIDE") return "is-outside";
   return "is-rest";
 }
 
-function getScheduleStatusFallbackNote(status: ScheduleStatus) {
+function getScheduleStatusFallbackNote(status?: ScheduleStatus) {
   if (status === "OUTSIDE") return "外出施工，具体地址以派单信息为准";
   if (status === "REST") return "休息或请假中";
   if (status === "WORKING") return "店内排班";
   return "排班说明待确认";
 }
 
-function getScheduleTaskTitle(item: ScheduleSummary) {
+function getScheduleTaskTitle(item: TeamScheduleRow) {
   const note = item.note?.trim();
   if (!note) return getScheduleStatusFallbackNote(item.status);
   const firstPart = splitScheduleNote(note)[0] ?? note;
   return firstPart.replace(/\s*\d{1,2}:\d{2}.*$/, "").trim() || note;
 }
 
-function getScheduleTaskMeta(item: ScheduleSummary, currentWorkerId?: string) {
+function getScheduleTaskMeta(item: TeamScheduleRow, currentWorkerId?: string) {
   const note = item.note?.trim() ?? "";
   const parts = splitScheduleNote(note);
   const time = parts.find((part) => /\d{1,2}:\d{2}/.test(part))?.match(/\d{1,2}:\d{2}/)?.[0]
@@ -272,7 +330,7 @@ function getScheduleTaskMeta(item: ScheduleSummary, currentWorkerId?: string) {
   };
 }
 
-function getScheduleTaskBadge(item: ScheduleSummary, currentWorkerId?: string) {
+function getScheduleTaskBadge(item: TeamScheduleRow, currentWorkerId?: string) {
   if (item.status === "WORKING") return item.workerId === currentWorkerId ? "施工中" : "待协作";
   if (item.status === "OUTSIDE") return "待接单";
   return "休息";

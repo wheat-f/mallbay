@@ -79,6 +79,8 @@ model User {
   afterSalesAssigned             AfterSaleAssignment[]        @relation("AfterSaleAssignedWorker")
   afterSalesAssignedBy           AfterSaleAssignment[]        @relation("AfterSaleAssignedBy")
   afterSalePhotosUploaded        AfterSalePhoto[]             @relation("AfterSalePhotoUploadedBy")
+  afterSaleCostsRecorded         AfterSaleCostEntry[]         @relation("AfterSaleCostRecordedBy")
+  afterSaleCostsReversed         AfterSaleCostEntry[]         @relation("AfterSaleCostReversedBy")
   penalties                      Penalty[]                    @relation("PenaltyWorker")
   penaltiesCreated               Penalty[]                    @relation("PenaltyCreatedBy")
   salesCommissionRules           SalesCommissionRule[]        @relation("SalesCommissionRuleCreatedBy")
@@ -187,6 +189,27 @@ enum ConstructionCostAdjustmentStatus {
   SETTLED
 }
 
+/// Confirmed after-sales costs remain immutable. Corrections are recorded as
+/// a separate reversal row so both operational and financial reports retain
+/// the full history.
+enum AfterSaleCostCategory {
+  MATERIAL
+  CONSTRUCTION_LABOR
+  REFUND_COMPENSATION
+  OUTSOURCE
+  SUPPLIER_RECOVERY
+}
+
+enum AfterSaleCostDirection {
+  EXPENSE
+  RECOVERY
+}
+
+enum AfterSaleCostStatus {
+  CONFIRMED
+  REVERSED
+}
+
 enum SalesQuoteStatus {
   DRAFT
   PENDING_APPROVAL
@@ -267,6 +290,7 @@ model Store {
   suppliers                  Supplier[]
   warranties                 Warranty[]
   afterSales                 AfterSale[]
+  afterSaleCostEntries       AfterSaleCostEntry[]
   salesCommissionRules       SalesCommissionRule[]
   salesCommissionLogs        SalesCommissionLog[]
   workerCommissions          WorkerCommission[]
@@ -1528,6 +1552,8 @@ model ConstructionCostWorkerLine {
   baseCostCents          Int
   commissionCents        Int      @default(0)
   allowanceCents         Int      @default(0)
+  /// 店长可在成本确认时逐人手工分配施工收费；为空时按确认工时比例分配。
+  manualConstructionChargeCents Int?
   varianceReasonCode     String?
   varianceReasonText     String?
   createdAt              DateTime @default(now())
@@ -2041,6 +2067,7 @@ model AfterSale {
   assignments AfterSaleAssignment[]
   photos      AfterSalePhoto[]
   penalties   Penalty[]
+  costEntries AfterSaleCostEntry[]
 
   @@index([storeId, status])
   @@index([orderId])
@@ -2076,6 +2103,35 @@ model AfterSaleAssignment {
 
   @@unique([afterSaleId, workerUserId])
   @@index([workerUserId])
+}
+
+model AfterSaleCostEntry {
+  id              String                  @id @default(cuid())
+  storeId         String
+  afterSaleId     String
+  category        AfterSaleCostCategory
+  direction       AfterSaleCostDirection
+  amountCents     Int
+  reason          String
+  paymentRecordId String?
+  status          AfterSaleCostStatus     @default(CONFIRMED)
+  reversalOfId    String?
+  reversalReason  String?
+  recordedById    String
+  reversedById    String?
+  confirmedAt     DateTime                @default(now())
+  reversedAt      DateTime?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  store      Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  afterSale  AfterSale @relation(fields: [afterSaleId], references: [id], onDelete: Cascade)
+  recordedBy User      @relation("AfterSaleCostRecordedBy", fields: [recordedById], references: [id])
+  reversedBy User?     @relation("AfterSaleCostReversedBy", fields: [reversedById], references: [id])
+
+  @@index([storeId, category, confirmedAt])
+  @@index([afterSaleId, status])
+  @@index([reversalOfId])
 }
 
 model Penalty {

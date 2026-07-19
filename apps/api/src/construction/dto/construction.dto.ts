@@ -350,6 +350,12 @@ export class ConfirmCostWorkerLineDto {
   allowanceCents?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  manualConstructionChargeCents?: number;
+
+  @IsOptional()
   @IsString()
   @MaxLength(50)
   varianceReasonCode?: string;

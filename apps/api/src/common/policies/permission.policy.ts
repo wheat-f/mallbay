@@ -35,11 +35,6 @@ export class PermissionPolicy {
   private static readonly afterSalesManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.SCHEDULER, CUSTOMER_SERVICE];
   private static readonly commissionManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.FINANCE];
   private static readonly financeManagers: StorePosition[] = [StorePosition.MANAGER, StorePosition.FINANCE];
-  private static readonly financeApplicants: StorePosition[] = [
-    StorePosition.MANAGER,
-    StorePosition.FINANCE,
-    StorePosition.PURCHASING
-  ];
   private static readonly invoiceApplicants: StorePosition[] = [StorePosition.MANAGER, StorePosition.SALES, StorePosition.FINANCE];
   private static readonly rebateApplicants: StorePosition[] = [StorePosition.MANAGER, StorePosition.SALES, CUSTOMER_SERVICE];
 
@@ -198,9 +193,8 @@ export class PermissionPolicy {
   }
 
   static canSubmitFinanceApplication(user: UserWithStoreMember, storeId: string) {
-    if (this.isAdmin(user)) return true;
-    return this.isStoreMember(user, storeId) &&
-      this.financeApplicants.includes(user.storeMember!.position);
+    // 费用申请是全员可发起的门店流程：申请人只能查看本人，店长审批，财务付款入账。
+    return this.isAdmin(user) || this.isStoreMember(user, storeId);
   }
 
   static canApplyInvoice(user: UserWithStoreMember, storeId: string) {

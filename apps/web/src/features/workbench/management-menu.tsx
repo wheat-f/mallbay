@@ -65,6 +65,7 @@ export const managementMenuItems: ManagementMenuItem[] = [
   { key: "warranties", label: "质保管理", href: "/warranties", icon: <FileProtectOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "SCHEDULER"] },
   { key: "after-sales", label: "售后管理", href: "/after-sales", icon: <ReconciliationOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "SCHEDULER"] },
   { key: "members", label: "人员管理", href: "/members", icon: <IdcardOutlined />, positions: ["MANAGER"] },
+  { key: "finance-expenses", label: "费用申请", href: "/finance/expenses", icon: <WalletOutlined />, positions: storePositions },
   { key: "finance", label: "财务管理", href: "/finance", icon: <WalletOutlined />, positions: ["MANAGER", "FINANCE", "PURCHASING"] },
   { key: "reports", label: "报表分析", href: "/reports", icon: <DashboardOutlined />, positions: ["MANAGER", "SALES", "FINANCE"] },
   { key: "invoices", label: "发票管理", href: "/invoices", icon: <FileDoneOutlined />, positions: ["MANAGER", "FINANCE"] },
@@ -112,6 +113,7 @@ export function getActiveManagementMenuKey(pathname: string) {
   if (pathname.startsWith("/purchases")) return "purchases";
   if (pathname.startsWith("/warranties")) return "warranties";
   if (pathname.startsWith("/after-sales")) return "after-sales";
+  if (pathname.startsWith("/finance/expenses")) return "finance-expenses";
   if (pathname.startsWith("/finance")) return "finance";
   if (pathname.startsWith("/invoices")) return "invoices";
   if (pathname.startsWith("/rebates")) return "rebates";

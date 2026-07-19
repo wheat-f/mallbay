@@ -75,6 +75,13 @@ type EvidenceFormValues = {
   evidenceNote?: string;
 };
 
+type AfterSaleCostFormValues = {
+  category: "MATERIAL" | "CONSTRUCTION_LABOR" | "REFUND_COMPENSATION" | "OUTSOURCE" | "SUPPLIER_RECOVERY";
+  amountYuan: number;
+  reason: string;
+  paymentRecordId?: string;
+};
+
 
 export default function AfterSaleDetailPage() {
   const { message } = App.useApp();
@@ -84,6 +91,7 @@ export default function AfterSaleDetailPage() {
   const [assignForm] = Form.useForm<AssignFormValues>();
   const [judgeForm] = Form.useForm<JudgeFormValues>();
   const [evidenceForm] = Form.useForm<EvidenceFormValues>();
+  const [costForm] = Form.useForm<AfterSaleCostFormValues>();
   const afterSaleId = params.id;
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
@@ -115,6 +123,8 @@ export default function AfterSaleDetailPage() {
   const hasJudgedResponsibility = Boolean(afterSale && afterSale.responsibility !== "PENDING");
   const userPosition = user?.storeMember?.position;
   const isAfterSalesManager = Boolean(user?.isAuditor || isAfterSalesManagerPosition(userPosition));
+  const isStoreManager = Boolean(user?.isAuditor || userPosition === "MANAGER");
+  const isFinance = Boolean(user?.isAuditor || userPosition === "FINANCE");
   const isAssignedAfterSalesWorker = Boolean(
     user?.id &&
       isAfterSalesWorkerPosition(userPosition) &&
@@ -195,6 +205,34 @@ export default function AfterSaleDetailPage() {
     },
     onSuccess: async () => {
       message.success("售后工单已归档");
+      await invalidateAfterSale();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+  const costMutation = useMutation({
+    mutationFn: (values: AfterSaleCostFormValues) => {
+      if (!afterSale) throw new Error("售后工单未加载");
+      return afterSalesApi.recordCost(afterSale.id, {
+        category: values.category,
+        amountCents: yuanToCents(values.amountYuan),
+        reason: values.reason,
+        paymentRecordId: values.paymentRecordId?.trim() || undefined
+      });
+    },
+    onSuccess: async () => {
+      message.success("售后费用记录已确认；如需更正请使用红冲");
+      costForm.resetFields();
+      await invalidateAfterSale();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+  const reverseCostMutation = useMutation({
+    mutationFn: ({ costId, reason }: { costId: string; reason: string }) => {
+      if (!afterSale) throw new Error("售后工单未加载");
+      return afterSalesApi.reverseCost(afterSale.id, costId, reason);
+    },
+    onSuccess: async () => {
+      message.success("已红冲原记录，并保留可追溯的调整记录");
       await invalidateAfterSale();
     },
     onError: (error: Error) => message.error(error.message)
@@ -394,6 +432,19 @@ export default function AfterSaleDetailPage() {
                 <ExclamationCircleOutlined />
                 <span>{getAfterSalePenaltyRiskNote(afterSale)}</span>
               </div>
+            </Card>
+
+            <Card className="after-sale-detail-card">
+              <AfterSaleCostLedger
+                afterSale={afterSale}
+                form={costForm}
+                isManager={isStoreManager}
+                isFinance={isFinance}
+                submitting={costMutation.isPending}
+                reversing={reverseCostMutation.isPending}
+                onSubmit={(values) => costMutation.mutate(values)}
+                onReverse={(costId, reason) => reverseCostMutation.mutate({ costId, reason })}
+              />
             </Card>
 
             <Card className="after-sale-detail-card">
@@ -781,6 +832,112 @@ function PenaltyRecordList({ afterSale }: { afterSale: AfterSaleSummary }) {
       ))}
     </div>
   );
+}
+
+function AfterSaleCostLedger({
+  afterSale,
+  form,
+  isManager,
+  isFinance,
+  submitting,
+  reversing,
+  onSubmit,
+  onReverse
+}: {
+  afterSale: AfterSaleSummary;
+  form: FormInstance<AfterSaleCostFormValues>;
+  isManager: boolean;
+  isFinance: boolean;
+  submitting: boolean;
+  reversing: boolean;
+  onSubmit: (values: AfterSaleCostFormValues) => void;
+  onReverse: (costId: string, reason: string) => void;
+}) {
+  const categories = [
+    ...(isManager ? [
+      { value: "MATERIAL", label: "材料" },
+      { value: "CONSTRUCTION_LABOR", label: "实际施工人工" },
+      { value: "OUTSOURCE", label: "外包" }
+    ] : []),
+    ...(isFinance ? [
+      { value: "REFUND_COMPENSATION", label: "退款/补偿" },
+      { value: "SUPPLIER_RECOVERY", label: "供应商追偿" }
+    ] : [])
+  ];
+  const entries = afterSale.costEntries ?? [];
+  const canRecord = categories.length > 0;
+  return (
+    <>
+      <div className="after-sale-card-title">
+        <DollarOutlined />
+        <h2>售后费用与追偿</h2>
+      </div>
+      <p className="after-sale-risk-note">店长录入材料、实际施工人工和外包；财务录入退款/补偿、供应商追偿及实际付款关联。确认后不可删除，只能红冲并保留原因。</p>
+      {canRecord ? (
+        <Form form={form} layout="vertical" onFinish={onSubmit}>
+          <Form.Item name="category" label="费用类型" rules={[{ required: true, message: "请选择费用类型" }]}>
+            <Select options={categories} placeholder="请选择您有权限录入的费用类型" />
+          </Form.Item>
+          <Form.Item name="amountYuan" label="金额（元）" rules={[{ required: true, message: "请填写金额" }]}>
+            <InputNumber min={0} precision={2} prefix="¥" style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="reason" label="录入原因" rules={[{ required: true, message: "请说明费用或追偿原因" }]}>
+            <Input.TextArea rows={2} maxLength={500} placeholder="例如：更换产品材料、客户退款、供应商质量追偿" />
+          </Form.Item>
+          {isFinance ? (
+            <Form.Item name="paymentRecordId" label="实际付款记录（可选）">
+              <Input placeholder="填写已登记的实际付款记录编号，用于财务对账" />
+            </Form.Item>
+          ) : null}
+          <Button type="primary" htmlType="submit" loading={submitting}>确认记录</Button>
+        </Form>
+      ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="仅店长或财务可以录入售后费用" />}
+      <div className="after-sale-penalty-records">
+        <span>费用台账</span>
+        {entries.length === 0 ? <div className="after-sale-penalty-empty">暂无已确认费用或追偿记录</div> : entries.map((entry) => (
+          <div key={entry.id} className="after-sale-penalty-record">
+            <strong>{getAfterSaleCostCategoryLabel(entry.category)} · {entry.direction === "RECOVERY" ? "追偿" : "费用"}</strong>
+            <span>{entry.status === "REVERSED" ? "已红冲" : "已确认"} / {formatPenaltyAmount(entry.amountCents)} / {entry.reason || "未填写原因"}</span>
+            {entry.status === "CONFIRMED" && canReverseAfterSaleCost(entry.category, isManager, isFinance) && entry.id ? (
+              <Button
+                danger
+                size="small"
+                loading={reversing}
+                onClick={() => {
+                  let reason = "";
+                  Modal.confirm({
+                    title: "红冲售后费用记录",
+                    content: <Input.TextArea autoFocus rows={3} placeholder="必须填写红冲或调整原因" onChange={(event) => { reason = event.target.value; }} />,
+                    okText: "确认红冲",
+                    okButtonProps: { danger: true },
+                    onOk: () => {
+                      if (!reason.trim()) return Promise.reject(new Error("请填写红冲或调整原因"));
+                      onReverse(entry.id!, reason.trim());
+                    }
+                  });
+                }}
+              >红冲</Button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function getAfterSaleCostCategoryLabel(category?: string) {
+  const labels: Record<string, string> = {
+    MATERIAL: "材料",
+    CONSTRUCTION_LABOR: "实际施工人工",
+    REFUND_COMPENSATION: "退款/补偿",
+    OUTSOURCE: "外包",
+    SUPPLIER_RECOVERY: "供应商追偿"
+  };
+  return labels[category ?? ""] ?? "费用";
+}
+
+function canReverseAfterSaleCost(category: string | undefined, isManager: boolean, isFinance: boolean) {
+  return (category === "REFUND_COMPENSATION" || category === "SUPPLIER_RECOVERY") ? isFinance : isManager;
 }
 
 function getResponsibilityIcon(responsibility: AfterSaleResponsibility) {

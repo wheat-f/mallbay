@@ -164,7 +164,9 @@ test("PermissionPolicy scopes finance invoice rebate and report operations", () 
   assert.equal(PermissionPolicy.canManageFinance(sales, "store-1"), false);
   assert.equal(PermissionPolicy.canSubmitFinanceApplication(purchasing, "store-1"), true);
   assert.equal(PermissionPolicy.canSubmitFinanceApplication(finance, "store-1"), true);
-  assert.equal(PermissionPolicy.canSubmitFinanceApplication(sales, "store-1"), false);
+  assert.equal(PermissionPolicy.canSubmitFinanceApplication(sales, "store-1"), true);
+  assert.equal(PermissionPolicy.canSubmitFinanceApplication(worker, "store-1"), true);
+  assert.equal(PermissionPolicy.canSubmitFinanceApplication(worker, "store-2"), false);
 
   assert.equal(PermissionPolicy.canApplyInvoice(sales, "store-1"), true);
   assert.equal(PermissionPolicy.canApplyInvoiceForOrder(sales, "store-1", "sales-1"), true);

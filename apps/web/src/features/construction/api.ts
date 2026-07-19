@@ -150,13 +150,13 @@ export type ConstructionCostSettlement = {
   actualGrossMarginBps?: number | null;
   order?: { id: string; orderNo: string; vehicle?: { carPlate?: string | null; carModel?: string | null } | null };
   // Individual rates, commissions and allowances are returned only to finance/admin.
-  workerLines: Array<{ workerUserId: string; standardMinutes: number; declaredMinutes?: number | null; confirmedMinutes: number; hourlyCostCentsSnapshot?: number; baseCostCents?: number; commissionCents?: number; allowanceCents?: number; worker?: { realName?: string | null; username?: string | null } }>;
+  workerLines: Array<{ workerUserId: string; standardMinutes: number; declaredMinutes?: number | null; confirmedMinutes: number; hourlyCostCentsSnapshot?: number; baseCostCents?: number; commissionCents?: number; allowanceCents?: number; manualConstructionChargeCents?: number | null; worker?: { realName?: string | null; username?: string | null } }>;
   adjustments: Array<{ id: string; adjustmentType: string; amountCents: number; reasonCode: string; reasonText?: string | null; status: "PENDING" | "APPROVED" | "REJECTED" | "SETTLED" }>;
   exceptions: Array<{ id: string; exceptionType: string; expectedCents: number; actualCents: number; varianceCents: number; status: string }>;
 };
 
 export type ConfirmCostSettlementPayload = {
-  workerLines: Array<{ workerUserId: string; confirmedMinutes: number; commissionCents?: number; allowanceCents?: number; varianceReasonCode?: string; varianceReasonText?: string }>;
+  workerLines: Array<{ workerUserId: string; confirmedMinutes: number; commissionCents?: number; allowanceCents?: number; manualConstructionChargeCents?: number; varianceReasonCode?: string; varianceReasonText?: string }>;
 };
 
 export type WorkCostDeclaration = {

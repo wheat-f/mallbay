@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { AfterSalePhotoStage, AfterSaleStatus, Prisma, StorePosition } from "@prisma/client";
+import { AfterSaleCostCategory, AfterSaleCostDirection, AfterSaleCostStatus, AfterSalePhotoStage, AfterSaleStatus, Prisma, StorePosition } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import type { MulterFile } from "../users/multer-file.type";
 import { OssService } from "../users/oss.service";
-import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, SubmitAfterSaleEvidenceDto, UploadAfterSalePhotoDto } from "./dto/after-sales.dto";
+import { AssignAfterSaleDto, CreateAfterSaleCostDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, ReverseAfterSaleCostDto, SubmitAfterSaleEvidenceDto, UploadAfterSalePhotoDto } from "./dto/after-sales.dto";
 
 export type AuthenticatedAfterSalesUser = UserWithStoreMember & {
   username?: string;
@@ -310,6 +310,80 @@ export class AfterSalesService {
     return closed;
   }
 
+  /**
+   * Store managers maintain operational after-sales costs; finance maintains
+   * cash-impacting refunds and supplier recovery.  A confirmed ledger row is
+   * immutable and can only be corrected through `reverseCost`.
+   */
+  async addCost(user: AuthenticatedAfterSalesUser, afterSaleId: string, dto: CreateAfterSaleCostDto) {
+    const actor = await this.withStoreMember(user);
+    const afterSale = await this.prisma.afterSale.findUnique({ where: { id: afterSaleId } });
+    if (!afterSale) throw new NotFoundException("售后单不存在");
+    this.assertCanRecordAfterSaleCost(actor, afterSale.storeId, dto.category);
+    if (!dto.reason.trim()) throw new BadRequestException("请填写成本或追偿原因");
+    if (dto.paymentRecordId) {
+      const payment = await this.prisma.paymentRecord.findFirst({ where: { id: dto.paymentRecordId, storeId: afterSale.storeId }, select: { id: true } });
+      if (!payment) throw new BadRequestException("关联的实际付款记录不存在或不属于当前门店");
+    }
+    const entry = await this.prisma.afterSaleCostEntry.create({
+      data: {
+        storeId: afterSale.storeId,
+        afterSaleId,
+        category: dto.category,
+        direction: dto.category === AfterSaleCostCategory.SUPPLIER_RECOVERY ? AfterSaleCostDirection.RECOVERY : AfterSaleCostDirection.EXPENSE,
+        amountCents: dto.amountCents,
+        reason: dto.reason.trim(),
+        paymentRecordId: dto.paymentRecordId,
+        recordedById: actor.id
+      }
+    });
+    await this.recordAuditEvent({
+      action: "AFTER_SALE_COST_RECORDED",
+      actorId: actor.id,
+      storeId: afterSale.storeId,
+      targetId: afterSaleId,
+      metadata: { entryId: entry.id, category: entry.category, direction: entry.direction, amountCents: entry.amountCents, reason: entry.reason }
+    });
+    return entry;
+  }
+
+  async reverseCost(user: AuthenticatedAfterSalesUser, afterSaleId: string, costId: string, dto: ReverseAfterSaleCostDto) {
+    const actor = await this.withStoreMember(user);
+    const entry = await this.prisma.afterSaleCostEntry.findFirst({ where: { id: costId, afterSaleId } });
+    if (!entry) throw new NotFoundException("售后成本记录不存在");
+    this.assertCanRecordAfterSaleCost(actor, entry.storeId, entry.category);
+    if (entry.status !== AfterSaleCostStatus.CONFIRMED) throw new BadRequestException("该售后成本已红冲，不能重复操作");
+    if (!dto.reason.trim()) throw new BadRequestException("请填写红冲或调整原因");
+    const now = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.afterSaleCostEntry.updateMany({
+        where: { id: entry.id, status: AfterSaleCostStatus.CONFIRMED },
+        data: { status: AfterSaleCostStatus.REVERSED, reversedAt: now, reversedById: actor.id, reversalReason: dto.reason.trim() }
+      });
+      if (updated.count !== 1) throw new BadRequestException("该售后成本已被其他操作处理，请刷新后重试");
+      return tx.afterSaleCostEntry.create({
+        data: {
+          storeId: entry.storeId,
+          afterSaleId,
+          category: entry.category,
+          direction: entry.direction === AfterSaleCostDirection.EXPENSE ? AfterSaleCostDirection.RECOVERY : AfterSaleCostDirection.EXPENSE,
+          amountCents: entry.amountCents,
+          reason: `红冲：${dto.reason.trim()}`,
+          reversalOfId: entry.id,
+          recordedById: actor.id
+        }
+      });
+    });
+    await this.recordAuditEvent({
+      action: "AFTER_SALE_COST_REVERSED",
+      actorId: actor.id,
+      storeId: entry.storeId,
+      targetId: afterSaleId,
+      metadata: { entryId: entry.id, reversalEntryId: result.id, reason: dto.reason.trim() }
+    });
+    return result;
+  }
+
   private async recordAuditEvent(event: {
     action: string;
     actorId: string;
@@ -337,6 +411,23 @@ export class AfterSalesService {
       select: { storeId: true, position: true }
     });
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
+  }
+
+  private assertCanRecordAfterSaleCost(actor: UserWithStoreMember, storeId: string, category: AfterSaleCostCategory) {
+    const financeCategory = category === AfterSaleCostCategory.REFUND_COMPENSATION || category === AfterSaleCostCategory.SUPPLIER_RECOVERY;
+    if (financeCategory) {
+      if (!this.isFinanceOrAdmin(actor, storeId)) throw new ForbiddenException("退款/补偿和供应商追偿仅财务可录入或红冲");
+      return;
+    }
+    if (!this.isStoreManagerOrAdmin(actor, storeId)) throw new ForbiddenException("材料、施工人工和外包费用仅店长可录入或红冲");
+  }
+
+  private isFinanceOrAdmin(actor: UserWithStoreMember, storeId: string) {
+    return Boolean(actor.isAuditor || (actor.storeMember?.storeId === storeId && actor.storeMember.position === "FINANCE"));
+  }
+
+  private isStoreManagerOrAdmin(actor: UserWithStoreMember, storeId: string) {
+    return Boolean(actor.isAuditor || (actor.storeMember?.storeId === storeId && actor.storeMember.position === "MANAGER"));
   }
 
   private async createPhotoEvidence(
@@ -477,6 +568,24 @@ const afterSaleSummarySelect = {
       createdAt: true,
       worker: { select: userDisplaySelect },
       createdBy: { select: userDisplaySelect }
+    },
+    orderBy: { createdAt: "desc" }
+  },
+  costEntries: {
+    select: {
+      id: true,
+      category: true,
+      direction: true,
+      amountCents: true,
+      reason: true,
+      paymentRecordId: true,
+      status: true,
+      reversalOfId: true,
+      reversalReason: true,
+      confirmedAt: true,
+      reversedAt: true,
+      recordedBy: { select: userDisplaySelect },
+      reversedBy: { select: userDisplaySelect }
     },
     orderBy: { createdAt: "desc" }
   },

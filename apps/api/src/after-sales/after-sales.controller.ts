@@ -5,7 +5,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { MulterFile } from "../users/multer-file.type";
 import { AfterSalesService, type AuthenticatedAfterSalesUser } from "./after-sales.service";
-import { AssignAfterSaleDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, SubmitAfterSaleEvidenceDto, UploadAfterSalePhotoDto } from "./dto/after-sales.dto";
+import { AssignAfterSaleDto, CreateAfterSaleCostDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, ReverseAfterSaleCostDto, SubmitAfterSaleEvidenceDto, UploadAfterSalePhotoDto } from "./dto/after-sales.dto";
 
 type AuthRequest = Request & {
   user: AuthenticatedAfterSalesUser;
@@ -68,5 +68,20 @@ export class AfterSalesController {
   @Post(":id/close")
   close(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.afterSales.close(req.user, id);
+  }
+
+  @Post(":id/costs")
+  addCost(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: CreateAfterSaleCostDto) {
+    return this.afterSales.addCost(req.user, id, dto);
+  }
+
+  @Post(":id/costs/:costId/reverse")
+  reverseCost(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Param("costId") costId: string,
+    @Body() dto: ReverseAfterSaleCostDto
+  ) {
+    return this.afterSales.reverseCost(req.user, id, costId, dto);
   }
 }

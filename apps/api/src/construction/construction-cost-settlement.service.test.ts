@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
-import { ConstructionCostSettlementService, assertConfirmLines, assertVarianceReasons, buildCostException, isAbnormal, isMaterialReceiptCostAdjustment, summarizeActualMaterialCost } from "./construction-cost-settlement.service";
+import { ConstructionCostSettlementService, assertConfirmLines, assertManualConstructionChargeAllocation, assertVarianceReasons, buildCostException, isAbnormal, isMaterialReceiptCostAdjustment, summarizeActualMaterialCost } from "./construction-cost-settlement.service";
 import { InventoryMovementType } from "@prisma/client";
 
 test("成本异常由申报偏差或预计材料成本缺失触发，不能进入批量确认", () => {
@@ -21,6 +21,12 @@ test("确认工时偏离标准时必须选择系统偏差原因", () => {
   assert.throws(() => assertVarianceReasons(existing, [{ workerUserId: "w1", confirmedMinutes: 100 }]), BadRequestException);
   assert.doesNotThrow(() => assertVarianceReasons(existing, [{ workerUserId: "w1", confirmedMinutes: 100, varianceReasonCode: "VEHICLE_CONDITION" }]));
   assert.doesNotThrow(() => assertVarianceReasons(existing, [{ workerUserId: "w1", confirmedMinutes: 120 }]));
+});
+
+test("店长手工分摊施工收费必须覆盖全员且合计与订单施工收费一致", () => {
+  assert.doesNotThrow(() => assertManualConstructionChargeAllocation([{ manualConstructionChargeCents: 10000 }, { manualConstructionChargeCents: 8000 }], 18000));
+  assert.throws(() => assertManualConstructionChargeAllocation([{ manualConstructionChargeCents: 18000 }, {}], 18000), BadRequestException);
+  assert.throws(() => assertManualConstructionChargeAllocation([{ manualConstructionChargeCents: 9000 }, { manualConstructionChargeCents: 8000 }], 18000), BadRequestException);
 });
 
 test("实际毛利低于底线或实际总成本超过预计时形成成本异常", () => {

@@ -35,7 +35,7 @@ test("management menu maps manager role to full prototype sidebar", () => {
   assert.equal(membersItem?.href, "/members");
   assert.deepEqual(
     labels,
-    ["工作台", "客户管理", "销售订单", "建议价设置", "施工收费标准", "报价审批", "产品管理", "施工管理", "施工成本确认", "库存管理", "采购管理", "质保管理", "售后管理", "人员管理", "财务管理", "报表分析", "发票管理", "返利管理", "系统设置"]
+    ["工作台", "客户管理", "销售订单", "建议价设置", "施工收费标准", "报价审批", "产品管理", "施工管理", "施工成本确认", "库存管理", "采购管理", "质保管理", "售后管理", "人员管理", "费用申请", "财务管理", "报表分析", "发票管理", "返利管理", "系统设置"]
   );
 });
 
@@ -52,7 +52,7 @@ test("management menu keeps customer service inventory and purchase read-only en
 test("management menu scopes sales users to sales workflow", () => {
   const labels = getManagementMenuItems({ position: "SALES", storeId: "store-1" }).map((item) => item.label);
 
-  assert.deepEqual(labels, ["工作台", "客户管理", "销售订单", "报价审批", "报表分析"]);
+  assert.deepEqual(labels, ["工作台", "客户管理", "销售订单", "报价审批", "费用申请", "报表分析"]);
 });
 
 test("management menu routes finance to role cost, product material cost and purchase review", () => {
@@ -68,7 +68,7 @@ test("management menu exposes desktop worker self-service entries for constructi
   const items = getManagementMenuItems({ position: "CONSTRUCTION", storeId: "store-1" });
   const labels = items.map((item) => item.label);
 
-  assert.deepEqual(labels, ["工作台", "我的施工任务", "我的排班", "请假申请", "施工物料", "施工档案", "售后任务"]);
+  assert.deepEqual(labels, ["工作台", "我的施工任务", "我的排班", "请假申请", "施工物料", "施工档案", "售后任务", "费用申请"]);
   assert.equal(items.find((item) => item.label === "我的施工任务")?.href, "/construction/tasks");
   assert.equal(items.find((item) => item.label === "我的排班")?.href, "/construction/schedules");
   assert.equal(items.find((item) => item.label === "请假申请")?.href, "/construction/leaves");
@@ -106,6 +106,7 @@ test("active management menu key follows route groups", () => {
   assert.equal(getActiveManagementMenuKey("/inventory/movements"), "inventory");
   assert.equal(getActiveManagementMenuKey("/purchases/orders/po-1"), "purchases");
   assert.equal(getActiveManagementMenuKey("/commissions"), "finance");
+  assert.equal(getActiveManagementMenuKey("/finance/expenses"), "finance-expenses");
   assert.equal(getActiveManagementMenuKey("/commissions/settlements"), "finance");
   assert.equal(getActiveManagementMenuKey("/members"), "members");
   assert.equal(getActiveManagementMenuKey("/settings"), "settings");

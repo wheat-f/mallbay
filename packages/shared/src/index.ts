@@ -363,6 +363,31 @@ export type AfterSaleSummary = {
       avatarUrl?: string | null;
     } | null;
   }>;
+  costEntries?: Array<{
+    id?: string;
+    category?: "MATERIAL" | "CONSTRUCTION_LABOR" | "REFUND_COMPENSATION" | "OUTSOURCE" | "SUPPLIER_RECOVERY";
+    direction?: "EXPENSE" | "RECOVERY";
+    amountCents?: number | null;
+    reason?: string | null;
+    paymentRecordId?: string | null;
+    status?: "CONFIRMED" | "REVERSED";
+    reversalOfId?: string | null;
+    reversalReason?: string | null;
+    confirmedAt?: string | Date | null;
+    reversedAt?: string | Date | null;
+    recordedBy?: {
+      id?: string;
+      username?: string | null;
+      nickname?: string | null;
+      avatarUrl?: string | null;
+    } | null;
+    reversedBy?: {
+      id?: string;
+      username?: string | null;
+      nickname?: string | null;
+      avatarUrl?: string | null;
+    } | null;
+  }>;
   closedAt?: string | Date | null;
   createdAt?: string | Date | null;
   updatedAt?: string | Date | null;
@@ -540,6 +565,93 @@ export type ReportSummary = {
     rejected: number;
     amountCents: number;
   }>;
+};
+
+/** Real people and order-level data used by the operational report centre. */
+export type OperationalReportFilters = {
+  storeId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  dateBasis?: "DEFAULT" | "ORDER" | "APPOINTMENT" | "CONSTRUCTION_COMPLETED" | "SETTLEMENT";
+  salesPersonId?: string;
+  workerUserId?: string;
+  constructionType?: string;
+  productCategory?: string;
+  orderStatus?: string;
+};
+
+export type OperationalReport = {
+  dateBasis: NonNullable<OperationalReportFilters["dateBasis"]>;
+  salesPeople: Array<{
+    userId: string;
+    name: string;
+    orders: number;
+    amountCents: number;
+    receivedCents: number;
+    costCents: number;
+    grossProfitCents: number;
+    accruedCommissionCents: number;
+    confirmedCommissionCents: number;
+    settledCommissionCents: number;
+    costSourceActualOrders: number;
+    costSourceStandardOrders: number;
+    costSourceMissingOrders: number;
+  }>;
+  constructionWorkers: Array<{
+    userId: string;
+    name: string;
+    orders: number;
+    orderAmountCents: number;
+    constructionChargeCents: number;
+    allocatedConstructionChargeCents: number;
+    confirmedMinutes: number;
+    accruedCommissionCents: number;
+    confirmedCommissionCents: number;
+    settledCommissionCents: number;
+    allocationStatus: "已按确认工时分摊" | "店长手工分摊" | "待确认工时";
+  }>;
+  financeOrders: Array<{
+    orderId: string;
+    orderNo: string;
+    salesPersonName: string;
+    constructionType: string;
+    status: string;
+    amountCents: number;
+    receivedCents: number;
+    materialCostCents: number;
+    constructionCostCents: number;
+    totalCostCents: number | null;
+    grossProfitCents: number | null;
+    costSource: "实际" | "标准" | "待补齐";
+  }>;
+  projectStats: Array<{
+    dimension: "施工类型" | "产品分类";
+    name: string;
+    orders: number;
+    amountCents: number;
+    constructionChargeCents: number;
+  }>;
+  afterSaleWorkers: Array<{
+    userId: string;
+    name: string;
+    afterSales: number;
+    constructionOrders: number;
+    afterSaleRateBps: number;
+    materialCostCents: number;
+    laborCostCents: number;
+    refundCompensationCents: number;
+    outsourceCostCents: number;
+    supplierRecoveryCents: number;
+  }>;
+  afterSaleBreakdown: Array<{ category: string; afterSales: number; proportionBps: number }>;
+};
+
+export type OperationalReportFilterOptions = {
+  salesPeople: Array<{ id: string; name: string; position: StorePosition }>;
+  constructionPeople: Array<{ id: string; name: string; position: StorePosition }>;
+  constructionTypes: string[];
+  productCategories: string[];
+  orderStatuses: string[];
 };
 
 export type AuthUser = {

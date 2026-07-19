@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
-import { AfterSalePhotoStage, AfterSaleResponsibility } from "@prisma/client";
+import { AfterSaleCostCategory, AfterSalePhotoStage, AfterSaleResponsibility } from "@prisma/client";
 
 export class AfterSalePhotoInputDto {
   @IsString()
@@ -130,4 +130,27 @@ export class SubmitAfterSaleEvidenceDto {
   @IsString()
   @MaxLength(1000)
   evidenceNote?: string;
+}
+
+export class CreateAfterSaleCostDto {
+  @IsEnum(AfterSaleCostCategory)
+  category!: AfterSaleCostCategory;
+
+  @IsInt()
+  @Min(0)
+  amountCents!: number;
+
+  @IsString()
+  @MaxLength(500)
+  reason!: string;
+
+  @IsOptional()
+  @IsString()
+  paymentRecordId?: string;
+}
+
+export class ReverseAfterSaleCostDto {
+  @IsString()
+  @MaxLength(500)
+  reason!: string;
 }

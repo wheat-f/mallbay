@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AfterSaleResponsibility, AfterSaleStatus, StorePosition } from "@prisma/client";
+import { AfterSaleCostCategory, AfterSaleCostDirection, AfterSaleCostStatus, AfterSaleResponsibility, AfterSaleStatus, StorePosition } from "@prisma/client";
 import { AfterSalesService } from "./after-sales.service";
 
 test("AfterSalesService creates after-sale linked to order warranty customer and issue photo evidence", async () => {
@@ -372,4 +372,54 @@ test("AfterSalesService uploads after-sale evidence through object storage and p
   assert.equal(serialized.includes("https://cdn.example/after.jpg"), true);
   assert.match(serialized, /返工后复查/);
   assert.match(serialized, /AFTER_SALE_PHOTO_UPLOADED/);
+});
+
+test("售后费用按角色录入，确认后只能以红冲方式更正", async () => {
+  const writes: unknown[] = [];
+  const entry = {
+    id: "cost-1",
+    storeId: "store-1",
+    afterSaleId: "after-sale-1",
+    category: AfterSaleCostCategory.MATERIAL,
+    direction: AfterSaleCostDirection.EXPENSE,
+    amountCents: 12345,
+    status: AfterSaleCostStatus.CONFIRMED
+  };
+  const prisma = {
+    afterSale: { findUnique: async () => ({ id: "after-sale-1", storeId: "store-1" }) },
+    paymentRecord: { findFirst: async () => ({ id: "payment-1" }) },
+    afterSaleCostEntry: {
+      create: async (args: unknown) => { writes.push(args); return entry; },
+      findFirst: async () => entry,
+      updateMany: async (args: unknown) => { writes.push(args); return { count: 1 }; }
+    },
+    $transaction: async (callback: (tx: unknown) => unknown) => callback({
+      afterSaleCostEntry: {
+        updateMany: async (args: unknown) => { writes.push(args); return { count: 1 }; },
+        create: async (args: unknown) => { writes.push(args); return { id: "cost-reversal-1" }; }
+      }
+    }),
+    auditEvent: { create: async (args: unknown) => writes.push(args) }
+  };
+  const service = new AfterSalesService(prisma as never);
+  const manager = { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } };
+  const finance = { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } };
+
+  await service.addCost(manager, "after-sale-1", { category: AfterSaleCostCategory.MATERIAL, amountCents: 12345, reason: "更换材料" });
+  await assert.rejects(
+    () => service.addCost(manager, "after-sale-1", { category: AfterSaleCostCategory.REFUND_COMPENSATION, amountCents: 100, reason: "客户退款" }),
+    /仅财务/
+  );
+  await assert.rejects(
+    () => service.addCost({ id: "scheduler-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER } }, "after-sale-1", { category: AfterSaleCostCategory.MATERIAL, amountCents: 100, reason: "更换材料" }),
+    /仅店长/
+  );
+  await service.addCost(finance, "after-sale-1", { category: AfterSaleCostCategory.REFUND_COMPENSATION, amountCents: 100, reason: "客户退款" });
+  await service.reverseCost(manager, "after-sale-1", "cost-1", { reason: "材料金额录入错误" });
+
+  const serialized = JSON.stringify(writes);
+  assert.match(serialized, /AFTER_SALE_COST_RECORDED/);
+  assert.match(serialized, /AFTER_SALE_COST_REVERSED/);
+  assert.match(serialized, /REVERSED/);
+  assert.match(serialized, /RECOVERY/);
 });

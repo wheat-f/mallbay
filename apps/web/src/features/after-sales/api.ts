@@ -28,6 +28,13 @@ export type SubmitAfterSaleEvidencePayload = {
   evidenceNote?: string;
 };
 
+export type CreateAfterSaleCostPayload = {
+  category: "MATERIAL" | "CONSTRUCTION_LABOR" | "REFUND_COMPENSATION" | "OUTSOURCE" | "SUPPLIER_RECOVERY";
+  amountCents: number;
+  reason: string;
+  paymentRecordId?: string;
+};
+
 export const afterSalesApi = {
   list: (storeId: string) =>
     request<AfterSaleSummary[]>(`/after-sales${toQueryString({ storeId })}`),
@@ -64,6 +71,18 @@ export const afterSalesApi = {
     request<AfterSaleSummary>(`/after-sales/${id}/evidence`, {
       method: "POST",
       body: JSON.stringify(payload)
+    }),
+
+  recordCost: (id: string, payload: CreateAfterSaleCostPayload) =>
+    request<AfterSaleSummary>(`/after-sales/${id}/costs`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  reverseCost: (id: string, costId: string, reversalReason: string) =>
+    request<AfterSaleSummary>(`/after-sales/${id}/costs/${costId}/reverse`, {
+      method: "POST",
+      body: JSON.stringify({ reason: reversalReason })
     }),
 
   close: (id: string) =>

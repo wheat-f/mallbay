@@ -150,6 +150,10 @@ export class ConstructionCostSettlementService {
     if (abnormal && !options.allowAbnormal) throw new BadRequestException("异常成本必须逐单进入详情确认");
     assertConfirmLines(settlement.workerLines, dto.workerLines);
     assertVarianceReasons(settlement.workerLines, dto.workerLines);
+    assertManualConstructionChargeAllocation(
+      dto.workerLines,
+      settlement.order.amount?.constructionChargeCents ?? settlement.order.amount?.laborCostCents ?? 0
+    );
     const actualMaterial = await this.calculateActualMaterialCost(settlement.orderId);
     if (actualMaterial.hasMissingCost) throw new BadRequestException("订单存在尚未补录实际入库价的出库批次，请采购员补录后再确认成本");
     const actualMaterialCostCents = actualMaterial.totalCents;
@@ -220,6 +224,7 @@ export class ConstructionCostSettlementService {
             baseCostCents: line.baseCostCents,
             commissionCents: line.commissionCents ?? 0,
             allowanceCents: line.allowanceCents ?? 0,
+            manualConstructionChargeCents: line.manualConstructionChargeCents,
             varianceReasonCode: line.varianceReasonCode,
             varianceReasonText: line.varianceReasonText
           }
@@ -248,7 +253,8 @@ export class ConstructionCostSettlementService {
         workerUserId: line.workerUserId,
         confirmedMinutes: line.standardMinutes,
         commissionCents: line.commissionCents,
-        allowanceCents: line.allowanceCents
+        allowanceCents: line.allowanceCents,
+        ...(line.manualConstructionChargeCents != null ? { manualConstructionChargeCents: line.manualConstructionChargeCents } : {})
       }))
     })));
   }
@@ -477,6 +483,18 @@ export function assertVarianceReasons(existing: Array<{ workerUserId: string; st
   const standardMinutesByWorker = new Map(existing.map((line) => [line.workerUserId, line.standardMinutes]));
   const missingReason = proposed.some((line) => line.confirmedMinutes !== standardMinutesByWorker.get(line.workerUserId) && !line.varianceReasonCode?.trim());
   if (missingReason) throw new BadRequestException("确认工时与标准工时不一致时，必须选择偏差原因");
+}
+
+/** 手工施工金额必须对所有已派工人员同时填写，并与本单对客施工收费完全一致。 */
+export function assertManualConstructionChargeAllocation(
+  proposed: Array<{ manualConstructionChargeCents?: number }>,
+  constructionChargeCents: number
+) {
+  const entered = proposed.filter((line) => line.manualConstructionChargeCents != null);
+  if (entered.length === 0) return;
+  if (entered.length !== proposed.length) throw new BadRequestException("手工分摊施工金额时必须填写每位施工人员的金额");
+  const allocated = entered.reduce((sum, line) => sum + (line.manualConstructionChargeCents ?? 0), 0);
+  if (allocated !== constructionChargeCents) throw new BadRequestException("手工分摊施工金额合计必须等于本单施工收费");
 }
 
 export function summarizeActualMaterialCost(movements: Array<{

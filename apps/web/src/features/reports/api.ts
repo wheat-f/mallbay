@@ -1,9 +1,13 @@
-import type { ReportSummary } from "@mallbay/shared";
+import type { OperationalReport, OperationalReportFilterOptions, OperationalReportFilters, ReportSummary } from "@mallbay/shared";
 import { request } from "../../lib/request";
 
 export const reportsApi = {
   summary: (storeId?: string) =>
-    request<ReportSummary>(`/reports/summary${toQueryString({ storeId })}`)
+    request<ReportSummary>(`/reports/summary${toQueryString({ storeId })}`),
+  operational: (query: OperationalReportFilters) =>
+    request<OperationalReport>(`/reports/operational${toQueryString(query)}`),
+  filterOptions: (storeId?: string) =>
+    request<OperationalReportFilterOptions>(`/reports/filter-options${toQueryString({ storeId })}`)
 };
 
 function toQueryString(query: Record<string, string | number | undefined>) {

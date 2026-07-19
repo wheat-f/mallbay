@@ -22,6 +22,14 @@ test("施工成本工作台分别提供店长确认与财务审批结算操作",
   assert.match(api, /settleCostSettlement/);
 });
 
+test("店长可在确认成本时按人员手工分配施工收费，并保留按确认工时的默认规则", () => {
+  const page = readFileSync("app/construction/cost-settlements/page.tsx", "utf8");
+  assert.match(page, /店长手工分配施工金额/);
+  assert.match(page, /manualConstructionChargeCents/);
+  assert.match(page, /默认按确认工时比例分摊/);
+  assert.match(page, /合计必须等于本单施工收费/);
+});
+
 test("店长导出施工成本时不展示个人薪酬明细", () => {
   const page = readFileSync("app/construction/cost-settlements/page.tsx", "utf8");
   assert.match(page, /const canViewDetailedLaborCosts = canSettle/);

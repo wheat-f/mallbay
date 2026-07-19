@@ -278,6 +278,7 @@ test("ConstructionService lists construction store members even before profiles 
       canWorkOutside: true,
       skillTags: ["PPF"],
       isActive: true,
+      position: StorePosition.CONSTRUCTION,
       user: { username: "worker1", nickname: "熟练师傅" }
     },
     {
@@ -286,6 +287,7 @@ test("ConstructionService lists construction store members even before profiles 
       canWorkOutside: false,
       skillTags: [],
       isActive: true,
+      position: StorePosition.APPRENTICE,
       user: { username: "worker2", nickname: "新学徒" }
     }
   ]);

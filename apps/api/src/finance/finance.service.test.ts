@@ -78,22 +78,23 @@ test("FinanceService approves reimbursement without creating payment record", as
   assert.equal(JSON.stringify(writes).includes(PaymentRecordType.REIMBURSEMENT), false);
 });
 
-test("FinanceService rejects sales submitting expenses directly", async () => {
+test("FinanceService allows sales to submit expense applications", async () => {
+  const writes: unknown[] = [];
   const prisma = {
     storeMember: { findUnique: async () => null },
     expenseApplication: {
-      create: async () => {
-        throw new Error("sales should not create expenses");
+      create: async (args: unknown) => {
+        writes.push(args);
+        return { id: "expense-1" };
       }
     }
   };
   const service = new FinanceService(prisma as never);
 
-  await assert.rejects(
-    () => service.createExpense(
-      { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
-      { storeId: "store-1", title: "销售费用", amountCents: 1000, reason: "不应允许" }
-    ),
-    /无权限/
+  await service.createExpense(
+    { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
+    { storeId: "store-1", title: "销售费用", amountCents: 1000, reason: "允许发起" }
   );
+
+  assert.equal(writes.length, 1);
 });

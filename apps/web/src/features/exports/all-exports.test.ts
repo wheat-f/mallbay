@@ -8,7 +8,7 @@ const exportPages = [
   ["app/warranties/[id]/page.tsx", "downloadWarrantyCard"],
   ["app/finance/payment-records/[id]/page.tsx", "exportPaymentVoucher"],
   ["app/invoices/page.tsx", "exportInvoiceReport"],
-  ["app/reports/page.tsx", "exportReportData"],
+  ["app/reports/page.tsx", "exportCurrentView"],
   ["app/inventory/movements/page.tsx", "exportMovementReport"],
   ["app/construction/capacities/page.tsx", "exportCapacityReport"],
   ["app/commissions/page.tsx", "exportCommissionReport"],
@@ -38,14 +38,12 @@ test("the shared Excel exporter applies the unified mallbay workbook template", 
   assert.match(source, /workbook\.xlsx\.writeBuffer/);
 });
 
-test("report and warranty exports include multiple business worksheets", () => {
+test("report exports the selected business view and warranty exports include multiple worksheets", () => {
   const reportsSource = readFileSync("app/reports/page.tsx", "utf8");
   const warrantySource = readFileSync("app/warranties/[id]/page.tsx", "utf8");
 
-  assert.match(reportsSource, /sheetName: "核心指标"/);
-  assert.match(reportsSource, /sheetName: "销售趋势"/);
-  assert.match(reportsSource, /sheetName: "库存趋势"/);
-  assert.match(reportsSource, /sheetName: "财务趋势"/);
+  assert.match(reportsSource, /exportWorkbookToExcel\("经营分析报表\.xlsx"/);
+  assert.match(reportsSource, /sheetName: currentView/);
   assert.match(warrantySource, /sheetName: "电子质保卡"/);
   assert.match(warrantySource, /sheetName: "质保日志"/);
 });

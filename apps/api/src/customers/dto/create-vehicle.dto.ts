@@ -1,11 +1,11 @@
-import { IsIn, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsIn, IsOptional, IsString, MaxLength, ValidateIf } from "class-validator";
 import { VEHICLE_TYPE_CODES } from "../../settings/dictionaries.service";
 
 export class CreateVehicleDto {
   @IsString()
   customerId!: string;
 
-  @IsOptional()
+  @ValidateIf((dto: CreateVehicleDto) => !dto.vin)
   @IsString()
   @MaxLength(20)
   carPlate?: string;
@@ -31,4 +31,13 @@ export class CreateVehicleDto {
   @IsOptional()
   @IsString()
   photoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  defaultContactId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  department?: string;
 }

@@ -7,7 +7,7 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, OrderStatus, Prisma, ProductStatus, ProductUnit } from "@prisma/client";
+import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, CustomerContactRole, CustomerVehicleStatus, OrderStatus, Prisma, ProductStatus, ProductUnit } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../../common/policies/permission.policy";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PricingService } from "../../pricing/pricing.service";
@@ -101,7 +101,14 @@ export class CreateOrderUseCase {
           dto.constructionType
         )
         : null;
-      const customer = await tx.customer.findUnique({ where: { id: dto.customerId } });
+      const customer = await tx.customer.findUnique({
+        where: { id: dto.customerId },
+        include: {
+          users: {
+            orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }]
+          }
+        }
+      });
       if (!customer || customer.storeId !== dto.storeId) {
         throw new NotFoundException("客户不存在");
       }
@@ -109,12 +116,20 @@ export class CreateOrderUseCase {
         throw new ForbiddenException("无权限");
       }
 
-      if (dto.vehicleId) {
-        const vehicle = await tx.customerVehicle.findUnique({ where: { id: dto.vehicleId } });
-        if (!vehicle || vehicle.customerId !== dto.customerId) {
-          throw new BadRequestException("车辆不属于该客户");
-        }
+      if (!dto.vehicleId?.trim()) {
+        throw new BadRequestException("正式订单必须选择车辆");
       }
+      const vehicle = await tx.customerVehicle.findUnique({
+        where: { id: dto.vehicleId },
+        include: { defaultContact: true }
+      });
+      if (!vehicle || vehicle.customerId !== dto.customerId || vehicle.storeId !== dto.storeId) {
+        throw new BadRequestException("车辆不属于该客户或当前门店");
+      }
+      if (vehicle.status !== CustomerVehicleStatus.ACTIVE) {
+        throw new BadRequestException("该车辆已停用，不能创建正式订单");
+      }
+      const contactSnapshot = resolveOrderContactSnapshot(customer, vehicle.defaultContact, dto.contactId);
 
       const productIds = [...new Set(dto.items.map((item) => item.productId))];
       const products = await tx.product.findMany({
@@ -173,7 +188,7 @@ export class CreateOrderUseCase {
           storeId: dto.storeId,
           orderNo: this.orderNumber.next(),
           customerId: dto.customerId,
-          vehicleId: dto.vehicleId,
+          vehicleId: vehicle.id,
           salesPersonId,
           constructionType: dto.constructionType,
           constructionLocation: dto.constructionLocation,
@@ -181,7 +196,8 @@ export class CreateOrderUseCase {
           appointmentDate: dto.appointmentDate ? new Date(dto.appointmentDate) : undefined,
           appointmentTimeSlot,
           status: OrderStatus.PENDING_DISPATCH,
-          remark: dto.remark
+          remark: dto.remark,
+          contactSnapshot: { create: contactSnapshot }
         }
       });
 
@@ -377,6 +393,63 @@ function normalizeCapacityDate(value: string) {
 function normalizeOptionalText(value: string | null | undefined) {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
+}
+
+type OrderContactSource = {
+  id: string;
+  customerId: string;
+  name: string;
+  phoneEncrypted: string | null;
+  phoneHash: string | null;
+  role: CustomerContactRole;
+  department: string | null;
+  isDefault: boolean;
+};
+
+type OrderCustomerWithContacts = {
+  name?: string | null;
+  companyName?: string | null;
+  contactPerson?: string | null;
+  phoneEncrypted?: string;
+  phoneHash?: string;
+  users?: OrderContactSource[];
+};
+
+function resolveOrderContactSnapshot(
+  customer: OrderCustomerWithContacts,
+  vehicleDefaultContact: OrderContactSource | null | undefined,
+  requestedContactId?: string
+) {
+  const contacts = customer.users ?? [];
+  let source: OrderContactSource | undefined;
+  if (requestedContactId) {
+    source = contacts.find((contact) => contact.id === requestedContactId);
+    if (!source) throw new BadRequestException("订单联系人不属于该客户");
+  } else if (vehicleDefaultContact) {
+    source = contacts.find((contact) => contact.id === vehicleDefaultContact.id);
+    if (!source) throw new BadRequestException("车辆默认联系人不属于该客户");
+  } else {
+    source = contacts.find((contact) => contact.isDefault)
+      ?? contacts.find((contact) => contact.role === CustomerContactRole.PRIMARY)
+      ?? contacts[0];
+  }
+
+  if (source) {
+    return {
+      sourceContactId: source.id,
+      contactName: source.name,
+      contactPhoneEncrypted: source.phoneEncrypted,
+      contactPhoneHash: source.phoneHash,
+      role: source.role,
+      department: source.department
+    };
+  }
+
+  return {
+    contactName: customer.contactPerson ?? customer.name ?? customer.companyName ?? "客户",
+    contactPhoneEncrypted: customer.phoneEncrypted,
+    contactPhoneHash: customer.phoneHash
+  };
 }
 
 function resolveConstructionChargeCents(dto: CreateOrderDto) {

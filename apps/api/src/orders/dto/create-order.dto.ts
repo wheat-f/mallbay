@@ -56,9 +56,12 @@ export class CreateOrderDto {
   @IsString()
   customerId!: string;
 
+  @IsString()
+  vehicleId!: string;
+
   @IsOptional()
   @IsString()
-  vehicleId?: string;
+  contactId?: string;
 
   @IsEnum(ConstructionType)
   constructionType!: ConstructionType;

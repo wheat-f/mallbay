@@ -12,4 +12,8 @@ export class CustomerPolicy {
   static canEdit(user: UserWithStoreMember, storeId: string, ownerUserId: string) {
     return PermissionPolicy.canEditCustomer(user, storeId, ownerUserId);
   }
+
+  static canManageVehicleLifecycle(user: UserWithStoreMember, storeId: string) {
+    return PermissionPolicy.isStoreManager(user, storeId);
+  }
 }

@@ -44,7 +44,20 @@ export function getInvoiceBusinessLabel(invoice: InvoiceLabelInput) {
     .join(" / ") || "发票信息待确认";
 }
 
-export function getInvoiceOrderLabel(invoice: { order?: BusinessOrderSummary | null; orderId?: string | null }) {
+export function getInvoiceOrderLabel(invoice: {
+  order?: BusinessOrderSummary | null;
+  orderId?: string | null;
+  allocations?: Array<{ order?: BusinessOrderSummary | null }>;
+}) {
+  const allocatedOrders = invoice.allocations
+    ?.map((allocation) => allocation.order)
+    .filter((order): order is BusinessOrderSummary => Boolean(order));
+  if (allocatedOrders?.length) {
+    return allocatedOrders.map((order) => [
+      order.orderNo,
+      getBusinessVehicleLabel(order.vehicle)
+    ].filter(Boolean).join(" / ")).join("；");
+  }
   const order = invoice.order;
   if (!order) return "关联订单待确认";
   return [order.orderNo, getBusinessCustomerLabel(order.customer), getBusinessVehicleLabel(order.vehicle)]

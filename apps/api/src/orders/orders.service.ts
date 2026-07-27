@@ -3,12 +3,16 @@ import { createHash } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import {
   ConstructionTaskStatus,
+  ConstructionLocation,
+  ConstructionType,
+  CustomerVehicleStatus,
   OrderAmendmentStatus,
   OrderStatus,
   PaymentDirection,
   PaymentRecordType,
   Prisma,
   ProductStatus,
+  ProductUnit,
   StorePosition
 } from "@prisma/client";
 import { normalizePagination } from "../common/pagination";
@@ -21,6 +25,7 @@ import { multiplyMoneyCents } from "../pricing/domain/money";
 import { AuditLogService, type AuditEvent } from "../observability/audit-log.service";
 import { OrderPolicy } from "./domain/order-policy";
 import { CreateOrderDto } from "./dto/create-order.dto";
+import { CopyOrderToDraftDto } from "./dto/copy-order.dto";
 import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
 import { CreatePaymentAccountDto } from "./dto/create-payment-account.dto";
 import { ExportOrderDetailsDto, ListOrdersDto } from "./dto/list-orders.dto";
@@ -186,8 +191,21 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
-        customer: { select: { id: true, name: true, companyName: true, contactPerson: true } },
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            companyName: true,
+            contactPerson: true,
+            vehicles: {
+              where: { status: CustomerVehicleStatus.ACTIVE },
+              orderBy: { createdAt: "desc" },
+              select: { id: true, carPlate: true, carModel: true, carColor: true, vehicleTypeCode: true, status: true }
+            }
+          }
+        },
         vehicle: { select: { id: true, carPlate: true, carModel: true, carColor: true } },
+        contactSnapshot: true,
         salesPerson: { select: { id: true, username: true, nickname: true } },
         items: { include: { product: true, inventoryAllocations: true } },
         amount: true,
@@ -208,6 +226,114 @@ export class OrdersService {
         pricingMode: getOrderPricingMode(order.amount)
       } : null
     };
+  }
+
+  async copyToDraft(user: AuthenticatedOrderUser, id: string, dto: CopyOrderToDraftDto) {
+    const actor = await this.withStoreMember(user);
+    const source = await this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        amount: true,
+        items: { include: { product: true } }
+      }
+    });
+    if (!source?.amount) throw new NotFoundException("订单不存在");
+    this.assertCanViewOrder(actor, source.storeId, source.salesPersonId);
+    if (!OrderPolicy.canCreate(actor, source.storeId)) {
+      throw new ForbiddenException("无权限复制订单");
+    }
+
+    const vehicle = await this.prisma.customerVehicle.findUnique({ where: { id: dto.vehicleId } });
+    if (!vehicle || vehicle.storeId !== source.storeId || vehicle.customerId !== source.customerId) {
+      throw new BadRequestException("所选车辆不属于原订单客户");
+    }
+    if (vehicle.status !== CustomerVehicleStatus.ACTIVE) {
+      throw new BadRequestException("停用车辆不能用于新订单");
+    }
+
+    const appointmentTimeSlot = dto.appointmentTimeSlot?.trim() || undefined;
+    if (dto.appointmentDate && !appointmentTimeSlot) throw new BadRequestException("预约时段不能为空");
+    if (!dto.appointmentDate && appointmentTimeSlot) throw new BadRequestException("预约日期不能为空");
+    if (source.constructionLocation === ConstructionLocation.OUTSIDE && !source.constructionAddress?.trim()) {
+      throw new BadRequestException("原订单缺少外出地址，请先完善后再复制");
+    }
+
+    if (dto.appointmentDate) {
+      await this.assertCopyCapacityAvailable(
+        source.storeId,
+        dto.appointmentDate,
+        source.constructionLocation,
+        source.constructionType
+      );
+    }
+
+    for (const item of source.items) {
+      if (item.product.storeId !== source.storeId || item.product.status !== ProductStatus.ACTIVE) {
+        throw new BadRequestException(`产品“${item.product.name}”已停用或不属于当前门店，不能复制`);
+      }
+      const quantity = toNullableNumber(item.quantity);
+      if (countDecimalPlaces(quantity) > item.product.quantityPrecision) {
+        throw new BadRequestException(`产品“${item.product.name}”数量精度已不符合当前产品档案`);
+      }
+      assertCopySalesUnitAvailable(item.product, item.salesUnit ?? undefined);
+    }
+
+    const constructionChargeCents = source.amount.constructionChargeCents ?? source.amount.laborCostCents;
+    return {
+      idempotencyKey: dto.idempotencyKey.trim(),
+      source: { orderId: source.id, orderNo: source.orderNo },
+      values: {
+        customerId: source.customerId,
+        vehicleId: vehicle.id,
+        salesPersonId: source.salesPersonId,
+        vehicleTypeCode: vehicle.vehicleTypeCode ?? undefined,
+        constructionType: source.constructionType,
+        constructionLocation: source.constructionLocation,
+        constructionAddress: source.constructionAddress ?? undefined,
+        appointmentDate: dto.appointmentDate,
+        appointmentTimeSlot,
+        items: source.items.map((item) => ({
+          productId: item.productId,
+          quantity: toNullableNumber(item.quantity),
+          salesUnit: item.salesUnit ?? item.product.salesUnit,
+          unitPriceYuan: item.unitPriceCents / 100
+        })),
+        constructionChargeYuan: constructionChargeCents / 100,
+        constructionChargeMode: "MANUAL",
+        remark: source.remark ?? undefined
+      },
+      validation: {
+        pricingRecalculationRequired: true,
+        capacityChecked: Boolean(dto.appointmentDate),
+        copiedFields: ["客户", "销售员", "施工要求", "商品", "成交价", "备注"],
+        excludedFields: ["原车辆", "库存锁定/出库", "施工记录", "收款", "发票", "质保", "售后"]
+      }
+    };
+  }
+
+  private async assertCopyCapacityAvailable(
+    storeId: string,
+    appointmentDate: string,
+    location: ConstructionLocation,
+    type: ConstructionType
+  ) {
+    const datePart = appointmentDate.includes("T") ? appointmentDate.slice(0, 10) : appointmentDate;
+    const capacity = await this.prisma.dailyCapacity.findUnique({
+      where: { storeId_date: { storeId, date: new Date(`${datePart}T00:00:00.000Z`) } }
+    });
+    if (!capacity) throw new BadRequestException("请先设置施工容量");
+    if (location === ConstructionLocation.IN_STORE && capacity.inStoreReserved >= capacity.inStoreCapacity) {
+      throw new BadRequestException("店内施工容量已满");
+    }
+    if (location === ConstructionLocation.OUTSIDE && capacity.outsideReserved >= capacity.outsideCapacity) {
+      throw new BadRequestException("外出施工容量已满");
+    }
+    if (type === ConstructionType.HEAT_FILM && capacity.heatFilmReserved >= capacity.heatFilmCapacity) {
+      throw new BadRequestException("隔热膜施工容量已满");
+    }
+    if (type === ConstructionType.INSPECTION && capacity.inspectionReserved >= capacity.inspectionCapacity) {
+      throw new BadRequestException("检查施工容量已满");
+    }
   }
 
   async addPayment(user: AuthenticatedOrderUser, orderId: string, dto: CreateOrderPaymentDto) {
@@ -989,6 +1115,29 @@ function toNullableNumber(value: unknown) {
     return Number(value.toString());
   }
   return 0;
+}
+
+function countDecimalPlaces(value: number) {
+  if (!Number.isFinite(value)) return Number.POSITIVE_INFINITY;
+  const text = String(value).toLowerCase();
+  const [coefficient, exponentText] = text.split("e");
+  const decimalLength = coefficient.includes(".") ? coefficient.length - coefficient.indexOf(".") - 1 : 0;
+  const exponent = exponentText ? Number(exponentText) : 0;
+  return Math.max(0, decimalLength - exponent);
+}
+
+function assertCopySalesUnitAvailable(
+  product: { unit: ProductUnit; salesUnit: ProductUnit; metersPerRoll: unknown },
+  requestedUnit?: ProductUnit
+) {
+  const defaultUnit = product.salesUnit ?? product.unit ?? ProductUnit.PIECE;
+  if (!requestedUnit || requestedUnit === defaultUnit) return;
+  const rollMeterSwitch = [defaultUnit, requestedUnit].every(
+    (unit) => unit === ProductUnit.ROLL || unit === ProductUnit.METER
+  );
+  if (!rollMeterSwitch || toNullableNumber(product.metersPerRoll) <= 0) {
+    throw new BadRequestException("复制订单中的销售单位已不符合当前产品换算配置");
+  }
 }
 
 function toOrderItemAuditSummary(item: {

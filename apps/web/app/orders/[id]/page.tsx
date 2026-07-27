@@ -1,11 +1,12 @@
 "use client";
 
-import { Alert, App, Button, Card, Checkbox, Drawer, Form, Input, InputNumber, Select, Skeleton, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Checkbox, DatePicker, Drawer, Form, Input, InputNumber, Select, Skeleton, Tag, TimePicker, Typography } from "antd";
 import {
   ArrowLeftOutlined,
   CarOutlined,
   CheckCircleOutlined,
   CreditCardOutlined,
+  CopyOutlined,
   CustomerServiceOutlined,
   EditOutlined,
   FileTextOutlined,
@@ -21,6 +22,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import dayjs, { type Dayjs } from "dayjs";
 import { orderApi, productApi } from "../../../src/lib/api";
 import type { OrderAuditEvent } from "../../../src/features/orders/api";
 import { centsToYuan, getOrderProductLabel, yuanToCents } from "../../../src/features/orders/create-order-form";
@@ -36,6 +38,7 @@ import { getAuditActorLabel } from "../../../src/features/audit/display";
 import { getProductUnitLabel } from "../../../src/features/products/display";
 import { OrderPaymentDrawer } from "../../../src/features/orders/order-payment-drawer";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { saveCreateOrderDraft } from "../../../src/features/orders/create-order-draft";
 
 type OrderDetail = {
   id: string;
@@ -46,15 +49,35 @@ type OrderDetail = {
   status: string;
   constructionType: string;
   constructionLocation: string;
+  constructionAddress?: string | null;
   appointmentDate?: string | null;
   appointmentTimeSlot?: string | null;
   remark?: string | null;
-  customer?: { name?: string | null; companyName?: string | null; contactPerson?: string | null };
-  vehicle?: { carPlate?: string | null; carModel?: string | null; carColor?: string | null };
+  customer?: {
+    id: string;
+    name?: string | null;
+    companyName?: string | null;
+    contactPerson?: string | null;
+    vehicles?: Array<{
+      id: string;
+      carPlate?: string | null;
+      carModel?: string | null;
+      carColor?: string | null;
+      vehicleTypeCode?: string | null;
+      status: "ACTIVE" | "INACTIVE";
+    }>;
+  };
+  contactSnapshot?: {
+    contactName: string;
+    role?: "PRIMARY" | "DRIVER" | "FINANCE" | "OTHER" | null;
+    department?: string | null;
+  } | null;
+  vehicle?: { id: string; carPlate?: string | null; carModel?: string | null; carColor?: string | null };
   items?: {
     id: string;
     productId: string;
     quantity: number;
+    salesUnit?: string | null;
     unitPriceCents: number;
     amountCents: number;
     product?: { name: string; brand: string; model: string };
@@ -117,6 +140,11 @@ type CommercialsFormValues = {
 
 type AmendmentFormValues = { reason: string };
 type AmendmentReviewFormValues = { action: "APPROVE" | "REJECT"; reviewNote: string };
+type CopyOrderFormValues = {
+  vehicleId: string;
+  appointmentDate?: Dayjs;
+  appointmentTimeSlot?: [Dayjs | null, Dayjs | null];
+};
 
 type FulfillmentChecklist = {
   customerConfirmed: boolean;
@@ -148,11 +176,13 @@ export default function OrderDetailPage() {
   const [amendmentReviewOpen, setAmendmentReviewOpen] = useState(false);
   const [paymentDrawerOpen, setPaymentDrawerOpen] = useState(false);
   const [fulfillmentDrawerOpen, setFulfillmentDrawerOpen] = useState(false);
+  const [copyDrawerOpen, setCopyDrawerOpen] = useState(false);
   const [fulfillmentChecklist, setFulfillmentChecklist] = useState<FulfillmentChecklist>(emptyFulfillmentChecklist);
   const [fulfillmentNote, setFulfillmentNote] = useState("");
   const [commercialsForm] = Form.useForm<CommercialsFormValues>();
   const [amendmentForm] = Form.useForm<AmendmentFormValues>();
   const [amendmentReviewForm] = Form.useForm<AmendmentReviewFormValues>();
+  const [copyOrderForm] = Form.useForm<CopyOrderFormValues>();
   const commercialItems = Form.useWatch("items", commercialsForm);
   const orderQuery = useQuery({
     queryKey: ["order-detail", params.id],
@@ -241,6 +271,47 @@ export default function OrderDetailPage() {
       (user.storeMember?.position === "SALES" && user.id === order.salesPersonId)
     )
   );
+  const canCopyOrder = Boolean(
+    order && user && (
+      user.isAuditor ||
+      user.storeMember?.position === "MANAGER" ||
+      user.storeMember?.position === "CUSTOMER_SERVICE" ||
+      (user.storeMember?.position === "SALES" && user.id === order.salesPersonId)
+    )
+  );
+  const copyOrderMutation = useMutation({
+    mutationFn: (values: CopyOrderFormValues) => orderApi.copyToDraft(params.id, {
+      vehicleId: values.vehicleId,
+      appointmentDate: values.appointmentDate?.format("YYYY-MM-DD"),
+      appointmentTimeSlot: values.appointmentTimeSlot?.every(Boolean)
+        ? `${values.appointmentTimeSlot[0]!.format("HH:mm")}-${values.appointmentTimeSlot[1]!.format("HH:mm")}`
+        : undefined,
+      idempotencyKey: crypto.randomUUID()
+    }),
+    onSuccess: (draft) => {
+      if (!order) return;
+      saveCreateOrderDraft(localStorage, {
+        storeId: order.storeId,
+        savedAt: new Date().toISOString(),
+        values: draft.values,
+        copySource: {
+          orderId: draft.source.orderId,
+          orderNo: draft.source.orderNo,
+          copiedFields: draft.validation.copiedFields,
+          excludedFields: draft.validation.excludedFields
+        },
+        summary: {
+          customerName: getCustomerName(order),
+          productCount: draft.values.items.length,
+          totalAmountYuan: draft.values.items.reduce((sum, item) => sum + item.quantity * item.unitPriceYuan, 0)
+            + (draft.values.constructionChargeYuan ?? 0)
+        }
+      });
+      message.success("已生成新订单草稿，请按当前规则核对建议价后提交");
+      router.push("/orders/create?draft=local&source=copy");
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
   const amendmentReviewMutation = useMutation({
     mutationFn: (values: AmendmentReviewFormValues) =>
       orderApi.reviewAmendmentRequest(params.id, pendingAmendment!.id, values),
@@ -346,6 +417,7 @@ export default function OrderDetailPage() {
                   <p>
                     {[
                       getCustomerName(order),
+                      `销售员 ${getSalesPersonName(order)}`,
                       getVehicleLabel(order),
                       order?.appointmentDate ? `预约 ${formatDateOnly(order.appointmentDate)}` : undefined
                     ].filter(Boolean).join(" / ") || "客户、车辆和预约信息待完善"}
@@ -353,6 +425,14 @@ export default function OrderDetailPage() {
                 </div>
               </div>
               <div className="order-detail-actions">
+                {canCopyOrder ? (
+                  <Button icon={<CopyOutlined />} onClick={() => {
+                    copyOrderForm.setFieldsValue({ vehicleId: undefined });
+                    setCopyDrawerOpen(true);
+                  }}>
+                    复制为新订单
+                  </Button>
+                ) : null}
                 {canEditCommercials ? (
                   <Button icon={<EditOutlined />} onClick={openCommercialsDrawer}>
                     修改订单
@@ -407,10 +487,12 @@ export default function OrderDetailPage() {
 
             <section className="order-detail-bento">
               <div className="order-bento-column">
-                <Card className="order-detail-card order-customer-card" title={<><UserOutlined />客户信息</>}>
+                <Card className="order-detail-card order-customer-card" title={<><UserOutlined />客户与销售信息</>}>
                   <div className="order-info-grid">
                     <span>客户</span><strong>{getCustomerName(order)}</strong>
                     <span>销售员</span><strong>{getSalesPersonName(order)}</strong>
+                    <span>订单联系人</span><strong>{getOrderContactLabel(order)}</strong>
+                    <span>联系人部门</span><strong>{order?.contactSnapshot?.department ?? "-"}</strong>
                     <span>车辆</span><strong>{getVehicleLabel(order)}</strong>
                     <span>施工类型</span><strong>{getConstructionTypeLabel(order?.constructionType)}</strong>
                     <span>施工地点</span><strong>{getConstructionLocationLabel(order?.constructionLocation)}</strong>
@@ -613,6 +695,47 @@ export default function OrderDetailPage() {
           await queryClient.invalidateQueries({ queryKey: ["order-audit-events", params.id] });
         }}
       />
+      <Drawer
+        title="复制为新订单"
+        width={520}
+        open={copyDrawerOpen}
+        onClose={() => !copyOrderMutation.isPending && setCopyDrawerOpen(false)}
+        destroyOnClose
+        extra={(
+          <Button type="primary" loading={copyOrderMutation.isPending} onClick={() => copyOrderForm.submit()}>
+            生成新草稿
+          </Button>
+        )}
+      >
+        <Alert
+          showIcon
+          type="info"
+          message="一车一订单，必须重新选择车辆"
+          description="仅复制客户、销售员、施工要求、商品、成交价和备注；库存、施工、收款、发票、质保及售后记录不会复制。新草稿将按当前规则重新试算建议价。"
+          className="mb-4"
+        />
+        <Form form={copyOrderForm} layout="vertical" onFinish={(values) => copyOrderMutation.mutate(values)}>
+          <Form.Item name="vehicleId" label="新订单车辆" rules={[{ required: true, message: "请选择车辆" }]}>
+            <Select
+              placeholder="选择该客户名下的启用车辆"
+              options={(order?.customer?.vehicles ?? []).map((vehicle) => ({
+                value: vehicle.id,
+                label: [vehicle.carPlate, vehicle.carModel, vehicle.carColor].filter(Boolean).join(" / ") || "未命名车辆"
+              }))}
+            />
+          </Form.Item>
+          {(order?.customer?.vehicles?.length ?? 0) === 0 ? (
+            <Alert type="warning" showIcon message="该客户没有启用车辆，请先在客户管理中维护车辆" className="mb-4" />
+          ) : null}
+          <Form.Item label="新预约日期" name="appointmentDate">
+            <DatePicker className="w-full" disabledDate={(date) => date.isBefore(dayjs().startOf("day"))} />
+          </Form.Item>
+          <Form.Item label="新预约时段" name="appointmentTimeSlot">
+            <TimePicker.RangePicker className="w-full" format="HH:mm" minuteStep={30} />
+          </Form.Item>
+          <Typography.Text type="secondary">预约日期和时段可暂不填写；填写后服务端会重新检查施工容量。</Typography.Text>
+        </Form>
+      </Drawer>
 
       <Drawer
         title="申请结算后金额修改"
@@ -1020,6 +1143,19 @@ function getCustomerName(order?: OrderDetail) {
 
 function getSalesPersonName(order?: OrderDetail) {
   return order?.salesPerson?.nickname ?? order?.salesPerson?.username ?? "销售员待确认";
+}
+
+function getOrderContactLabel(order?: OrderDetail) {
+  const snapshot = order?.contactSnapshot;
+  if (!snapshot) return "联系人快照待补齐";
+  const roleLabels: Record<NonNullable<NonNullable<OrderDetail["contactSnapshot"]>["role"]>, string> = {
+    PRIMARY: "主要联系人",
+    DRIVER: "司机/车辆联系人",
+    FINANCE: "财务联系人",
+    OTHER: "其他联系人"
+  };
+  const roleLabel = snapshot.role ? roleLabels[snapshot.role] : undefined;
+  return [snapshot.contactName, roleLabel].filter(Boolean).join(" / ");
 }
 
 function getVehicleLabel(order?: OrderDetail) {

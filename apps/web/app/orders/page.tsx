@@ -63,6 +63,7 @@ const QUICK_STATUS_OPTIONS: Array<{ label: string; value?: OrderStatus; tone: st
   { label: "已派工", value: "DISPATCHED", tone: "processing" },
   { label: "施工中", value: "IN_CONSTRUCTION", tone: "processing" },
   { label: "已完工", value: "COMPLETED", tone: "success" },
+  { label: "已质保", value: "WARRANTIED", tone: "success" },
   { label: "已取消", value: "CANCELLED", tone: "default" }
 ];
 

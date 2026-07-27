@@ -1,7 +1,7 @@
 "use client";
 
 import type { InvoiceStatus, InvoiceSummary } from "@mallbay/shared";
-import { Button, Card, Empty, Input, Modal, Skeleton, Tag } from "antd";
+import { App, Button, Card, Empty, Form, Input, Modal, Skeleton, Tag } from "antd";
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
@@ -15,7 +15,7 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoicesApi } from "../../../src/lib/api";
 import { formatCentsAsYuan } from "../../../src/features/finance/display";
 import {
@@ -32,12 +32,24 @@ type InvoiceTimelineItem = {
   description: string;
 };
 
+type InvoiceAction = "ISSUE" | "REISSUE" | "VOID";
+
+type InvoiceActionFormValues = {
+  invoiceNo?: string;
+  fileUrl?: string;
+  note?: string;
+};
+
 export default function InvoiceDetailPage() {
   const params = useParams<{ id: string }>();
   const invoiceId = params.id;
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [activeAction, setActiveAction] = useState<InvoiceAction>();
+  const [actionForm] = Form.useForm<InvoiceActionFormValues>();
 
   const invoicesQuery = useQuery({
     queryKey: ["invoices", storeId],
@@ -51,6 +63,64 @@ export default function InvoiceDetailPage() {
   );
   const fileDisplay = getInvoiceFileDisplay(invoice?.fileUrl);
   const timeline = getInvoiceDetailTimeline(invoice);
+  const refreshInvoices = () => queryClient.invalidateQueries({ queryKey: ["invoices", storeId] });
+  const closeActionModal = () => {
+    setActiveAction(undefined);
+    actionForm.resetFields();
+  };
+  const issueInvoice = useMutation({
+    mutationFn: (values: InvoiceActionFormValues) =>
+      invoicesApi.issue(invoiceId, { invoiceNo: values.invoiceNo!, fileUrl: values.fileUrl, note: values.note }),
+    onSuccess: async () => {
+      message.success("发票已开票");
+      closeActionModal();
+      await refreshInvoices();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+  const reissueInvoice = useMutation({
+    mutationFn: (values: InvoiceActionFormValues) =>
+      invoicesApi.reissue(invoiceId, { invoiceNo: values.invoiceNo!, fileUrl: values.fileUrl, note: values.note }),
+    onSuccess: async () => {
+      message.success("重新开票已完成");
+      closeActionModal();
+      await refreshInvoices();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+  const voidInvoice = useMutation({
+    mutationFn: (values: InvoiceActionFormValues) => invoicesApi.void(invoiceId, values.note),
+    onSuccess: async () => {
+      message.success(invoice?.status === "APPLIED" ? "开票申请已取消" : "发票已作废");
+      closeActionModal();
+      await refreshInvoices();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+  const isSubmittingAction = issueInvoice.isPending || reissueInvoice.isPending || voidInvoice.isPending;
+  const canIssue = invoice?.status === "APPLIED";
+  const canReissue = invoice?.status === "VOIDED";
+  const canVoid = invoice?.status === "APPLIED" || invoice?.status === "ISSUED" || invoice?.status === "REISSUED";
+  const actionTitle = activeAction === "ISSUE" ? "开具发票" : activeAction === "REISSUE" ? "重新开具发票" : "取消/作废发票";
+  const actionSubmitText = activeAction === "VOID" ? (invoice?.status === "APPLIED" ? "确认取消申请" : "确认作废") : "确认提交";
+
+  const openInvoiceAction = (action: InvoiceAction) => {
+    if (!invoice) return;
+    actionForm.resetFields();
+    if (action === "REISSUE") {
+      actionForm.setFieldsValue({ invoiceNo: invoice.invoiceNo ?? undefined });
+    }
+    setActiveAction(action);
+  };
+
+  const submitInvoiceAction = async () => {
+    if (!activeAction) return;
+    const fields = activeAction === "VOID" ? ["note"] : ["invoiceNo", "fileUrl", "note"];
+    const values = await actionForm.validateFields(fields);
+    if (activeAction === "ISSUE") issueInvoice.mutate(values);
+    if (activeAction === "REISSUE") reissueInvoice.mutate(values);
+    if (activeAction === "VOID") voidInvoice.mutate(values);
+  };
 
   return (
     <div className="management-page invoice-detail-page">
@@ -74,10 +144,21 @@ export default function InvoiceDetailPage() {
           <Button icon={<HistoryOutlined />} onClick={() => setIsLogModalOpen(true)}>
             查看操作日志
           </Button>
-          <Button icon={<ReloadOutlined />}>重新开具</Button>
-          <Button danger icon={<CloseCircleOutlined />}>
-            废弃/取消发票
-          </Button>
+          {canIssue ? (
+            <Button icon={<ReloadOutlined />} onClick={() => openInvoiceAction("ISSUE")}>
+              开具发票
+            </Button>
+          ) : null}
+          {canReissue ? (
+            <Button icon={<ReloadOutlined />} onClick={() => openInvoiceAction("REISSUE")}>
+              重新开具
+            </Button>
+          ) : null}
+          {canVoid ? (
+            <Button danger icon={<CloseCircleOutlined />} onClick={() => openInvoiceAction("VOID")}>
+              {invoice?.status === "APPLIED" ? "取消申请" : "废弃/取消发票"}
+            </Button>
+          ) : null}
         </div>
       </section>
 
@@ -120,14 +201,27 @@ export default function InvoiceDetailPage() {
                 <LinkOutlined />
                 <span>关联订单</span>
               </div>
-              <div className="invoice-detail-order-card">
-                <div>
-                  <span>订单信息</span>
-                  <strong>{getInvoiceOrderLabel(invoice)}</strong>
-                </div>
-                <Link href={`/orders/${invoice.orderId}`}>查看订单详情</Link>
-              </div>
-            </Card>
+              <div className="invoice-detail-order-card invoice-allocation-list">
+                <strong>本张发票按订单分摊</strong>
+                {(invoice.allocations?.length
+                  ? invoice.allocations
+                  : [{ orderId: invoice.orderId, amountCents: invoice.amountCents, order: invoice.order }]
+                ).map((allocation) => {
+                  const allocationInvoice = { ...invoice, orderId: allocation.orderId, order: allocation.order };
+                  return (
+                    <div key={allocation.orderId} className="invoice-allocation-row">
+                      <div>
+                        <span>订单信息</span>
+                        <strong>{getInvoiceOrderLabel(allocationInvoice)}</strong>
+                      </div>
+                      <div className="invoice-allocation-row-actions">
+                        <strong>{formatCentsAsYuan(allocation.amountCents)}</strong>
+                        <Link href={"/orders/" + allocation.orderId}>查看订单</Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>            </Card>
 
             <Card className="invoice-detail-section invoice-detail-line-items">
               <div className="invoice-detail-section-title">
@@ -141,17 +235,24 @@ export default function InvoiceDetailPage() {
                 <span>单价</span>
                 <span>小计</span>
               </div>
-              <div className="invoice-detail-line-row">
-                <div>
-                  <strong>漆面保护膜施工服务</strong>
-                  <p>{getInvoiceOrderLabel(invoice)}</p>
-                </div>
-                <span>订单开票</span>
-                <span>1</span>
-                <span>{formatCentsAsYuan(invoice.amountCents)}</span>
-                <strong>{formatCentsAsYuan(invoice.amountCents)}</strong>
-              </div>
-              <div className="invoice-detail-line-total">
+              {(invoice.allocations?.length
+                ? invoice.allocations
+                : [{ orderId: invoice.orderId, amountCents: invoice.amountCents, order: invoice.order }]
+              ).map((allocation) => {
+                const allocationInvoice = { ...invoice, orderId: allocation.orderId, order: allocation.order };
+                return (
+                  <div key={"line-" + allocation.orderId} className="invoice-detail-line-row">
+                    <div>
+                      <strong>订单施工服务</strong>
+                      <p>{getInvoiceOrderLabel(allocationInvoice)}</p>
+                    </div>
+                    <span>订单开票</span>
+                    <span>1</span>
+                    <span>{formatCentsAsYuan(allocation.amountCents)}</span>
+                    <strong>{formatCentsAsYuan(allocation.amountCents)}</strong>
+                  </div>
+                );
+              })}              <div className="invoice-detail-line-total">
                 <span>总计金额</span>
                 <strong>{formatCentsAsYuan(invoice.amountCents)}</strong>
               </div>
@@ -224,6 +325,35 @@ export default function InvoiceDetailPage() {
             </div>
           ))}
         </div>
+      </Modal>
+
+      <Modal
+        title={actionTitle}
+        open={Boolean(activeAction)}
+        onCancel={closeActionModal}
+        okText={actionSubmitText}
+        cancelText="取消"
+        confirmLoading={isSubmittingAction}
+        onOk={() => void submitInvoiceAction()}
+        destroyOnClose
+      >
+        <Form form={actionForm} layout="vertical">
+          {activeAction === "VOID" ? (
+            <p>取消申请或作废发票后会保留操作记录；如需再次开票，请在作废完成后重新开具。</p>
+          ) : (
+            <>
+              <Form.Item name="invoiceNo" label="发票号" rules={[{ required: true, message: "请输入发票号" }]}>
+                <Input placeholder="请输入发票号" />
+              </Form.Item>
+              <Form.Item name="fileUrl" label="电子发票文件链接">
+                <Input placeholder="可粘贴电子发票文件链接" />
+              </Form.Item>
+            </>
+          )}
+          <Form.Item name="note" label={activeAction === "VOID" ? "取消/作废原因" : "操作备注"}>
+            <Input.TextArea rows={3} placeholder={activeAction === "VOID" ? "请说明取消或作废原因" : "可补充本次开票说明"} />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

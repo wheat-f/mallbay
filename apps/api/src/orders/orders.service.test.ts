@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { ConstructionTaskStatus, ConstructionType, OrderStatus, PaymentAccountType, PaymentDirection, PaymentRecordType, PaymentType, ProductUnit, StorePosition } from "@prisma/client";
+import { ConstructionLocation, ConstructionTaskStatus, ConstructionType, CustomerVehicleStatus, OrderStatus, PaymentAccountType, PaymentDirection, PaymentRecordType, PaymentType, ProductStatus, ProductUnit, StorePosition } from "@prisma/client";
 import { OrdersService, redactOrderAmount } from "./orders.service";
 
 test("销售订单读取会移除内部成本、毛利、提成和成本快照字段", () => {
@@ -63,6 +63,115 @@ test("OrdersService detail includes item inventory allocations for fulfillment p
     true
   );
   assert.equal((result.items[0].inventoryAllocations[0] as { status: string }).status, "LOCKED");
+});
+
+test("OrdersService copyToDraft copies commercial inputs but forces a valid active customer vehicle", async () => {
+  const source = {
+    id: "order-1",
+    orderNo: "ORD-1",
+    storeId: "store-1",
+    customerId: "customer-1",
+    salesPersonId: "sales-1",
+    constructionType: ConstructionType.PPF,
+    constructionLocation: ConstructionLocation.IN_STORE,
+    constructionAddress: null,
+    remark: "保留备注",
+    amount: { constructionChargeCents: 180000, laborCostCents: 170000 },
+    items: [{
+      productId: "product-1",
+      quantity: 1.2,
+      salesUnit: ProductUnit.ROLL,
+      unitPriceCents: 99000,
+      product: {
+        id: "product-1",
+        storeId: "store-1",
+        status: ProductStatus.ACTIVE,
+        name: "漆面保护膜",
+        quantityPrecision: 3,
+        unit: ProductUnit.ROLL,
+        salesUnit: ProductUnit.ROLL,
+        metersPerRoll: 15
+      }
+    }]
+  };
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    order: { findUnique: async () => source },
+    customerVehicle: {
+      findUnique: async () => ({
+        id: "vehicle-2",
+        storeId: "store-1",
+        customerId: "customer-1",
+        status: CustomerVehicleStatus.ACTIVE,
+        vehicleTypeCode: "REGULAR"
+      })
+    }
+  };
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+
+  const result = await service.copyToDraft(
+    {
+      id: "manager-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+    },
+    "order-1",
+    { vehicleId: "vehicle-2", idempotencyKey: "copy-1" }
+  );
+
+  assert.equal(result.values.customerId, "customer-1");
+  assert.equal(result.values.vehicleId, "vehicle-2");
+  assert.equal(result.values.salesPersonId, "sales-1");
+  assert.equal(result.values.constructionChargeYuan, 1800);
+  assert.deepEqual(result.values.items, [{
+    productId: "product-1",
+    quantity: 1.2,
+    salesUnit: ProductUnit.ROLL,
+    unitPriceYuan: 990
+  }]);
+  assert.equal(result.validation.pricingRecalculationRequired, true);
+  assert.deepEqual(result.validation.excludedFields, ["原车辆", "库存锁定/出库", "施工记录", "收款", "发票", "质保", "售后"]);
+});
+
+test("OrdersService copyToDraft rejects a vehicle outside the original customer", async () => {
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        orderNo: "ORD-1",
+        storeId: "store-1",
+        customerId: "customer-1",
+        salesPersonId: "sales-1",
+        constructionType: ConstructionType.PPF,
+        constructionLocation: ConstructionLocation.IN_STORE,
+        amount: { constructionChargeCents: 0, laborCostCents: 0 },
+        items: []
+      })
+    },
+    customerVehicle: {
+      findUnique: async () => ({
+        id: "vehicle-foreign",
+        storeId: "store-1",
+        customerId: "customer-2",
+        status: CustomerVehicleStatus.ACTIVE
+      })
+    }
+  };
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+
+  await assert.rejects(
+    () => service.copyToDraft(
+      {
+        id: "manager-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+      },
+      "order-1",
+      { vehicleId: "vehicle-foreign", idempotencyKey: "copy-2" }
+    ),
+    /所选车辆不属于原订单客户/
+  );
 });
 
 test("OrdersService recalculates paid and outstanding amount after payment", async () => {

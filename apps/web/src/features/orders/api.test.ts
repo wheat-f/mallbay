@@ -23,6 +23,7 @@ test("orderApi.create posts JSON to /orders", async () => {
   const result = await orderApi.create({
     storeId: "store-1",
     customerId: "customer-1",
+    vehicleId: "vehicle-1",
     constructionType: "PPF",
     constructionLocation: "IN_STORE",
     items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
@@ -191,6 +192,35 @@ test("orderApi.auditEvents queries /orders/:id/audit-events", async () => {
   assert.deepEqual(result, [
     { id: "audit-1", action: "ORDER_COMMERCIALS_UPDATED", createdAt: "2026-06-06T00:00:00.000Z" }
   ]);
+});
+
+test("orderApi.copyToDraft posts the selected vehicle and optional appointment", async () => {
+  let capturedInput: RequestInfo | URL | undefined;
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    capturedInput = input;
+    capturedInit = init;
+    return {
+      ok: true,
+      json: async () => ({ source: { orderId: "order-1", orderNo: "ORD-1" }, values: {}, validation: {} })
+    } as Response;
+  }) as typeof fetch;
+
+  await orderApi.copyToDraft("order-1", {
+    vehicleId: "vehicle-2",
+    appointmentDate: "2026-07-25",
+    appointmentTimeSlot: "09:00-12:00",
+    idempotencyKey: "copy-1"
+  });
+
+  assert.equal(capturedInput, "http://localhost:3001/orders/order-1/copy");
+  assert.equal(capturedInit?.method, "POST");
+  assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
+    vehicleId: "vehicle-2",
+    appointmentDate: "2026-07-25",
+    appointmentTimeSlot: "09:00-12:00",
+    idempotencyKey: "copy-1"
+  });
 });
 
 test("orderApi.paymentAccountAuditEvents queries /payment-accounts/:id/audit-events", async () => {

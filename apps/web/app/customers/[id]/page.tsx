@@ -17,10 +17,15 @@ import {
 } from "antd";
 import {
   ArrowLeftOutlined,
+  BankOutlined,
   CarOutlined,
+  CheckCircleOutlined,
   EditOutlined,
   FileTextOutlined,
+  HistoryOutlined,
   PlusOutlined,
+  StopOutlined,
+  SwapOutlined,
   UploadOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,8 +38,11 @@ import type {
   CreateCustomerNotePayload,
   CreateCustomerPayload,
   CreateCustomerTagPayload,
-  CreateVehiclePayload
+  CreateVehiclePayload,
+  CustomerVehicleHistoryItem,
+  UpdateVehiclePayload
 } from "../../../src/features/customers/api";
+import { useAuthStore } from "../../../src/stores/auth-store";
 import {
   getAfterSaleResponsibilityLabel,
   getAfterSaleStatusLabel,
@@ -61,6 +69,7 @@ type CustomerDetail = {
   referrer?: { id: string; name?: string | null; companyName?: string | null; contactPerson?: string | null } | null;
   tags?: CustomerTag[];
   vehicles?: CustomerVehicle[];
+  users?: CustomerContact[];
   notes?: CustomerNote[];
   orders?: CustomerOrder[];
   warranties?: CustomerWarranty[];
@@ -74,6 +83,26 @@ type CustomerVehicle = {
   carModel: string;
   carColor?: string | null;
   photoUrl?: string | null;
+  vehicleTypeCode?: "SMALL_CAR" | "STANDARD_CAR" | "LUXURY_LARGE_CAR" | null;
+  status: "ACTIVE" | "INACTIVE";
+  defaultContactId?: string | null;
+  department?: string | null;
+  disabledReason?: string | null;
+};
+
+type CustomerContact = {
+  id: string;
+  name: string;
+  role?: "DECISION_MAKER" | "DRIVER" | "FINANCE" | "OTHER" | null;
+  department?: string | null;
+  isDefault?: boolean;
+};
+
+type CustomerListItem = {
+  id: string;
+  name?: string | null;
+  companyName?: string | null;
+  contactPerson?: string | null;
 };
 
 type CustomerNote = {
@@ -154,6 +183,8 @@ type EditCustomerFormValues = Partial<CreateCustomerPayload>;
 type VehicleFormValues = Omit<CreateVehiclePayload, "customerId">;
 type NoteFormValues = Pick<CreateCustomerNotePayload, "content" | "noteType">;
 type TagFormValues = Pick<CreateCustomerTagPayload, "label">;
+type VehicleLifecycleFormValues = { reason: string };
+type VehicleTransferFormValues = { toCustomerId: string; reason: string };
 type UploadRequestOption = Parameters<NonNullable<UploadProps["customRequest"]>>[0];
 
 const sourceLabels: Record<string, string> = {
@@ -178,6 +209,27 @@ const noteTypeLabels: Record<string, string> = {
   COMMUNICATION: "沟通记录"
 };
 
+const vehicleTypeLabels: Record<string, string> = {
+  SMALL_CAR: "小车",
+  STANDARD_CAR: "常规车",
+  LUXURY_LARGE_CAR: "豪车/大车"
+};
+
+const contactRoleLabels: Record<string, string> = {
+  DECISION_MAKER: "决策人",
+  DRIVER: "司机",
+  FINANCE: "财务联系人",
+  OTHER: "其他"
+};
+
+const vehicleHistoryActionLabels: Record<CustomerVehicleHistoryItem["action"], string> = {
+  CREATE: "新增车辆",
+  UPDATE: "修改车辆",
+  DISABLE: "停用车辆",
+  ENABLE: "启用车辆",
+  TRANSFER: "转移车辆"
+};
+
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -185,11 +237,19 @@ export default function CustomerDetailPage() {
   const queryClient = useQueryClient();
   const [editForm] = Form.useForm<EditCustomerFormValues>();
   const [vehicleForm] = Form.useForm<VehicleFormValues>();
+  const [vehicleLifecycleForm] = Form.useForm<VehicleLifecycleFormValues>();
+  const [vehicleTransferForm] = Form.useForm<VehicleTransferFormValues>();
   const [noteForm] = Form.useForm<NoteFormValues>();
   const [tagForm] = Form.useForm<TagFormValues>();
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
   const [vehicleDrawerOpen, setVehicleDrawerOpen] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<CustomerVehicle | null>(null);
+  const [lifecycleVehicle, setLifecycleVehicle] = useState<CustomerVehicle | null>(null);
+  const [transferVehicle, setTransferVehicle] = useState<CustomerVehicle | null>(null);
+  const [historyVehicle, setHistoryVehicle] = useState<CustomerVehicle | null>(null);
   const [vehiclePhotoUploading, setVehiclePhotoUploading] = useState(false);
+  const currentUser = useAuthStore((state) => state.user);
+  const isManager = currentUser?.storeMember?.position === "MANAGER";
   const customerId = params.id;
   const detailQueryKey = ["customer-detail", customerId];
 
@@ -214,17 +274,62 @@ export default function CustomerDetailPage() {
   });
 
   const vehicleMutation = useMutation({
-    mutationFn: (values: VehicleFormValues) =>
-      customerApi.createVehicle(compactPayload({ ...values, customerId }) as CreateVehiclePayload),
+    mutationFn: (values: VehicleFormValues) => {
+      const payload = compactPayload(values);
+      return editingVehicle
+        ? customerApi.updateVehicle(editingVehicle.id, payload as UpdateVehiclePayload)
+        : customerApi.createVehicle({ ...payload, customerId } as CreateVehiclePayload);
+    },
     onSuccess: () => {
-      message.success("车辆已添加");
+      message.success(editingVehicle ? "车辆信息已更新" : "车辆已添加");
       setVehicleDrawerOpen(false);
+      setEditingVehicle(null);
       vehicleForm.resetFields();
       queryClient.invalidateQueries({ queryKey: detailQueryKey });
     },
     onError: (error: Error) => message.error(error.message)
   });
 
+
+  const transferTargetsQuery = useQuery({
+    queryKey: ["customer-transfer-targets", customer?.storeId],
+    queryFn: () => customerApi.list({ storeId: customer!.storeId, page: 1, pageSize: 100 }),
+    enabled: Boolean(transferVehicle && customer?.storeId)
+  });
+
+  const vehicleHistoryQuery = useQuery({
+    queryKey: ["customer-vehicle-history", historyVehicle?.id],
+    queryFn: () => customerApi.vehicleHistory(historyVehicle!.id),
+    enabled: Boolean(historyVehicle)
+  });
+
+  const lifecycleMutation = useMutation({
+    mutationFn: (values: VehicleLifecycleFormValues) =>
+      customerApi.changeVehicleStatus(
+        lifecycleVehicle!.id,
+        lifecycleVehicle!.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+        values.reason.trim()
+      ),
+    onSuccess: () => {
+      message.success(lifecycleVehicle?.status === "ACTIVE" ? "车辆已停用" : "车辆已启用");
+      setLifecycleVehicle(null);
+      vehicleLifecycleForm.resetFields();
+      queryClient.invalidateQueries({ queryKey: detailQueryKey });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
+  const transferMutation = useMutation({
+    mutationFn: (values: VehicleTransferFormValues) =>
+      customerApi.transferVehicle(transferVehicle!.id, values.toCustomerId, values.reason.trim()),
+    onSuccess: () => {
+      message.success("车辆归属已转移");
+      setTransferVehicle(null);
+      vehicleTransferForm.resetFields();
+      queryClient.invalidateQueries({ queryKey: detailQueryKey });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
   const noteMutation = useMutation({
     mutationFn: (values: NoteFormValues) =>
       customerApi.createNote({
@@ -282,14 +387,46 @@ export default function CustomerDetailPage() {
     await updateMutation.mutateAsync(values);
   };
 
-  const openVehicleDrawer = () => {
+  const openVehicleDrawer = (vehicle?: CustomerVehicle) => {
+    setEditingVehicle(vehicle ?? null);
     vehicleForm.resetFields();
+    vehicleForm.setFieldsValue(vehicle
+      ? {
+          carPlate: vehicle.carPlate ?? undefined,
+          carModel: vehicle.carModel,
+          carColor: vehicle.carColor ?? undefined,
+          photoUrl: vehicle.photoUrl ?? undefined,
+          vehicleTypeCode: vehicle.vehicleTypeCode ?? undefined,
+          defaultContactId: vehicle.defaultContactId ?? undefined,
+          department: vehicle.department ?? undefined
+        }
+      : { vehicleTypeCode: "STANDARD_CAR" });
     setVehicleDrawerOpen(true);
+  };
+
+  const closeVehicleDrawer = () => {
+    setVehicleDrawerOpen(false);
+    setEditingVehicle(null);
+    vehicleForm.resetFields();
   };
 
   const submitVehicleDrawer = async () => {
     const values = await vehicleForm.validateFields();
+    if (!editingVehicle && !values.carPlate?.trim() && !values.vin?.trim()) {
+      message.error("车牌号或车架号 VIN 至少填写一项");
+      return;
+    }
     await vehicleMutation.mutateAsync(values);
+  };
+
+  const submitVehicleLifecycle = async () => {
+    const values = await vehicleLifecycleForm.validateFields();
+    await lifecycleMutation.mutateAsync(values);
+  };
+
+  const submitVehicleTransfer = async () => {
+    const values = await vehicleTransferForm.validateFields();
+    await transferMutation.mutateAsync(values);
   };
 
   const handleVehiclePhotoUpload = async (options: UploadRequestOption) => {
@@ -346,6 +483,14 @@ export default function CustomerDetailPage() {
               <Button icon={<EditOutlined />} disabled={!customer} onClick={openEditDrawer}>
                 编辑资料
               </Button>
+              {customer.customerType === "COMPANY" ? (
+                <Button
+                  icon={<BankOutlined />}
+                  onClick={() => router.push(`/customers/${customerId}/settlement`)}
+                >
+                  企业对账
+                </Button>
+              ) : null}
               <Button
                 type="primary"
                 icon={<FileTextOutlined />}
@@ -375,7 +520,7 @@ export default function CustomerDetailPage() {
                 className="customer-detail-card customer-vehicle-card"
                 title="车辆信息"
                 extra={
-                  <Button size="small" icon={<PlusOutlined />} onClick={openVehicleDrawer}>
+                  <Button size="small" icon={<PlusOutlined />} onClick={() => openVehicleDrawer()}>
                     新增车辆
                   </Button>
                 }
@@ -395,9 +540,52 @@ export default function CustomerDetailPage() {
                           <CarOutlined />
                         )}
                       </div>
-                      <div>
-                        <strong>{vehicle.carPlate ?? vehicle.carModel}</strong>
-                        <span>{`${vehicle.carModel}${vehicle.carColor ? ` / ${vehicle.carColor}` : ""}`}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong>{vehicle.carPlate ?? vehicle.carModel}</strong>
+                          <Tag color={vehicle.status === "ACTIVE" ? "green" : "default"}>
+                            {vehicle.status === "ACTIVE" ? "在用" : "已停用"}
+                          </Tag>
+                        </div>
+                        <span>{[
+                          vehicle.carModel,
+                          vehicle.carColor,
+                          vehicle.vehicleTypeCode ? vehicleTypeLabels[vehicle.vehicleTypeCode] : "车型类型待维护"
+                        ].filter(Boolean).join(" / ")}</span>
+                        <Typography.Text type="secondary" className="block text-xs">
+                          {vehicle.department ? `使用部门：${vehicle.department}` : "使用部门未维护"}
+                          {" · "}
+                          {vehicle.defaultContactId
+                            ? `默认联系人：${customer.users?.find((contact) => contact.id === vehicle.defaultContactId)?.name ?? "已设置"}`
+                            : "默认联系人未设置"}
+                        </Typography.Text>
+                        {vehicle.disabledReason ? (
+                          <Typography.Text type="secondary" className="block text-xs">停用原因：{vehicle.disabledReason}</Typography.Text>
+                        ) : null}
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openVehicleDrawer(vehicle)}>
+                            编辑
+                          </Button>
+                          <Button size="small" type="text" icon={<HistoryOutlined />} onClick={() => setHistoryVehicle(vehicle)}>
+                            历史
+                          </Button>
+                          {isManager ? (
+                            <>
+                              <Button size="small" type="text" icon={<SwapOutlined />} onClick={() => setTransferVehicle(vehicle)}>
+                                转移
+                              </Button>
+                              <Button
+                                size="small"
+                                type="text"
+                                danger={vehicle.status === "ACTIVE"}
+                                icon={vehicle.status === "ACTIVE" ? <StopOutlined /> : <CheckCircleOutlined />}
+                                onClick={() => setLifecycleVehicle(vehicle)}
+                              >
+                                {vehicle.status === "ACTIVE" ? "停用" : "启用"}
+                              </Button>
+                            </>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -758,15 +946,15 @@ export default function CustomerDetailPage() {
 
           <Drawer
             open={vehicleDrawerOpen}
-            title="新增车辆"
-            onClose={() => setVehicleDrawerOpen(false)}
+            title={editingVehicle ? "编辑车辆" : "新增车辆"}
+            onClose={closeVehicleDrawer}
             placement="right"
             rootClassName="customer-detail-vehicle-drawer"
             destroyOnHidden
             forceRender
             footer={(
               <div className="customer-detail-drawer-footer">
-                <Button onClick={() => setVehicleDrawerOpen(false)}>取消</Button>
+                <Button onClick={closeVehicleDrawer}>取消</Button>
                 <Button type="primary" loading={vehicleMutation.isPending} onClick={submitVehicleDrawer}>
                   保存
                 </Button>
@@ -774,6 +962,20 @@ export default function CustomerDetailPage() {
             )}
           >
             <Form<VehicleFormValues> form={vehicleForm} layout="vertical" className="customer-detail-drawer-form">
+              <Form.Item
+                name="vehicleTypeCode"
+                label="车辆类型"
+                rules={[{ required: true, message: "请选择车辆类型" }]}
+              >
+                <Select
+                  placeholder="请选择车辆类型"
+                  options={[
+                    { label: "小车", value: "SMALL_CAR" },
+                    { label: "常规车", value: "STANDARD_CAR" },
+                    { label: "豪车/大车", value: "LUXURY_LARGE_CAR" }
+                  ]}
+                />
+              </Form.Item>
               <Form.Item
                 name="carModel"
                 label="车型"
@@ -792,6 +994,25 @@ export default function CustomerDetailPage() {
               <Form.Item name="carColor" label="车身颜色">
                 <Input maxLength={50} />
               </Form.Item>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Form.Item name="defaultContactId" label="默认用车联系人">
+                  <Select
+                    allowClear
+                    placeholder="选择该车默认联系人"
+                    options={(customer.users ?? []).map((contact) => ({
+                      value: contact.id,
+                      label: [
+                        contact.name,
+                        contact.role ? contactRoleLabels[contact.role] : null,
+                        contact.department
+                      ].filter(Boolean).join(" / ")
+                    }))}
+                  />
+                </Form.Item>
+                <Form.Item name="department" label="使用部门">
+                  <Input maxLength={100} placeholder="例如 销售部、行政部" />
+                </Form.Item>
+              </div>
               <Form.Item name="photoUrl" label="车辆照片" hidden>
                 <Input type="hidden" />
               </Form.Item>
@@ -815,10 +1036,135 @@ export default function CustomerDetailPage() {
               </Form.Item>
             </Form>
           </Drawer>
+
+          <Drawer
+            open={Boolean(lifecycleVehicle)}
+            title={lifecycleVehicle?.status === "ACTIVE" ? "停用车辆" : "启用车辆"}
+            onClose={() => {
+              setLifecycleVehicle(null);
+              vehicleLifecycleForm.resetFields();
+            }}
+            placement="right"
+            destroyOnHidden
+            footer={(
+              <div className="customer-detail-drawer-footer">
+                <Button onClick={() => setLifecycleVehicle(null)}>取消</Button>
+                <Button
+                  type="primary"
+                  danger={lifecycleVehicle?.status === "ACTIVE"}
+                  loading={lifecycleMutation.isPending}
+                  onClick={submitVehicleLifecycle}
+                >
+                  确认{lifecycleVehicle?.status === "ACTIVE" ? "停用" : "启用"}
+                </Button>
+              </div>
+            )}
+          >
+            <Typography.Paragraph type="secondary">
+              {lifecycleVehicle?.status === "ACTIVE"
+                ? "停用后该车辆不能用于新订单，历史订单、质保和售后记录仍保留。"
+                : "启用前系统会再次校验本门店车牌号与 VIN 是否冲突。"}
+            </Typography.Paragraph>
+            <Form<VehicleLifecycleFormValues> form={vehicleLifecycleForm} layout="vertical">
+              <Form.Item
+                name="reason"
+                label={lifecycleVehicle?.status === "ACTIVE" ? "停用原因" : "启用原因"}
+                rules={[{ required: true, whitespace: true, message: "请填写操作原因" }]}
+              >
+                <Input.TextArea rows={4} maxLength={200} showCount />
+              </Form.Item>
+            </Form>
+          </Drawer>
+
+          <Drawer
+            open={Boolean(transferVehicle)}
+            title="转移车辆归属"
+            onClose={() => {
+              setTransferVehicle(null);
+              vehicleTransferForm.resetFields();
+            }}
+            placement="right"
+            destroyOnHidden
+            footer={(
+              <div className="customer-detail-drawer-footer">
+                <Button onClick={() => setTransferVehicle(null)}>取消</Button>
+                <Button type="primary" loading={transferMutation.isPending} onClick={submitVehicleTransfer}>
+                  确认转移
+                </Button>
+              </div>
+            )}
+          >
+            <Typography.Paragraph type="secondary">
+              转移仅变更车辆当前归属客户；历史订单、质保和售后仍保留原记录，并写入车辆归属审计。
+            </Typography.Paragraph>
+            <Form<VehicleTransferFormValues> form={vehicleTransferForm} layout="vertical">
+              <Form.Item
+                name="toCustomerId"
+                label="目标客户"
+                rules={[{ required: true, message: "请选择目标客户" }]}
+              >
+                <Select
+                  showSearch
+                  loading={transferTargetsQuery.isLoading}
+                  placeholder="搜索并选择本门店客户"
+                  optionFilterProp="label"
+                  options={((transferTargetsQuery.data?.items ?? []) as CustomerListItem[])
+                    .filter((item) => item.id !== customerId)
+                    .map((item) => ({ value: item.id, label: getCustomerListItemName(item) }))}
+                />
+              </Form.Item>
+              <Form.Item
+                name="reason"
+                label="转移原因"
+                rules={[{ required: true, whitespace: true, message: "请填写转移原因" }]}
+              >
+                <Input.TextArea rows={4} maxLength={200} showCount />
+              </Form.Item>
+            </Form>
+          </Drawer>
+
+          <Drawer
+            open={Boolean(historyVehicle)}
+            title={`${historyVehicle?.carPlate ?? historyVehicle?.carModel ?? "车辆"} · 变更历史`}
+            onClose={() => setHistoryVehicle(null)}
+            placement="right"
+            width={520}
+            destroyOnHidden
+          >
+            {vehicleHistoryQuery.isLoading ? <Skeleton active /> : (
+              <div className="space-y-3">
+                {(vehicleHistoryQuery.data ?? []).map((item) => (
+                  <Card key={item.id} size="small">
+                    <div className="flex items-center justify-between gap-3">
+                      <Typography.Text strong>{vehicleHistoryActionLabels[item.action]}</Typography.Text>
+                      <Typography.Text type="secondary">{formatDateTime(item.operatedAt)}</Typography.Text>
+                    </div>
+                    {item.action === "TRANSFER" ? (
+                      <Typography.Paragraph className="!mb-1 !mt-2">
+                        {getCustomerListItemName(item.fromCustomer)} → {getCustomerListItemName(item.toCustomer)}
+                      </Typography.Paragraph>
+                    ) : null}
+                    <Typography.Paragraph type="secondary" className="!mb-0">
+                      {item.reason ? `原因：${item.reason}；` : ""}
+                      操作人：{item.operatedBy.nickname ?? item.operatedBy.username}
+                    </Typography.Paragraph>
+                  </Card>
+                ))}
+                {(vehicleHistoryQuery.data ?? []).length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无车辆变更历史" />
+                ) : null}
+              </div>
+            )}
+          </Drawer>
         </>
       )}
     </div>
   );
+}
+
+function getCustomerListItemName(customer?: CustomerListItem | null) {
+  if (!customer) return "原客户未记录";
+  return customer.companyName ?? customer.name ?? customer.contactPerson ?? "未命名客户";
 }
 
 function getCustomerDisplayName(customer: CustomerDetail) {

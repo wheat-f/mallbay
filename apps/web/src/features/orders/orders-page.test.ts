@@ -55,6 +55,12 @@ test("orders page provides a quick filter for dispatched orders", () => {
   assert.match(pageSource, /\{ label: "已派工", value: "DISPATCHED", tone: "processing" \}/);
 });
 
+test("orders page provides a quick filter for warranted orders", () => {
+  const pageSource = readFileSync("app/orders/page.tsx", "utf8");
+
+  assert.match(pageSource, /\{ label: "已质保", value: "WARRANTIED", tone: "success" \}/);
+});
+
 test("orders page exports all filtered sales product rows through the server", () => {
   const pageSource = readFileSync("app/orders/page.tsx", "utf8");
 

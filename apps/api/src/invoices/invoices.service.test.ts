@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ConstructionTaskStatus, InvoiceStatus, OrderStatus, StorePosition } from "@prisma/client";
+import { ConstructionTaskStatus, CustomerType, InvoiceStatus, OrderStatus, StorePosition } from "@prisma/client";
 import { InvoicesService } from "./invoices.service";
 
 test("InvoicesService applies and issues invoice for paid completed order", async () => {
@@ -8,6 +8,10 @@ test("InvoicesService applies and issues invoice for paid completed order", asyn
   const prisma = {
     storeMember: { findUnique: async () => null },
     order: {
+      findMany: async () => {
+        const order = await prisma.order.findUnique();
+        return [{ ...order, customerId: order.customerId ?? 'customer-1', orderNo: order.orderNo ?? 'TEST-ORDER', customer: { customerType: CustomerType.PERSONAL } }];
+      },
       findUnique: async () => ({
         id: "order-1",
         storeId: "store-1",
@@ -17,6 +21,7 @@ test("InvoicesService applies and issues invoice for paid completed order", asyn
       })
     },
     invoice: {
+      findMany: async () => [],
       create: async (args: unknown) => {
         writes.push(args);
         return { id: "invoice-1", status: InvoiceStatus.APPLIED };
@@ -51,6 +56,7 @@ test("InvoicesService accepts a paid order whose construction record is complete
   const prisma = {
     storeMember: { findUnique: async () => null },
     order: {
+      findMany: async () => [{ id: "order-construction-completed", storeId: "store-1", salesPersonId: "sales-1", status: OrderStatus.DISPATCHED, orderNo: "TEST-ORDER", customerId: "customer-1", customer: { customerType: CustomerType.PERSONAL }, constructionRecord: { status: ConstructionTaskStatus.COMPLETED }, amount: { outstandingCents: 0, totalAmountCents: 100000 } }],
       findUnique: async () => ({
         id: "order-construction-completed",
         storeId: "store-1",
@@ -61,6 +67,7 @@ test("InvoicesService accepts a paid order whose construction record is complete
       })
     },
     invoice: {
+      findMany: async () => [],
       create: async (args: unknown) => {
         writes.push(args);
         return { id: "invoice-construction-completed", status: InvoiceStatus.APPLIED };
@@ -81,6 +88,10 @@ test("InvoicesService rejects sales applying invoice for another sales person's 
   const prisma = {
     storeMember: { findUnique: async () => null },
     order: {
+      findMany: async () => {
+        const order = await prisma.order.findUnique();
+        return [{ ...order, customerId: order.customerId ?? 'customer-1', orderNo: order.orderNo ?? 'TEST-ORDER', customer: { customerType: CustomerType.PERSONAL } }];
+      },
       findUnique: async () => ({
         id: "order-2",
         storeId: "store-1",
@@ -90,6 +101,7 @@ test("InvoicesService rejects sales applying invoice for another sales person's 
       })
     },
     invoice: {
+      findMany: async () => [],
       create: async () => {
         throw new Error("sales should not invoice another sales person's order");
       }
@@ -111,6 +123,7 @@ test("InvoicesService auto generates a local PDF URL when issuing without fileUr
   const prisma = {
     storeMember: { findUnique: async () => null },
     invoice: {
+      findMany: async () => [],
       findUnique: async () => ({
         id: "invoice-2",
         storeId: "store-1",
@@ -143,6 +156,7 @@ test("InvoicesService records sending issued invoice without changing invoice st
   const prisma = {
     storeMember: { findUnique: async () => null },
     invoice: {
+      findMany: async () => [],
       findUnique: async () => ({
         id: "invoice-3",
         storeId: "store-1",
@@ -239,6 +253,105 @@ test("InvoicesService limits sales invoice list to their own orders", async () =
 
   assert.deepEqual((calls[0] as { where: unknown }).where, {
     storeId: "store-1",
-    order: { salesPersonId: "sales-1" }
+    OR: [
+      { order: { salesPersonId: "sales-1" } },
+      { allocations: { some: { order: { salesPersonId: "sales-1" } } } }
+    ]
   });
 });
+
+test("InvoicesService creates a company multi-order invoice with explicit allocations", async () => {
+  let createArgs: any;
+  let findManyArgs: any;
+  const orders = [
+    { id: "company-order-1", storeId: "store-1", salesPersonId: "sales-1", status: OrderStatus.COMPLETED, orderNo: "C-001", customerId: "company-1", customer: { customerType: CustomerType.COMPANY }, constructionRecord: null, amount: { outstandingCents: 0, totalAmountCents: 10000 } },
+    { id: "company-order-2", storeId: "store-1", salesPersonId: "sales-1", status: OrderStatus.WARRANTIED, orderNo: "C-002", customerId: "company-1", customer: { customerType: CustomerType.COMPANY }, constructionRecord: null, amount: { outstandingCents: 0, totalAmountCents: 20000 } }
+  ];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    order: { findMany: async () => orders },
+    invoice: {
+      findMany: async () => [],
+      create: async (args: unknown) => { createArgs = args; return { id: "company-invoice-1", status: InvoiceStatus.APPLIED, allocations: [] }; }
+    }
+  };
+  const service = new InvoicesService(prisma as never);
+  await service.apply(
+    { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
+    {
+      orderIds: ["company-order-1", "company-order-2"],
+      allocations: [
+        { orderId: "company-order-1", amountCents: 7000 },
+        { orderId: "company-order-2", amountCents: 13000 }
+      ],
+      title: "企业客户发票",
+      amountCents: 20000
+    }
+  );
+  assert.equal(createArgs.data.customerId, "company-1");
+  assert.equal(createArgs.data.orderId, "company-order-1");
+  assert.deepEqual(createArgs.data.allocations.create, [
+    { orderId: "company-order-1", amountCents: 7000 },
+    { orderId: "company-order-2", amountCents: 13000 }
+  ]);
+});
+
+test("InvoicesService rejects multi-order invoice for a personal customer", async () => {
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    order: { findMany: async () => [
+      { id: "personal-order-1", storeId: "store-1", salesPersonId: "sales-1", status: OrderStatus.COMPLETED, orderNo: "P-001", customerId: "personal-1", customer: { customerType: CustomerType.PERSONAL }, constructionRecord: null, amount: { outstandingCents: 0, totalAmountCents: 10000 } },
+      { id: "personal-order-2", storeId: "store-1", salesPersonId: "sales-1", status: OrderStatus.COMPLETED, orderNo: "P-002", customerId: "personal-1", customer: { customerType: CustomerType.PERSONAL }, constructionRecord: null, amount: { outstandingCents: 0, totalAmountCents: 10000 } }
+    ] },
+    invoice: { findMany: async () => [], create: async () => { throw new Error("should not create"); } }
+  };
+  const service = new InvoicesService(prisma as never);
+  await assert.rejects(
+    () => service.apply(
+      { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
+      { orderIds: ["personal-order-1", "personal-order-2"], title: "个人发票", amountCents: 20000 }
+    ),
+    /多订单合并开票仅适用于企业客户/
+  );
+});
+
+test("InvoicesService ignores voided invoices when calculating remaining amount", async () => {
+  let createArgs: any;
+  let findManyArgs: any;
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    order: { findMany: async () => [{ id: "voided-order", storeId: "store-1", salesPersonId: "sales-1", status: OrderStatus.COMPLETED, orderNo: "V-001", customerId: "company-1", customer: { customerType: CustomerType.COMPANY }, constructionRecord: null, amount: { outstandingCents: 0, totalAmountCents: 10000 } }] },
+    invoice: {
+      findMany: async (args: unknown) => { findManyArgs = args; return []; },
+      create: async (args: unknown) => { createArgs = args; return { id: "invoice-after-void", status: InvoiceStatus.APPLIED, allocations: [] }; }
+    }
+  };
+  const service = new InvoicesService(prisma as never);
+  await service.apply(
+    { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
+    { orderId: "voided-order", title: "作废后重新申请", amountCents: 10000 }
+  );
+  assert.equal(createArgs.data.amountCents, 10000);
+  assert.equal(findManyArgs.where.status.not, InvoiceStatus.VOIDED);
+});
+
+
+
+
+test("InvoicesService refuses to reissue an invoice that is not voided", async () => {
+  const prisma = {
+    invoice: { findUnique: async () => ({ id: "issued-invoice", status: InvoiceStatus.ISSUED }) }
+  };
+  const service = new InvoicesService(prisma as never);
+  await assert.rejects(
+    () => service.reissue(
+      { id: "finance-1", isAuditor: true, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
+      "issued-invoice",
+      { invoiceNo: "INV-REISSUE" }
+    ),
+    /仅作废发票可以重新开具/
+  );
+});
+
+
+

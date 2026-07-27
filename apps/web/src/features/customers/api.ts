@@ -29,6 +29,8 @@ export type CreateVehiclePayload = {
   vehicleTypeCode: "SMALL_CAR" | "STANDARD_CAR" | "LUXURY_LARGE_CAR";
   carColor?: string;
   photoUrl?: string;
+  defaultContactId?: string;
+  department?: string;
 };
 
 export type CreatedVehicle = CreateVehiclePayload & {
@@ -36,6 +38,18 @@ export type CreatedVehicle = CreateVehiclePayload & {
 };
 
 export type UpdateVehiclePayload = Partial<Omit<CreateVehiclePayload, "customerId">>;
+
+export type CustomerVehicleStatus = "ACTIVE" | "INACTIVE";
+
+export type CustomerVehicleHistoryItem = {
+  id: string;
+  action: "CREATE" | "UPDATE" | "DISABLE" | "ENABLE" | "TRANSFER";
+  reason?: string | null;
+  operatedAt: string;
+  fromCustomer?: { id: string; name?: string | null; companyName?: string | null } | null;
+  toCustomer: { id: string; name?: string | null; companyName?: string | null };
+  operatedBy: { id: string; username: string; nickname?: string | null };
+};
 
 export type CreateCustomerUserPayload = {
   customerId?: string;
@@ -62,6 +76,49 @@ export type CustomerListQuery = {
   pageSize?: number;
 };
 
+export type CustomerOrderContext = {
+  customer: {
+    id: string;
+    vehicleCount: number;
+    orderCount: number;
+    totalAmountCents: number;
+    outstandingCents: number;
+  };
+  vehicle: {
+    id: string;
+    carPlate?: string | null;
+    carModel: string;
+    carColor?: string | null;
+    vehicleTypeCode?: string | null;
+    status: "ACTIVE" | "INACTIVE";
+    usable: boolean;
+    unusableReason?: string | null;
+    orderCount: number;
+    totalAmountCents: number;
+    outstandingCents: number;
+    activeWarrantyCount: number;
+    openAfterSalesCount: number;
+    recentConstruction?: {
+      status: string;
+      completedAt?: string | null;
+      actualMinutes?: number | null;
+      qualityResult?: string | null;
+      order: { id: string; orderNo: string; constructionType: string };
+    } | null;
+  } | null;
+  recentOrders: Array<{
+    id: string;
+    orderNo: string;
+    status: string;
+    constructionType: string;
+    appointmentDate?: string | null;
+    amount?: {
+      totalAmountCents: number;
+      outstandingCents: number;
+    } | null;
+  }>;
+};
+
 export const customerApi = {
   create: (payload: CreateCustomerPayload) =>
     request<CreatedCustomer>("/customers", {
@@ -75,6 +132,11 @@ export const customerApi = {
     ),
 
   detail: (id: string) => request<unknown>(`/customers/${id}`),
+
+  orderContext: (id: string, vehicleId?: string) =>
+    request<CustomerOrderContext>(
+      `/customers/${id}/order-context${toQueryString({ vehicleId })}`
+    ),
 
   update: (id: string, payload: Partial<CreateCustomerPayload>) =>
     request<unknown>(`/customers/${id}`, {
@@ -93,6 +155,21 @@ export const customerApi = {
       method: "PATCH",
       body: JSON.stringify(payload)
     }),
+
+  changeVehicleStatus: (id: string, status: CustomerVehicleStatus, reason: string) =>
+    request<CreatedVehicle>(`/customers/vehicles/${id}/${status === "ACTIVE" ? "enable" : "disable"}`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    }),
+
+  transferVehicle: (id: string, toCustomerId: string, reason: string) =>
+    request<CreatedVehicle>(`/customers/vehicles/${id}/transfer`, {
+      method: "POST",
+      body: JSON.stringify({ toCustomerId, reason })
+    }),
+
+  vehicleHistory: (id: string) =>
+    request<CustomerVehicleHistoryItem[]>(`/customers/vehicles/${id}/history`),
 
   uploadVehiclePhoto: (file: File) => {
     const formData = new FormData();

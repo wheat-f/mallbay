@@ -30,4 +30,13 @@ export class UpdateVehicleDto {
   @IsOptional()
   @IsString()
   photoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  defaultContactId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  department?: string | null;
 }

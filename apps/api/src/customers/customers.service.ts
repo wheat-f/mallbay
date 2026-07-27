@@ -22,6 +22,11 @@ import { CreateVehicleDto } from "./dto/create-vehicle.dto";
 import { ListCustomersDto } from "./dto/list-customers.dto";
 import { UpdateCustomerDto } from "./dto/update-customer.dto";
 import { UpdateVehicleDto } from "./dto/update-vehicle.dto";
+import {
+  ChangeVehicleStatusDto,
+  ListCustomerVehiclesDto,
+  TransferVehicleDto
+} from "./dto/vehicle-lifecycle.dto";
 
 export const SENSITIVE_FIELD_CODEC = Symbol("SENSITIVE_FIELD_CODEC");
 
@@ -246,6 +251,129 @@ export class CustomersService {
     };
   }
 
+  async orderContext(user: AuthenticatedCustomerUser, customerId: string, vehicleId?: string) {
+    const customer = await this.assertCanViewCustomer(user, customerId);
+    const vehicle = vehicleId
+      ? await this.prisma.customerVehicle.findUnique({
+          where: { id: vehicleId },
+          select: {
+            id: true,
+            customerId: true,
+            storeId: true,
+            carPlate: true,
+            carModel: true,
+            carColor: true,
+            vehicleTypeCode: true,
+            status: true
+          }
+        })
+      : null;
+    if (vehicleId && !vehicle) {
+      throw new NotFoundException("车辆不存在");
+    }
+    if (vehicle && (vehicle.customerId !== customerId || vehicle.storeId !== customer.storeId)) {
+      throw new BadRequestException("车辆不属于当前客户");
+    }
+
+    const selectedOrderWhere: Prisma.OrderWhereInput = vehicle
+      ? { customerId, vehicleId: vehicle.id }
+      : { customerId };
+    const [
+      customerOrderCount,
+      customerAmount,
+      vehicleOrderCount,
+      vehicleAmount,
+      recentOrders,
+      recentConstruction,
+      activeWarrantyCount,
+      openAfterSalesCount,
+      vehicleCount
+    ] = await Promise.all([
+      this.prisma.order.count({ where: { customerId } }),
+      this.prisma.orderAmount.aggregate({
+        where: { order: { customerId } },
+        _sum: { totalAmountCents: true, outstandingCents: true }
+      }),
+      this.prisma.order.count({ where: selectedOrderWhere }),
+      this.prisma.orderAmount.aggregate({
+        where: { order: selectedOrderWhere },
+        _sum: { totalAmountCents: true, outstandingCents: true }
+      }),
+      this.prisma.order.findMany({
+        where: selectedOrderWhere,
+        take: 5,
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          orderNo: true,
+          status: true,
+          constructionType: true,
+          appointmentDate: true,
+          amount: { select: { totalAmountCents: true, outstandingCents: true } }
+        }
+      }),
+      vehicle
+        ? this.prisma.constructionRecord.findFirst({
+            where: { order: { customerId, vehicleId: vehicle.id } },
+            orderBy: [{ completedAt: "desc" }, { createdAt: "desc" }],
+            select: {
+              status: true,
+              completedAt: true,
+              actualMinutes: true,
+              qualityResult: true,
+              order: { select: { id: true, orderNo: true, constructionType: true } }
+            }
+          })
+        : Promise.resolve(null),
+      vehicle
+        ? this.prisma.warranty.count({
+            where: { order: { customerId, vehicleId: vehicle.id }, status: "ACTIVE" }
+          })
+        : Promise.resolve(0),
+      vehicle
+        ? this.prisma.afterSale.count({
+            where: {
+              order: { customerId, vehicleId: vehicle.id },
+              status: { in: ["OPEN", "ASSIGNED"] }
+            }
+          })
+        : Promise.resolve(0),
+      this.prisma.customerVehicle.count({ where: { customerId } })
+    ]);
+
+    const unusableReason = vehicle
+      ? vehicle.status !== "ACTIVE"
+        ? "车辆已停用"
+        : !vehicle.vehicleTypeCode
+          ? "车辆类型待补齐"
+          : null
+      : null;
+
+    return {
+      customer: {
+        id: customer.id,
+        vehicleCount,
+        orderCount: customerOrderCount,
+        totalAmountCents: customerAmount._sum.totalAmountCents ?? 0,
+        outstandingCents: customerAmount._sum.outstandingCents ?? 0
+      },
+      vehicle: vehicle
+        ? {
+            ...vehicle,
+            usable: !unusableReason,
+            unusableReason,
+            orderCount: vehicleOrderCount,
+            totalAmountCents: vehicleAmount._sum.totalAmountCents ?? 0,
+            outstandingCents: vehicleAmount._sum.outstandingCents ?? 0,
+            activeWarrantyCount,
+            openAfterSalesCount,
+            recentConstruction
+          }
+        : null,
+      recentOrders
+    };
+  }
+
   async update(user: AuthenticatedCustomerUser, id: string, dto: UpdateCustomerDto) {
     const actor = await this.withStoreMember(user);
     const customer = await this.prisma.customer.findUnique({ where: { id } });
@@ -294,17 +422,37 @@ export class CustomersService {
 
   async createVehicle(user: AuthenticatedCustomerUser, dto: CreateVehicleDto) {
     const customer = await this.assertCanEditCustomer(user, dto.customerId);
-    const vehicle = await this.prisma.customerVehicle.create({
-      data: {
-        customerId: customer.id,
-        carPlate: dto.carPlate,
-        vinEncrypted: dto.vin ? this.codec.encrypt(dto.vin) : undefined,
-        vinHash: dto.vin ? this.codec.hash(dto.vin) : undefined,
-        carModel: dto.carModel,
-        vehicleTypeCode: dto.vehicleTypeCode,
-        carColor: dto.carColor,
-        photoUrl: dto.photoUrl
-      }
+    const identity = this.normalizeVehicleIdentity(dto.carPlate, dto.vin);
+    await this.assertVehicleIdentityAvailable(customer.storeId, identity);
+    await this.assertContactBelongsToCustomer(dto.defaultContactId, customer.id);
+    const vehicle = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.customerVehicle.create({
+        data: {
+          storeId: customer.storeId,
+          customerId: customer.id,
+          carPlate: identity.carPlate,
+          carPlateNormalized: identity.carPlateNormalized,
+          vinEncrypted: identity.vin ? this.codec.encrypt(identity.vin) : undefined,
+          vinHash: identity.vin ? this.codec.hash(identity.vin) : undefined,
+          carModel: dto.carModel.trim(),
+          vehicleTypeCode: dto.vehicleTypeCode,
+          carColor: dto.carColor?.trim() || undefined,
+          photoUrl: dto.photoUrl,
+          defaultContactId: dto.defaultContactId,
+          department: dto.department?.trim() || undefined
+        }
+      });
+      await tx.vehicleOwnershipHistory.create({
+        data: {
+          storeId: customer.storeId,
+          vehicleId: created.id,
+          toCustomerId: customer.id,
+          action: "CREATE",
+          afterSnapshot: this.toVehicleSnapshot(created),
+          operatedById: user.id
+        }
+      });
+      return created;
     });
     return this.sanitizeVehicle(vehicle);
   }
@@ -318,36 +466,192 @@ export class CustomersService {
       throw new NotFoundException("车辆不存在");
     }
     await this.assertCanEditCustomer(user, vehicle.customerId);
+    const identity = this.normalizeVehicleIdentity(
+      dto.carPlate === undefined ? vehicle.carPlate ?? undefined : dto.carPlate,
+      dto.vin
+    );
+    const vinHash = dto.vin ? this.codec.hash(identity.vin!) : vehicle.vinHash;
+    if (!identity.carPlateNormalized && !vinHash) {
+      throw new BadRequestException("车牌号和 VIN 至少填写一项");
+    }
+    await this.assertVehicleIdentityAvailable(
+      vehicle.customer.storeId,
+      { ...identity, vinHash },
+      vehicle.id
+    );
+    await this.assertContactBelongsToCustomer(dto.defaultContactId, vehicle.customerId);
 
-    const updated = await this.prisma.customerVehicle.update({
-      where: { id },
-      data: {
-        carPlate: dto.carPlate,
-        vinEncrypted: dto.vin ? this.codec.encrypt(dto.vin) : undefined,
-        vinHash: dto.vin ? this.codec.hash(dto.vin) : undefined,
-        carModel: dto.carModel,
-        vehicleTypeCode: dto.vehicleTypeCode,
-        carColor: dto.carColor,
-        photoUrl: dto.photoUrl
-      }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.customerVehicle.update({
+        where: { id },
+        data: {
+          carPlate: identity.carPlate,
+          carPlateNormalized: identity.carPlateNormalized,
+          vinEncrypted: dto.vin ? this.codec.encrypt(identity.vin!) : undefined,
+          vinHash: dto.vin ? vinHash : undefined,
+          carModel: dto.carModel?.trim(),
+          vehicleTypeCode: dto.vehicleTypeCode,
+          carColor: dto.carColor?.trim(),
+          photoUrl: dto.photoUrl,
+          defaultContactId: dto.defaultContactId,
+          department: dto.department?.trim()
+        }
+      });
+      await tx.vehicleOwnershipHistory.create({
+        data: {
+          storeId: vehicle.customer.storeId,
+          vehicleId: vehicle.id,
+          fromCustomerId: vehicle.customerId,
+          toCustomerId: vehicle.customerId,
+          action: "UPDATE",
+          beforeSnapshot: this.toVehicleSnapshot(vehicle),
+          afterSnapshot: this.toVehicleSnapshot(result),
+          operatedById: user.id
+        }
+      });
+      return result;
     });
     return this.sanitizeVehicle(updated);
   }
 
+  async listVehicles(user: AuthenticatedCustomerUser, customerId: string, query: ListCustomerVehiclesDto) {
+    await this.assertCanViewCustomer(user, customerId);
+    const { page, pageSize, skip } = normalizePagination(query.page, query.pageSize);
+    const q = query.q?.trim();
+    const where: Prisma.CustomerVehicleWhereInput = {
+      customerId,
+      status: query.status ?? "ACTIVE",
+      ...(q
+        ? {
+            OR: [
+              { carPlate: { contains: q, mode: "insensitive" } },
+              { carModel: { contains: q, mode: "insensitive" } },
+              { carColor: { contains: q, mode: "insensitive" } },
+              { department: { contains: q, mode: "insensitive" } }
+            ]
+          }
+        : {})
+    };
+    const [total, vehicles] = await Promise.all([
+      this.prisma.customerVehicle.count({ where }),
+      this.prisma.customerVehicle.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
+        include: {
+          defaultContact: { select: { id: true, name: true, role: true, department: true } },
+          _count: { select: { orders: true } }
+        }
+      })
+    ]);
+    return { total, page, pageSize, items: vehicles.map((item) => this.sanitizeVehicle(item)) };
+  }
+
+  async changeVehicleStatus(
+    user: AuthenticatedCustomerUser,
+    id: string,
+    status: "ACTIVE" | "INACTIVE",
+    dto: ChangeVehicleStatusDto
+  ) {
+    const vehicle = await this.prisma.customerVehicle.findUnique({ where: { id }, include: { customer: true } });
+    if (!vehicle) throw new NotFoundException("车辆不存在");
+    await this.assertCanManageVehicleLifecycle(user, vehicle.customer.storeId);
+    if (vehicle.status === status) return this.sanitizeVehicle(vehicle);
+    if (status === "ACTIVE") {
+      await this.assertVehicleIdentityAvailable(
+        vehicle.customer.storeId,
+        { carPlateNormalized: vehicle.carPlateNormalized ?? undefined, vinHash: vehicle.vinHash },
+        vehicle.id
+      );
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.customerVehicle.update({
+        where: { id },
+        data: status === "INACTIVE"
+          ? { status, disabledAt: new Date(), disabledById: user.id, disabledReason: dto.reason.trim() }
+          : { status, disabledAt: null, disabledById: null, disabledReason: null }
+      });
+      await tx.vehicleOwnershipHistory.create({
+        data: {
+          storeId: vehicle.customer.storeId,
+          vehicleId: vehicle.id,
+          fromCustomerId: vehicle.customerId,
+          toCustomerId: vehicle.customerId,
+          action: status === "INACTIVE" ? "DISABLE" : "ENABLE",
+          beforeSnapshot: this.toVehicleSnapshot(vehicle),
+          afterSnapshot: this.toVehicleSnapshot(result),
+          reason: dto.reason.trim(),
+          operatedById: user.id
+        }
+      });
+      return result;
+    });
+    return this.sanitizeVehicle(updated);
+  }
+
+  async transferVehicle(user: AuthenticatedCustomerUser, id: string, dto: TransferVehicleDto) {
+    const vehicle = await this.prisma.customerVehicle.findUnique({ where: { id }, include: { customer: true } });
+    if (!vehicle) throw new NotFoundException("车辆不存在");
+    await this.assertCanManageVehicleLifecycle(user, vehicle.customer.storeId);
+    const target = await this.prisma.customer.findUnique({ where: { id: dto.toCustomerId } });
+    if (!target) throw new NotFoundException("目标客户不存在");
+    if (target.storeId !== vehicle.customer.storeId) throw new BadRequestException("车辆只能转移给同门店客户");
+    if (target.id === vehicle.customerId) throw new BadRequestException("车辆已属于该客户");
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.customerVehicle.update({
+        where: { id },
+        data: { customerId: target.id, defaultContactId: null, department: null }
+      });
+      await tx.vehicleOwnershipHistory.create({
+        data: {
+          storeId: target.storeId,
+          vehicleId: vehicle.id,
+          fromCustomerId: vehicle.customerId,
+          toCustomerId: target.id,
+          action: "TRANSFER",
+          beforeSnapshot: this.toVehicleSnapshot(vehicle),
+          afterSnapshot: this.toVehicleSnapshot(result),
+          reason: dto.reason.trim(),
+          operatedById: user.id
+        }
+      });
+      return result;
+    });
+    return this.sanitizeVehicle(updated);
+  }
+
+  async vehicleHistory(user: AuthenticatedCustomerUser, id: string) {
+    const vehicle = await this.prisma.customerVehicle.findUnique({ where: { id } });
+    if (!vehicle) throw new NotFoundException("车辆不存在");
+    await this.assertCanViewCustomer(user, vehicle.customerId);
+    return this.prisma.vehicleOwnershipHistory.findMany({
+      where: { vehicleId: id },
+      orderBy: { operatedAt: "desc" },
+      include: {
+        fromCustomer: { select: { id: true, name: true, companyName: true } },
+        toCustomer: { select: { id: true, name: true, companyName: true } },
+        operatedBy: { select: { id: true, username: true, nickname: true } }
+      }
+    });
+  }
+
   async createCustomerUser(user: AuthenticatedCustomerUser, dto: CreateCustomerUserForCustomerDto) {
     const customer = await this.assertCanEditCustomer(user, dto.customerId);
-    if (customer.customerType !== "COMPANY") {
-      throw new BadRequestException("只有企业客户可以维护用户");
-    }
     const [companyUser] = this.normalizeCompanyUsers([dto]);
     if (!companyUser) {
-      throw new BadRequestException("请输入用户姓名");
+      throw new BadRequestException("请输入联系人姓名");
     }
-    const created = await this.prisma.customerUser.create({
-      data: {
-        customerId: customer.id,
-        ...this.toCustomerUserCreateData(companyUser)
+    const created = await this.prisma.$transaction(async (tx) => {
+      if (companyUser.isDefault) {
+        await tx.customerUser.updateMany({ where: { customerId: customer.id }, data: { isDefault: false } });
       }
+      return tx.customerUser.create({
+        data: {
+          customerId: customer.id,
+          ...this.toCustomerUserCreateData(companyUser)
+        }
+      });
     });
     return this.sanitizeCustomerUser(created);
   }
@@ -414,6 +718,26 @@ export class CustomersService {
     return customer;
   }
 
+  private async assertCanViewCustomer(user: AuthenticatedCustomerUser, customerId: string) {
+    const actor = await this.withStoreMember(user);
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer) {
+      throw new NotFoundException("客户不存在");
+    }
+    if (!CustomerPolicy.canView(actor, customer.storeId, customer.ownerUserId)) {
+      throw new ForbiddenException("无权限");
+    }
+    return customer;
+  }
+
+  private async assertCanManageVehicleLifecycle(user: AuthenticatedCustomerUser, storeId: string) {
+    const actor = await this.withStoreMember(user);
+    if (!CustomerPolicy.canManageVehicleLifecycle(actor, storeId)) {
+      throw new ForbiddenException("仅店长可以停用、启用或转移车辆");
+    }
+    return actor;
+  }
+
   private buildScopedWhere(user: UserWithStoreMember, storeId: string): Prisma.CustomerWhereInput {
     if (user.isAuditor) {
       return { storeId };
@@ -444,22 +768,108 @@ export class CustomersService {
     }
   }
 
-  private normalizeCompanyUsers(users: Array<{ name?: string; phone?: string; note?: string }> | undefined) {
+  private normalizeCompanyUsers(users: Array<{
+    name?: string;
+    phone?: string;
+    note?: string;
+    role?: "PRIMARY" | "SETTLEMENT" | "DRIVER" | "OTHER";
+    department?: string;
+    isDefault?: boolean;
+  }> | undefined) {
     return (users ?? [])
       .map((user) => ({
         name: user.name?.trim(),
         phone: user.phone?.trim(),
-        note: user.note?.trim()
+        note: user.note?.trim(),
+        role: user.role,
+        department: user.department?.trim(),
+        isDefault: user.isDefault
       }))
       .filter((user) => Boolean(user.name));
   }
 
-  private toCustomerUserCreateData(user: { name?: string; phone?: string; note?: string }) {
+  private toCustomerUserCreateData(user: {
+    name?: string;
+    phone?: string;
+    note?: string;
+    role?: "PRIMARY" | "SETTLEMENT" | "DRIVER" | "OTHER";
+    department?: string;
+    isDefault?: boolean;
+  }) {
     return {
       name: user.name!,
       phoneEncrypted: user.phone ? this.codec.encrypt(user.phone) : undefined,
       phoneHash: user.phone ? this.codec.hash(user.phone) : undefined,
-      note: user.note || undefined
+      note: user.note || undefined,
+      role: user.role ?? "OTHER",
+      department: user.department || undefined,
+      isDefault: user.isDefault ?? false
+    };
+  }
+
+  private normalizeVehicleIdentity(carPlate?: string, vin?: string) {
+    const normalizedPlate = carPlate?.replace(/\s+/g, "").toUpperCase() || undefined;
+    const normalizedVin = vin?.replace(/\s+/g, "").toUpperCase() || undefined;
+    return {
+      carPlate: normalizedPlate,
+      carPlateNormalized: normalizedPlate,
+      vin: normalizedVin,
+      vinHash: normalizedVin ? this.codec.hash(normalizedVin) : undefined
+    };
+  }
+
+  private async assertVehicleIdentityAvailable(
+    storeId: string,
+    identity: { carPlateNormalized?: string; vin?: string; vinHash?: string | null },
+    excludeVehicleId?: string
+  ) {
+    const vinHash = identity.vinHash ?? (identity.vin ? this.codec.hash(identity.vin) : undefined);
+    if (!identity.carPlateNormalized && !vinHash) {
+      throw new BadRequestException("车牌号和 VIN 至少填写一项");
+    }
+    const duplicate = await this.prisma.customerVehicle.findFirst({
+      where: {
+        storeId,
+        id: excludeVehicleId ? { not: excludeVehicleId } : undefined,
+        OR: [
+          ...(identity.carPlateNormalized ? [{ carPlateNormalized: identity.carPlateNormalized }] : []),
+          ...(vinHash ? [{ vinHash }] : [])
+        ]
+      },
+      select: { id: true, carPlate: true }
+    });
+    if (duplicate) throw new ConflictException("该门店已存在相同车牌号或 VIN 的车辆");
+  }
+
+  private async assertContactBelongsToCustomer(contactId: string | null | undefined, customerId: string) {
+    if (!contactId) return;
+    const contact = await this.prisma.customerUser.findUnique({ where: { id: contactId }, select: { customerId: true } });
+    if (!contact || contact.customerId !== customerId) {
+      throw new BadRequestException("默认联系人不属于当前客户");
+    }
+  }
+
+  private toVehicleSnapshot(vehicle: {
+    id: string;
+    customerId: string;
+    carPlate: string | null;
+    carModel: string;
+    carColor: string | null;
+    vehicleTypeCode: string | null;
+    status: string;
+    defaultContactId: string | null;
+    department: string | null;
+  }) {
+    return {
+      id: vehicle.id,
+      customerId: vehicle.customerId,
+      carPlate: vehicle.carPlate,
+      carModel: vehicle.carModel,
+      carColor: vehicle.carColor,
+      vehicleTypeCode: vehicle.vehicleTypeCode,
+      status: vehicle.status,
+      defaultContactId: vehicle.defaultContactId,
+      department: vehicle.department
     };
   }
 

@@ -20,7 +20,10 @@ test("invoices page uses business selectors instead of manual ids", () => {
   assert.match(pageSource, /paymentStatus: "PAID"/);
   assert.match(pageSource, /const invoiceOrderOptions =/);
   assert.match(pageSource, /const invoiceOptions =/);
-  assert.match(pageSource, /placeholder="选择可开票订单"/);
+  assert.match(pageSource, /可选择同一企业客户的多笔订单/);
+  assert.match(pageSource, /mode="multiple"/);
+  assert.match(pageSource, /逐单开票金额/);
+  assert.match(pageSource, /可开票/);
   assert.match(pageSource, /options=\{invoiceOrderOptions\}/);
   assert.match(pageSource, /placeholder="选择发票"/);
   assert.match(pageSource, /options=\{invoiceOptions\}/);
@@ -134,10 +137,10 @@ test("invoices page opens the application drawer from order invoice links", () =
   assert.match(pageSource, /const requestedInvoiceOrderId = searchParams\.get\("orderId"\)/);
   assert.match(pageSource, /invoiceActionParam !== "create-invoice"/);
   assert.match(pageSource, /setApplicationDrawerOpen\(true\)/);
-  assert.match(pageSource, /applyForm\.setFieldsValue\(\{ orderId: requestedInvoiceOrderId \}\)/);
-  assert.match(pageSource, /label: `当前订单 \$\{requestedInvoiceOrderId\}`/);
+  assert.match(pageSource, /orderIds: \[requestedInvoiceOrderId\]/);
+  assert.match(pageSource, /allocations: \[\{ orderId: requestedInvoiceOrderId, amountYuan \}\]/);
+  assert.match(pageSource, /label: `当前订单 \$\{requestedInvoiceOrderId\} \/ 可开票/);
 });
-
 test("invoices page uses mobile invoice cards instead of squeezing the desktop table", () => {
   const pageSource = readFileSync("app/invoices/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
@@ -229,3 +232,21 @@ test("invoice detail page follows the prototype invoice detail and operation log
   );
   assert.match(cssSource, /\.invoice-detail-timeline/);
 });
+
+test("invoice detail page wires issue reissue and void actions to invoice APIs", () => {
+  const pageSource = readFileSync("app/invoices/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /useMutation/);
+  assert.match(pageSource, /invoicesApi\.issue\(invoiceId/);
+  assert.match(pageSource, /invoicesApi\.reissue\(invoiceId/);
+  assert.match(pageSource, /invoicesApi\.void\(invoiceId/);
+  assert.match(pageSource, /openInvoiceAction\("ISSUE"\)/);
+  assert.match(pageSource, /openInvoiceAction\("REISSUE"\)/);
+  assert.match(pageSource, /openInvoiceAction\("VOID"\)/);
+  assert.match(pageSource, /actionForm\.validateFields/);
+  assert.match(pageSource, /取消申请/);
+  assert.match(pageSource, /废弃\/取消发票/);
+});
+
+
+

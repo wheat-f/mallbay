@@ -17,6 +17,7 @@ export class ExpenseWorkflowService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(actor: FinanceActor, dto: CreateExpenseDto) {
+    actor = await this.withStoreMember(actor);
     if (!PermissionPolicy.canSubmitFinanceApplication(actor, dto.storeId)) throw new ForbiddenException("无权限");
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
@@ -48,6 +49,7 @@ export class ExpenseWorkflowService {
   }
 
   async review(actor: FinanceActor, id: string, dto: ReviewExpenseDto) {
+    actor = await this.withStoreMember(actor);
     if (dto.decision !== "APPROVE" && dto.decision !== "REJECT") throw new ConflictException("只支持通过或驳回");
     const expense = await this.prisma.expenseApplication.findUnique({ where: { id } });
     if (!expense) throw new NotFoundException("费用申请不存在");
@@ -75,6 +77,7 @@ export class ExpenseWorkflowService {
   }
 
   async withdraw(actor: FinanceActor, id: string, note?: string) {
+    actor = await this.withStoreMember(actor);
     const expense = await this.prisma.expenseApplication.findUnique({ where: { id } });
     if (!expense) throw new NotFoundException("费用申请不存在");
     if (!PermissionPolicy.canViewOwnFinanceApplication(actor, expense.storeId, expense.applicantId)) throw new ForbiddenException("无权限");
@@ -89,6 +92,7 @@ export class ExpenseWorkflowService {
   }
 
   async resubmit(actor: FinanceActor, id: string, dto: ResubmitExpenseDto) {
+    actor = await this.withStoreMember(actor);
     const expense = await this.prisma.expenseApplication.findUnique({ where: { id } });
     if (!expense) throw new NotFoundException("费用申请不存在");
     if (!PermissionPolicy.canViewOwnFinanceApplication(actor, expense.storeId, expense.applicantId)) throw new ForbiddenException("无权限");
@@ -104,5 +108,14 @@ export class ExpenseWorkflowService {
       });
       return updated;
     });
+  }
+
+  private async withStoreMember(actor: FinanceActor): Promise<FinanceActor> {
+    if (actor.storeMember !== undefined) return actor;
+    const member = await this.prisma.storeMember.findUnique({
+      where: { userId: actor.id },
+      select: { storeId: true, position: true }
+    });
+    return { ...actor, storeMember: member };
   }
 }

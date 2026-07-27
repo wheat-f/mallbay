@@ -2,7 +2,9 @@ import type { InvoiceSummary } from "@mallbay/shared";
 import { request } from "../../lib/request";
 
 export type ApplyInvoicePayload = {
-  orderId: string;
+  orderId?: string;
+  orderIds?: string[];
+  allocations?: Array<{ orderId: string; amountCents: number }>;
   title: string;
   taxNo?: string;
   amountCents: number;

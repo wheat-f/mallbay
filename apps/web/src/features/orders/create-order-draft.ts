@@ -11,6 +11,12 @@ export type CreateOrderDraft = {
   savedAt: string;
   values: CreateOrderFormValues;
   pricingSnapshot?: PricingCalculationResponse;
+  copySource?: {
+    orderId: string;
+    orderNo: string;
+    copiedFields: string[];
+    excludedFields: string[];
+  };
   summary: {
     customerName: string;
     productCount: number;

@@ -474,6 +474,9 @@ export class SalesQuotesService {
     if (quote.status !== SalesQuoteStatus.APPROVED || quote.validUntil <= new Date()) {
       throw new BadRequestException("只有有效的已批准报价单可以转订单");
     }
+    if (!quote.vehicleId) {
+      throw new BadRequestException("报价单未选择车辆，请补齐车辆后再生成正式订单");
+    }
     if (quote.costCompleteness === "TEMPORARY" && (quote.temporaryCostCents === null || !quote.temporaryCostReason?.trim())) {
       throw new BadRequestException("临时成本报价缺少冻结的金额或成本依据，不能转正式订单");
     }
@@ -494,7 +497,7 @@ export class SalesQuotesService {
       const order = await this.createOrderUseCase.execute(actor, {
         storeId: quote.storeId,
         customerId: quote.customerId,
-        vehicleId: quote.vehicleId ?? undefined,
+        vehicleId: quote.vehicleId,
         salesPersonId: quote.salesPersonId,
         constructionType: pricingInput.constructionType,
         constructionLocation: pricingInput.constructionLocation,

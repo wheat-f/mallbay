@@ -60,7 +60,7 @@ test("CustomersService creates a personal customer owned by the current sales us
   assert.deepEqual(calls, ["customer.create"]);
 });
 
-test("CustomersService creates company customer users without role fields", async () => {
+test("CustomersService creates company customer contacts with safe role defaults", async () => {
   const writes: unknown[] = [];
   const prisma = {
     customer: {
@@ -99,7 +99,8 @@ test("CustomersService creates company customer users without role fields", asyn
 
   const serialized = JSON.stringify(writes[0]);
   assert.equal(serialized.includes("\"users\":{\"create\":[{\"name\":\"王五\""), true);
-  assert.equal(serialized.includes("role"), false);
+  assert.equal(serialized.includes("\"role\":\"OTHER\""), true);
+  assert.equal(serialized.includes("\"isDefault\":false"), true);
   assert.deepEqual(result, {
     id: "customer-company-1",
     customerType: CustomerType.COMPANY,
@@ -553,16 +554,12 @@ test("CustomersService creates custom tags and rejects blank labels", async () =
 
 test("CustomersService adds a user under an existing company customer", async () => {
   const writes: unknown[] = [];
-  const prisma = {
-    customer: {
-      findUnique: async () => ({
-        id: "customer-company-1",
-        storeId: "store-1",
-        ownerUserId: "sales-1",
-        customerType: CustomerType.COMPANY
-      })
-    },
+  const tx = {
     customerUser: {
+      updateMany: async (args: unknown) => {
+        writes.push(args);
+        return { count: 0 };
+      },
       create: async (args: unknown) => {
         writes.push(args);
         return {
@@ -575,6 +572,17 @@ test("CustomersService adds a user under an existing company customer", async ()
         };
       }
     }
+  };
+  const prisma = {
+    customer: {
+      findUnique: async () => ({
+        id: "customer-company-1",
+        storeId: "store-1",
+        ownerUserId: "sales-1",
+        customerType: CustomerType.COMPANY
+      })
+    },
+    $transaction: async (callback: (client: typeof tx) => unknown) => callback(tx)
   };
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
@@ -597,6 +605,175 @@ test("CustomersService adds a user under an existing company customer", async ()
     name: "李四",
     note: "用车人"
   });
+});
+
+test("CustomersService lets finance read a paged vehicle list without edit permission", async () => {
+  let capturedWhere: unknown;
+  const prisma = {
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
+    },
+    customerVehicle: {
+      count: async (args: { where: unknown }) => {
+        capturedWhere = args.where;
+        return 1;
+      },
+      findMany: async () => [{
+        id: "vehicle-1",
+        customerId: "customer-1",
+        status: "ACTIVE",
+        carPlate: "京A12345",
+        carModel: "宝马5系",
+        vinEncrypted: "secret",
+        vinHash: "hash:vin",
+        defaultContact: null,
+        _count: { orders: 2 }
+      }]
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+
+  const result = await service.listVehicles(
+    {
+      id: "finance-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.FINANCE }
+    },
+    "customer-1",
+    { q: "宝马", page: 2, pageSize: 10 }
+  );
+
+  assert.equal(result.total, 1);
+  assert.equal(result.page, 2);
+  assert.equal(result.pageSize, 10);
+  assert.equal("vinEncrypted" in result.items[0]!, false);
+  assert.equal("vinHash" in result.items[0]!, false);
+  assert.deepEqual(capturedWhere, {
+    customerId: "customer-1",
+    status: "ACTIVE",
+    OR: [
+      { carPlate: { contains: "宝马", mode: "insensitive" } },
+      { carModel: { contains: "宝马", mode: "insensitive" } },
+      { carColor: { contains: "宝马", mode: "insensitive" } },
+      { department: { contains: "宝马", mode: "insensitive" } }
+    ]
+  });
+});
+
+test("CustomersService denies sales users from disabling vehicles", async () => {
+  const prisma = {
+    customerVehicle: {
+      findUnique: async () => ({
+        id: "vehicle-1",
+        customerId: "customer-1",
+        status: "ACTIVE",
+        customer: { id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" }
+      })
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+
+  await assert.rejects(
+    () => service.changeVehicleStatus(
+      {
+        id: "sales-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.SALES }
+      },
+      "vehicle-1",
+      "INACTIVE",
+      { reason: "车辆暂不使用" }
+    ),
+    { name: "ForbiddenException", message: "仅店长可以停用、启用或转移车辆" }
+  );
+});
+
+test("CustomersService rechecks duplicate identity before a manager enables a vehicle", async () => {
+  let duplicateWhere: unknown;
+  const vehicle = {
+    id: "vehicle-1",
+    customerId: "customer-1",
+    status: "INACTIVE",
+    carPlate: "京A12345",
+    carPlateNormalized: "京A12345",
+    vinHash: "hash:VIN001",
+    carModel: "宝马5系",
+    carColor: "黑色",
+    vehicleTypeCode: "REGULAR",
+    defaultContactId: null,
+    department: null,
+    customer: { id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" }
+  };
+  const prisma = {
+    customerVehicle: {
+      findUnique: async () => vehicle,
+      findFirst: async (args: { where: unknown }) => {
+        duplicateWhere = args.where;
+        return { id: "vehicle-2", carPlate: "京A12345" };
+      }
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+
+  await assert.rejects(
+    () => service.changeVehicleStatus(
+      {
+        id: "manager-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
+      },
+      "vehicle-1",
+      "ACTIVE",
+      { reason: "恢复使用" }
+    ),
+    { name: "ConflictException", message: "该门店已存在相同车牌号或 VIN 的车辆" }
+  );
+  assert.deepEqual(duplicateWhere, {
+    storeId: "store-1",
+    id: { not: "vehicle-1" },
+    OR: [
+      { carPlateNormalized: "京A12345" },
+      { vinHash: "hash:VIN001" }
+    ]
+  });
+});
+
+test("CustomersService lets finance read vehicle ownership history", async () => {
+  const prisma = {
+    customerVehicle: {
+      findUnique: async () => ({ id: "vehicle-1", customerId: "customer-1" })
+    },
+    customer: {
+      findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
+    },
+    vehicleOwnershipHistory: {
+      findMany: async () => [{ id: "history-1", action: "CREATE" }]
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+
+  const history = await service.vehicleHistory(
+    {
+      id: "finance-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.FINANCE }
+    },
+    "vehicle-1"
+  );
+
+  assert.deepEqual(history, [{ id: "history-1", action: "CREATE" }]);
 });
 
 test("CustomersService rejects sales editing another sales user's customer", async () => {

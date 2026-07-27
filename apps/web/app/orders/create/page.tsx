@@ -43,7 +43,8 @@ import { getProductUnitLabel } from "../../../src/features/products/display";
 import {
   loadCreateOrderDraft,
   removeCreateOrderDraft,
-  saveCreateOrderDraft
+  saveCreateOrderDraft,
+  type CreateOrderDraft
 } from "../../../src/features/orders/create-order-draft";
 
 type ProductOption = {
@@ -65,14 +66,7 @@ type ProductOption = {
   }>;
 };
 
-type NewOrderCustomerFormValues = CreateCustomerFormValues & {
-  carPlate?: string;
-  vin?: string;
-  carModel: string;
-  carColor?: string;
-  photoUrl?: string;
-  vehicleTypeCode: "SMALL_CAR" | "STANDARD_CAR" | "LUXURY_LARGE_CAR";
-};
+type NewOrderCustomerFormValues = CreateCustomerFormValues;
 
 type NewPaymentAccountFormValues = Omit<PaymentAccountPayload, "storeId">;
 
@@ -104,6 +98,7 @@ function CreateOrderContent() {
   const [newPaymentAccountOpen, setNewPaymentAccountOpen] = useState(false);
   const [serverPricing, setServerPricing] = useState<PricingCalculationResponse | null>(null);
   const [draftPricingChoiceOpen, setDraftPricingChoiceOpen] = useState(false);
+  const [copySource, setCopySource] = useState<CreateOrderDraft["copySource"] | null>(null);
   const [newOrderCustomerType, setNewOrderCustomerType] = useState("PERSONAL");
   const constructionChargeTouchedRef = useRef(false);
   const draftRestoredRef = useRef(false);
@@ -142,6 +137,12 @@ function CreateOrderContent() {
     queryKey: ["order-customer-detail", selectedCustomerId],
     queryFn: () => customerApi.detail(selectedCustomerId!),
     enabled: Boolean(selectedCustomerId)
+  });
+
+  const orderContextQuery = useQuery({
+    queryKey: ["order-customer-context", selectedCustomerId, selectedVehicleId],
+    queryFn: () => customerApi.orderContext(selectedCustomerId!, selectedVehicleId),
+    enabled: Boolean(selectedCustomerId && selectedVehicleId)
   });
 
   const productsQuery = useQuery({
@@ -382,38 +383,37 @@ function CreateOrderContent() {
   });
 
   const createCustomerMutation = useMutation({
-    mutationFn: async (values: NewOrderCustomerFormValues) => {
+    mutationFn: (values: NewOrderCustomerFormValues) => {
       if (!storeId) throw new Error("当前账号尚未加入门店");
-      const { carPlate, vin, carModel, carColor, photoUrl, vehicleTypeCode, ...customerValues } = values;
-      const customer = await customerApi.create(toCreateCustomerPayload(storeId, customerValues));
-      try {
-        await customerApi.createVehicle({
-          customerId: customer.id,
-          carPlate: trimOptional(carPlate),
-          vin: trimOptional(vin),
-          carModel: carModel.trim(),
-          vehicleTypeCode,
-          carColor: trimOptional(carColor),
-          photoUrl: trimOptional(photoUrl)
-        });
-        return { customer, vehicleCreated: true };
-      } catch {
-        return { customer, vehicleCreated: false };
-      }
+      return customerApi.create(toCreateCustomerPayload(storeId, values));
     },
-    onSuccess: async (result) => {
-      if (result.vehicleCreated) {
-        message.success("客户已创建并回填到订单");
-      } else {
-        message.warning("客户已创建，但车辆创建失败，请在客户详情继续补车辆");
-      }
+    onSuccess: (customer) => {
       setNewCustomerOpen(false);
       setNewOrderCustomerType("PERSONAL");
       newCustomerForm.resetFields();
       setCustomerKeyword("");
       setReferrerKeyword("");
-      form.setFieldsValue(resolveCreatedCustomerSelection(result.customer));
-      await queryClient.invalidateQueries({ queryKey: ["order-customer-detail", result.customer.id] });
+      const selection = resolveCreatedCustomerSelection(customer);
+      form.setFieldsValue(selection);
+      const values = {
+        ...(form.getFieldsValue(true) as CreateOrderFormValues),
+        ...selection
+      };
+      if (storeId) {
+        saveCreateOrderDraft(localStorage, {
+          storeId,
+          savedAt: new Date().toISOString(),
+          values,
+          pricingSnapshot: serverPricing ?? undefined,
+          summary: {
+            customerName: customer.companyName ?? customer.name ?? "新建客户",
+            productCount: values.items?.filter((item) => item?.productId).length ?? 0,
+            totalAmountYuan: getOrderAmountSummary(values).totalAmountYuan
+          }
+        });
+      }
+      message.success("客户已创建，订单草稿已保留；请先在客户档案新增车辆");
+      router.push(`/customers/${customer.id}`);
     },
     onError: (error: Error) => message.error(error.message)
   });
@@ -451,6 +451,7 @@ function CreateOrderContent() {
       savedAt: new Date().toISOString(),
       values,
       pricingSnapshot: serverPricing ?? undefined,
+      copySource: copySource ?? undefined,
       summary: {
         customerName: selectedCustomer?.companyName ?? selectedCustomer?.name ?? "客户待选择",
         productCount: values.items?.filter((item) => item?.productId).length ?? 0,
@@ -489,13 +490,18 @@ function CreateOrderContent() {
       suggestedConstructionChargeYuan: draft.values.suggestedConstructionChargeYuan ?? draft.values.suggestedLaborCostYuan,
       constructionChargeYuan: draft.values.constructionChargeYuan ?? draft.values.laborCostYuan
     });
+    setCopySource(draft.copySource ?? null);
+    if (draft.copySource) {
+      form.setFieldValue("pricingCalculationId", undefined);
+      setServerPricing(null);
+    }
     if (draft.pricingSnapshot && draft.values.pricingCalculationId) {
       setServerPricing(draft.pricingSnapshot);
       draftPricingPendingRef.current = true;
       setDraftPricingChoiceOpen(true);
     }
     constructionChargeTouchedRef.current = true;
-    message.success("已恢复订单草稿");
+    message.success(draft.copySource ? "已恢复复制订单草稿，请核对车辆、预约和当前建议价" : "已恢复订单草稿");
   }, [form, message, params, storeId]);
 
   const keepDraftPricing = () => {
@@ -539,6 +545,15 @@ function CreateOrderContent() {
   return (
     <>
       <div className="management-page">
+        {copySource ? (
+          <Alert
+            type="info"
+            showIcon
+            className="mb-4"
+            message={`正在复制订单 ${copySource.orderNo}`}
+            description={`已复制：${copySource.copiedFields.join("、")}。未复制：${copySource.excludedFields.join("、")}。客户固定为原订单客户，车辆已重新选择，提交前系统会按当前规则重新校验。`}
+          />
+        ) : null}
         {draftPricingChoiceOpen ? (
           <Alert
             type="warning"
@@ -601,6 +616,7 @@ function CreateOrderContent() {
                 <div className="create-order-customer-row">
                   <Form.Item name="customerId" label="客户" rules={[{ required: true, message: "请选择客户" }]}>
                     <Select
+                      disabled={Boolean(copySource)}
                       showSearch
                       filterOption={false}
                       onSearch={setCustomerKeyword}
@@ -615,15 +631,14 @@ function CreateOrderContent() {
                     />
                   </Form.Item>
                   <Form.Item label=" ">
-                    <Button icon={<PlusOutlined />} disabled={!storeId} onClick={() => setNewCustomerOpen(true)}>
+                    <Button icon={<PlusOutlined />} disabled={!storeId || Boolean(copySource)} onClick={() => setNewCustomerOpen(true)}>
                       新建客户
                     </Button>
                   </Form.Item>
                 </div>
 
-                <Form.Item name="vehicleId" label="车辆">
+                <Form.Item name="vehicleId" label="车辆" rules={[{ required: true, message: "请选择车辆" }]}>
                   <Select
-                    allowClear
                     disabled={!selectedCustomer}
                     loading={selectedCustomerQuery.isLoading}
                     options={vehicleOptions}
@@ -631,6 +646,23 @@ function CreateOrderContent() {
                     placeholder={selectedCustomer ? "选择客户车辆" : "请先选择客户"}
                   />
                 </Form.Item>
+
+                {selectedCustomer && vehicleOptions.length === 0 ? (
+                  <Alert
+                    showIcon
+                    type="warning"
+                    message="该客户没有可用于下单的启用车辆"
+                    description="请先前往客户档案新增或启用车辆，正式订单必须关联一辆启用车辆。"
+                    action={(
+                      <Button onClick={() => {
+                        saveDraft();
+                        router.push(`/customers/${selectedCustomer.id}`);
+                      }}>
+                        前往客户档案
+                      </Button>
+                    )}
+                  />
+                ) : null}
 
 
                 <Form.Item name="vehicleTypeCode" label="车辆类型" rules={[{ required: Boolean(selectedVehicle), message: "请选择车辆类型" }]} extra={selectedVehicle?.vehicleTypeCode ? "已从车辆档案自动带出；本单可按实际情况修正。" : selectedVehicle ? "该历史车辆尚未维护车辆类型，请为本单选择。" : "请先选择车辆。"}>
@@ -962,7 +994,11 @@ function CreateOrderContent() {
 
             <aside className="create-order-aside">
               <div className="create-order-history-panel-slot">
-                <CustomerHistoryPanel customerHistory={customerHistory} />
+          <CustomerHistoryPanel
+            customerHistory={customerHistory}
+            orderContext={orderContextQuery.data}
+            loadingVehicleContext={orderContextQuery.isLoading}
+          />
               </div>
               <Card title="订单金额汇总" className="create-order-summary-card">
                 <div className="create-order-summary-row">
@@ -993,14 +1029,14 @@ function CreateOrderContent() {
         <Drawer
           className="create-order-customer-drawer"
           open={newCustomerOpen}
-          title="新建客户并回填订单"
+          title="新建客户"
           onClose={closeNewCustomerDrawer}
           destroyOnHidden
           footer={
             <div className="create-order-drawer-footer">
               <Button onClick={closeNewCustomerDrawer}>取消</Button>
               <Button type="primary" loading={createCustomerMutation.isPending} onClick={() => newCustomerForm.submit()}>
-                创建并使用
+                创建并前往客户档案
               </Button>
             </div>
           }
@@ -1116,31 +1152,12 @@ function CreateOrderContent() {
               />
             </Form.Item>
 
-            <Typography.Title level={5}>车辆信息</Typography.Title>
-            <Form.Item
-              name="carModel"
-              label="车型"
-              rules={[{ required: true, whitespace: true, message: "请输入车型" }]}
-            >
-              <Input maxLength={80} placeholder="例如：宝马 5 系" />
-            </Form.Item>
-            <Form.Item name="vehicleTypeCode" label="车辆类型" rules={[{ required: true, message: "请选择车辆类型" }]}>
-              <Select loading={vehicleTypesQuery.isLoading} options={vehicleTypeOptions} placeholder="请选择小车、常规车或豪车/大车" />
-            </Form.Item>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Form.Item name="carPlate" label="车牌号">
-                <Input maxLength={20} placeholder="湘A12345" />
-              </Form.Item>
-              <Form.Item name="vin" label="VIN">
-                <Input maxLength={17} placeholder="17 位车架号" />
-              </Form.Item>
-              <Form.Item name="carColor" label="颜色">
-                <Input maxLength={30} />
-              </Form.Item>
-            </div>
-            <Form.Item name="photoUrl" label="车辆照片">
-              <Input maxLength={500} placeholder="车辆照片链接，可稍后在客户档案补充" />
-            </Form.Item>
+            <Alert
+              showIcon
+              type="info"
+              message="车辆统一在客户档案维护"
+              description="创建客户后将自动保存当前订单草稿并前往客户档案。新增或启用车辆后，可返回订单继续选择。"
+            />
           </Form>
         </Drawer>
 
@@ -1261,16 +1278,58 @@ function getSuggestedPriceSourceLabel(source?: "DEFAULT_UNIT" | "UNIT_OVERRIDE" 
 }
 
 function CustomerHistoryPanel({
-  customerHistory
+  customerHistory,
+  orderContext,
+  loadingVehicleContext
 }: {
   customerHistory?: ReturnType<typeof getOrderCustomerHistorySummary>;
+  orderContext?: Awaited<ReturnType<typeof customerApi.orderContext>>;
+  loadingVehicleContext?: boolean;
 }) {
+  const vehicleContext = orderContext?.vehicle;
+  const latestVehicleOrder = orderContext?.recentOrders[0];
   return (
     <Card title="客户历史记录" className="create-order-history-panel">
       {customerHistory ? (
         <>
           {customerHistory.warning ? (
             <Alert className="mb-3" type="warning" showIcon title={customerHistory.warning} />
+          ) : null}
+          {loadingVehicleContext ? (
+            <Typography.Text type="secondary">正在加载当前车辆历史...</Typography.Text>
+          ) : vehicleContext ? (
+            <div className="create-order-history-section">
+              <Typography.Text strong>当前车辆</Typography.Text>
+              <div className="create-order-history-line">
+                {vehicleContext.carPlate || "未上牌"} / {vehicleContext.carModel}
+                {vehicleContext.carColor ? ` / ${vehicleContext.carColor}` : ""}
+              </div>
+              {!vehicleContext.usable ? (
+                <Alert
+                  className="mt-2"
+                  type="warning"
+                  showIcon
+                  title={vehicleContext.unusableReason ?? "当前车辆暂不可用于下单"}
+                />
+              ) : null}
+              <div className="create-order-history-line">
+                历史订单 {vehicleContext.orderCount} 单，累计消费
+                ¥{(centsToYuan(vehicleContext.totalAmountCents) ?? 0).toFixed(2)}，待收
+                ¥{(centsToYuan(vehicleContext.outstandingCents) ?? 0).toFixed(2)}
+              </div>
+              <div className="create-order-history-line">
+                有效质保 {vehicleContext.activeWarrantyCount} 个，待处理售后
+                {vehicleContext.openAfterSalesCount} 个
+              </div>
+              {latestVehicleOrder ? (
+                <div className="create-order-history-line">
+                  最近订单：{latestVehicleOrder.orderNo} / {latestVehicleOrder.status} /{" "}
+                  ¥{(centsToYuan(latestVehicleOrder.amount?.totalAmountCents ?? 0) ?? 0).toFixed(2)}
+                </div>
+              ) : (
+                <Typography.Text type="secondary">当前车辆暂无历史订单</Typography.Text>
+              )}
+            </div>
           ) : null}
           <div className="create-order-history-metrics">
             <div>

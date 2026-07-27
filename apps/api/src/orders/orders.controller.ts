@@ -3,6 +3,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuard
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CreateOrderDto } from "./dto/create-order.dto";
+import { CopyOrderToDraftDto } from "./dto/copy-order.dto";
 import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
 import { CreatePaymentAccountDto } from "./dto/create-payment-account.dto";
 import { ExportOrderDetailsDto, ListOrdersDto } from "./dto/list-orders.dto";
@@ -44,6 +45,11 @@ export class OrdersController {
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.orders.detail(req.user, id);
+  }
+
+  @Post(":id/copy")
+  copyToDraft(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: CopyOrderToDraftDto) {
+    return this.orders.copyToDraft(req.user, id, dto);
   }
 
   @Patch(":id/commercials")

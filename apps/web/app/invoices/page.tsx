@@ -28,7 +28,11 @@ import {
 } from "../../src/features/invoices/display";
 import { exportRowsToExcel } from "../../src/lib/export-excel";
 
-type ApplyInvoiceFormValues = Omit<ApplyInvoicePayload, "amountCents"> & {
+type ApplyInvoiceFormValues = {
+  orderIds: string[];
+  allocations: Array<{ orderId: string; amountYuan: number }>;
+  title: string;
+  taxNo?: string;
   amountYuan: number;
   invoiceType?: "SPECIAL" | "NORMAL";
   recipientName?: string;
@@ -49,9 +53,16 @@ type InvoiceProcessValues = {
 
 type InvoiceOrderOption = {
   id: string;
+  customerId?: string | null;
   orderNo?: string | null;
-  customer?: { personalName?: string | null; companyName?: string | null; name?: string | null } | null;
-  vehicle?: { plateNo?: string | null } | null;
+  amount?: { totalAmountCents?: number | null } | null;
+  customer?: {
+    personalName?: string | null;
+    companyName?: string | null;
+    name?: string | null;
+    customerType?: "PERSONAL" | "COMPANY" | null;
+  } | null;
+  vehicle?: { plateNo?: string | null; carPlate?: string | null } | null;
 };
 
 export default function InvoicesPage() {
@@ -91,20 +102,51 @@ function InvoicesContent() {
     enabled: Boolean(storeId)
   });
 
-  const invoiceOrderOptions = ((invoiceOrdersQuery.data?.items ?? []) as InvoiceOrderOption[]).map((order) => ({
-    value: order.id,
-    label: [
-      order.orderNo ?? "未编号订单",
-      order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name,
-      order.vehicle?.plateNo
-    ].filter(Boolean).join(" / ")
-  }));
-  if (requestedInvoiceOrderId && !invoiceOrderOptions.some((option) => option.value === requestedInvoiceOrderId)) {
-    invoiceOrderOptions.push({
-      value: requestedInvoiceOrderId,
-      label: `当前订单 ${requestedInvoiceOrderId}`
-    });
-  }
+  const invoiceOrderRecords = useMemo(
+    () => (invoiceOrdersQuery.data?.items ?? []) as InvoiceOrderOption[],
+    [invoiceOrdersQuery.data?.items]
+  );
+  const invoiceOrderById = useMemo(
+    () => new Map(invoiceOrderRecords.map((order) => [order.id, order])),
+    [invoiceOrderRecords]
+  );
+  const invoiceOrderRemainingById = useMemo(() => {
+    const usedByOrder = new Map<string, number>();
+    for (const invoice of invoicesQuery.data ?? []) {
+      if (invoice.status === "VOIDED") continue;
+      if (invoice.allocations?.length) {
+        for (const allocation of invoice.allocations) {
+          usedByOrder.set(allocation.orderId, (usedByOrder.get(allocation.orderId) ?? 0) + allocation.amountCents);
+        }
+      } else if (invoice.orderId) {
+        usedByOrder.set(invoice.orderId, (usedByOrder.get(invoice.orderId) ?? 0) + invoice.amountCents);
+      }
+    }
+    return new Map(invoiceOrderRecords.map((order) => [
+      order.id,
+      Math.max(0, (order.amount?.totalAmountCents ?? 0) - (usedByOrder.get(order.id) ?? 0))
+    ]));
+  }, [invoiceOrderRecords, invoicesQuery.data]);
+  const invoiceOrderOptions = useMemo(() => {
+    const options = invoiceOrderRecords
+      .filter((order) => (invoiceOrderRemainingById.get(order.id) ?? 0) > 0)
+      .map((order) => ({
+        value: order.id,
+        label: [
+          order.orderNo ?? "未编号订单",
+          order.customer?.companyName ?? order.customer?.personalName ?? order.customer?.name,
+          order.vehicle?.carPlate ?? order.vehicle?.plateNo,
+          `可开票 ${formatCentsAsYuan(invoiceOrderRemainingById.get(order.id) ?? 0)}`
+        ].filter(Boolean).join(" / ")
+      }));
+    if (requestedInvoiceOrderId && !options.some((option) => option.value === requestedInvoiceOrderId)) {
+      options.push({
+        value: requestedInvoiceOrderId,
+        label: `当前订单 ${requestedInvoiceOrderId} / 可开票 ${formatCentsAsYuan(invoiceOrderRemainingById.get(requestedInvoiceOrderId) ?? 0)}`
+      });
+    }
+    return options;
+  }, [invoiceOrderRecords, invoiceOrderRemainingById, requestedInvoiceOrderId]);
   const invoiceRows = useMemo(() => invoicesQuery.data ?? [], [invoicesQuery.data]);
   const invoiceOptions = invoiceRows.map((invoice) => ({
     value: invoice.id,
@@ -164,6 +206,34 @@ function InvoicesContent() {
   };
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["invoices", storeId] });
 
+  const handleInvoiceOrderSelection = (orderIds: string[]) => {
+    const selectedOrders = orderIds
+      .map((orderId) => invoiceOrderById.get(orderId))
+      .filter((order): order is InvoiceOrderOption => Boolean(order));
+    const customerIds = new Set(selectedOrders.map((order) => order.customerId).filter(Boolean));
+    if (customerIds.size > 1) {
+      message.warning("合并开票只能选择同一客户的订单");
+      return;
+    }
+    if (
+      orderIds.length > 1
+      && selectedOrders.some((order) => order.customer?.customerType && order.customer.customerType !== "COMPANY")
+    ) {
+      message.warning("多订单合并开票仅适用于企业客户");
+      return;
+    }
+
+    const allocations = orderIds.map((orderId) => ({
+      orderId,
+      amountYuan: (invoiceOrderRemainingById.get(orderId) ?? 0) / 100
+    }));
+    applyForm.setFieldsValue({
+      orderIds,
+      allocations,
+      amountYuan: allocations.reduce((sum, allocation) => sum + allocation.amountYuan, 0)
+    });
+  };
+
   useEffect(() => {
     sendForm.resetFields();
     if (selectedInvoice) {
@@ -179,14 +249,24 @@ function InvoicesContent() {
     if (invoiceActionParam !== "create-invoice") return;
     setApplicationDrawerOpen(true);
     if (requestedInvoiceOrderId) {
-      applyForm.setFieldsValue({ orderId: requestedInvoiceOrderId });
+      const order = invoiceOrderById.get(requestedInvoiceOrderId);
+      const amountYuan = (invoiceOrderRemainingById.get(requestedInvoiceOrderId) ?? 0) / 100;
+      applyForm.setFieldsValue({
+        orderIds: [requestedInvoiceOrderId],
+        allocations: [{ orderId: requestedInvoiceOrderId, amountYuan }],
+        amountYuan
+      });
     }
-  }, [applyForm, invoiceActionParam, requestedInvoiceOrderId]);
+  }, [applyForm, invoiceActionParam, invoiceOrderById, requestedInvoiceOrderId]);
 
   const applyInvoice = useMutation({
     mutationFn: (values: ApplyInvoiceFormValues) =>
       invoicesApi.apply({
-        orderId: values.orderId,
+        orderIds: values.orderIds,
+        allocations: values.allocations.map((allocation) => ({
+          orderId: allocation.orderId,
+          amountCents: yuanToCents(allocation.amountYuan)
+        })),
         title: values.title,
         taxNo: values.taxNo,
         amountCents: yuanToCents(values.amountYuan)
@@ -558,7 +638,15 @@ function InvoicesContent() {
           form={applyForm}
           layout="vertical"
           className="invoice-apply-form invoice-drawer-form"
-          initialValues={{ invoiceType: "SPECIAL" }}
+          initialValues={{ invoiceType: "SPECIAL", orderIds: [], allocations: [] }}
+          onValuesChange={(changedValues, allValues) => {
+            if (!changedValues.allocations) return;
+            const amountYuan = (allValues.allocations ?? []).reduce(
+              (sum: number, allocation: { amountYuan?: number }) => sum + (allocation.amountYuan ?? 0),
+              0
+            );
+            applyForm.setFieldValue("amountYuan", amountYuan);
+          }}
           onFinish={(values) => applyInvoice.mutate(values)}
         >
           <section className="invoice-drawer-section">
@@ -571,23 +659,53 @@ function InvoicesContent() {
                 ]}
               />
             </Form.Item>
-            <Form.Item name="orderId" label="可开票订单" rules={[{ required: true, message: "请选择可开票订单" }]}>
+            <Form.Item
+              name="orderIds"
+              label="可开票订单"
+              rules={[{ required: true, type: "array", min: 1, message: "请至少选择一笔可开票订单" }]}
+            >
               <Select
+                mode="multiple"
                 showSearch
                 optionFilterProp="label"
                 loading={invoiceOrdersQuery.isLoading}
-                placeholder="选择可开票订单"
+                placeholder="可选择同一企业客户的多笔订单"
                 options={invoiceOrderOptions}
+                onChange={handleInvoiceOrderSelection}
               />
             </Form.Item>
+            <Form.List name="allocations">
+              {(fields) => (
+                <div className="invoice-allocation-list">
+                  <strong>逐单开票金额</strong>
+                  <span className="management-kpi-desc">默认按每单金额分摊，可在提交前调整；合计自动作为本次开票金额。</span>
+                  {fields.map((field) => {
+                    const orderId = applyForm.getFieldValue(["allocations", field.name, "orderId"]) as string;
+                    const orderLabel = invoiceOrderOptions.find((option) => option.value === orderId)?.label ?? orderId;
+                    return (
+                      <div key={field.key} className="invoice-allocation-row">
+                        <Form.Item name={[field.name, "orderId"]} hidden><Input /></Form.Item>
+                        <span>{orderLabel}</span>
+                        <Form.Item
+                          name={[field.name, "amountYuan"]}
+                          rules={[{ required: true, message: "请输入该订单开票金额" }]}
+                        >
+                          <InputNumber min={0.01} precision={2} addonBefore="¥" />
+                        </Form.Item>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Form.List>
             <Form.Item name="title" label="发票抬头" rules={[{ required: true, message: "请输入发票抬头" }]}>
               <Input placeholder="客户公司或个人抬头" />
             </Form.Item>
             <Form.Item name="taxNo" label="统一社会信用代码 / 税号">
               <Input placeholder="企业税号，个人发票可留空" />
             </Form.Item>
-            <Form.Item name="amountYuan" label="金额（元）" rules={[{ required: true, message: "请输入金额" }]}>
-              <InputNumber className="w-full" min={0.01} precision={2} placeholder="金额（元）" />
+            <Form.Item name="amountYuan" label="本次开票合计（元）" rules={[{ required: true, message: "请先分摊开票金额" }]}>
+              <InputNumber className="w-full" min={0.01} precision={2} readOnly placeholder="由逐单金额自动汇总" />
             </Form.Item>
           </section>
 
@@ -616,3 +734,4 @@ function InvoicesContent() {
     </div>
   );
 }
+

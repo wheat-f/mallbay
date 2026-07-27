@@ -9,13 +9,21 @@ import {
 } from "@prisma/client";
 import { CreateOrderUseCase } from "./create-order.use-case";
 
+const activeVehicle = () => ({
+  id: "vehicle-1",
+  storeId: "store-1",
+  customerId: "customer-1",
+  status: "ACTIVE",
+  defaultContact: null
+});
+
 test("CreateOrderUseCase creates order items amount and deposit payment in one transaction", async () => {
   const operations: string[] = [];
   const tx = {
     customer: {
       findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
     },
-    customerVehicle: { findUnique: async () => ({ id: "vehicle-1", customerId: "customer-1" }) },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: { findMany: async () => [{ id: "product-1", basePriceCents: 5000000, status: "ACTIVE" }] },
     dailyCapacity: {
       findUnique: async () => ({
@@ -109,7 +117,7 @@ test("CreateOrderUseCase snapshots the selected meter sales unit and its base in
     customer: {
       findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
     },
-    customerVehicle: { findUnique: async () => null },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: {
       findMany: async () => [
         {
@@ -143,6 +151,7 @@ test("CreateOrderUseCase snapshots the selected meter sales unit and its base in
     {
       storeId: "store-1",
       customerId: "customer-1",
+      vehicleId: "vehicle-1",
       constructionType: ConstructionType.PPF,
       constructionLocation: ConstructionLocation.IN_STORE,
       items: [{ productId: "product-1", salesUnit: ProductUnit.METER, quantity: 2, unitPriceCents: 500000 }],
@@ -177,7 +186,7 @@ test("CreateOrderUseCase reserves daily capacity for scheduled in store orders",
     customer: {
       findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
     },
-    customerVehicle: { findUnique: async () => null },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
     order: { create: async () => ({ id: "order-1", orderNo: "ORD202606010001" }) },
     orderItem: { createMany: async () => undefined },
@@ -200,6 +209,7 @@ test("CreateOrderUseCase reserves daily capacity for scheduled in store orders",
     {
       storeId: "store-1",
       customerId: "customer-1",
+      vehicleId: "vehicle-1",
       constructionType: ConstructionType.PPF,
       constructionLocation: ConstructionLocation.IN_STORE,
       appointmentDate: "2026-06-01",
@@ -226,7 +236,7 @@ test("CreateOrderUseCase stores suggested labor snapshot and adjustment reason",
     customer: {
       findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
     },
-    customerVehicle: { findUnique: async () => null },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
     order: { create: async () => ({ id: "order-1", orderNo: "ORD202606010002" }) },
     orderItem: { createMany: async () => undefined },
@@ -249,6 +259,7 @@ test("CreateOrderUseCase stores suggested labor snapshot and adjustment reason",
     {
       storeId: "store-1",
       customerId: "customer-1",
+      vehicleId: "vehicle-1",
       constructionType: ConstructionType.PPF,
       constructionLocation: ConstructionLocation.OUTSIDE,
       constructionAddress: "客户小区",
@@ -289,7 +300,7 @@ test("CreateOrderUseCase rejects deposit when payment account is unavailable", a
     customer: {
       findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
     },
-    customerVehicle: { findUnique: async () => null },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
     paymentAccount: {
       findUnique: async () => ({ id: "account-1", storeId: "store-2", isActive: true })
@@ -320,6 +331,7 @@ test("CreateOrderUseCase rejects deposit when payment account is unavailable", a
       {
         storeId: "store-1",
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: ConstructionType.PPF,
         constructionLocation: ConstructionLocation.IN_STORE,
         items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
@@ -344,7 +356,7 @@ test("CreateOrderUseCase rejects sales creating orders for another sales person'
     customer: {
       findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-2" })
     },
-    customerVehicle: { findUnique: async () => null },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
     order: {
       create: async () => {
@@ -372,6 +384,7 @@ test("CreateOrderUseCase rejects sales creating orders for another sales person'
       {
         storeId: "store-1",
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: ConstructionType.PPF,
         constructionLocation: ConstructionLocation.IN_STORE,
         items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
@@ -390,7 +403,7 @@ test("CreateOrderUseCase rejects outside construction orders without address", a
     customer: {
       findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
     },
-    customerVehicle: { findUnique: async () => null },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
     order: {
       create: async () => {
@@ -418,6 +431,7 @@ test("CreateOrderUseCase rejects outside construction orders without address", a
       {
         storeId: "store-1",
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: ConstructionType.PPF,
         constructionLocation: ConstructionLocation.OUTSIDE,
         constructionAddress: "   ",
@@ -448,7 +462,7 @@ test("CreateOrderUseCase rejects scheduled orders without appointment time slot"
     customer: {
       findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
     },
-    customerVehicle: { findUnique: async () => null },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
     order: {
       create: async () => {
@@ -476,6 +490,7 @@ test("CreateOrderUseCase rejects scheduled orders without appointment time slot"
       {
         storeId: "store-1",
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: ConstructionType.PPF,
         constructionLocation: ConstructionLocation.IN_STORE,
         appointmentDate: "2026-06-01",
@@ -496,7 +511,7 @@ test("CreateOrderUseCase rejects appointment time slot without appointment date"
     customer: {
       findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" })
     },
-    customerVehicle: { findUnique: async () => null },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: { findMany: async () => [{ id: "product-1", status: "ACTIVE" }] },
     order: {
       create: async () => {
@@ -524,6 +539,7 @@ test("CreateOrderUseCase rejects appointment time slot without appointment date"
       {
         storeId: "store-1",
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: ConstructionType.PPF,
         constructionLocation: ConstructionLocation.IN_STORE,
         appointmentTimeSlot: "09:00-12:00",
@@ -551,7 +567,7 @@ test("CreateOrderUseCase rejects scheduled orders when daily capacity is full", 
       })
     },
     customer: { findUnique: async () => null },
-    customerVehicle: { findUnique: async () => null },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: { findMany: async () => [] },
     order: { create: async () => ({ id: "order-1" }) },
     orderItem: { createMany: async () => undefined },
@@ -575,6 +591,7 @@ test("CreateOrderUseCase rejects scheduled orders when daily capacity is full", 
       {
         storeId: "store-1",
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: ConstructionType.PPF,
         constructionLocation: ConstructionLocation.IN_STORE,
         appointmentDate: "2026-06-01",
@@ -597,7 +614,7 @@ test("CreateOrderUseCase creates an ORDER capacity reservation for direct schedu
     },
     capacityReservation: { create: async (args: unknown) => { reservations.push(args); return { id: "reservation-1" }; } },
     customer: { findUnique: async () => ({ id: "customer-1", storeId: "store-1", ownerUserId: "sales-1" }) },
-    customerVehicle: { findUnique: async () => null },
+    customerVehicle: { findUnique: async () => activeVehicle() },
     product: { findMany: async () => [{ id: "product-1", status: "ACTIVE", quantityPrecision: 3 }] },
     order: { create: async () => ({ id: "order-1", orderNo: "ORD-1" }) },
     orderItem: { createMany: async () => undefined },
@@ -605,7 +622,7 @@ test("CreateOrderUseCase creates an ORDER capacity reservation for direct schedu
     orderPayment: { create: async () => undefined }
   };
   const useCase = new CreateOrderUseCase({ $transaction: async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx) } as never, { next: () => "ORD-1" });
-  await useCase.execute({ id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } }, { storeId: "store-1", customerId: "customer-1", constructionType: ConstructionType.PPF, constructionLocation: ConstructionLocation.IN_STORE, appointmentDate: "2026-06-01", appointmentTimeSlot: "09:00-12:00", items: [{ productId: "product-1", quantity: 1, unitPriceCents: 1000 }], laborCostCents: 100 } as never);
+  await useCase.execute({ id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } }, { storeId: "store-1", customerId: "customer-1", vehicleId: "vehicle-1", constructionType: ConstructionType.PPF, constructionLocation: ConstructionLocation.IN_STORE, appointmentDate: "2026-06-01", appointmentTimeSlot: "09:00-12:00", items: [{ productId: "product-1", quantity: 1, unitPriceCents: 1000 }], laborCostCents: 100 } as never);
   assert.equal(reservations.length, 1);
   assert.equal((reservations[0] as { data: { sourceType: string; orderId: string; status: string } }).data.sourceType, "ORDER");
   assert.equal((reservations[0] as { data: { sourceType: string; orderId: string; status: string } }).data.orderId, "order-1");

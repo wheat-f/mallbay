@@ -19,6 +19,7 @@ export class FinanceQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listExpenses(actor: FinanceActor, query: ListFinanceApplicationsDto) {
+    actor = await this.withStoreMember(actor);
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
     const where: Prisma.ExpenseApplicationWhereInput = { storeId: query.storeId };
@@ -52,6 +53,7 @@ export class FinanceQueryService {
   }
 
   async listReimbursements(actor: FinanceActor, query: ListFinanceApplicationsDto) {
+    actor = await this.withStoreMember(actor);
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
     const where: Prisma.ReimbursementApplicationWhereInput = { storeId: query.storeId };
@@ -85,6 +87,7 @@ export class FinanceQueryService {
   }
 
   async getExpenseDetail(actor: FinanceActor, id: string) {
+    actor = await this.withStoreMember(actor);
     const item = await this.prisma.expenseApplication.findUnique({
       where: { id },
       include: { applicant: true, reimbursements: true }
@@ -102,6 +105,7 @@ export class FinanceQueryService {
   }
 
   async getReimbursementDetail(actor: FinanceActor, id: string) {
+    actor = await this.withStoreMember(actor);
     const item = await this.prisma.reimbursementApplication.findUnique({
       where: { id },
       include: { applicant: true, expense: true, paymentAccount: true, paymentRecord: true }
@@ -119,6 +123,7 @@ export class FinanceQueryService {
   }
 
   async getOverview(actor: FinanceActor, storeId: string) {
+    actor = await this.withStoreMember(actor);
     if (!PermissionPolicy.canViewAllFinanceApplications(actor, storeId)) throw new ForbiddenException("无权限");
     const [expenseCount, reimbursementCount, pendingExpenseCount, pendingReimbursementCount, paymentCount] = await Promise.all([
       this.prisma.expenseApplication.count({ where: { storeId } }),
@@ -131,6 +136,7 @@ export class FinanceQueryService {
   }
 
   async listPaymentRecords(actor: FinanceActor, query: ListFinanceApplicationsDto) {
+    actor = await this.withStoreMember(actor);
     if (!PermissionPolicy.canViewAllFinanceApplications(actor, query.storeId)) throw new ForbiddenException("无权限");
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
@@ -173,5 +179,16 @@ export class FinanceQueryService {
     if (item.status === FinanceApprovalStatus.REJECTED && own) actions.push("RESUBMIT");
     if (own || all) actions.push("UPLOAD_ATTACHMENT");
     return actions;
+  }
+
+  private async withStoreMember(actor: FinanceActor): Promise<FinanceActor> {
+    // JWT 只携带用户标识；财务权限必须以数据库中的当前门店岗位为准。
+    // 即使调用方意外传入了旧的 storeMember，也不能继续使用缓存角色，
+    // 否则岗位调整或重新登录后仍可能被错误判定为“无权限”。
+    const member = await this.prisma.storeMember.findUnique({
+      where: { userId: actor.id },
+      select: { storeId: true, position: true }
+    });
+    return { ...actor, storeMember: member };
   }
 }

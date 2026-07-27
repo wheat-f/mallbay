@@ -1,4 +1,5 @@
-import { IsOptional, IsString, Matches, MaxLength } from "class-validator";
+import { CustomerContactRole } from "@prisma/client";
+import { IsBoolean, IsEnum, IsOptional, IsString, Matches, MaxLength } from "class-validator";
 
 export class CreateCustomerUserDto {
   @IsString()
@@ -14,6 +15,19 @@ export class CreateCustomerUserDto {
   @IsString()
   @MaxLength(100)
   note?: string;
+
+  @IsOptional()
+  @IsEnum(CustomerContactRole)
+  role?: CustomerContactRole;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  department?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
 }
 
 export class CreateCustomerUserForCustomerDto extends CreateCustomerUserDto {

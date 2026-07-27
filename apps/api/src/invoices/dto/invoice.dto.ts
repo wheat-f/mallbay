@@ -1,8 +1,33 @@
-import { IsOptional, IsString, IsInt, MaxLength, Min } from "class-validator";
+import { Type } from "class-transformer";
+import { ArrayMinSize, IsArray, IsOptional, IsString, IsInt, MaxLength, Min, ValidateNested } from "class-validator";
 
-export class ApplyInvoiceDto {
+export class InvoiceOrderAllocationDto {
   @IsString()
   orderId!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amountCents!: number;
+}
+
+export class ApplyInvoiceDto {
+  @IsOptional()
+  @IsString()
+  orderId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  orderIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => InvoiceOrderAllocationDto)
+  allocations?: InvoiceOrderAllocationDto[];
 
   @IsString()
   @MaxLength(120)

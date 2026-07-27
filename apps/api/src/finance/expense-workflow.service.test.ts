@@ -31,6 +31,7 @@ function createPrisma(expense: Record<string, unknown>) {
   };
   return {
     prisma: {
+      storeMember: { findUnique: async () => ({ storeId: "store-1", position: StorePosition.MANAGER }) },
       expenseApplication: { findUnique: async () => expense },
       $transaction: async <T>(callback: (value: typeof tx) => Promise<T>) => callback(tx)
     },
@@ -44,6 +45,18 @@ test("ExpenseWorkflowService creates and records a pending expense", async () =>
   await service.create(applicant, { storeId: "store-1", title: "耗材", amountCents: 1000, reason: "施工" });
   assert.equal(writes.length, 2);
   assert.match(JSON.stringify(writes), /MANAGER_REVIEW/);
+});
+
+test("ExpenseWorkflowService resolves the current user's store membership before creating", async () => {
+  const { prisma, writes } = createPrisma({ id: "expense-1", storeId: "store-1", applicantId: "manager-1", status: FinanceApprovalStatus.PENDING });
+  const service = new ExpenseWorkflowService(prisma as never);
+
+  await service.create(
+    { id: "manager-1", isAuditor: false },
+    { storeId: "store-1", title: "门店耗材", amountCents: 1000, reason: "施工使用" }
+  );
+
+  assert.equal(writes.length, 2);
 });
 
 test("ExpenseWorkflowService only lets manager approve and never accepts PAID", async () => {

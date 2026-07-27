@@ -24,7 +24,9 @@ function getDatabaseUrl() {
       .split(/\r?\n/)
       .find((value) => /^\s*DATABASE_URL\s*=/.test(value));
     if (!line) continue;
-    const value = line.split("=", 2)[1]?.trim();
+    // Split only at the first equals sign. Connection URLs commonly contain query parameters such as `schema=public`; truncating at a second equals produces an invalid URL and makes Prisma issue `SET search_path = ""`.
+    const separator = line.indexOf("=");
+    const value = separator >= 0 ? line.slice(separator + 1).trim() : undefined;
     if (value) return value.replace(/^['"]|['"]$/g, "");
   }
 

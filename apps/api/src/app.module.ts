@@ -5,6 +5,7 @@ import { AfterSalesModule } from "./after-sales/after-sales.module";
 import { CommissionsModule } from "./commissions/commissions.module";
 import { ConstructionModule } from "./construction/construction.module";
 import { CustomersModule } from "./customers/customers.module";
+import { CustomerSettlementsModule } from "./customer-settlements/customer-settlements.module";
 import { FinanceModule } from "./finance/finance.module";
 import { InvoicesModule } from "./invoices/invoices.module";
 import { InventoryModule } from "./inventory/inventory.module";
@@ -35,6 +36,7 @@ import { HealthController } from "./health.controller";
     AfterSalesModule,
     CommissionsModule,
     CustomersModule,
+    CustomerSettlementsModule,
     ConstructionModule,
     InventoryModule,
     WarrantiesModule,

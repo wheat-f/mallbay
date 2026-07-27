@@ -104,23 +104,22 @@ test("create order new customer drawer includes profile fields aligned with cust
   assert.match(cssSource, /create-order-customer-drawer[\s\S]*ant-drawer-content-wrapper/);
 });
 
-test("create order new customer modal saves vehicle photo url", () => {
+test("create order new customer flow keeps vehicle maintenance in customer archive", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
-  assert.match(pageSource, /name="photoUrl"/);
-  assert.match(pageSource, /label="车辆照片"/);
-  assert.match(pageSource, /车辆照片链接，可稍后在客户档案补充/);
-  assert.doesNotMatch(pageSource, /车辆照片 URL/);
-  assert.match(pageSource, /photoUrl: trimOptional\(photoUrl\)/);
+  assert.match(pageSource, /车辆统一在客户档案维护/);
+  assert.match(pageSource, /创建客户后将自动保存当前订单草稿并前往客户档案/);
+  assert.doesNotMatch(pageSource, /name="photoUrl"/);
+  assert.doesNotMatch(pageSource, /label="车辆照片"/);
 });
 
-test("create order new customer flow keeps the created customer when vehicle creation fails", () => {
+test("create order new customer flow redirects to customer vehicle management", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
-  assert.match(pageSource, /vehicleCreated/);
-  assert.match(pageSource, /客户已创建，但车辆创建失败/);
-  assert.match(pageSource, /请在客户详情继续补车辆/);
-  assert.match(pageSource, /resolveCreatedCustomerSelection\(result\.customer\)/);
+  assert.match(pageSource, /resolveCreatedCustomerSelection\(customer\)/);
+  assert.match(pageSource, /客户已创建，订单草稿已保留；请先在客户档案新增车辆/);
+  assert.match(pageSource, /router\.push\(`\/customers\/\$\{customer\.id\}`\)/);
+  assert.doesNotMatch(pageSource, /vehicleCreated/);
 });
 
 test("create order customer history card exposes recent construction records", () => {

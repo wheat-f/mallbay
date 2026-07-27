@@ -429,8 +429,14 @@ export type ExpenseApplicationSummary = {
 export type InvoiceSummary = {
   id: string;
   storeId: string;
-  orderId: string;
+  orderId?: string | null;
   order?: BusinessOrderSummary | null;
+  allocations?: Array<{
+    id?: string;
+    orderId: string;
+    amountCents: number;
+    order?: BusinessOrderSummary | null;
+  }>;
   title: string;
   taxNo?: string | null;
   amountCents: number;

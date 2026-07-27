@@ -24576,3 +24576,38 @@ button:hover .avatar-hover-mask {
     display: none;
   }
 }
+
+.invoice-allocation-list {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-container-low);
+}
+
+.invoice-allocation-list > strong {
+  color: var(--mb-primary);
+}
+
+.invoice-allocation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--mb-border);
+}
+
+.invoice-allocation-row-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .invoice-allocation-row {
+    grid-template-columns: 1fr;
+  }
+}

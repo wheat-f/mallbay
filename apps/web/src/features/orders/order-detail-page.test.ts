@@ -51,9 +51,20 @@ test("order detail exposes pending dispatch confirmation and fulfillment links",
 test("order detail shows the responsible salesperson", () => {
   const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
 
-  assert.match(pageSource, /销售员/);
+  assert.match(pageSource, /客户与销售信息/);
+  assert.match(pageSource, /`销售员 \$\{getSalesPersonName\(order\)\}`/);
   assert.match(pageSource, /getSalesPersonName/);
   assert.match(pageSource, /salesPerson\?:/);
+});
+
+test("order detail renders the frozen order contact snapshot", () => {
+  const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /contactSnapshot\?:/);
+  assert.match(pageSource, /订单联系人/);
+  assert.match(pageSource, /联系人部门/);
+  assert.match(pageSource, /getOrderContactLabel/);
+  assert.match(pageSource, /联系人快照待补齐/);
 });
 
 test("order detail confirmation flow uses the prototype right-side drawer", () => {

@@ -15,6 +15,7 @@ export type OrderCustomer = {
 
 export type OrderVehicle = {
   id: string;
+  status?: "ACTIVE" | "INACTIVE";
   carPlate?: string | null;
   carModel?: string | null;
   carColor?: string | null;
@@ -156,7 +157,9 @@ export function buildOrderCustomerOptions(
 }
 
 export function buildOrderVehicleOptions(customer?: OrderCustomer | null) {
-  return (customer?.vehicles ?? []).map((vehicle) => ({
+  return (customer?.vehicles ?? [])
+    .filter((vehicle) => vehicle.status !== "INACTIVE")
+    .map((vehicle) => ({
     label: getOrderVehicleLabel(vehicle),
     value: vehicle.id
   }));
@@ -205,7 +208,7 @@ export function resolveVehicleIdForCustomer(
   customer: OrderCustomer | undefined | null,
   currentVehicleId?: string
 ) {
-  const vehicles = customer?.vehicles ?? [];
+  const vehicles = (customer?.vehicles ?? []).filter((vehicle) => vehicle.status !== "INACTIVE");
   if (currentVehicleId && vehicles.some((vehicle) => vehicle.id === currentVehicleId)) {
     return currentVehicleId;
   }
@@ -286,10 +289,15 @@ export function toCreateOrderPayload(values: CreateOrderFormValues, storeId: str
   const trimmedConstructionChargeAdjustmentReason = trimOptionalText(
     constructionChargeAdjustmentReason ?? laborCostAdjustmentReason
   );
+  const vehicleId = trimOptionalText(values.vehicleId);
+  if (!vehicleId) {
+    throw new Error("请选择车辆后再提交订单");
+  }
 
   return {
     ...payloadValues,
     storeId,
+    vehicleId,
     ...(appointmentDate ? { appointmentDate } : {}),
     ...(appointmentTimeSlot ? { appointmentTimeSlot } : {}),
     ...(constructionAddress ? { constructionAddress } : {}),

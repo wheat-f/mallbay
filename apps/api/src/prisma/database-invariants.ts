@@ -50,6 +50,59 @@ const databaseInvariantChecks: DatabaseInvariantCheck[] = [
       HAVING COUNT(*) > 1
       ORDER BY "submissionId"
     `
+  },
+  {
+    invariant: "customer_vehicle_unique_normalized_plate",
+    message: "同一门店不能存在重复的标准化车牌",
+    query: `
+      SELECT customer."storeId",
+             REGEXP_REPLACE(UPPER(TRIM(vehicle."carPlate")), '\\s+', '', 'g') AS "carPlateNormalized",
+             COUNT(*)::int AS "count",
+             ARRAY_AGG(vehicle."id" ORDER BY vehicle."id") AS "vehicleIds"
+      FROM "CustomerVehicle" vehicle
+      JOIN "Customer" customer ON customer."id" = vehicle."customerId"
+      WHERE NULLIF(REGEXP_REPLACE(UPPER(TRIM(vehicle."carPlate")), '\\s+', '', 'g'), '') IS NOT NULL
+      GROUP BY customer."storeId", REGEXP_REPLACE(UPPER(TRIM(vehicle."carPlate")), '\\s+', '', 'g')
+      HAVING COUNT(*) > 1
+      ORDER BY customer."storeId", "carPlateNormalized"
+    `
+  },
+  {
+    invariant: "customer_vehicle_unique_vin",
+    message: "同一门店不能存在重复的 VIN 标识",
+    query: `
+      SELECT customer."storeId", vehicle."vinHash", COUNT(*)::int AS "count",
+             ARRAY_AGG(vehicle."id" ORDER BY vehicle."id") AS "vehicleIds"
+      FROM "CustomerVehicle" vehicle
+      JOIN "Customer" customer ON customer."id" = vehicle."customerId"
+      WHERE vehicle."vinHash" IS NOT NULL
+      GROUP BY customer."storeId", vehicle."vinHash"
+      HAVING COUNT(*) > 1
+      ORDER BY customer."storeId", vehicle."vinHash"
+    `
+  },
+  {
+    invariant: "customer_vehicle_has_identity",
+    message: "车辆至少需要车牌或 VIN 之一",
+    query: `
+      SELECT vehicle."id", vehicle."customerId"
+      FROM "CustomerVehicle" vehicle
+      WHERE NULLIF(REGEXP_REPLACE(TRIM(vehicle."carPlate"), '\\s+', '', 'g'), '') IS NULL
+        AND vehicle."vinHash" IS NULL
+      ORDER BY vehicle."id"
+    `
+  },
+  {
+    invariant: "order_vehicle_customer_consistency",
+    message: "订单车辆必须归属于订单客户",
+    query: `
+      SELECT orders."id" AS "orderId", orders."customerId" AS "orderCustomerId",
+             vehicle."id" AS "vehicleId", vehicle."customerId" AS "vehicleCustomerId"
+      FROM "Order" orders
+      JOIN "CustomerVehicle" vehicle ON vehicle."id" = orders."vehicleId"
+      WHERE orders."customerId" <> vehicle."customerId"
+      ORDER BY orders."id"
+    `
   }
 ];
 

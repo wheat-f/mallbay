@@ -88,3 +88,46 @@ test("customer detail page replaces nested tables with mobile record cards", () 
   assert.ok(desktopTableIndex > baseHiddenIndex, "mobile breakpoint must come after the base hidden rule");
   assert.ok(mobileDisplayIndex > baseHiddenIndex, "mobile display override must come after the base hidden rule");
 });
+
+test("customer detail exposes controlled vehicle lifecycle management", () => {
+  const pageSource = readFileSync("app/customers/[id]/page.tsx", "utf8");
+  const apiSource = readFileSync("src/features/customers/api.ts", "utf8");
+
+  assert.match(pageSource, /defaultContactId/);
+  assert.match(pageSource, /department/);
+  assert.match(pageSource, /vehicleTypeCode/);
+  assert.match(pageSource, />\s*编辑\s*</);
+  assert.match(pageSource, />\s*历史\s*</);
+  assert.match(pageSource, />\s*转移\s*</);
+  assert.match(pageSource, /"停用" : "启用"/);
+  assert.match(pageSource, /变更历史/);
+  assert.match(pageSource, /const isManager = currentUser\?\.storeMember\?\.position === "MANAGER"/);
+  assert.doesNotMatch(pageSource, /删除车辆/);
+
+  assert.match(apiSource, /changeVehicleStatus/);
+  assert.match(apiSource, /transferVehicle/);
+  assert.match(apiSource, /vehicleHistory/);
+  assert.doesNotMatch(apiSource, /deleteVehicle/);
+});
+
+test("enterprise customer detail links to statement and unified receipt workbench", () => {
+  const detailSource = readFileSync("app/customers/[id]/page.tsx", "utf8");
+  const settlementSource = readFileSync("app/customers/[id]/settlement/page.tsx", "utf8");
+  const apiSource = readFileSync("src/features/customer-settlements/api.ts", "utf8");
+
+  assert.match(detailSource, /customer\.customerType === "COMPANY"/);
+  assert.match(detailSource, /企业对账/);
+  assert.match(detailSource, /\/settlement/);
+
+  assert.match(settlementSource, /生成对账单草稿/);
+  assert.match(settlementSource, /登记统一收款/);
+  assert.match(settlementSource, /预览自动分摊/);
+  assert.match(settlementSource, /逐单分摊结果/);
+  assert.match(settlementSource, /canReverseReceipts/);
+  assert.match(settlementSource, /原收款与分摊记录会保留/);
+
+  assert.match(apiSource, /\/customer-statements\/candidate-orders/);
+  assert.match(apiSource, /\/customer-receipts\/preview-allocation/);
+  assert.match(apiSource, /\/customer-receipts\/\$\{id\}\/reverse/);
+});
+

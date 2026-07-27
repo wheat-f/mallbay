@@ -194,6 +194,7 @@ test("toCreateOrderPayload converts yuan form values to cents API payload", () =
     toCreateOrderPayload(
       {
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: "PPF",
         constructionLocation: "IN_STORE",
         items: [{ productId: "product-1", quantity: 2, unitPriceYuan: 199.9 }],
@@ -205,6 +206,7 @@ test("toCreateOrderPayload converts yuan form values to cents API payload", () =
     {
       storeId: "store-1",
       customerId: "customer-1",
+      vehicleId: "vehicle-1",
       constructionType: "PPF",
       constructionLocation: "IN_STORE",
       items: [{ productId: "product-1", quantity: 2, unitPriceCents: 19990 }],
@@ -214,11 +216,28 @@ test("toCreateOrderPayload converts yuan form values to cents API payload", () =
   );
 });
 
+test("order vehicle helpers exclude inactive vehicles from selection and auto selection", () => {
+  const customer = {
+    id: "customer-1",
+    vehicles: [
+      { id: "vehicle-active", status: "ACTIVE" as const, carPlate: "京A10001" },
+      { id: "vehicle-inactive", status: "INACTIVE" as const, carPlate: "京A10002" }
+    ]
+  };
+
+  assert.deepEqual(buildOrderVehicleOptions(customer), [
+    { label: "京A10001", value: "vehicle-active" }
+  ]);
+  assert.equal(resolveVehicleIdForCustomer(customer), "vehicle-active");
+  assert.equal(resolveVehicleIdForCustomer(customer, "vehicle-inactive"), "vehicle-active");
+});
+
 test("toCreateOrderPayload preserves the sales unit selected for each product line", () => {
   assert.deepEqual(
     toCreateOrderPayload(
       {
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: "PPF",
         constructionLocation: "IN_STORE",
         items: [{ productId: "product-1", salesUnit: "METER", quantity: 2.5, unitPriceYuan: 99.9 }]
@@ -228,6 +247,7 @@ test("toCreateOrderPayload preserves the sales unit selected for each product li
     {
       storeId: "store-1",
       customerId: "customer-1",
+      vehicleId: "vehicle-1",
       constructionType: "PPF",
       constructionLocation: "IN_STORE",
       items: [{ productId: "product-1", salesUnit: "METER", quantity: 2.5, unitPriceCents: 9990 }],
@@ -241,6 +261,7 @@ test("toCreateOrderPayload formats appointment date picker values before submit"
     toCreateOrderPayload(
       {
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: "PPF",
         constructionLocation: "IN_STORE",
         appointmentDate: { format: (pattern: string) => (pattern === "YYYY-MM-DD" ? "2026-06-18" : "bad") },
@@ -252,6 +273,7 @@ test("toCreateOrderPayload formats appointment date picker values before submit"
     {
       storeId: "store-1",
       customerId: "customer-1",
+      vehicleId: "vehicle-1",
       constructionType: "PPF",
       constructionLocation: "IN_STORE",
       appointmentDate: "2026-06-18",
@@ -267,6 +289,7 @@ test("toCreateOrderPayload trims optional text fields before submit", () => {
     toCreateOrderPayload(
       {
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: "PPF",
         constructionLocation: "OUTSIDE",
         constructionAddress: " 湖南长沙岳麓区 ",
@@ -278,6 +301,7 @@ test("toCreateOrderPayload trims optional text fields before submit", () => {
     {
       storeId: "store-1",
       customerId: "customer-1",
+      vehicleId: "vehicle-1",
       constructionType: "PPF",
       constructionLocation: "OUTSIDE",
       constructionAddress: "湖南长沙岳麓区",
@@ -291,6 +315,7 @@ test("toCreateOrderPayload trims optional text fields before submit", () => {
     "remark" in toCreateOrderPayload(
       {
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: "PPF",
         constructionLocation: "IN_STORE",
         remark: "   ",
@@ -307,6 +332,7 @@ test("toCreateOrderPayload includes deposit with yuan converted to cents", () =>
     toCreateOrderPayload(
       {
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: "PPF",
         constructionLocation: "IN_STORE",
         items: [{ productId: "product-1", quantity: 1, unitPriceYuan: 100 }],
@@ -335,6 +361,7 @@ test("toCreateOrderPayload accepts a zero deposit without creating a zero paymen
     toCreateOrderPayload(
       {
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: "PPF",
         constructionLocation: "IN_STORE",
         items: [{ productId: "product-1", quantity: 1, unitPriceYuan: 100 }],
@@ -353,6 +380,7 @@ test("toCreateOrderPayload includes labor suggestion snapshot and adjustment rea
     toCreateOrderPayload(
       {
         customerId: "customer-1",
+        vehicleId: "vehicle-1",
         constructionType: "PPF",
         constructionLocation: "OUTSIDE",
         items: [{ productId: "product-1", quantity: 1, unitPriceYuan: 100 }],
@@ -365,6 +393,7 @@ test("toCreateOrderPayload includes labor suggestion snapshot and adjustment rea
     {
       storeId: "store-1",
       customerId: "customer-1",
+      vehicleId: "vehicle-1",
       constructionType: "PPF",
       constructionLocation: "OUTSIDE",
       items: [{ productId: "product-1", quantity: 1, unitPriceCents: 10000 }],
@@ -379,6 +408,7 @@ test("toCreateOrderPayload keeps construction charge mode as a page-only interac
   const payload = toCreateOrderPayload(
     {
       customerId: "customer-1",
+      vehicleId: "vehicle-1",
       constructionType: "PPF",
       constructionLocation: "IN_STORE",
       constructionChargeMode: "MANUAL",
@@ -396,6 +426,7 @@ test("getOrderAmountSummary totals products labor deposit and outstanding amount
   assert.deepEqual(
     getOrderAmountSummary({
       customerId: "customer-1",
+      vehicleId: "vehicle-1",
       constructionType: "PPF",
       constructionLocation: "IN_STORE",
       items: [

@@ -13,7 +13,7 @@ export type OrderPaymentStatus = "UNPAID" | "PARTIAL" | "PAID";
 export type CreateOrderPayload = {
   storeId: string;
   customerId: string;
-  vehicleId?: string;
+  vehicleId: string;
   salesPersonId?: string;
   constructionType: ConstructionType;
   constructionLocation: ConstructionLocation;
@@ -138,6 +138,25 @@ export type OrderPaymentPayload = {
   paidAt: string;
 };
 
+export type CopyOrderToDraftPayload = {
+  vehicleId: string;
+  appointmentDate?: string;
+  appointmentTimeSlot?: string;
+  idempotencyKey: string;
+};
+
+export type CopyOrderToDraftResponse = {
+  idempotencyKey: string;
+  source: { orderId: string; orderNo: string };
+  values: import("./create-order-form").CreateOrderFormValues;
+  validation: {
+    pricingRecalculationRequired: true;
+    capacityChecked: boolean;
+    copiedFields: string[];
+    excludedFields: string[];
+  };
+};
+
 export type OrderAuditEvent = {
   id: string;
   action: string;
@@ -165,6 +184,12 @@ export const orderApi = {
     request<SalesOrderExportDetail[]>(`/orders/export-details${toQueryString(query)}`),
 
   detail: (id: string) => request<unknown>(`/orders/${id}`),
+
+  copyToDraft: (id: string, payload: CopyOrderToDraftPayload) =>
+    request<CopyOrderToDraftResponse>(`/orders/${id}/copy`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
 
   auditEvents: (id: string) => request<OrderAuditEvent[]>(`/orders/${id}/audit-events`),
 

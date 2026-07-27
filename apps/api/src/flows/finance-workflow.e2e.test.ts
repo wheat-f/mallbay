@@ -26,9 +26,17 @@ function createFinanceMemory() {
   const reimbursements: any[] = [];
   const payments: any[] = [];
   const approvals: any[] = [];
+  const members = new Map([
+    [applicant.id, applicant.storeMember],
+    [manager.id, manager.storeMember],
+    [finance.id, finance.storeMember],
+  ]);
   let sequence = 0;
   const id = (prefix: string) => `${prefix}-${++sequence}`;
   const prisma: any = {
+    storeMember: {
+      findUnique: async ({ where }: any) => members.get(where.userId) ?? null,
+    },
     expenseApplication: {
       create: async ({ data }: any) => {
         const row = { id: id("expense"), createdAt: new Date(), ...data };

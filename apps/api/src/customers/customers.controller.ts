@@ -29,6 +29,11 @@ import { CreateVehicleDto } from "./dto/create-vehicle.dto";
 import { ListCustomersDto } from "./dto/list-customers.dto";
 import { UpdateCustomerDto } from "./dto/update-customer.dto";
 import { UpdateVehicleDto } from "./dto/update-vehicle.dto";
+import {
+  ChangeVehicleStatusDto,
+  ListCustomerVehiclesDto,
+  TransferVehicleDto
+} from "./dto/vehicle-lifecycle.dto";
 
 type AuthRequest = Request & {
   user: AuthenticatedCustomerUser;
@@ -62,6 +67,15 @@ export class CustomersController {
     return this.customers.detail(req.user, id);
   }
 
+  @Get(":id/order-context")
+  orderContext(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Query("vehicleId") vehicleId?: string
+  ) {
+    return this.customers.orderContext(req.user, id, vehicleId);
+  }
+
   @Patch(":id")
   update(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateCustomerDto) {
     return this.customers.update(req.user, id, dto);
@@ -70,6 +84,15 @@ export class CustomersController {
   @Post("vehicles")
   createVehicle(@Req() req: AuthRequest, @Body() dto: CreateVehicleDto) {
     return this.customers.createVehicle(req.user, dto);
+  }
+
+  @Get(":id/vehicles")
+  listVehicles(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Query() query: ListCustomerVehiclesDto
+  ) {
+    return this.customers.listVehicles(req.user, id, query);
   }
 
   @Post("vehicles/photos/upload")
@@ -100,6 +123,26 @@ export class CustomersController {
   @Patch("vehicles/:id")
   updateVehicle(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateVehicleDto) {
     return this.customers.updateVehicle(req.user, id, dto);
+  }
+
+  @Post("vehicles/:id/disable")
+  disableVehicle(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ChangeVehicleStatusDto) {
+    return this.customers.changeVehicleStatus(req.user, id, "INACTIVE", dto);
+  }
+
+  @Post("vehicles/:id/enable")
+  enableVehicle(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ChangeVehicleStatusDto) {
+    return this.customers.changeVehicleStatus(req.user, id, "ACTIVE", dto);
+  }
+
+  @Post("vehicles/:id/transfer")
+  transferVehicle(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: TransferVehicleDto) {
+    return this.customers.transferVehicle(req.user, id, dto);
+  }
+
+  @Get("vehicles/:id/history")
+  vehicleHistory(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.customers.vehicleHistory(req.user, id);
   }
 
   @Post("notes")

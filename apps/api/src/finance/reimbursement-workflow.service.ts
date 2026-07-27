@@ -33,6 +33,7 @@ export class ReimbursementWorkflowService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(actor: FinanceActor, dto: CreateReimbursementDto) {
+    actor = await this.withStoreMember(actor);
     if (!PermissionPolicy.canSubmitFinanceApplication(actor, dto.storeId))
       throw new ForbiddenException("无权限");
     if (!dto.expenseId && !dto.exceptionReason?.trim())
@@ -93,6 +94,7 @@ export class ReimbursementWorkflowService {
   }
 
   async review(actor: FinanceActor, id: string, dto: ReviewReimbursementDto) {
+    actor = await this.withStoreMember(actor);
     const reimbursement = await this.prisma.reimbursementApplication.findUnique(
       { where: { id } },
     );
@@ -133,6 +135,7 @@ export class ReimbursementWorkflowService {
   }
 
   async withdraw(actor: FinanceActor, id: string, note?: string) {
+    actor = await this.withStoreMember(actor);
     const reimbursement = await this.prisma.reimbursementApplication.findUnique(
       { where: { id } },
     );
@@ -176,6 +179,7 @@ export class ReimbursementWorkflowService {
     id: string,
     dto: ResubmitReimbursementDto,
   ) {
+    actor = await this.withStoreMember(actor);
     const reimbursement = await this.prisma.reimbursementApplication.findUnique(
       { where: { id } },
     );
@@ -223,6 +227,7 @@ export class ReimbursementWorkflowService {
   }
 
   async pay(actor: FinanceActor, id: string, dto: PayReimbursementDto) {
+    actor = await this.withStoreMember(actor);
     const reimbursement = await this.prisma.reimbursementApplication.findUnique(
       { where: { id } },
     );
@@ -320,5 +325,14 @@ export class ReimbursementWorkflowService {
         alreadyPaid: false,
       };
     });
+  }
+
+  private async withStoreMember(actor: FinanceActor): Promise<FinanceActor> {
+    if (actor.storeMember !== undefined) return actor;
+    const member = await this.prisma.storeMember.findUnique({
+      where: { userId: actor.id },
+      select: { storeId: true, position: true }
+    });
+    return { ...actor, storeMember: member };
   }
 }

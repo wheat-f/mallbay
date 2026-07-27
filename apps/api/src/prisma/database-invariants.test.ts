@@ -26,7 +26,7 @@ test("checkDatabaseInvariants reports duplicate cover and pending submission ris
 
   const violations = await checkDatabaseInvariants(prisma);
 
-  assert.equal(queries.length, 3);
+  assert.equal(queries.length, 7);
   assert.deepEqual(violations, [
     {
       invariant: "store_photo_single_cover",
@@ -44,6 +44,38 @@ test("checkDatabaseInvariants reports duplicate cover and pending submission ris
       rows: [{ submissionId: "submission-1", count: 2 }]
     }
   ]);
+});
+
+test("checkDatabaseInvariants audits customer vehicle identity and ownership", async () => {
+  const prisma = {
+    $queryRawUnsafe: async (query: string) => {
+      if (query.includes("customer_vehicle_unique_normalized_plate") || query.includes('AS "carPlateNormalized"')) {
+        return [{ storeId: "store-1", carPlateNormalized: "京A12345", count: 2 }];
+      }
+      if (query.includes('vehicle."vinHash", COUNT(*)')) {
+        return [{ storeId: "store-1", vinHash: "hash", count: 2 }];
+      }
+      if (query.includes("至少需要车牌") || query.includes('AND vehicle."vinHash" IS NULL')) {
+        return [{ id: "vehicle-empty", customerId: "customer-1" }];
+      }
+      if (query.includes('orders."customerId" <> vehicle."customerId"')) {
+        return [{ orderId: "order-1", vehicleId: "vehicle-2" }];
+      }
+      return [];
+    }
+  };
+
+  const violations = await checkDatabaseInvariants(prisma);
+
+  assert.deepEqual(
+    violations.map((item) => item.invariant),
+    [
+      "customer_vehicle_unique_normalized_plate",
+      "customer_vehicle_unique_vin",
+      "customer_vehicle_has_identity",
+      "order_vehicle_customer_consistency"
+    ]
+  );
 });
 
 test("formatDatabaseInvariantViolations produces deploy-safe failure output", () => {

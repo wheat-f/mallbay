@@ -5,6 +5,8 @@ import {
   formatDatabaseInvariantViolations
 } from "./database-invariants";
 
+const NON_BLOCKING_LEGACY_INVARIANTS = new Set(["customer_vehicle_has_identity"]);
+
 export async function runDatabaseInvariantPreflight() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -14,11 +16,27 @@ export async function runDatabaseInvariantPreflight() {
 
   try {
     const violations = await checkDatabaseInvariants(prisma);
-    if (violations.length > 0) {
-      throw new Error(formatDatabaseInvariantViolations(violations));
+    const blockingViolations = violations.filter(
+      (violation) => !NON_BLOCKING_LEGACY_INVARIANTS.has(violation.invariant)
+    );
+    const legacyWarnings = violations.filter((violation) =>
+      NON_BLOCKING_LEGACY_INVARIANTS.has(violation.invariant)
+    );
+    if (legacyWarnings.length > 0) {
+      console.warn(
+        "数据库存在历史数据质量提醒，已跳过启动阻断：\n" +
+          formatDatabaseInvariantViolations(legacyWarnings)
+      );
+    }
+    if (blockingViolations.length > 0) {
+      throw new Error(formatDatabaseInvariantViolations(blockingViolations));
     }
 
-    console.log("数据库不变量预检通过。");
+    console.log(
+      legacyWarnings.length > 0
+        ? "数据库不变量预检通过（含历史数据质量提醒）。"
+        : "数据库不变量预检通过。"
+    );
   } finally {
     await prisma.$disconnect();
   }

@@ -54,7 +54,7 @@ export default function ConstructionLeavesPage() {
   });
   const leaveTypeOptions = useMemo(() => {
     const dictionary = dictionariesQuery.data?.find((item) => item.code === "LEAVE_TYPE");
-    const normalized = dictionary?.dictionaryItems?.map((item) => ({ value: item.code, label: item.name })) ?? [];
+    const normalized = dictionary?.dictionaryItems?.filter((item) => item.status === "ACTIVE").map((item) => ({ value: item.code, label: item.name })) ?? [];
     return normalized.length > 0 ? normalized : defaultLeaveTypeOptions;
   }, [dictionariesQuery.data]);
 

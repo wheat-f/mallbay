@@ -276,6 +276,7 @@ function SettingsConfigurationBoard({
   dictionaryRows,
   dictionaryLoading,
   onDictionaryAction,
+  onToggleDictionaryItem,
   onServiceTest
 }: {
   dictionarySettingsSectionRef: RefObject<HTMLDivElement | null>;
@@ -283,6 +284,7 @@ function SettingsConfigurationBoard({
   dictionaryRows: DictionaryItem[];
   dictionaryLoading: boolean;
   onDictionaryAction: (action: "export" | "create" | "edit", row?: DictionaryItem) => void;
+  onToggleDictionaryItem: (dictionary: DictionaryItem, itemId: string, status: DictionaryStatus) => void;
   onServiceTest: () => void;
 }) {
   return (
@@ -308,7 +310,7 @@ function SettingsConfigurationBoard({
               <tr>
                 <th>分类名称</th>
                 <th>字典代码</th>
-                <th>包含子项</th>
+                <th>字典项（逐项状态）</th>
                 <th>状态</th>
                 <th>操作</th>
               </tr>
@@ -321,8 +323,8 @@ function SettingsConfigurationBoard({
               ) : dictionaryRows.map((row) => (
                 <tr key={row.id}>
                   <td>{row.name}</td>
-                  <td><code>{row.code}</code></td>
-                  <td>{row.items.join("、")}</td>
+                  <td><code>{row.code}</code><div><Tag>{row.source === "SYSTEM" ? "系统" : row.source === "HQ_TEMPLATE" ? "总部模板" : "门店"}</Tag></div></td>
+                  <td><Space wrap size={[4, 4]}>{(row.dictionaryItems?.length ? row.dictionaryItems : row.items.map((name, index) => ({ id: `${row.id}-${index}`, name, status: "ACTIVE" as DictionaryStatus }))).map((item) => <Space key={item.id} size={2}><Tag color={item.status === "ACTIVE" ? "green" : "default"}>{item.name}{item.status === "ACTIVE" ? "（启用）" : "（停用）"}</Tag>{row.allowDisableItems && item.id.indexOf(`${row.id}-`) !== 0 ? <Button type="link" size="small" onClick={() => onToggleDictionaryItem(row, item.id, item.status === "ACTIVE" ? "INACTIVE" : "ACTIVE")}>{item.status === "ACTIVE" ? "停用" : "启用"}</Button> : null}</Space>)}</Space></td>
                   <td>
                     <Tag className={row.status === "ACTIVE" ? "settings-status-success" : "settings-status-warning"}>
                       {row.status === "ACTIVE" ? "启用中" : "已停用"}
@@ -540,6 +542,16 @@ export default function SettingsPage() {
     setDictionaryModalOpen(true);
   };
 
+  const toggleDictionaryItem = async (dictionary: DictionaryItem, itemId: string, status: DictionaryStatus) => {
+    try {
+      await dictionaryApi.setItemStatus(itemId, status);
+      message.success(status === "ACTIVE" ? "字典项已启用" : "字典项已停用");
+      await loadDictionaries();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "字典项状态保存失败");
+    }
+  };
+
   const saveDictionary = async () => {
     if (!storeId) return;
     const items = dictionaryDraft.items.map((item) => item.trim()).filter(Boolean);
@@ -643,6 +655,7 @@ export default function SettingsPage() {
             dictionaryRows={dictionaryRows}
             dictionaryLoading={dictionaryLoading}
             onDictionaryAction={handleDictionaryAction}
+            onToggleDictionaryItem={toggleDictionaryItem}
             onServiceTest={handleServiceTest}
           />
 

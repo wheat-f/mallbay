@@ -189,7 +189,7 @@ export default function CustomersPage() {
   });
   const vehicleTypeOptions = useMemo(() => {
     const dictionary = vehicleTypesQuery.data?.find((item) => item.code === "VEHICLE_TYPE");
-    return (dictionary?.dictionaryItems ?? []).map((item) => ({ value: item.code, label: item.name }));
+    return (dictionary?.dictionaryItems ?? []).filter((item) => item.status === "ACTIVE").map((item) => ({ value: item.code, label: item.name }));
   }, [vehicleTypesQuery.data]);
 
   const updateMutation = useMutation({

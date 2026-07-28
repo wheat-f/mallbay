@@ -1,8 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { DictionaryMode, DictionaryStatus, Prisma } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
-import { CreateDictionaryDto, UpdateDictionaryDto } from "./dto/dictionary.dto";
+import { CreateDictionaryDto, CreateDictionaryItemDto, UpdateDictionaryDto, UpdateDictionaryItemDto } from "./dto/dictionary.dto";
 
 type DefaultDictionaryDefinition = {
   name: string;
@@ -84,7 +84,6 @@ export class DictionariesService {
   }
   private serialize(dictionary: Prisma.DictionaryGetPayload<{ include: { dictionaryItems: true } }>) {
     const normalizedItems = dictionary.dictionaryItems
-      .filter((item) => item.status === DictionaryStatus.ACTIVE)
       .sort((left, right) => left.sortOrder - right.sortOrder || left.code.localeCompare(right.code));
     return {
       ...dictionary,
@@ -100,7 +99,7 @@ export class DictionariesService {
       const existing = await this.prisma.dictionary.findUnique({ where: { storeId_code: { storeId, code: item.code } } });
       const dictionary = await this.prisma.dictionary.upsert({
         where: { storeId_code: { storeId, code: item.code } },
-        create: { storeId, name: item.name, code: item.code, items: [...item.items] },
+        create: { storeId, name: item.name, code: item.code, items: [...item.items], source: FIXED_DICTIONARY_CODES.has(item.code) ? "SYSTEM" : "STORE", allowCustomItems: !FIXED_DICTIONARY_CODES.has(item.code), allowDisableItems: true },
         update: {}
       });
       // 非固定字典只在首次创建时写入初始项，后续由门店按业务自行增减。
@@ -128,7 +127,11 @@ export class DictionariesService {
         name: dto.name.trim(),
         code: dto.code.trim().toUpperCase(),
         items: dto.items.map((item) => item.trim()).filter(Boolean),
-        status: dto.status ?? DictionaryStatus.ACTIVE
+        status: dto.status ?? DictionaryStatus.ACTIVE,
+        source: dto.source ?? "STORE",
+        allowCustomItems: dto.allowCustomItems ?? true,
+        allowDisableItems: dto.allowDisableItems ?? true,
+        allowHierarchy: dto.allowHierarchy ?? false
       }
     });
     const dictionaryItems = await this.syncItems(row.id, dto.items);
@@ -142,13 +145,19 @@ export class DictionariesService {
     if (FIXED_DICTIONARY_CODES.has(dictionary.code)) {
       if (dto.status === DictionaryStatus.INACTIVE) throw new BadRequestException("系统固定字典不可停用");
       if (dto.items !== undefined) assertFixedDictionaryItems(dictionary.code, dto.items);
+      if (dto.source !== undefined && dto.source !== dictionary.source) throw new BadRequestException("系统固定字典来源不可修改");
+      if (dto.allowCustomItems === true) throw new BadRequestException("系统固定字典不可新增自定义项");
     }
     const row = await this.prisma.dictionary.update({
       where: { id },
       data: {
         ...(dto.name === undefined ? {} : { name: dto.name.trim() }),
         ...(dto.items === undefined ? {} : { items: dto.items.map((item) => item.trim()).filter(Boolean) }),
-        ...(dto.status === undefined ? {} : { status: dto.status })
+        ...(dto.status === undefined ? {} : { status: dto.status }),
+        ...(dto.source === undefined ? {} : { source: dto.source }),
+        ...(dto.allowCustomItems === undefined ? {} : { allowCustomItems: dto.allowCustomItems }),
+        ...(dto.allowDisableItems === undefined ? {} : { allowDisableItems: dto.allowDisableItems }),
+        ...(dto.allowHierarchy === undefined ? {} : { allowHierarchy: dto.allowHierarchy })
       }
     });
     const dictionaryItems = dto.items === undefined
@@ -172,6 +181,64 @@ export class DictionariesService {
     return this.serialize({ ...row, dictionaryItems });
   }
 
+
+  private async getItemOrThrow(id: string) {
+    const item = await this.prisma.dictionaryItem.findUnique({ where: { id }, include: { dictionary: true } });
+    if (!item) throw new NotFoundException("字典项不存在");
+    return item;
+  }
+
+  async listItems(user: AuthenticatedSettingsUser, dictionaryId: string) {
+    const dictionary = await this.prisma.dictionary.findUnique({ where: { id: dictionaryId } });
+    if (!dictionary) throw new NotFoundException("字典不存在");
+    await this.assertStoreReader(user, dictionary.storeId);
+    return this.prisma.dictionaryItem.findMany({ where: { dictionaryId }, orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }, { code: "asc" }] });
+  }
+
+  async createItem(user: AuthenticatedSettingsUser, dictionaryId: string, dto: CreateDictionaryItemDto) {
+    const dictionary = await this.prisma.dictionary.findUnique({ where: { id: dictionaryId } });
+    if (!dictionary) throw new NotFoundException("字典不存在");
+    const actor = await this.assertManager(user, dictionary.storeId);
+    if (!dictionary.allowCustomItems || dictionary.source !== "STORE") throw new BadRequestException("当前字典不允许新增字典项");
+    if (dto.parentId && !dictionary.allowHierarchy) throw new BadRequestException("当前字典不支持层级");
+    const duplicate = await this.prisma.dictionaryItem.findFirst({ where: { dictionaryId, parentId: dto.parentId ?? null, code: dto.code.trim() } });
+    if (duplicate) throw new ConflictException("同一层级下字典编码已存在");
+    return this.prisma.$transaction(async (tx) => {
+      const item = await tx.dictionaryItem.create({ data: { dictionaryId, parentId: dto.parentId ?? null, code: dto.code.trim(), name: dto.name.trim(), sortOrder: dto.sortOrder ?? 0, status: dto.status ?? DictionaryStatus.ACTIVE, source: "STORE", disabledReason: dto.disabledReason, updatedById: actor.id } });
+      await tx.dictionary.update({ where: { id: dictionaryId }, data: { version: { increment: 1 }, updatedById: actor.id } });
+      return item;
+    });
+  }
+
+  async updateItem(user: AuthenticatedSettingsUser, id: string, dto: UpdateDictionaryItemDto) {
+    const item = await this.getItemOrThrow(id);
+    const actor = await this.assertManager(user, item.dictionary.storeId);
+    const statusOnly = dto.status !== undefined && dto.name === undefined && dto.parentId === undefined && dto.sortOrder === undefined;
+    if (item.dictionary.source !== "STORE" || item.isSystem) {
+      if (!item.dictionary.allowDisableItems || !statusOnly) throw new BadRequestException("系统字典项仅允许启停");
+    }
+    if (dto.version !== undefined && dto.version !== item.dictionary.version) throw new ConflictException("字典已被其他人修改，请刷新后重试");
+    if (dto.parentId !== undefined && !item.dictionary.allowHierarchy) throw new BadRequestException("当前字典不支持层级");
+    if (dto.parentId === id) throw new BadRequestException("父级不能是自身");
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.dictionaryItem.update({ where: { id }, data: { ...(dto.name === undefined ? {} : { name: dto.name.trim() }), ...(dto.parentId === undefined ? {} : { parentId: dto.parentId }), ...(dto.sortOrder === undefined ? {} : { sortOrder: dto.sortOrder }), ...(dto.status === undefined ? {} : { status: dto.status }), ...(dto.disabledReason === undefined ? {} : { disabledReason: dto.disabledReason }), updatedById: actor.id } });
+      await tx.dictionary.update({ where: { id: item.dictionaryId }, data: { version: { increment: 1 }, updatedById: actor.id } });
+      return updated;
+    });
+  }
+
+  async setItemStatus(user: AuthenticatedSettingsUser, id: string, status: DictionaryStatus, reason?: string) {
+    return this.updateItem(user, id, { status, disabledReason: reason });
+  }
+
+  async removeItem(user: AuthenticatedSettingsUser, id: string) {
+    const item = await this.getItemOrThrow(id);
+    await this.assertManager(user, item.dictionary.storeId);
+    if (item.isSystem || item.source !== "STORE") throw new BadRequestException("系统字典项不可删除");
+    if (item.usageCount > 0) throw new BadRequestException("已被业务数据引用，只能停用不能删除");
+    if (await this.prisma.dictionaryItem.count({ where: { parentId: id } })) throw new BadRequestException("存在子级字典项，请先处理子级");
+    return this.prisma.dictionaryItem.delete({ where: { id } });
+  }
   private async syncItems(dictionaryId: string, names: readonly string[], isSystem = false, stableCodes?: readonly string[]) {
     const normalizedNames = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
     const existing = await this.prisma.dictionaryItem.findMany({ where: { dictionaryId }, orderBy: { sortOrder: "asc" } });
@@ -186,13 +253,13 @@ export class DictionariesService {
       if (current) {
         await this.prisma.dictionaryItem.update({
           where: { id: current.id },
-          data: { code, name, sortOrder, isSystem, status: DictionaryStatus.ACTIVE }
+          data: { code, name, sortOrder, isSystem, status: current?.status ?? DictionaryStatus.ACTIVE }
         });
       } else {
         await this.prisma.dictionaryItem.upsert({
           where: { dictionaryId_code: { dictionaryId, code } },
-          create: { dictionaryId, code, name, sortOrder, isSystem, status: DictionaryStatus.ACTIVE },
-          update: { name, sortOrder, isSystem, status: DictionaryStatus.ACTIVE }
+          create: { dictionaryId, code, name, sortOrder, isSystem, source: isSystem ? "SYSTEM" : "STORE", status: DictionaryStatus.ACTIVE },
+          update: { name, sortOrder, isSystem }
         });
       }
     }

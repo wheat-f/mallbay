@@ -119,6 +119,12 @@ enum DictionaryStatus {
   INACTIVE
 }
 
+enum DictionarySource {
+  SYSTEM
+  HQ_TEMPLATE
+  STORE
+}
+
 enum DictionaryMode {
   LEGACY
   NORMALIZED
@@ -339,6 +345,12 @@ model Dictionary {
   items     Json
   status    DictionaryStatus @default(ACTIVE)
   mode      DictionaryMode   @default(LEGACY)
+  source    DictionarySource  @default(STORE)
+  allowCustomItems  Boolean   @default(true)
+  allowDisableItems Boolean   @default(true)
+  allowHierarchy    Boolean   @default(false)
+  version   Int               @default(1)
+  updatedById String?
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
@@ -359,13 +371,21 @@ model DictionaryItem {
   status       DictionaryStatus @default(ACTIVE)
   isSystem     Boolean          @default(false)
   metadata     Json?
+  parentId     String?
+  source       DictionarySource @default(STORE)
+  disabledReason String?
+  usageCount   Int              @default(0)
+  updatedById  String?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
   dictionary Dictionary @relation(fields: [dictionaryId], references: [id], onDelete: Cascade)
+  parent     DictionaryItem? @relation("DictionaryItemHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children   DictionaryItem[] @relation("DictionaryItemHierarchy")
 
   @@unique([dictionaryId, code])
   @@index([dictionaryId, status, sortOrder])
+  @@index([dictionaryId, parentId, status, sortOrder])
 }
 
 // 当前对外展示的门店照片（审核通过后从 StoreSubmissionPhoto 同步过来）

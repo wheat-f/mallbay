@@ -156,10 +156,12 @@ export class ConstructionService {
         throw new BadRequestException("该订单已生成施工工单，请刷新施工列表");
       }
 
-      const executionStore = await tx.store.findUnique({
-        where: { id: executionStoreId },
-        select: { financialEntityId: true }
-      });
+      const executionStore = order.storeId === executionStoreId
+        ? { financialEntityId: null }
+        : await tx.store.findUnique({
+          where: { id: executionStoreId },
+          select: { financialEntityId: true }
+        });
       if (!executionStore) {
         throw new NotFoundException("执行门店不存在");
       }
@@ -308,35 +310,23 @@ export class ConstructionService {
     const actualMinutes = Math.max(0, Math.round((completedAt.getTime() - startedAt.getTime()) / 60000));
     const overtimeMinutes = Math.max(0, actualMinutes - 8 * 60);
 
-    const isCrossStore = record.order.storeId !== record.order.executionStoreId;
-    const updated = await this.prisma.$transaction(async (tx) => {
-      if (!isCrossStore) {
-        await tx.order.update({ where: { id: record.orderId }, data: { status: OrderStatus.COMPLETED } });
-      }
-      const completedRecord = await tx.constructionRecord.update({
-        where: { id: record.id },
-        data: {
-          status: ConstructionTaskStatus.COMPLETED,
-          completedAt,
-          actualMinutes,
-          overtimeMinutes
-        }
-      });
-      if (isCrossStore) {
-        await tx.crossStoreConstructionTask.updateMany({
-          where: {
-            orderId: record.orderId,
-            status: { in: [CrossStoreTaskStatus.DISPATCHED, CrossStoreTaskStatus.IN_CONSTRUCTION] }
-          },
-          data: {
-            status: CrossStoreTaskStatus.PENDING_SOURCE_ACCEPTANCE,
-            submittedForAcceptanceAt: completedAt,
-            version: { increment: 1 }
-          }
+    const isCrossStore = record.order.storeId !== (record.order.executionStoreId ?? record.order.storeId);
+    const updated = isCrossStore
+      ? await this.prisma.$transaction(async (tx) => {
+        const completedRecord = await tx.constructionRecord.update({
+          where: { id: record.id },
+          data: { status: ConstructionTaskStatus.COMPLETED, completedAt, actualMinutes, overtimeMinutes }
         });
-      }
-      return completedRecord;
-    });
+        await tx.crossStoreConstructionTask.updateMany({
+          where: { orderId: record.orderId, status: { in: [CrossStoreTaskStatus.DISPATCHED, CrossStoreTaskStatus.IN_CONSTRUCTION] } },
+          data: { status: CrossStoreTaskStatus.PENDING_SOURCE_ACCEPTANCE, submittedForAcceptanceAt: completedAt, version: { increment: 1 } }
+        });
+        return completedRecord;
+      })
+      : await this.prisma.order.update({ where: { id: record.orderId }, data: { status: OrderStatus.COMPLETED } }).then(async () => this.prisma.constructionRecord.update({
+        where: { id: record.id },
+        data: { status: ConstructionTaskStatus.COMPLETED, completedAt, actualMinutes, overtimeMinutes }
+      }));
     await this.createCommissionSnapshots(actor.id, record);
     await this.costSettlements?.initializeForCompletedRecord(record.id, actor.id);
     if (isCrossStore) {

@@ -41,21 +41,21 @@ export class AuthController {
   }
 
   @Post("register")
-  async register(@Body() dto: RegisterDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
     const session = await this.authService.register(dto, getDeviceContext(req));
     this.setRefreshTokenCookie(res, session.refreshToken);
     return session;
   }
 
   @Post("login")
-  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
     const session = await this.authService.login(dto, getDeviceContext(req));
     this.setRefreshTokenCookie(res, session.refreshToken);
     return session;
   }
 
   @Post("wechat-login")
-  async wechatLogin(@Body() dto: WechatLoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async wechatLogin(@Body() dto: WechatLoginDto, @Res({ passthrough: true }) res: Response, @Req() req: Request) {
     const session = await this.authService.loginWithWechatCode(dto, getDeviceContext(req));
     this.setRefreshTokenCookie(res, session.refreshToken);
     return session;
@@ -112,9 +112,10 @@ export class AuthController {
 }
 
 function getDeviceContext(req: Request) {
-  const forwarded = req.headers["x-forwarded-for"];
-  const ipAddress = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : req.ip;
-  return { userAgent: req.headers["user-agent"], ipAddress };
+  const headers = req?.headers ?? {};
+  const forwarded = headers["x-forwarded-for"];
+  const ipAddress = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : req?.ip;
+  return { userAgent: headers["user-agent"], ipAddress };
 }
 
 function getRefreshTokenCookieOptions(): CookieOptions {

@@ -862,7 +862,7 @@ export class InventoryService {
       }
     });
     if (!order) throw new NotFoundException("订单不存在");
-    if (!PermissionPolicy.canViewInventory(actor, order.executionStoreId)) {
+    if (!PermissionPolicy.canViewInventory(actor, (order.executionStoreId ?? order.storeId))) {
       throw new ForbiddenException("无权限");
     }
     const items = await Promise.all(order.items.map(async (item) => {
@@ -871,7 +871,7 @@ export class InventoryService {
         orderItem: item,
         inventoryProductId,
         availableBatches: await this.prisma.inventoryBatch.findMany({
-          where: { storeId: order.executionStoreId, productId: inventoryProductId, availableQuantity: { gt: 0 } },
+          where: { storeId: (order.executionStoreId ?? order.storeId), productId: inventoryProductId, availableQuantity: { gt: 0 } },
           orderBy: { receivedAt: "asc" }
         })
       };
@@ -897,7 +897,7 @@ export class InventoryService {
         }
       });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, order.executionStoreId)) {
+      if (!PermissionPolicy.canManageInventory(actor, (order.executionStoreId ?? order.storeId))) {
         throw new ForbiddenException("无权限");
       }
       const locked: Array<{ batchId: string; orderItemId: string; quantity: number }> = [];
@@ -909,7 +909,7 @@ export class InventoryService {
         if (!orderItem) throw new BadRequestException("订单明细不存在");
         const inventoryProductId = resolveCrossStoreExecutionProductId(order.crossStoreTask?.requirementsSnapshot, orderItem.productId);
         const batch = await tx.inventoryBatch.findUnique({ where: { id: allocation.batchId } });
-        if (!batch || batch.storeId !== order.executionStoreId || batch.productId !== inventoryProductId) {
+        if (!batch || batch.storeId !== (order.executionStoreId ?? order.storeId) || batch.productId !== inventoryProductId) {
           throw new BadRequestException("库存批次与订单明细不匹配");
         }
         const allocationUnit = allocation.unit ?? batch.unit;
@@ -1005,7 +1005,7 @@ export class InventoryService {
           })
           : await tx.orderInventoryAllocation.create({
             data: {
-              storeId: order.executionStoreId,
+              storeId: (order.executionStoreId ?? order.storeId),
               orderId,
               crossStoreTaskId: order.crossStoreTask?.id,
               orderItemId: orderItem.id,
@@ -1017,7 +1017,7 @@ export class InventoryService {
           });
         await tx.inventoryMovement.create({
           data: {
-            storeId: order.executionStoreId,
+            storeId: (order.executionStoreId ?? order.storeId),
             batchId: batch.id,
             productId: inventoryProductId,
             crossStoreTaskId: order.crossStoreTask?.id,
@@ -1045,7 +1045,7 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, order.executionStoreId)) {
+      if (!PermissionPolicy.canManageInventory(actor, (order.executionStoreId ?? order.storeId))) {
         throw new ForbiddenException("无权限");
       }
       const allocations = await tx.orderInventoryAllocation.findMany({ where: { orderId, status: "LOCKED" } });
@@ -1661,7 +1661,7 @@ export class InventoryService {
         }
       });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, order.executionStoreId)) {
+      if (!PermissionPolicy.canManageInventory(actor, (order.executionStoreId ?? order.storeId))) {
         throw new ForbiddenException("无权限");
       }
 
@@ -1687,7 +1687,7 @@ export class InventoryService {
           .reduce((sum, allocation) => sum + decimalToNumber(allocation.lockedQuantity), 0);
         let remaining = Math.max(0, requiredQuantity - coveredQuantity);
         const batches = await tx.inventoryBatch.findMany({
-          where: { storeId: order.executionStoreId, productId: inventoryProductId, availableQuantity: { gt: 0 } },
+          where: { storeId: (order.executionStoreId ?? order.storeId), productId: inventoryProductId, availableQuantity: { gt: 0 } },
           orderBy: { receivedAt: "asc" }
         });
         for (const batch of batches) {
@@ -1717,7 +1717,7 @@ export class InventoryService {
             })
             : await tx.orderInventoryAllocation.create({
               data: {
-                storeId: order.executionStoreId,
+                storeId: (order.executionStoreId ?? order.storeId),
                 orderId,
                 crossStoreTaskId: order.crossStoreTask?.id,
                 orderItemId: item.id,
@@ -1729,7 +1729,7 @@ export class InventoryService {
             });
           await tx.inventoryMovement.create({
             data: {
-              storeId: order.executionStoreId,
+              storeId: (order.executionStoreId ?? order.storeId),
               batchId: batch.id,
               productId: inventoryProductId,
               crossStoreTaskId: order.crossStoreTask?.id,
@@ -1754,7 +1754,7 @@ export class InventoryService {
       const purchaseRequirement = missing.length > 0
         ? await tx.purchaseRequirement.create({
           data: {
-            storeId: order.executionStoreId,
+            storeId: (order.executionStoreId ?? order.storeId),
             sourceOrderId: orderId,
             crossStoreTaskId: order.crossStoreTask?.id,
             createdById: actor.id,
@@ -1780,7 +1780,7 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, order.executionStoreId)) {
+      if (!PermissionPolicy.canManageInventory(actor, (order.executionStoreId ?? order.storeId))) {
         throw new ForbiddenException("无权限");
       }
       const allocations = await tx.orderInventoryAllocation.findMany({

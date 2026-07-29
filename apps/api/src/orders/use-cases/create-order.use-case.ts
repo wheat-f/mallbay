@@ -80,16 +80,21 @@ export class CreateOrderUseCase {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const [sourceStore, executionStore] = await Promise.all([
-        tx.store.findUnique({
-          where: { id: dto.storeId },
-          select: { id: true, name: true, status: true, financialEntityId: true, crossStoreConstructionEnabled: true }
-        }),
-        tx.store.findUnique({
-          where: { id: executionStoreId },
-          select: { id: true, name: true, status: true, financialEntityId: true, crossStoreConstructionEnabled: true }
-        })
-      ]);
+      const [sourceStore, executionStore] = isCrossStore
+        ? await Promise.all([
+          tx.store.findUnique({
+            where: { id: dto.storeId },
+            select: { id: true, name: true, status: true, financialEntityId: true, crossStoreConstructionEnabled: true }
+          }),
+          tx.store.findUnique({
+            where: { id: executionStoreId },
+            select: { id: true, name: true, status: true, financialEntityId: true, crossStoreConstructionEnabled: true }
+          })
+        ])
+        : [
+          { id: dto.storeId, name: "", status: StoreStatus.PUBLISHED, financialEntityId: null, crossStoreConstructionEnabled: false },
+          { id: dto.storeId, name: "", status: StoreStatus.PUBLISHED, financialEntityId: null, crossStoreConstructionEnabled: false }
+        ];
       if (!sourceStore || !executionStore) throw new BadRequestException("来源门店或执行门店不存在");
       if (isCrossStore && (
         sourceStore.financialEntityId !== executionStore.financialEntityId ||
@@ -404,7 +409,7 @@ export class CreateOrderUseCase {
         });
       }
 
-      return { ...order, crossStoreTask };
+      return crossStoreTask ? { ...order, crossStoreTask } : order;
     });
   }
 

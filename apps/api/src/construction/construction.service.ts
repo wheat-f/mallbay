@@ -157,7 +157,7 @@ export class ConstructionService {
       }
 
       const executionStore = order.storeId === executionStoreId
-        ? { financialEntityId: null }
+        ? { financialEntityId: "" }
         : await tx.store.findUnique({
           where: { id: executionStoreId },
           select: { financialEntityId: true }

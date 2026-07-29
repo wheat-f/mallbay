@@ -92,7 +92,7 @@ export class CreateOrderUseCase {
           })
         ])
         : [
-          { id: dto.storeId, name: "", status: StoreStatus.PUBLISHED, financialEntityId: null, crossStoreConstructionEnabled: false },
+          { id: dto.storeId, name: "", status: StoreStatus.PUBLISHED, financialEntityId: "", crossStoreConstructionEnabled: false },
           { id: dto.storeId, name: "", status: StoreStatus.PUBLISHED, financialEntityId: null, crossStoreConstructionEnabled: false }
         ];
       if (!sourceStore || !executionStore) throw new BadRequestException("来源门店或执行门店不存在");
@@ -184,7 +184,8 @@ export class CreateOrderUseCase {
           include: { executionProduct: true }
         })
         : [];
-      const mappingsByProductId = new Map(crossStoreMappings.map((mapping) => [mapping.sourceProductId, mapping]));
+      const typedCrossStoreMappings = crossStoreMappings as Array<Prisma.CrossStoreProductMappingGetPayload<{ include: { executionProduct: true } }>>;
+      const mappingsByProductId = new Map(typedCrossStoreMappings.map((mapping) => [mapping.sourceProductId, mapping]));
       if (isCrossStore && mappingsByProductId.size !== productIds.length) {
         throw new BadRequestException("部分产品尚未配置执行门店产品映射，不能提交跨店施工订单");
       }

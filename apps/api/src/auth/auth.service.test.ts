@@ -5,7 +5,7 @@ import { AuthService } from "./auth.service";
 import { WechatMiniProgramService } from "./wechat-mini-program.service";
 
 test("issueAndPersistTokens fails fast when JWT secrets are missing", async () => {
-  const prisma = {
+  const prisma: any = {
     user: {
       findUniqueOrThrow: async () => ({
         id: "user-1",
@@ -21,6 +21,9 @@ test("issueAndPersistTokens fails fast when JWT secrets are missing", async () =
       update: async () => ({})
     }
   };
+  prisma.authSession = { create: async () => ({}), update: async () => ({}), findUnique: async () => null, findMany: async () => [], updateMany: async () => ({}), findFirst: async () => null };
+  prisma.$transaction = async (operations: unknown[]) => Promise.all(operations as Promise<unknown>[]);
+
   const jwt = {
     signAsync: async () => "signed-token"
   };
@@ -39,7 +42,7 @@ test("issueAndPersistTokens fails fast when JWT secrets are missing", async () =
 });
 
 test("issueAndPersistTokens includes the first store membership in the session user", async () => {
-  const prisma = {
+  const prisma: any = {
     user: {
       findUniqueOrThrow: async () => ({
         id: "user-1",
@@ -65,6 +68,9 @@ test("issueAndPersistTokens includes the first store membership in the session u
       update: async () => ({})
     }
   };
+  prisma.authSession = { create: async () => ({}), update: async () => ({}), findUnique: async () => null, findMany: async () => [], updateMany: async () => ({}), findFirst: async () => null };
+  prisma.$transaction = async (operations: unknown[]) => Promise.all(operations as Promise<unknown>[]);
+
   const jwt = {
     signAsync: async (payload: { jti?: string }) => (payload.jti ? "refresh-token" : "access-token")
   };
@@ -91,7 +97,7 @@ test("issueAndPersistTokens includes the first store membership in the session u
 
 test("login failure increments observability metric without sensitive labels", async () => {
   const increments: Array<{ name: string; labels: Record<string, string> }> = [];
-  const prisma = {
+  const prisma: any = {
     user: {
       findFirst: async () => null
     }
@@ -163,7 +169,7 @@ test("wechat mini login issues a session for bound open id", async () => {
     alipayUserId: null,
     isAuditor: false
   };
-  const prisma = {
+  const prisma: any = {
     user: {
       findUnique: async ({ where }: { where: { wechatOpenId: string } }) => {
         assert.deepEqual(where, { wechatOpenId: "openid-1" });
@@ -179,6 +185,9 @@ test("wechat mini login issues a session for bound open id", async () => {
       }
     }
   };
+  prisma.authSession = { create: async () => ({}), update: async () => ({}), findUnique: async () => null, findMany: async () => [], updateMany: async () => ({}), findFirst: async () => null };
+  prisma.$transaction = async (operations: unknown[]) => Promise.all(operations as Promise<unknown>[]);
+
   const jwt = {
     signAsync: async (payload: { jti?: string }) => (payload.jti ? "refresh-token" : "access-token")
   };

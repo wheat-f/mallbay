@@ -1,5 +1,5 @@
 import { DictionarySource, DictionaryStatus } from "@prisma/client";
-import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from "class-validator";
+import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsNotEmpty, MaxLength, Min, MinLength } from "class-validator";
 
 export class DictionaryItemInputDto {
   @IsOptional() @IsString() id?: string;
@@ -40,6 +40,7 @@ export class CreateDictionaryItemDto extends DictionaryItemInputDto {}
 export class SetDictionaryItemStatusDto {
   @IsEnum(DictionaryStatus) status!: DictionaryStatus;
   @IsOptional() @IsString() @MaxLength(240) reason?: string;
+  @IsOptional() @IsInt() @Min(1) version?: number;
 }
 
 export class UpdateDictionaryItemDto {
@@ -49,4 +50,15 @@ export class UpdateDictionaryItemDto {
   @IsOptional() @IsEnum(DictionaryStatus) status?: DictionaryStatus;
   @IsOptional() @IsString() @MaxLength(240) disabledReason?: string;
   @IsOptional() @IsInt() @Min(1) version?: number;
+}
+export class ImportDictionaryItemsDto {
+  @IsString() @IsNotEmpty() storeId!: string;
+  @IsArray() @ArrayMinSize(1) items!: Array<{ code: string; name: string; sortOrder?: number }>;
+}
+
+export class DeleteDictionaryItemDto {
+  @IsString() @IsNotEmpty() @MaxLength(240) reason!: string;
+}
+export class DisableDictionaryDto {
+  @IsString() @IsNotEmpty() @MaxLength(240) reason!: string;
 }

@@ -25,6 +25,12 @@ export type StoreListResult = {
   items: StoreListItem[];
 };
 
+export type EligibleExecutionStore = {
+  id: string;
+  name: string;
+  address: string | null;
+};
+
 export const storeApi = {
   create: (payload: { name: string; managerId: string }) =>
     request<{ id: string; name: string; status: string }>("/stores", {
@@ -42,6 +48,9 @@ export const storeApi = {
   },
 
   getStore: (id: string) => request<StoreDetail>(`/stores/${id}`, { auth: false }),
+
+  eligibleExecutionStores: (sourceStoreId: string) =>
+    request<EligibleExecutionStore[]>(`/stores/${sourceStoreId}/eligible-execution-stores`),
 
   adminList: (params: { q?: string; page?: number } = {}) => {
     const qs = new URLSearchParams();
@@ -83,6 +92,8 @@ export const storeApi = {
       id: string;
       name: string;
       status: string;
+      financialEntityId: string | null;
+      crossStoreConstructionEnabled: boolean;
       address: string | null;
       description: string | null;
       createdAt: string;
@@ -98,6 +109,37 @@ export const storeApi = {
         submittedBy: { id: string; username: string; nickname: string | null };
       } | null;
     }>(`/stores/admin/${id}`),
+  financialEntities: () =>
+    request<{
+      id: string;
+      code: string;
+      name: string;
+      status: string;
+      stores: {
+        id: string;
+        name: string;
+        status: string;
+        crossStoreConstructionEnabled: boolean;
+      }[];
+    }[]>("/stores/admin/financial-entities"),
+
+  createFinancialEntity: (payload: { code: string; name: string }) =>
+    request<{ id: string; code: string; name: string }>("/stores/admin/financial-entities", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  updateCrossStoreConfig: (storeId: string, payload: { financialEntityId: string; enabled: boolean }) =>
+    request<{
+      id: string;
+      name: string;
+      financialEntityId: string;
+      crossStoreConstructionEnabled: boolean;
+    }>(`/stores/admin/${storeId}/cross-store-config`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+
 
   reviewSubmission: (submissionId: string, payload: { action: "APPROVE" | "REJECT"; reviewNote?: string }) =>
     request<{ success: boolean }>(`/stores/submissions/${submissionId}/review`, {
@@ -152,3 +194,4 @@ export const storeApi = {
       }[];
     }>(`/stores/workbench/${id}`)
 };
+

@@ -1,0 +1,7 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+test("version lifecycle exposes validate and publish transitions", () => { const source = readFileSync("src/settings/config-versions.service.ts", "utf8"); assert.match(source, /SettingsConfigStatus\.VALIDATION_FAILED/); assert.match(source, /SettingsConfigStatus\.PUBLISHED/); assert.match(source, /expectedVersion/); assert.match(source, /settings\.config\.published/); });
+test("dictionary writes are audited and store managers are the only writers", () => { const source = readFileSync("src/settings/dictionaries.service.ts", "utf8"); assert.match(source, /settings\.dictionary\.item\.disabled/); assert.match(source, /position !== "MANAGER"/); assert.match(source, /usageCount > 0/); });
+test("version validation covers security, capacity, risky switch reason and overlap rules", () => { const source = readFileSync("src/settings/config-versions.service.ts", "utf8"); assert.match(source, /sessionIdleMinutes/); assert.match(source, /store\.capacity/); assert.match(source, /重叠生效时间/); assert.match(source, /超过 30 天自动过期/); assert.match(source, /async clone/); });
+test("dictionary import is add-only and audited", () => { const source = readFileSync("src/settings/dictionaries.service.ts", "utf8"); assert.match(source, /编码已存在，请更换编码/); assert.match(source, /ADD_ONLY/); assert.match(source, /settings\.dictionary\.items\.imported/); });

@@ -110,6 +110,7 @@ function CreateOrderContent() {
   const selectedCustomerId = Form.useWatch("customerId", form) ?? initialCustomerId;
   const selectedVehicleId = Form.useWatch("vehicleId", form);
   const selectedVehicleTypeCode = Form.useWatch("vehicleTypeCode", form);
+  const selectedExecutionStoreId = Form.useWatch("executionStoreId", form) ?? storeId;
   const selectedAppointmentDate = Form.useWatch("appointmentDate", form);
   const selectedConstructionLocation = Form.useWatch("constructionLocation", form) ?? "IN_STORE";
   const selectedConstructionType = Form.useWatch("constructionType", form) ?? "PPF";
@@ -145,6 +146,13 @@ function CreateOrderContent() {
     enabled: Boolean(selectedCustomerId && selectedVehicleId)
   });
 
+  const eligibleExecutionStoresQuery = useQuery({
+    queryKey: ["eligible-execution-stores", storeId],
+    queryFn: () => storeApi.eligibleExecutionStores(storeId!),
+    enabled: Boolean(storeId),
+    staleTime: 60_000
+  });
+
   const productsQuery = useQuery({
     queryKey: ["products-for-order", storeId],
     queryFn: () => productApi.list({ storeId: storeId!, page: 1, pageSize: 100, status: "ACTIVE" }),
@@ -158,14 +166,14 @@ function CreateOrderContent() {
   });
 
   const capacitiesQuery = useQuery({
-    queryKey: ["order-capacity", storeId, selectedAppointmentDateValue],
+    queryKey: ["order-capacity", selectedExecutionStoreId, selectedAppointmentDateValue],
     queryFn: () =>
       constructionApi.capacities({
-        storeId: storeId!,
+        storeId: selectedExecutionStoreId!,
         from: selectedAppointmentDateValue!,
         to: selectedAppointmentDateValue!
       }),
-    enabled: Boolean(storeId && selectedAppointmentDateValue)
+    enabled: Boolean(selectedExecutionStoreId && selectedAppointmentDateValue)
   });
 
   const paymentAccountsQuery = useQuery({
@@ -180,6 +188,23 @@ function CreateOrderContent() {
     enabled: Boolean(storeId)
   });
 
+  const executionStoreOptions = useMemo(() => {
+    if (!storeId) return [];
+    const sourceStoreName = storeMembersQuery.data?.name ?? "本店";
+    return [
+      { value: storeId, label: `${sourceStoreName}（本店施工）` },
+      ...(eligibleExecutionStoresQuery.data ?? []).map((store) => ({
+        value: store.id,
+        label: `${store.name}（跨店施工）`
+      }))
+    ];
+  }, [eligibleExecutionStoresQuery.data, storeId, storeMembersQuery.data?.name]);
+
+  useEffect(() => {
+    if (storeId && !form.getFieldValue("executionStoreId")) {
+      form.setFieldValue("executionStoreId", storeId);
+    }
+  }, [form, storeId]);
   const searchedCustomers = (customersQuery.data ?? []) as OrderCustomer[];
   // 客户详情请求尚未返回或偶发失败时，先使用搜索结果中的客户和车辆，不能把
   // 已选客户误判为“未选择”。详情返回后会自动补齐全部车辆与历史信息。
@@ -343,6 +368,7 @@ function CreateOrderContent() {
       if (!storeId || !values.pricingCalculationId) throw new Error("缺少价格试算快照，请先重新试算");
       return salesQuoteApi.create({
         storeId,
+        executionStoreId: values.executionStoreId ?? storeId,
         customerId: values.customerId,
         vehicleId: values.vehicleId,
         appointmentDate: formatOrderDateValue(values.appointmentDate),
@@ -601,6 +627,7 @@ function CreateOrderContent() {
           initialValues={{
             customerId: initialCustomerId,
             salesPersonId: user?.id,
+            executionStoreId: storeId,
             constructionType: "PPF",
             constructionLocation: "IN_STORE",
             constructionChargeYuan: 0,
@@ -691,6 +718,19 @@ function CreateOrderContent() {
 
               <Card title={<OrderStepTitle step={2} title="施工预约" />} className="create-order-card">
                 <div className="create-order-field-grid">
+                  <Form.Item
+                    name="executionStoreId"
+                    label="执行门店"
+                    rules={[{ required: true, message: "请选择执行门店" }]}
+                    extra="默认本店施工；选择其他门店后，施工容量、派工、材料库存与入库补货均归执行门店。"
+                    className="create-order-field-wide"
+                  >
+                    <Select
+                      loading={eligibleExecutionStoresQuery.isLoading}
+                      options={executionStoreOptions}
+                      placeholder="选择实际施工门店"
+                    />
+                  </Form.Item>
                   <Form.Item name="constructionType" label="施工类型" rules={[{ required: true }]}>
                     <Select options={CONSTRUCTION_TYPE_OPTIONS} />
                   </Form.Item>
@@ -723,6 +763,15 @@ function CreateOrderContent() {
                   </Form.Item>
                 </div>
 
+                {selectedExecutionStoreId && selectedExecutionStoreId !== storeId ? (
+                  <Alert
+                    className="mb-3"
+                    type="info"
+                    showIcon
+                    message="跨店施工协作"
+                    description="订单收入归下单门店；执行门店负责施工、材料出库和施工记录。当前同一财务主体内不收取协作费。"
+                  />
+                ) : null}
                 {selectedAppointmentDateValue ? (
                   <Alert
                     className="mt-1"
@@ -730,7 +779,7 @@ function CreateOrderContent() {
                     showIcon
                     title={capacityStatus?.message ?? "正在检查施工容量..."}
                     action={
-                      capacityStatus?.state === "missing" || capacityStatus?.state === "full" ? (
+                      (capacityStatus?.state === "missing" || capacityStatus?.state === "full") && selectedExecutionStoreId === storeId ? (
                         <Button size="small" onClick={() => router.push(getConstructionCapacityHref(selectedAppointmentDateValue))}>
                           去设置施工容量
                         </Button>
@@ -1531,3 +1580,10 @@ function getDaysInMonth(year?: number, month?: number) {
 function formatBirthday(year: number, month: number, day: number) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
+
+
+
+
+
+
+

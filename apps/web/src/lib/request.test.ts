@@ -36,7 +36,10 @@ test("request sends auth token and parses JSON responses", async () => {
   assert.deepEqual(result, { success: true });
   assert.equal(capturedInput, "http://localhost:3001/test");
   assert.equal(capturedInit?.credentials, "include");
-  assert.deepEqual(capturedInit?.headers, {
+  const authHeaders = capturedInit?.headers as Record<string, string>;
+  assert.equal(typeof authHeaders["X-Request-Id"], "string");
+  delete authHeaders["X-Request-Id"];
+  assert.deepEqual(authHeaders, {
     "Content-Type": "application/json",
     Authorization: "Bearer access-token"
   });
@@ -60,10 +63,13 @@ test("request sends JSON content type for unauthenticated requests", async () =>
       encryptedPassword: "ciphertext"
     })
   });
-
-  assert.deepEqual(capturedInit?.headers, {
+  const unauthHeaders = capturedInit?.headers as Record<string, string>;
+  assert.equal(typeof unauthHeaders["X-Request-Id"], "string");
+  delete unauthHeaders["X-Request-Id"];
+  assert.deepEqual(unauthHeaders, {
     "Content-Type": "application/json"
   });
+
 });
 
 test("request refreshes session and retries once after an authenticated 401 response", async () => {

@@ -16,6 +16,10 @@ export class CreateSalesQuoteDto {
   @IsString()
   storeId!: string;
 
+  @IsOptional()
+  @IsString()
+  executionStoreId?: string;
+
   @IsString()
   customerId!: string;
 

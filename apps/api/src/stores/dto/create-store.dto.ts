@@ -1,4 +1,4 @@
-import { IsString, MaxLength, MinLength } from "class-validator";
+import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class CreateStoreDto {
   @IsString()
@@ -8,4 +8,12 @@ export class CreateStoreDto {
 
   @IsString()
   managerId!: string; // 被指派为店长的用户 ID
+
+  @IsOptional()
+  @IsString()
+  financialEntityId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  crossStoreConstructionEnabled?: boolean;
 }

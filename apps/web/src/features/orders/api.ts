@@ -12,6 +12,7 @@ export type OrderPaymentStatus = "UNPAID" | "PARTIAL" | "PAID";
 
 export type CreateOrderPayload = {
   storeId: string;
+  executionStoreId?: string;
   customerId: string;
   vehicleId: string;
   salesPersonId?: string;
@@ -257,3 +258,4 @@ function toQueryString(query: Record<string, string | number | boolean | undefin
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
 }
+

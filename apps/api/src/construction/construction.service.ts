@@ -3,8 +3,10 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import {
   ConstructionPhotoStage,
   ConstructionTaskStatus,
+  CrossStoreTaskStatus,
   InventoryMovementType,
   LeaveRequestStatus,
+  NotificationType,
   OrderStatus,
   Prisma,
   QualityCheckResult,
@@ -139,7 +141,8 @@ export class ConstructionService {
       if (!order) {
         throw new NotFoundException("订单不存在");
       }
-      if (!PermissionPolicy.canDispatchConstruction(actor, order.storeId)) {
+      const executionStoreId = order.executionStoreId ?? order.storeId;
+      if (!PermissionPolicy.canDispatchConstruction(actor, executionStoreId)) {
         throw new ForbiddenException("无权限");
       }
       if (order.status !== OrderStatus.PENDING_DISPATCH) {
@@ -153,22 +156,28 @@ export class ConstructionService {
         throw new BadRequestException("该订单已生成施工工单，请刷新施工列表");
       }
 
+      const executionStore = await tx.store.findUnique({
+        where: { id: executionStoreId },
+        select: { financialEntityId: true }
+      });
+      if (!executionStore) {
+        throw new NotFoundException("执行门店不存在");
+      }
       const members = await tx.storeMember.findMany({
         where: {
-          storeId: order.storeId,
           userId: { in: workerIds },
-          position: { in: [StorePosition.CONSTRUCTION, StorePosition.APPRENTICE] }
+          position: { in: [StorePosition.CONSTRUCTION, StorePosition.APPRENTICE] },
+          store: { financialEntityId: executionStore.financialEntityId }
         }
       });
       if (members.length !== workerIds.length) {
-        throw new BadRequestException("施工人员必须属于本门店且岗位有效");
+        throw new BadRequestException("施工人员必须属于同一财务主体内的有效施工岗位");
       }
 
       const assignmentDate = order.appointmentDate ?? new Date();
       for (const workerId of workerIds) {
         const leave = await tx.leaveRequest.findFirst({
           where: {
-            storeId: order.storeId,
             workerId,
             status: LeaveRequestStatus.APPROVED,
             startDate: { lte: assignmentDate },
@@ -182,7 +191,7 @@ export class ConstructionService {
 
       const record = await tx.constructionRecord.create({
         data: {
-          storeId: order.storeId,
+          storeId: executionStoreId,
           orderId,
           dispatchedById: actor.id,
           status: ConstructionTaskStatus.DISPATCHED
@@ -199,6 +208,16 @@ export class ConstructionService {
         where: { id: orderId },
         data: { status: OrderStatus.DISPATCHED }
       });
+      if (order.storeId !== executionStoreId) {
+        await tx.crossStoreConstructionTask.updateMany({
+          where: { orderId, status: CrossStoreTaskStatus.READY_TO_DISPATCH },
+          data: {
+            status: CrossStoreTaskStatus.DISPATCHED,
+            dispatchedAt: new Date(),
+            version: { increment: 1 }
+          }
+        });
+      }
       return record;
     });
   }
@@ -211,10 +230,20 @@ export class ConstructionService {
       throw new BadRequestException("只有已派单订单可以开工");
     }
     const startedAt = dto.startedAt ? new Date(dto.startedAt) : new Date();
-    await this.prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.IN_CONSTRUCTION } });
-    return this.prisma.constructionRecord.update({
-      where: { id: record.id },
-      data: { startedAt, status: ConstructionTaskStatus.IN_CONSTRUCTION }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.IN_CONSTRUCTION } });
+      await tx.crossStoreConstructionTask.updateMany({
+        where: { orderId, status: CrossStoreTaskStatus.DISPATCHED },
+        data: {
+          status: CrossStoreTaskStatus.IN_CONSTRUCTION,
+          constructionStartedAt: startedAt,
+          version: { increment: 1 }
+        }
+      });
+      return tx.constructionRecord.update({
+        where: { id: record.id },
+        data: { startedAt, status: ConstructionTaskStatus.IN_CONSTRUCTION }
+      });
     });
   }
 
@@ -227,7 +256,10 @@ export class ConstructionService {
     const actor = await this.withStoreMember(user);
     const record = await this.findRecord(recordId);
     const assignedWorkerId = this.getAssignedWorkerId(actor.id, record);
-    if (!PermissionPolicy.canUploadConstructionPhoto(actor, record.storeId, assignedWorkerId)) {
+    if (
+      assignedWorkerId !== actor.id &&
+      !PermissionPolicy.canUploadConstructionPhoto(actor, record.storeId, assignedWorkerId)
+    ) {
       throw new ForbiddenException("无权限");
     }
     const url = dto.url ?? (file ? await this.oss?.uploadConstructionPhoto(record.storeId, record.orderId, file) : undefined);
@@ -276,18 +308,48 @@ export class ConstructionService {
     const actualMinutes = Math.max(0, Math.round((completedAt.getTime() - startedAt.getTime()) / 60000));
     const overtimeMinutes = Math.max(0, actualMinutes - 8 * 60);
 
-    await this.prisma.order.update({ where: { id: record.orderId }, data: { status: OrderStatus.COMPLETED } });
-    const updated = await this.prisma.constructionRecord.update({
-      where: { id: record.id },
-      data: {
-        status: ConstructionTaskStatus.COMPLETED,
-        completedAt,
-        actualMinutes,
-        overtimeMinutes
+    const isCrossStore = record.order.storeId !== record.order.executionStoreId;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (!isCrossStore) {
+        await tx.order.update({ where: { id: record.orderId }, data: { status: OrderStatus.COMPLETED } });
       }
+      const completedRecord = await tx.constructionRecord.update({
+        where: { id: record.id },
+        data: {
+          status: ConstructionTaskStatus.COMPLETED,
+          completedAt,
+          actualMinutes,
+          overtimeMinutes
+        }
+      });
+      if (isCrossStore) {
+        await tx.crossStoreConstructionTask.updateMany({
+          where: {
+            orderId: record.orderId,
+            status: { in: [CrossStoreTaskStatus.DISPATCHED, CrossStoreTaskStatus.IN_CONSTRUCTION] }
+          },
+          data: {
+            status: CrossStoreTaskStatus.PENDING_SOURCE_ACCEPTANCE,
+            submittedForAcceptanceAt: completedAt,
+            version: { increment: 1 }
+          }
+        });
+      }
+      return completedRecord;
     });
     await this.createCommissionSnapshots(actor.id, record);
     await this.costSettlements?.initializeForCompletedRecord(record.id, actor.id);
+    if (isCrossStore) {
+      const recipients = await this.prisma.storeMember.findMany({
+        where: { storeId: record.order.storeId, position: StorePosition.MANAGER },
+        select: { userId: true }
+      });
+      await Promise.all(recipients.map(({ userId }) => this.notifications?.send(
+        userId,
+        NotificationType.CROSS_STORE_TASK_SUBMITTED,
+        { orderId: record.orderId, constructionRecordId: record.id }
+      )));
+    }
     return updated;
   }
 
@@ -831,7 +893,10 @@ export class ConstructionService {
 
   private assertAssignedWorker(user: UserWithStoreMember, record: ConstructionRecordWithRelations) {
     const assignedWorkerId = this.getAssignedWorkerId(user.id, record);
-    if (!PermissionPolicy.canWorkOnConstructionTask(user, record.storeId, assignedWorkerId)) {
+    if (
+      assignedWorkerId !== user.id &&
+      !PermissionPolicy.canWorkOnConstructionTask(user, record.storeId, assignedWorkerId)
+    ) {
       throw new ForbiddenException("无权限");
     }
   }
@@ -840,6 +905,7 @@ export class ConstructionService {
     const assignedWorkerId = this.getAssignedWorkerId(user.id, record);
     if (
       !PermissionPolicy.canDispatchConstruction(user, record.storeId) &&
+      assignedWorkerId !== user.id &&
       !PermissionPolicy.canWorkOnConstructionTask(user, record.storeId, assignedWorkerId)
     ) {
       throw new ForbiddenException("无权限");

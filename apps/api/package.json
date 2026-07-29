@@ -12,7 +12,10 @@
     "db:preflight": "tsx --tsconfig tsconfig.app.json src/prisma/preflight-db-invariants.ts",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "settings:migrate": "tsx scripts/migrate-settings-workbench.ts",
+    "settings:migrate:domains": "tsx scripts/migrate-settings-domains.ts",
+    "settings:migrate:finance-settlement": "tsx scripts/migrate-finance-settlement.ts"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.21",

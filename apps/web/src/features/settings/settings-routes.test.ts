@@ -1,0 +1,6 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+test("settings routes expose versioned store, HQ and security editors", () => { const files = ["app/settings/store/page.tsx", "app/settings/permissions/page.tsx", "app/settings/security/page.tsx"].map((file) => readFileSync(file, "utf8")).join("\n"); assert.match(files, /SettingsVersionEditor/); assert.match(files, /settings\.permissions/); assert.match(files, /settings\.security/); assert.match(files, /保存并发布|校验并发布/); });
+test("finance settings reads existing versioned cost and account services", () => { const source = readFileSync("app/settings/finance/page.tsx", "utf8"); assert.match(source, /positionCostRateVersions/); assert.match(source, /paymentAccounts/); assert.match(source, /已发布成本版本不可直接修改/); });
+test("direct settings routes render server-backed 403 guards", () => { const files = ["app/settings/permissions/page.tsx", "app/settings/dictionaries/page.tsx", "app/settings/audit/page.tsx", "src/features/settings/settings-version-editor.tsx"].map((file) => readFileSync(file, "utf8")).join("\n"); assert.match(files, /SettingsCapabilityGuard/); assert.match(files, /settings\.permissions/); assert.match(files, /settings\.dictionary/); });

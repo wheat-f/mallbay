@@ -185,6 +185,7 @@ test("auth accepts encrypted credentials over HTTP", async () => {
 });
 
 function createPrismaStub(users: Map<string, TestUser>) {
+  const sessions = new Map<string, { id: string; userId: string; tokenHash: string; deviceName: string; userAgent: string | null; ipAddress: string | null; lastSeenAt: Date; createdAt: Date; revokedAt: Date | null }>();
   return {
     user: {
       findUnique: async ({ where }: { where: { id?: string; username?: string } }) => {
@@ -254,6 +255,18 @@ function createPrismaStub(users: Map<string, TestUser>) {
         return user;
       }
     },
+    settingsConfigVersion: {
+      findFirst: async () => null
+    },
+    authSession: {
+      findUnique: async ({ where }: { where: { id: string } }) => sessions.get(where.id) ?? null,
+      findFirst: async ({ where }: { where: { id?: string; userId?: string; revokedAt?: null } }) => Array.from(sessions.values()).find((session) => (!where.id || session.id === where.id) && (!where.userId || session.userId === where.userId) && (where.revokedAt === undefined || session.revokedAt === where.revokedAt)) ?? null,
+      findMany: async ({ where }: { where: { userId: string; revokedAt?: null } }) => Array.from(sessions.values()).filter((session) => session.userId === where.userId && (where.revokedAt === undefined || session.revokedAt === where.revokedAt)),
+      create: async ({ data }: { data: { id: string; userId: string; tokenHash: string; deviceName: string; userAgent?: string; ipAddress?: string } }) => { const now = new Date(); const session = { id: data.id, userId: data.userId, tokenHash: data.tokenHash, deviceName: data.deviceName, userAgent: data.userAgent ?? null, ipAddress: data.ipAddress ?? null, lastSeenAt: now, createdAt: now, revokedAt: null }; sessions.set(session.id, session); return session; },
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => { const session = sessions.get(where.id); if (!session) throw new Error("Session not found"); Object.assign(session, data); return session; },
+      updateMany: async ({ where, data }: { where: { id?: string; userId?: string; revokedAt?: null }; data: Record<string, unknown> }) => { let count = 0; for (const session of sessions.values()) { if ((!where.id || session.id === where.id) && (!where.userId || session.userId === where.userId) && (where.revokedAt === undefined || session.revokedAt === where.revokedAt)) { Object.assign(session, data); count += 1; } } return { count }; }
+    },
+    $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
     $connect: async () => undefined,
     $disconnect: async () => undefined
   };

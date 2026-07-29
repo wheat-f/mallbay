@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS "AuthSession" ("id" TEXT NOT NULL, "userId" TEXT NOT NULL, "tokenHash" TEXT NOT NULL, "deviceName" TEXT NOT NULL DEFAULT '未知设备', "userAgent" TEXT, "ipAddress" TEXT, "lastSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "revokedAt" TIMESTAMP(3), CONSTRAINT "AuthSession_pkey" PRIMARY KEY ("id"));
+CREATE INDEX IF NOT EXISTS "AuthSession_userId_revokedAt_lastSeenAt_idx" ON "AuthSession"("userId", "revokedAt", "lastSeenAt" DESC);
+DO $$ BEGIN ALTER TABLE "AuthSession" ADD CONSTRAINT "AuthSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

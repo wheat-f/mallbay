@@ -4,6 +4,7 @@ export type SalesQuoteRow = {
   id: string;
   quoteNo: string;
   storeId: string;
+  executionStoreId: string;
   customerId: string;
   status: "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "EXPIRED" | "CONVERTED" | "WITHDRAWN";
   suggestedTotalCents: number;
@@ -31,6 +32,7 @@ export type SalesQuoteRow = {
 
 export type RecalculateSalesQuotePayload = {
   storeId: string;
+  executionStoreId?: string;
   pricingCalculationId: string;
   items: Array<{ productId: string; finalUnitPriceCents: number }>;
   finalConstructionChargeCents?: number;
@@ -106,3 +108,4 @@ export const salesQuoteApi = {
   convertToOrder: (id: string) =>
     request<{ quoteId: string; orderId: string }>(`/sales-quotes/${id}/convert-to-order`, { method: "POST" })
 };
+

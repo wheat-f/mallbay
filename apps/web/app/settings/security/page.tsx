@@ -1,0 +1,6 @@
+"use client";
+import { Button, Space, Typography } from "antd";
+import { ArrowLeftOutlined } from "@ant-design/icons";
+import { useRouter } from "next/navigation";
+import { SettingsVersionEditor } from "../../../src/features/settings/settings-version-editor";
+export default function SecuritySettingsPage(){const router=useRouter();return <div className="management-page settings-workspace"><Space direction="vertical" size={20} style={{width:"100%"}}><Button icon={<ArrowLeftOutlined/>} onClick={()=>router.push("/settings")}>返回职责工作台</Button><div><Typography.Title level={2}>安全策略</Typography.Title><Typography.Paragraph type="secondary">敏感策略变更需服务端校验并记录审计；MFA、IP 白名单和设备管理列入二期。</Typography.Paragraph></div><SettingsVersionEditor capabilityCode="settings.security" domain="HQ" scopeId="global" title="登录与会话" description="首期默认会话闲置 30 分钟失效，密码至少 8 位且同时含字母和数字。" fields={[{key:"sessionIdleMinutes",label:"会话闲置失效（分钟）",type:"number",min:5},{key:"minPasswordLength",label:"最小密码长度",type:"number",min:8},{key:"requireAlphaNumeric",label:"密码必须含字母和数字",type:"boolean"},{key:"maxLoginFailures",label:"连续失败锁定阈值",type:"number",min:1},{key:"lockoutMinutes",label:"锁定时长（分钟）",type:"number",min:1}]} initial={{sessionIdleMinutes:30,minPasswordLength:8,requireAlphaNumeric:true,maxLoginFailures:5,lockoutMinutes:15}}/></Space></div>;}

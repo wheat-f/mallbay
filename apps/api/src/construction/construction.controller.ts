@@ -20,6 +20,14 @@ import type { MulterFile } from "../users/multer-file.type";
 import { ConstructionService, type AuthenticatedConstructionUser } from "./construction.service";
 import { CapacityReservationService } from "./capacity-reservation.service";
 import { ConstructionCostSettlementService } from "./construction-cost-settlement.service";
+import { CrossStoreConstructionService } from "./cross-store-construction.service";
+import {
+  CancelCrossStoreTaskDto,
+  CompleteCrossStoreAcceptanceDto,
+  ListCrossStoreTasksDto,
+  RejectCrossStoreTaskDto,
+  UpsertCrossStoreProductMappingDto
+} from "./dto/cross-store-construction.dto";
 import {
   AssignOrderDto,
   ApproveCostAdjustmentDto,
@@ -52,8 +60,76 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("construction")
 export class ConstructionController {
-  constructor(private readonly construction: ConstructionService, private readonly capacities: CapacityReservationService, private readonly costSettlements: ConstructionCostSettlementService) {}
+  constructor(
+    private readonly construction: ConstructionService,
+    private readonly capacities: CapacityReservationService,
+    private readonly costSettlements: ConstructionCostSettlementService,
+    private readonly crossStore: CrossStoreConstructionService
+  ) {}
 
+  @Get("cross-store/tasks")
+  listCrossStoreTasks(@Req() req: AuthRequest, @Query() query: ListCrossStoreTasksDto) {
+    return this.crossStore.list(req.user, query);
+  }
+
+  @Get("cross-store/tasks/:id")
+  getCrossStoreTask(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.crossStore.get(req.user, id);
+  }
+
+  @Post("cross-store/tasks/:id/accept")
+  acceptCrossStoreTask(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.crossStore.accept(req.user, id);
+  }
+
+  @Post("cross-store/tasks/:id/reject")
+  rejectCrossStoreTask(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Body() dto: RejectCrossStoreTaskDto
+  ) {
+    return this.crossStore.reject(req.user, id, dto);
+  }
+
+  @Post("cross-store/tasks/:id/cancel")
+  cancelCrossStoreTask(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Body() dto: CancelCrossStoreTaskDto
+  ) {
+    return this.crossStore.cancel(req.user, id, dto);
+  }
+
+  @Post("cross-store/tasks/:id/submit-acceptance")
+  submitCrossStoreTaskForAcceptance(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Body() dto: CompleteCrossStoreAcceptanceDto
+  ) {
+    return this.crossStore.submitForSourceAcceptance(req.user, id, dto);
+  }
+
+  @Post("cross-store/tasks/:id/source-accept")
+  acceptCrossStoreTaskBySource(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.crossStore.completeSourceAcceptance(req.user, id);
+  }
+
+  @Get("cross-store/product-mappings")
+  listCrossStoreProductMappings(
+    @Req() req: AuthRequest,
+    @Query("sourceStoreId") sourceStoreId: string,
+    @Query("executionStoreId") executionStoreId: string
+  ) {
+    return this.crossStore.listProductMappings(req.user, sourceStoreId, executionStoreId);
+  }
+
+  @Post("cross-store/product-mappings")
+  upsertCrossStoreProductMapping(
+    @Req() req: AuthRequest,
+    @Body() dto: UpsertCrossStoreProductMappingDto
+  ) {
+    return this.crossStore.upsertProductMapping(req.user, dto);
+  }
   @Get("cost-settlements")
   listCostSettlements(@Req() req: AuthRequest, @Query() query: ListCostSettlementsDto) {
     return this.costSettlements.list(req.user, query);

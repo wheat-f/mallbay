@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { CapacityReservationStatus, Prisma, PricingApprovalStatus, PricingApprovalType, SalesQuoteStatus } from "@prisma/client";
+import { CapacityReservationStatus, Prisma, PricingApprovalStatus, PricingApprovalType, SalesQuoteStatus, StoreStatus } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { multiplyMoneyCents } from "../pricing/domain/money";
@@ -25,6 +25,29 @@ export class SalesQuotesService {
   async create(user: PricingAuthenticatedUser, dto: CreateSalesQuoteDto) {
     const actor = await this.withStoreMember(user);
     if (!PermissionPolicy.canCreateOrder(actor, dto.storeId)) throw new ForbiddenException("无权限");
+    const executionStoreId = dto.executionStoreId?.trim() || dto.storeId;
+    if (executionStoreId !== dto.storeId) {
+      const [sourceStore, executionStore] = await Promise.all([
+        this.prisma.store.findUnique({
+          where: { id: dto.storeId },
+          select: { financialEntityId: true, crossStoreConstructionEnabled: true, status: true }
+        }),
+        this.prisma.store.findUnique({
+          where: { id: executionStoreId },
+          select: { financialEntityId: true, crossStoreConstructionEnabled: true, status: true }
+        })
+      ]);
+      if (!sourceStore || !executionStore) throw new BadRequestException("来源门店或执行门店不存在");
+      if (
+        sourceStore.financialEntityId !== executionStore.financialEntityId ||
+        !sourceStore.crossStoreConstructionEnabled ||
+        !executionStore.crossStoreConstructionEnabled ||
+        sourceStore.status !== StoreStatus.PUBLISHED ||
+        executionStore.status !== StoreStatus.PUBLISHED
+      ) {
+        throw new BadRequestException("只能选择同一财务主体下已启用跨店施工的正式门店");
+      }
+    }
     if (dto.appointmentDate && !dto.appointmentTimeSlot) throw new BadRequestException("预约时段不能为空");
     if (!dto.appointmentDate && dto.appointmentTimeSlot) throw new BadRequestException("预约日期不能为空");
     if (dto.constructionLocation === ConstructionLocation.OUTSIDE && !dto.constructionAddress?.trim()) {
@@ -105,6 +128,7 @@ export class SalesQuotesService {
     const quote = await this.prisma.salesQuote.create({
       data: {
         storeId: dto.storeId,
+        executionStoreId,
         quoteNo: createQuoteNo(),
         customerId: dto.customerId,
         vehicleId: dto.vehicleId,
@@ -169,7 +193,7 @@ export class SalesQuotesService {
     if (submitForApproval) {
       try {
         await this.capacityReservations.holdQuote({
-          storeId: dto.storeId,
+          storeId: executionStoreId,
           quoteId: quote.id,
           appointmentDate: dto.appointmentDate,
           constructionLocation: dto.constructionLocation,
@@ -439,6 +463,7 @@ export class SalesQuotesService {
     }
     const next = await this.create(user, {
       storeId: dto.storeId,
+      executionStoreId: quote.executionStoreId,
       customerId: quote.customerId,
       vehicleId: quote.vehicleId ?? undefined,
       appointmentDate: quote.appointmentDate?.toISOString(),
@@ -496,6 +521,7 @@ export class SalesQuotesService {
     try {
       const order = await this.createOrderUseCase.execute(actor, {
         storeId: quote.storeId,
+        executionStoreId: quote.executionStoreId,
         customerId: quote.customerId,
         vehicleId: quote.vehicleId,
         salesPersonId: quote.salesPersonId,

@@ -25,6 +25,10 @@ import { SubmitStoreDto } from "./dto/submit-store.dto";
 import { ReviewStoreDto } from "./dto/review-store.dto";
 import { ListStoresDto } from "./dto/list-stores.dto";
 import { ChangeManagerDto } from "./dto/change-manager.dto";
+import {
+  CreateFinancialEntityDto,
+  UpdateStoreCrossStoreConfigDto
+} from "./dto/cross-store-config.dto";
 import { StoresService } from "./stores.service";
 
 type AuthRequest = Request & {
@@ -59,6 +63,29 @@ export class StoresController {
     return this.storesService.getWorkbenchStore(req.user.id, id);
   }
 
+  @Get(":id/eligible-execution-stores")
+  listEligibleExecutionStores(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.storesService.listEligibleExecutionStores(req.user.id, req.user.isAuditor, id);
+  }
+
+  @Get("admin/financial-entities")
+  listFinancialEntities(@Req() req: AuthRequest) {
+    return this.storesService.listFinancialEntities(req.user.isAuditor);
+  }
+
+  @Post("admin/financial-entities")
+  createFinancialEntity(@Req() req: AuthRequest, @Body() dto: CreateFinancialEntityDto) {
+    return this.storesService.createFinancialEntity(req.user.isAuditor, dto);
+  }
+
+  @Patch("admin/:id/cross-store-config")
+  updateCrossStoreConfig(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Body() dto: UpdateStoreCrossStoreConfigDto
+  ) {
+    return this.storesService.updateCrossStoreConfig(req.user.isAuditor, id, dto);
+  }
   // 管理员：全量门店列表（含所有状态）
   @Get("admin/all")
   listAllStores(@Req() req: AuthRequest, @Query() query: ListStoresDto) {

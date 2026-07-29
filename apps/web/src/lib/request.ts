@@ -12,7 +12,10 @@ export type ApiOptions = RequestInit & {
 };
 
 export async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
-  return requestWithAuthRetry<T>(path, options, (token) => ({
+  const method = (options.method ?? "GET").toUpperCase();
+  const requestId = method !== "GET" && method !== "HEAD" ? createRequestId() : undefined;
+  const nextOptions = requestId ? { ...options, headers: { ...(options.headers as Record<string, string> | undefined), "X-Request-Id": requestId } } : options;
+  return requestWithAuthRetry<T>(path, nextOptions, (token) => ({
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   }));
@@ -23,12 +26,17 @@ export async function requestMultipart<T>(path: string, formData: FormData): Pro
     path,
     {
       method: "POST",
-      body: formData
+      body: formData,
+      headers: { "X-Request-Id": createRequestId() }
     },
     (token) => ({
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     })
   );
+}
+
+function createRequestId() {
+  return typeof globalThis.crypto?.randomUUID === "function" ? globalThis.crypto.randomUUID() : `req_web_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
 async function requestWithAuthRetry<T>(

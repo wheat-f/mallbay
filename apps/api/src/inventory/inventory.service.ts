@@ -51,6 +51,37 @@ type CreatePurchaseOrderFromRequirementInput = {
   }>;
 };
 
+type CrossStoreRequirementItem = {
+  sourceProductId?: string;
+  executionProductId?: string;
+  executionInventoryUnit?: ProductUnit;
+  executionRequiredQuantity?: number;
+};
+
+function resolveCrossStoreRequirementItem(snapshot: unknown, sourceProductId: string) {
+  if (!snapshot || typeof snapshot !== "object" || !("items" in snapshot)) return undefined;
+  const items = (snapshot as { items?: unknown }).items;
+  if (!Array.isArray(items)) return undefined;
+  return items.find(
+    (item): item is CrossStoreRequirementItem =>
+      Boolean(item)
+      && typeof item === "object"
+      && (item as CrossStoreRequirementItem).sourceProductId === sourceProductId
+  );
+}
+
+function resolveCrossStoreExecutionProductId(snapshot: unknown, sourceProductId: string) {
+  return resolveCrossStoreRequirementItem(snapshot, sourceProductId)?.executionProductId ?? sourceProductId;
+}
+
+function resolveCrossStoreExecutionUnit(snapshot: unknown, sourceProductId: string, fallback: ProductUnit) {
+  return resolveCrossStoreRequirementItem(snapshot, sourceProductId)?.executionInventoryUnit ?? fallback;
+}
+
+function resolveCrossStoreExecutionRequiredQuantity(snapshot: unknown, sourceProductId: string, fallback: number) {
+  const value = resolveCrossStoreRequirementItem(snapshot, sourceProductId)?.executionRequiredQuantity;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
 type SplitBatchInput = {
   quantityMeters: number;
 };
@@ -807,12 +838,13 @@ export class InventoryService {
       throw new ForbiddenException("无权限");
     }
     const orders = await this.prisma.order.findMany({
-      where: { storeId, status: { not: "CANCELLED" } },
+      where: { executionStoreId: storeId, status: { not: "CANCELLED" } },
       orderBy: { createdAt: "desc" },
       include: {
         customer: true,
         vehicle: true,
-        items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } }
+        items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } },
+        crossStoreTask: true
       }
     });
     return orders.filter((order) => isPendingInventoryMatchOrder(order));
@@ -825,20 +857,25 @@ export class InventoryService {
       include: {
         customer: true,
         vehicle: true,
-        items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } }
+        items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } },
+        crossStoreTask: true
       }
     });
     if (!order) throw new NotFoundException("订单不存在");
-    if (!PermissionPolicy.canViewInventory(actor, order.storeId)) {
+    if (!PermissionPolicy.canViewInventory(actor, order.executionStoreId)) {
       throw new ForbiddenException("无权限");
     }
-    const items = await Promise.all(order.items.map(async (item) => ({
-      orderItem: item,
-      availableBatches: await this.prisma.inventoryBatch.findMany({
-        where: { storeId: order.storeId, productId: item.productId, availableQuantity: { gt: 0 } },
-        orderBy: { receivedAt: "asc" }
-      })
-    })));
+    const items = await Promise.all(order.items.map(async (item) => {
+      const inventoryProductId = resolveCrossStoreExecutionProductId(order.crossStoreTask?.requirementsSnapshot, item.productId);
+      return {
+        orderItem: item,
+        inventoryProductId,
+        availableBatches: await this.prisma.inventoryBatch.findMany({
+          where: { storeId: order.executionStoreId, productId: inventoryProductId, availableQuantity: { gt: 0 } },
+          orderBy: { receivedAt: "asc" }
+        })
+      };
+    }));
     return { order, items };
   }
 
@@ -854,10 +891,13 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        include: { items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } } }
+        include: {
+          items: { include: { product: true, inventoryAllocations: { include: { batch: true } } } },
+          crossStoreTask: true
+        }
       });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, order.storeId)) {
+      if (!PermissionPolicy.canManageInventory(actor, order.executionStoreId)) {
         throw new ForbiddenException("无权限");
       }
       const locked: Array<{ batchId: string; orderItemId: string; quantity: number }> = [];
@@ -867,8 +907,9 @@ export class InventoryService {
         }
         const orderItem = order.items.find((item) => item.id === allocation.orderItemId);
         if (!orderItem) throw new BadRequestException("订单明细不存在");
+        const inventoryProductId = resolveCrossStoreExecutionProductId(order.crossStoreTask?.requirementsSnapshot, orderItem.productId);
         const batch = await tx.inventoryBatch.findUnique({ where: { id: allocation.batchId } });
-        if (!batch || batch.storeId !== order.storeId || batch.productId !== orderItem.productId) {
+        if (!batch || batch.storeId !== order.executionStoreId || batch.productId !== inventoryProductId) {
           throw new BadRequestException("库存批次与订单明细不匹配");
         }
         const allocationUnit = allocation.unit ?? batch.unit;
@@ -883,33 +924,62 @@ export class InventoryService {
         if (lockBaseQuantity > decimalToNumber(batch.availableQuantity)) {
           throw new BadRequestException("锁库数量超出可用库存");
         }
-        const orderBaseUnit = orderItem.baseUnit ?? orderItem.product.inventoryUnit ?? batch.unit;
-        const lockOrderBaseQuantity = this.convertProductQuantityOrReject({
-          quantity: allocation.quantity,
-          fromUnit: allocationUnit,
-          toUnit: orderBaseUnit,
-          product: orderItem.product,
-          packageUnit: batch.packageUnit,
-          baseQuantityPerPackage: decimalToNumber(batch.baseQuantityPerPackage ?? 1),
-          action: "锁库"
-        });
-        const requiredOrderBaseQuantity = decimalToNumber(orderItem.requiredBaseQuantity ?? orderItem.quantity);
-        const coveredOrderBaseQuantity = (orderItem.inventoryAllocations ?? []).reduce((sum, existing) => {
-          const storedQuantity = existing.status === "RELEASED"
-            ? decimalToNumber(existing.outboundQuantity)
-            : decimalToNumber(existing.lockedQuantity);
-          return sum + this.convertProductQuantityOrReject({
-            quantity: storedQuantity,
-            fromUnit: existing.batch?.unit ?? orderBaseUnit,
+        const crossRequirement = resolveCrossStoreRequirementItem(
+          order.crossStoreTask?.requirementsSnapshot,
+          orderItem.productId
+        );
+        if (crossRequirement) {
+          const requiredExecutionQuantity = resolveCrossStoreExecutionRequiredQuantity(
+            order.crossStoreTask?.requirementsSnapshot,
+            orderItem.productId,
+            decimalToNumber(orderItem.requiredBaseQuantity ?? orderItem.quantity)
+          );
+          const executionUnit = resolveCrossStoreExecutionUnit(
+            order.crossStoreTask?.requirementsSnapshot,
+            orderItem.productId,
+            batch.unit
+          );
+          if (batch.unit !== executionUnit) {
+            throw new BadRequestException("库存批次单位与跨店映射的执行库存单位不一致");
+          }
+          const coveredExecutionQuantity = (orderItem.inventoryAllocations ?? []).reduce((sum, existing) => {
+            const storedQuantity = existing.status === "RELEASED"
+              ? decimalToNumber(existing.outboundQuantity)
+              : decimalToNumber(existing.lockedQuantity);
+            return sum + storedQuantity;
+          }, 0);
+          if (coveredExecutionQuantity + lockBaseQuantity > requiredExecutionQuantity + 0.0001) {
+            throw new BadRequestException("锁库数量不能超过跨店订单冻结的执行数量");
+          }
+        } else {
+          const orderBaseUnit = orderItem.baseUnit ?? orderItem.product.inventoryUnit ?? batch.unit;
+          const lockOrderBaseQuantity = this.convertProductQuantityOrReject({
+            quantity: allocation.quantity,
+            fromUnit: allocationUnit,
             toUnit: orderBaseUnit,
             product: orderItem.product,
-            packageUnit: existing.batch?.packageUnit,
-            baseQuantityPerPackage: decimalToNumber(existing.batch?.baseQuantityPerPackage ?? 1),
+            packageUnit: batch.packageUnit,
+            baseQuantityPerPackage: decimalToNumber(batch.baseQuantityPerPackage ?? 1),
             action: "锁库"
           });
-        }, 0);
-        if (coveredOrderBaseQuantity + lockOrderBaseQuantity > requiredOrderBaseQuantity + 0.0001) {
-          throw new BadRequestException("锁库数量不能超过订单待锁数量");
+          const requiredOrderBaseQuantity = decimalToNumber(orderItem.requiredBaseQuantity ?? orderItem.quantity);
+          const coveredOrderBaseQuantity = (orderItem.inventoryAllocations ?? []).reduce((sum, existing) => {
+            const storedQuantity = existing.status === "RELEASED"
+              ? decimalToNumber(existing.outboundQuantity)
+              : decimalToNumber(existing.lockedQuantity);
+            return sum + this.convertProductQuantityOrReject({
+              quantity: storedQuantity,
+              fromUnit: existing.batch?.unit ?? orderBaseUnit,
+              toUnit: orderBaseUnit,
+              product: orderItem.product,
+              packageUnit: existing.batch?.packageUnit,
+              baseQuantityPerPackage: decimalToNumber(existing.batch?.baseQuantityPerPackage ?? 1),
+              action: "锁库"
+            });
+          }, 0);
+          if (coveredOrderBaseQuantity + lockOrderBaseQuantity > requiredOrderBaseQuantity + 0.0001) {
+            throw new BadRequestException("锁库数量不能超过订单待锁数量");
+          }
         }
         const existingAllocation = (orderItem.inventoryAllocations ?? []).find((existing) => existing.batchId === batch.id);
         await tx.inventoryBatch.update({
@@ -935,10 +1005,11 @@ export class InventoryService {
           })
           : await tx.orderInventoryAllocation.create({
             data: {
-              storeId: order.storeId,
+              storeId: order.executionStoreId,
               orderId,
+              crossStoreTaskId: order.crossStoreTask?.id,
               orderItemId: orderItem.id,
-              productId: orderItem.productId,
+              productId: inventoryProductId,
               batchId: batch.id,
               lockedQuantity: lockBaseQuantity,
               lockedById: actor.id
@@ -946,9 +1017,10 @@ export class InventoryService {
           });
         await tx.inventoryMovement.create({
           data: {
-            storeId: order.storeId,
+            storeId: order.executionStoreId,
             batchId: batch.id,
-            productId: orderItem.productId,
+            productId: inventoryProductId,
+            crossStoreTaskId: order.crossStoreTask?.id,
             orderId,
             movementType: InventoryMovementType.ORDER_LOCK,
             quantity: lockBaseQuantity,
@@ -973,7 +1045,7 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, order.storeId)) {
+      if (!PermissionPolicy.canManageInventory(actor, order.executionStoreId)) {
         throw new ForbiddenException("无权限");
       }
       const allocations = await tx.orderInventoryAllocation.findMany({ where: { orderId, status: "LOCKED" } });
@@ -1583,24 +1655,39 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        include: { items: { include: { product: true, inventoryAllocations: true } } }
+        include: {
+          items: { include: { product: true, inventoryAllocations: true } },
+          crossStoreTask: true
+        }
       });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, order.storeId)) {
+      if (!PermissionPolicy.canManageInventory(actor, order.executionStoreId)) {
         throw new ForbiddenException("无权限");
       }
 
       const locked: Array<{ batchId: string; productId: string; quantity: number }> = [];
       const missing: Array<{ productId: string; orderItemId: string; quantity: number; unit: ProductUnit }> = [];
       for (const item of order.items) {
-        const requiredQuantity = decimalToNumber(item.requiredBaseQuantity ?? item.quantity);
-        const requiredUnit = item.baseUnit ?? item.product.unit;
+        const inventoryProductId = resolveCrossStoreExecutionProductId(
+          order.crossStoreTask?.requirementsSnapshot,
+          item.productId
+        );
+        const requiredQuantity = resolveCrossStoreExecutionRequiredQuantity(
+          order.crossStoreTask?.requirementsSnapshot,
+          item.productId,
+          decimalToNumber(item.requiredBaseQuantity ?? item.quantity)
+        );
+        const requiredUnit = resolveCrossStoreExecutionUnit(
+          order.crossStoreTask?.requirementsSnapshot,
+          item.productId,
+          item.baseUnit ?? item.product.unit
+        );
         const coveredQuantity = (item.inventoryAllocations ?? [])
           .filter((allocation) => allocation.status !== "RELEASED")
           .reduce((sum, allocation) => sum + decimalToNumber(allocation.lockedQuantity), 0);
         let remaining = Math.max(0, requiredQuantity - coveredQuantity);
         const batches = await tx.inventoryBatch.findMany({
-          where: { storeId: order.storeId, productId: item.productId, availableQuantity: { gt: 0 } },
+          where: { storeId: order.executionStoreId, productId: inventoryProductId, availableQuantity: { gt: 0 } },
           orderBy: { receivedAt: "asc" }
         });
         for (const batch of batches) {
@@ -1630,10 +1717,11 @@ export class InventoryService {
             })
             : await tx.orderInventoryAllocation.create({
               data: {
-                storeId: order.storeId,
+                storeId: order.executionStoreId,
                 orderId,
+                crossStoreTaskId: order.crossStoreTask?.id,
                 orderItemId: item.id,
-                productId: item.productId,
+                productId: inventoryProductId,
                 batchId: batch.id,
                 lockedQuantity: quantity,
                 lockedById: actor.id
@@ -1641,9 +1729,10 @@ export class InventoryService {
             });
           await tx.inventoryMovement.create({
             data: {
-              storeId: order.storeId,
+              storeId: order.executionStoreId,
               batchId: batch.id,
-              productId: item.productId,
+              productId: inventoryProductId,
+              crossStoreTaskId: order.crossStoreTask?.id,
               orderId,
               movementType: InventoryMovementType.ORDER_LOCK,
               quantity,
@@ -1654,19 +1743,20 @@ export class InventoryService {
               note: "订单库存锁定"
             }
           });
-          locked.push({ batchId: batch.id, productId: item.productId, quantity });
+          locked.push({ batchId: batch.id, productId: inventoryProductId, quantity });
           remaining -= quantity;
         }
         if (remaining > 0) {
-          missing.push({ productId: item.productId, orderItemId: item.id, quantity: remaining, unit: requiredUnit });
+          missing.push({ productId: inventoryProductId, orderItemId: item.id, quantity: remaining, unit: requiredUnit });
         }
       }
 
       const purchaseRequirement = missing.length > 0
         ? await tx.purchaseRequirement.create({
           data: {
-            storeId: order.storeId,
+            storeId: order.executionStoreId,
             sourceOrderId: orderId,
+            crossStoreTaskId: order.crossStoreTask?.id,
             createdById: actor.id,
             items: {
               create: missing.map((item) => ({
@@ -1690,7 +1780,7 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, order.storeId)) {
+      if (!PermissionPolicy.canManageInventory(actor, order.executionStoreId)) {
         throw new ForbiddenException("无权限");
       }
       const allocations = await tx.orderInventoryAllocation.findMany({
@@ -2040,7 +2130,9 @@ function decimalToNumber(value: number | { toNumber?: () => number; toString: ()
 }
 
 function isPendingInventoryMatchOrder(order: {
+  crossStoreTask?: { requirementsSnapshot?: unknown } | null;
   items?: Array<{
+    productId: string;
     quantity: number | { toNumber?: () => number; toString: () => string };
     requiredBaseQuantity?: number | { toNumber?: () => number; toString: () => string } | null;
     baseUnit?: ProductUnit | null;
@@ -2058,23 +2150,35 @@ function isPendingInventoryMatchOrder(order: {
   }>;
 }) {
   return (order.items ?? []).some((item) => {
-    const requiredQuantity = decimalToNumber(item.requiredBaseQuantity ?? item.quantity);
+    const crossRequirement = resolveCrossStoreRequirementItem(
+      order.crossStoreTask?.requirementsSnapshot,
+      item.productId
+    );
+    const requiredQuantity = resolveCrossStoreExecutionRequiredQuantity(
+      order.crossStoreTask?.requirementsSnapshot,
+      item.productId,
+      decimalToNumber(item.requiredBaseQuantity ?? item.quantity)
+    );
     if (requiredQuantity <= 0) return false;
+    const targetUnit = resolveCrossStoreExecutionUnit(
+      order.crossStoreTask?.requirementsSnapshot,
+      item.productId,
+      item.baseUnit ?? item.product?.inventoryUnit ?? item.product?.unit ?? ProductUnit.PIECE
+    );
     const outboundQuantity = (item.inventoryAllocations ?? [])
-      .reduce(
-        (sum, allocation) =>
-          sum + convertOrderAllocationQuantity(
-            toNullableDecimalNumber(allocation.outboundQuantity),
-            allocation.batch?.unit ?? item.baseUnit ?? item.product?.inventoryUnit ?? item.product?.unit ?? ProductUnit.PIECE,
-            item.baseUnit ?? item.product?.inventoryUnit ?? item.product?.unit ?? ProductUnit.PIECE,
-            item.product?.metersPerRoll
-          ),
-        0
-      );
+      .reduce((sum, allocation) => {
+        const quantity = toNullableDecimalNumber(allocation.outboundQuantity);
+        if (crossRequirement) return sum + quantity;
+        return sum + convertOrderAllocationQuantity(
+          quantity,
+          allocation.batch?.unit ?? targetUnit,
+          targetUnit,
+          item.product?.metersPerRoll
+        );
+      }, 0);
     return outboundQuantity < requiredQuantity;
   });
 }
-
 function convertOrderAllocationQuantity(
   quantity: number,
   fromUnit: ProductUnit,

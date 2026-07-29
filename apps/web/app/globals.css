@@ -24611,3 +24611,14 @@ button:hover .avatar-hover-mask {
     grid-template-columns: 1fr;
   }
 }
+.settings-workbench-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 28px; }
+.settings-workbench-header h2, .settings-domain-heading h3, .settings-capability-card h4 { margin: 0; }
+.settings-workbench-grid { display: grid; gap: 28px; }
+.settings-domain-section { display: grid; gap: 16px; }
+.settings-domain-heading { display: flex; align-items: center; gap: 12px; }
+.settings-domain-icon { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 12px; background: #e8f2ff; color: #1769aa; font-size: 20px; }
+.settings-capability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.settings-capability-card { min-height: 192px; }
+.settings-capability-card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.settings-capability-meta { display: grid; gap: 5px; margin: 16px 0; color: #667085; font-size: 12px; }
+@media (max-width: 900px) { .settings-workbench-header { flex-direction: column; } .settings-capability-grid { grid-template-columns: 1fr; } }

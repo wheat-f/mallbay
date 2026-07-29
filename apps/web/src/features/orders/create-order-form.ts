@@ -78,6 +78,7 @@ export type OrderProduct = {
 
 export type CreateOrderFormValues = {
   customerId: string;
+  executionStoreId?: string;
   vehicleId?: string;
   salesPersonId?: string;
   vehicleTypeCode?: "SMALL_CAR" | "STANDARD_CAR" | "LUXURY_LARGE_CAR";
@@ -413,3 +414,4 @@ export function getOrderCapacityStatus(
     message: `${primaryCapacity.label}容量剩余 ${primaryCapacity.total - primaryCapacity.reserved} 个预约名额。`
   };
 }
+

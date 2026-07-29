@@ -178,6 +178,56 @@ export type WorkCostDeclaration = {
   varianceReasonText?: string | null;
 };
 
+export type CrossStoreTaskScope = "SOURCE" | "EXECUTION";
+
+export type CrossStoreTaskStatus =
+  | "PENDING_ACCEPTANCE"
+  | "REJECTED"
+  | "ACCEPTED"
+  | "READY_TO_DISPATCH"
+  | "DISPATCHED"
+  | "IN_CONSTRUCTION"
+  | "PENDING_SOURCE_ACCEPTANCE"
+  | "COMPLETED"
+  | "CANCELLED";
+export type CrossStoreTask = {
+  id: string;
+  orderId: string;
+  sourceStoreId: string;
+  executionStoreId: string;
+  status: CrossStoreTaskStatus;
+  rejectionReason?: string | null;
+  cancellationReason?: string | null;
+  acceptanceRemark?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sourceStore: { id: string; name: string };
+  executionStore: { id: string; name: string };
+  order: {
+    id: string;
+    orderNo: string;
+    status: string;
+    appointmentDate?: string | null;
+    appointmentTimeSlot?: string | null;
+    customer?: { id: string; name?: string | null; companyName?: string | null } | null;
+    vehicle?: { id: string; carPlate?: string | null; carModel?: string | null } | null;
+    amount?: { totalAmountCents: number; paidAmountCents: number; outstandingCents: number } | null;
+  };
+};
+
+export type CrossStoreProductMapping = {
+  id: string;
+  sourceStoreId: string;
+  executionStoreId: string;
+  sourceProductId: string;
+  executionProductId: string;
+  sourceSalesUnit: string;
+  executionInventoryUnit: string;
+  conversionSnapshot?: Record<string, unknown> | null;
+  sourceProduct: { id: string; brand: string; name: string; model: string };
+  executionProduct: { id: string; brand: string; name: string; model: string };
+  executionStore: { id: string; name: string };
+};
 export const constructionApi = {
   capacities: (query: ConstructionListQuery) =>
     request<DailyCapacitySummary[]>(`/construction/capacities${toQueryString(query)}`),
@@ -334,7 +384,55 @@ export const constructionApi = {
     request<ConstructionCostSettlement>(`/construction/cost-settlements/${id}/settle`, { method: "POST" }),
 
   exportCostSettlements: (storeId: string) =>
-    request<Array<Record<string, string | number | null>>>(`/construction/cost-settlements/export${toQueryString({ storeId })}`)
+    request<Array<Record<string, string | number | null>>>(`/construction/cost-settlements/export${toQueryString({ storeId })}`),
+
+  crossStoreTasks: (query: { storeId: string; scope: CrossStoreTaskScope; status?: CrossStoreTaskStatus }) =>
+    request<CrossStoreTask[]>(`/construction/cross-store/tasks${toQueryString(query)}`),
+
+  crossStoreTask: (id: string) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}`),
+
+  acceptCrossStoreTask: (id: string) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}/accept`, { method: "POST" }),
+
+  rejectCrossStoreTask: (id: string, reason: string) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    }),
+
+  cancelCrossStoreTask: (id: string, reason: string) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    }),
+
+  submitCrossStoreAcceptance: (id: string, remark: string) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}/submit-acceptance`, {
+      method: "POST",
+      body: JSON.stringify({ remark })
+    }),
+
+  acceptCrossStoreCompletion: (id: string) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}/source-accept`, { method: "POST" }),
+
+  crossStoreProductMappings: (sourceStoreId: string, executionStoreId: string) =>
+    request<CrossStoreProductMapping[]>(
+      `/construction/cross-store/product-mappings${toQueryString({ sourceStoreId, executionStoreId })}`
+    ),
+
+  upsertCrossStoreProductMapping: (payload: {
+    sourceProductId: string;
+    executionStoreId: string;
+    executionProductId: string;
+    sourceSalesUnit: string;
+    executionInventoryUnit: string;
+    conversionSnapshot?: Record<string, unknown>;
+  }) =>
+    request<CrossStoreProductMapping>("/construction/cross-store/product-mappings", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    })
 };
 
 function toQueryString(query: Record<string, string | number | undefined>) {
@@ -347,3 +445,8 @@ function toQueryString(query: Record<string, string | number | undefined>) {
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
 }
+
+
+
+
+

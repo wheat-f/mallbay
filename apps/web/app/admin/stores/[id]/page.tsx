@@ -2,7 +2,7 @@
 
 import {
   Alert, App, Avatar, Button, Card, Drawer, Form, Image, Input,
-  Spin, Tag, Typography
+  Select, Spin, Switch, Tag, Typography
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -202,6 +202,12 @@ export default function AdminStorePage() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [changeManagerOpen, setChangeManagerOpen] = useState(false);
 
+  const financialEntitiesQuery = useQuery({
+    queryKey: ["admin-financial-entities"],
+    queryFn: () => storeApi.financialEntities(),
+    staleTime: 30_000
+  });
+
   const storeQuery = useQuery({
     queryKey: ["admin-store", storeId],
     queryFn: () => storeApi.adminGetStore(storeId),
@@ -251,6 +257,13 @@ export default function AdminStorePage() {
   });
 
   const statusCfg = store ? (STATUS_CONFIG[store.status] ?? { text: store.status, color: "default" }) : null;
+
+  const crossStoreConfigMutation = useMutation({
+    mutationFn: (payload: { financialEntityId: string; enabled: boolean }) =>
+      storeApi.updateCrossStoreConfig(storeId, payload),
+    onSuccess: () => { message.success("跨门店配置已保存"); invalidate(); },
+    onError: (e: Error) => message.error(e.message)
+  });
 
   return (
     <>
@@ -422,6 +435,42 @@ export default function AdminStorePage() {
                 </div>
               </Card>
 
+              <Card className="admin-store-action-card">
+                <div className="admin-store-section-title">
+                  <SafetyCertificateOutlined />
+                  <span>跨门店施工配置</span>
+                </div>
+                <Typography.Paragraph type="secondary">
+                  同一财务主体内可把订单转交其他门店施工；材料默认由执行门店提供，当前不收取协作费。
+                </Typography.Paragraph>
+                <Form layout="vertical">
+                  <Form.Item label="财务主体">
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      value={store.financialEntityId ?? undefined}
+                      placeholder="选择财务主体"
+                      loading={financialEntitiesQuery.isLoading}
+                      options={(financialEntitiesQuery.data ?? []).map((entity) => ({ label: `${entity.code} · ${entity.name}`, value: entity.id }))}
+                      onChange={(value) => crossStoreConfigMutation.mutate({ financialEntityId: value, enabled: store.crossStoreConstructionEnabled })}
+                    />
+                  </Form.Item>
+                  <div className="flex items-center justify-between rounded-lg bg-[var(--mb-surface-muted)] px-3 py-3">
+                    <div>
+                      <div className="font-medium">允许跨门店施工</div>
+                      <div className="text-xs text-[var(--mb-text-muted)]">关闭后本门店不能发起或接收外派施工任务</div>
+                    </div>
+                    <Switch
+                      checked={store.crossStoreConstructionEnabled}
+                      loading={crossStoreConfigMutation.isPending}
+                      onChange={(enabled) => {
+                        if (!store.financialEntityId) { message.warning("请先选择财务主体"); return; }
+                        crossStoreConfigMutation.mutate({ financialEntityId: store.financialEntityId, enabled });
+                      }}
+                    />
+                  </div>
+                </Form>
+              </Card>
               <Card className="admin-store-risk-card">
                 <div className="admin-store-section-title">
                   <SafetyCertificateOutlined />

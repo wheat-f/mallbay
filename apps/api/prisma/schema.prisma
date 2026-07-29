@@ -27,12 +27,15 @@ model User {
   alipayUserId String? @unique
 
   // 运营人员角色（目前仅审核员一个岗位）
-  isAuditor Boolean @default(false)
+  isAuditor         Boolean   @default(false)
+  loginFailureCount Int       @default(0)
+  lockedUntil       DateTime?
 
   storeMembers                   StoreMember[]
   sentInvitations                StoreInvitation[]            @relation("InvitedBy")
   receivedInvitations            StoreInvitation[]            @relation("InvitedUser")
   notifications                  Notification[]
+  authSessions                   AuthSession[]
   submittedSubmissions           StoreAuditSubmission[]       @relation("SubmittedBy")
   reviewedSubmissions            StoreAuditSubmission[]       @relation("ReviewedBy")
   createdStores                  Store[]                      @relation("CreatedBy")
@@ -128,6 +131,35 @@ enum DictionarySource {
 enum DictionaryMode {
   LEGACY
   NORMALIZED
+}
+
+enum SettingsConfigDomain {
+  HQ
+  STORE
+  FINANCE
+  OWN
+}
+
+enum SettingsConfigStatus {
+  DRAFT
+  VALIDATING
+  VALIDATION_FAILED
+  PUBLISHED
+  EXPIRED
+  WITHDRAWN
+}
+
+enum SettingsMigrationRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  ROLLED_BACK
+}
+
+enum SettingsMigrationReviewStatus {
+  PENDING
+  RESOLVED
+  IGNORED
 }
 
 enum PricingRuleSetStatus {
@@ -266,6 +298,36 @@ enum StoreStatus {
   FROZEN // 冻结：暂停运营，不对外展示
 }
 
+enum CrossStoreTaskStatus {
+  PENDING_ACCEPTANCE
+  REJECTED
+  ACCEPTED
+  READY_TO_DISPATCH
+  DISPATCHED
+  IN_CONSTRUCTION
+  PENDING_SOURCE_ACCEPTANCE
+  COMPLETED
+  CANCELLED
+}
+
+enum CrossStoreMaterialSupplyMode {
+  EXECUTION_STORE
+}
+
+model FinancialEntity {
+  id        String           @id @default(cuid())
+  code      String           @unique
+  name      String
+  status    DictionaryStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  stores          Store[]
+  productMappings CrossStoreProductMapping[]
+
+  @@index([status])
+}
+
 model Store {
   id                 String             @id @default(cuid())
   status             StoreStatus        @default(DRAFTED)
@@ -274,12 +336,15 @@ model Store {
   pricingRolloutMode PricingRolloutMode @default(LEGACY)
 
   // 当前对外展示的内容（审核通过后从 StoreAuditSubmission 同步过来）
-  name        String // 审核员创建时初始化，后续可通过审核更新
-  address     String?
-  description String? // 最多 300 字，在应用层校验
+  name                          String // 审核员创建时初始化，后续可通过审核更新
+  address                       String?
+  description                   String? // 最多 300 字，在应用层校验
+  financialEntityId             String
+  crossStoreConstructionEnabled Boolean @default(false)
 
-  createdById String?
-  createdBy   User?   @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById     String?
+  createdBy       User?           @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  financialEntity FinancialEntity @relation(fields: [financialEntityId], references: [id])
 
   members                     StoreMember[]
   photos                      StorePhoto[]
@@ -291,7 +356,11 @@ model Store {
   customerStatements          CustomerStatement[]
   customerReceipts            CustomerReceipt[]
   products                    Product[]
-  orders                      Order[]
+  orders                      Order[]                      @relation("OrderSourceStore")
+  executionOrders             Order[]                      @relation("OrderExecutionStore")
+  crossStoreTasksAsSource     CrossStoreConstructionTask[] @relation("CrossStoreTaskSourceStore")
+  crossStoreTasksAsExecution  CrossStoreConstructionTask[] @relation("CrossStoreTaskExecutionStore")
+  crossStoreProductMappings   CrossStoreProductMapping[]   @relation("CrossStoreMappingExecutionStore")
   orderAmendmentRequests      OrderAmendmentRequest[]
   paymentAccounts             PaymentAccount[]
   dailyCapacities             DailyCapacity[]
@@ -324,7 +393,8 @@ model Store {
   vehiclePriceClasses         VehiclePriceClass[]
   vehicleModelMappings        VehicleModelMapping[]
   pricingCalculations         PricingCalculation[]
-  salesQuotes                 SalesQuote[]
+  salesQuotes                 SalesQuote[]                 @relation("SalesQuoteSourceStore")
+  executionSalesQuotes        SalesQuote[]                 @relation("SalesQuoteExecutionStore")
   capacityReservations        CapacityReservation[]
   constructionServiceItems    ConstructionServiceItem[]
   positionCostRateVersions    PositionCostRateVersion[]
@@ -335,24 +405,25 @@ model Store {
 
   @@index([createdById])
   @@index([status])
+  @@index([financialEntityId, crossStoreConstructionEnabled])
 }
 
 model Dictionary {
-  id        String           @id @default(cuid())
-  storeId   String
-  name      String
-  code      String
-  items     Json
-  status    DictionaryStatus @default(ACTIVE)
-  mode      DictionaryMode   @default(LEGACY)
-  source    DictionarySource  @default(STORE)
-  allowCustomItems  Boolean   @default(true)
-  allowDisableItems Boolean   @default(true)
-  allowHierarchy    Boolean   @default(false)
-  version   Int               @default(1)
-  updatedById String?
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+  id                String           @id @default(cuid())
+  storeId           String
+  name              String
+  code              String
+  items             Json
+  status            DictionaryStatus @default(ACTIVE)
+  mode              DictionaryMode   @default(LEGACY)
+  source            DictionarySource @default(STORE)
+  allowCustomItems  Boolean          @default(true)
+  allowDisableItems Boolean          @default(true)
+  allowHierarchy    Boolean          @default(false)
+  version           Int              @default(1)
+  updatedById       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   store           Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
   dictionaryItems DictionaryItem[]
@@ -362,30 +433,138 @@ model Dictionary {
 }
 
 model DictionaryItem {
-  id           String           @id @default(cuid())
-  dictionaryId String
-  code         String
-  name         String
-  description  String?
-  sortOrder    Int              @default(0)
-  status       DictionaryStatus @default(ACTIVE)
-  isSystem     Boolean          @default(false)
-  metadata     Json?
-  parentId     String?
-  source       DictionarySource @default(STORE)
+  id             String           @id @default(cuid())
+  dictionaryId   String
+  code           String
+  name           String
+  description    String?
+  sortOrder      Int              @default(0)
+  status         DictionaryStatus @default(ACTIVE)
+  isSystem       Boolean          @default(false)
+  metadata       Json?
+  parentId       String?
+  source         DictionarySource @default(STORE)
   disabledReason String?
-  usageCount   Int              @default(0)
-  updatedById  String?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  usageCount     Int              @default(0)
+  updatedById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
-  dictionary Dictionary @relation(fields: [dictionaryId], references: [id], onDelete: Cascade)
-  parent     DictionaryItem? @relation("DictionaryItemHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  dictionary Dictionary       @relation(fields: [dictionaryId], references: [id], onDelete: Cascade)
+  parent     DictionaryItem?  @relation("DictionaryItemHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
   children   DictionaryItem[] @relation("DictionaryItemHierarchy")
 
   @@unique([dictionaryId, code])
   @@index([dictionaryId, status, sortOrder])
   @@index([dictionaryId, parentId, status, sortOrder])
+}
+
+/// Global HQ dictionary templates. A null store scope is intentional: templates
+/// are inherited by every store and are never edited through a store scope.
+model DictionaryTemplate {
+  id                String           @id @default(cuid())
+  name              String
+  code              String           @unique
+  items             Json
+  status            DictionaryStatus @default(ACTIVE)
+  allowCustomItems  Boolean          @default(false)
+  allowDisableItems Boolean          @default(true)
+  allowHierarchy    Boolean          @default(false)
+  version           Int              @default(1)
+  updatedById       String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  templateItems DictionaryTemplateItem[]
+
+  @@index([status, updatedAt])
+}
+
+model DictionaryTemplateItem {
+  id             String           @id @default(cuid())
+  templateId     String
+  code           String
+  name           String
+  description    String?
+  sortOrder      Int              @default(0)
+  status         DictionaryStatus @default(ACTIVE)
+  metadata       Json?
+  parentId       String?
+  disabledReason String?
+  usageCount     Int              @default(0)
+  updatedById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  template DictionaryTemplate       @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  parent   DictionaryTemplateItem?  @relation("TemplateItemParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children DictionaryTemplateItem[] @relation("TemplateItemParent")
+
+  @@unique([templateId, code])
+  @@index([templateId, status, sortOrder])
+  @@index([templateId, parentId, status, sortOrder])
+}
+
+/// Operational record for settings data migrations, including backup/checkpoint state.
+model SettingsMigrationRun {
+  id           String                     @id @default(cuid())
+  runKey       String                     @unique
+  status       SettingsMigrationRunStatus @default(RUNNING)
+  backupFile   String?
+  featureFlag  String
+  checkpoint   Json                       @default("{}")
+  summary      Json?
+  errorMessage String?
+  createdById  String?
+  startedAt    DateTime                   @default(now())
+  completedAt  DateTime?
+  rolledBackAt DateTime?
+  reviews      SettingsMigrationReview[]
+
+  @@index([status, startedAt(sort: Desc)])
+}
+
+model SettingsMigrationReview {
+  id           String                        @id @default(cuid())
+  runId        String
+  sourceType   String
+  sourceId     String
+  reason       String
+  payload      Json                          @default("{}")
+  status       SettingsMigrationReviewStatus @default(PENDING)
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime                      @default(now())
+  run          SettingsMigrationRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, sourceType, sourceId])
+  @@index([status, createdAt(sort: Desc)])
+}
+
+/// Versioned settings payloads. Published rows are immutable.
+model SettingsConfigVersion {
+  id               String               @id @default(cuid())
+  domain           SettingsConfigDomain
+  capabilityCode   String
+  scopeId          String
+  version          Int                  @default(1)
+  status           SettingsConfigStatus @default(DRAFT)
+  effectiveAt      DateTime?
+  payload          Json
+  validationErrors Json?
+  createdById      String
+  updatedById      String
+  publishedById    String?
+  publishedAt      DateTime?
+  expiresAt        DateTime?
+  requestId        String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@unique([createdById, requestId])
+  @@index([domain, scopeId, status])
+  @@index([capabilityCode, scopeId, version])
+  @@index([createdById, createdAt(sort: Desc)])
 }
 
 // 当前对外展示的门店照片（审核通过后从 StoreSubmissionPhoto 同步过来）
@@ -959,15 +1138,17 @@ model Product {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
-  store                    Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  orderItems               OrderItem[]
-  inventoryBatches         InventoryBatch[]
-  inventoryMovements       InventoryMovement[]
-  inventoryAllocations     OrderInventoryAllocation[]
-  purchaseRequirementItems PurchaseRequirementItem[]
-  purchaseOrderItems       PurchaseOrderItem[]
-  salesQuoteItems          SalesQuoteItem[]
-  unitSuggestedPrices      ProductUnitSuggestedPrice[]
+  store                       Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orderItems                  OrderItem[]
+  inventoryBatches            InventoryBatch[]
+  inventoryMovements          InventoryMovement[]
+  inventoryAllocations        OrderInventoryAllocation[]
+  purchaseRequirementItems    PurchaseRequirementItem[]
+  purchaseOrderItems          PurchaseOrderItem[]
+  salesQuoteItems             SalesQuoteItem[]
+  unitSuggestedPrices         ProductUnitSuggestedPrice[]
+  sourceCrossStoreMappings    CrossStoreProductMapping[]  @relation("CrossStoreSourceProduct")
+  executionCrossStoreMappings CrossStoreProductMapping[]  @relation("CrossStoreExecutionProduct")
 
   @@unique([storeId, brand, model])
   @@index([storeId, category])
@@ -991,6 +1172,32 @@ model ProductUnitSuggestedPrice {
 
   @@unique([productId, salesUnit])
   @@index([productId, isActive])
+}
+
+model CrossStoreProductMapping {
+  id                     String           @id @default(cuid())
+  financialEntityId      String
+  sourceProductId        String
+  executionStoreId       String
+  executionProductId     String
+  sourceSalesUnit        ProductUnit
+  executionInventoryUnit ProductUnit
+  conversionSnapshot     Json?
+  status                 DictionaryStatus @default(ACTIVE)
+  createdById            String
+  updatedById            String?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  financialEntity  FinancialEntity @relation(fields: [financialEntityId], references: [id], onDelete: Cascade)
+  sourceProduct    Product         @relation("CrossStoreSourceProduct", fields: [sourceProductId], references: [id], onDelete: Cascade)
+  executionStore   Store           @relation("CrossStoreMappingExecutionStore", fields: [executionStoreId], references: [id], onDelete: Cascade)
+  executionProduct Product         @relation("CrossStoreExecutionProduct", fields: [executionProductId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceProductId, executionStoreId])
+  @@index([financialEntityId, status])
+  @@index([executionStoreId, status])
+  @@index([executionProductId])
 }
 
 model VehiclePriceClass {
@@ -1271,6 +1478,7 @@ model PricingCalculation {
 model SalesQuote {
   id                               String            @id @default(cuid())
   storeId                          String
+  executionStoreId                 String
   quoteNo                          String            @unique
   customerId                       String
   vehicleId                        String?
@@ -1307,7 +1515,8 @@ model SalesQuote {
   createdAt                        DateTime          @default(now())
   updatedAt                        DateTime          @updatedAt
 
-  store               Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store               Store                @relation("SalesQuoteSourceStore", fields: [storeId], references: [id], onDelete: Cascade)
+  executionStore      Store                @relation("SalesQuoteExecutionStore", fields: [executionStoreId], references: [id], onDelete: Restrict)
   customer            Customer             @relation(fields: [customerId], references: [id])
   vehicle             CustomerVehicle?     @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   salesPerson         User                 @relation("SalesQuoteSalesPerson", fields: [salesPersonId], references: [id])
@@ -1318,6 +1527,7 @@ model SalesQuote {
   capacityReservation CapacityReservation?
 
   @@index([storeId, status, createdAt])
+  @@index([executionStoreId, status, createdAt])
   @@index([customerId, createdAt])
   @@index([pricingCalculationId])
 }
@@ -1392,6 +1602,7 @@ model CapacityReservation {
 model Order {
   id                   String               @id @default(cuid())
   storeId              String
+  executionStoreId     String
   orderNo              String               @unique
   customerId           String
   vehicleId            String?
@@ -1406,7 +1617,8 @@ model Order {
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
 
-  store                      Store                               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store                      Store                               @relation("OrderSourceStore", fields: [storeId], references: [id], onDelete: Cascade)
+  executionStore             Store                               @relation("OrderExecutionStore", fields: [executionStoreId], references: [id])
   customer                   Customer                            @relation(fields: [customerId], references: [id])
   vehicle                    CustomerVehicle?                    @relation(fields: [vehicleId], references: [id])
   salesPerson                User                                @relation("OrderSalesPerson", fields: [salesPersonId], references: [id])
@@ -1431,11 +1643,50 @@ model Order {
   statementItems             CustomerStatementItem[]
   receiptReversalAllocations CustomerReceiptReversalAllocation[]
   invoiceAllocations         InvoiceOrderAllocation[]
+  crossStoreTask             CrossStoreConstructionTask?
 
   @@index([storeId, status])
+  @@index([executionStoreId, status])
+  @@index([storeId, executionStoreId, appointmentDate])
   @@index([storeId, salesPersonId])
   @@index([customerId])
   @@index([vehicleId])
+}
+
+model CrossStoreConstructionTask {
+  id                       String                       @id @default(cuid())
+  orderId                  String                       @unique
+  sourceStoreId            String
+  executionStoreId         String
+  status                   CrossStoreTaskStatus         @default(PENDING_ACCEPTANCE)
+  materialSupplyMode       CrossStoreMaterialSupplyMode @default(EXECUTION_STORE)
+  requirementsSnapshot     Json
+  sourceContactSnapshot    Json?
+  rejectionReason          String?
+  cancellationReason       String?
+  createdById              String
+  acceptedById             String?
+  sourceAcceptedById       String?
+  cancelledById            String?
+  acceptedAt               DateTime?
+  dispatchedAt             DateTime?
+  constructionStartedAt    DateTime?
+  submittedForAcceptanceAt DateTime?
+  completedAt              DateTime?
+  cancelledAt              DateTime?
+  version                  Int                          @default(1)
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
+
+  order                Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sourceStore          Store                      @relation("CrossStoreTaskSourceStore", fields: [sourceStoreId], references: [id])
+  executionStore       Store                      @relation("CrossStoreTaskExecutionStore", fields: [executionStoreId], references: [id])
+  inventoryMovements   InventoryMovement[]
+  inventoryAllocations OrderInventoryAllocation[]
+  purchaseRequirements PurchaseRequirement[]
+
+  @@index([sourceStoreId, status, createdAt])
+  @@index([executionStoreId, status, createdAt])
 }
 
 model OrderContactSnapshot {
@@ -2017,34 +2268,37 @@ model InventoryBatch {
 }
 
 model InventoryMovement {
-  id             String                @id @default(cuid())
-  storeId        String
-  batchId        String
-  productId      String
-  orderId        String?
-  movementType   InventoryMovementType
-  quantity       Decimal               @db.Decimal(12, 3)
-  unit           ProductUnit?
-  fromUnit       ProductUnit?
-  toUnit         ProductUnit?
-  conversionRate Float?
-  sourceType     String?
-  sourceId       String?
-  note           String?
-  warehouseId    String?
-  warehouseName  String?
-  createdById    String
-  createdAt      DateTime              @default(now())
+  id               String                @id @default(cuid())
+  storeId          String
+  batchId          String
+  productId        String
+  orderId          String?
+  crossStoreTaskId String?
+  movementType     InventoryMovementType
+  quantity         Decimal               @db.Decimal(12, 3)
+  unit             ProductUnit?
+  fromUnit         ProductUnit?
+  toUnit           ProductUnit?
+  conversionRate   Float?
+  sourceType       String?
+  sourceId         String?
+  note             String?
+  warehouseId      String?
+  warehouseName    String?
+  createdById      String
+  createdAt        DateTime              @default(now())
 
-  store     Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  batch     InventoryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  product   Product        @relation(fields: [productId], references: [id])
-  order     Order?         @relation(fields: [orderId], references: [id])
-  warehouse Warehouse?     @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  createdBy User           @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id])
+  store          Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  batch          InventoryBatch              @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  product        Product                     @relation(fields: [productId], references: [id])
+  order          Order?                      @relation(fields: [orderId], references: [id])
+  crossStoreTask CrossStoreConstructionTask? @relation(fields: [crossStoreTaskId], references: [id], onDelete: SetNull)
+  warehouse      Warehouse?                  @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  createdBy      User                        @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id])
 
   @@index([storeId, createdAt])
   @@index([orderId])
+  @@index([crossStoreTaskId])
   @@index([batchId])
   @@index([productId])
   @@index([warehouseId])
@@ -2055,6 +2309,7 @@ model OrderInventoryAllocation {
   id               String                    @id @default(cuid())
   storeId          String
   orderId          String
+  crossStoreTaskId String?
   orderItemId      String
   productId        String
   batchId          String
@@ -2068,39 +2323,44 @@ model OrderInventoryAllocation {
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
 
-  store      Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderItem  OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
-  product    Product        @relation(fields: [productId], references: [id])
-  batch      InventoryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  lockedBy   User           @relation("InventoryAllocationLockedBy", fields: [lockedById], references: [id])
-  outboundBy User?          @relation("InventoryAllocationOutboundBy", fields: [outboundById], references: [id])
+  store          Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order          Order                       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  crossStoreTask CrossStoreConstructionTask? @relation(fields: [crossStoreTaskId], references: [id], onDelete: SetNull)
+  orderItem      OrderItem                   @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  product        Product                     @relation(fields: [productId], references: [id])
+  batch          InventoryBatch              @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  lockedBy       User                        @relation("InventoryAllocationLockedBy", fields: [lockedById], references: [id])
+  outboundBy     User?                       @relation("InventoryAllocationOutboundBy", fields: [outboundById], references: [id])
 
   @@unique([orderId, orderItemId, batchId])
   @@index([storeId, status])
   @@index([orderId])
+  @@index([crossStoreTaskId])
   @@index([batchId])
   @@index([lockedById])
   @@index([outboundById])
 }
 
 model PurchaseRequirement {
-  id            String                    @id @default(cuid())
-  storeId       String
-  sourceOrderId String?
-  status        PurchaseRequirementStatus @default(OPEN)
-  createdById   String
-  createdAt     DateTime                  @default(now())
-  updatedAt     DateTime                  @updatedAt
+  id               String                    @id @default(cuid())
+  storeId          String
+  sourceOrderId    String?
+  crossStoreTaskId String?
+  status           PurchaseRequirementStatus @default(OPEN)
+  createdById      String
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
 
-  store          Store                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  sourceOrder    Order?                    @relation(fields: [sourceOrderId], references: [id], onDelete: SetNull)
-  createdBy      User                      @relation("PurchaseRequirementCreatedBy", fields: [createdById], references: [id])
+  store          Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sourceOrder    Order?                      @relation(fields: [sourceOrderId], references: [id], onDelete: SetNull)
+  crossStoreTask CrossStoreConstructionTask? @relation(fields: [crossStoreTaskId], references: [id], onDelete: SetNull)
+  createdBy      User                        @relation("PurchaseRequirementCreatedBy", fields: [createdById], references: [id])
   items          PurchaseRequirementItem[]
   purchaseOrders PurchaseOrder[]
 
   @@index([storeId, status])
   @@index([sourceOrderId])
+  @@index([crossStoreTaskId])
   @@index([createdById])
 }
 
@@ -2743,6 +3003,7 @@ model StoreInvitation {
 // ─── Notifications ───────────────────────────────────────────────────────────
 
 enum NotificationType {
+  SETTINGS_CONFIG_EXPIRING // 系统设置草稿即将过期
   STORE_INVITATION // 收到门店邀请
   INVITATION_ACCEPTED // 邀请被接受
   INVITATION_REJECTED // 邀请被拒绝
@@ -2755,6 +3016,29 @@ enum NotificationType {
   LEAVE_APPROVAL_REQUIRED // 施工请假待审批
   LEAVE_APPROVED // 施工请假已批准
   LEAVE_REJECTED // 施工请假已驳回
+  CROSS_STORE_TASK_CREATED // 来源门店发起跨门店施工协作
+  CROSS_STORE_TASK_ACCEPTED // 执行门店已接单
+  CROSS_STORE_TASK_REJECTED // 执行门店已拒单
+  CROSS_STORE_TASK_READY // 协作任务已具备派工条件
+  CROSS_STORE_TASK_SUBMITTED // 执行门店已提交来源门店验收
+  CROSS_STORE_TASK_COMPLETED // 来源门店已完成验收
+  CROSS_STORE_TASK_CANCELLED // 协作任务已取消
+}
+
+model AuthSession {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String
+  deviceName String    @default("未知设备")
+  userAgent  String?
+  ipAddress  String?
+  lastSeenAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, lastSeenAt(sort: Desc)])
 }
 
 model Notification {

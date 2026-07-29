@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { DictionaryMode, DictionaryStatus, Prisma } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateDictionaryDto, CreateDictionaryItemDto, UpdateDictionaryDto, UpdateDictionaryItemDto } from "./dto/dictionary.dto";
 
@@ -58,6 +58,8 @@ export type AuthenticatedSettingsUser = UserWithStoreMember & { username?: strin
 
 @Injectable()
 export class DictionariesService {
+  private readonly listCache = new Map<string, { expiresAt: number; value: any }>();
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async actor(user: AuthenticatedSettingsUser) {
@@ -68,8 +70,9 @@ export class DictionariesService {
 
   private async assertManager(user: AuthenticatedSettingsUser, storeId: string) {
     const actor = await this.actor(user);
-    if (!PermissionPolicy.isStoreManager(actor, storeId)) {
-      throw new ForbiddenException("仅店长或系统审核员可维护基础字典");
+    // HQ/auditor accounts are read-only for store configuration in this phase.
+    if (!actor.storeMember || actor.storeMember.storeId !== storeId || actor.storeMember.position !== "MANAGER") {
+      throw new ForbiddenException("仅当前门店店长可维护门店基础字典");
     }
     return actor;
   }
@@ -82,6 +85,12 @@ export class DictionariesService {
     }
     return actor;
   }
+  private async recordAudit(actorId: string, action: string, targetId: string, storeId: string, metadata: Record<string, unknown> = {}) {
+    await this.prisma.auditEvent.create({ data: { action, actorId, storeId, targetType: "Dictionary", targetId, metadata: metadata as Prisma.InputJsonValue } });
+  }
+  private async recordFailure(actorId: string, action: string, targetId: string, storeId: string, message: string, metadata: Record<string, unknown> = {}) {
+    try { await this.prisma.auditEvent.create({ data: { action: `${action}.failed`, actorId, storeId, targetType: "Dictionary", targetId, metadata: { result: "FAILED", message, ...metadata } as Prisma.InputJsonValue } }); } catch { /* preserve the original operation error */ }
+  }
   private serialize(dictionary: Prisma.DictionaryGetPayload<{ include: { dictionaryItems: true } }>) {
     const normalizedItems = dictionary.dictionaryItems
       .sort((left, right) => left.sortOrder - right.sortOrder || left.code.localeCompare(right.code));
@@ -90,10 +99,14 @@ export class DictionariesService {
       items: normalizedItems.length > 0
         ? normalizedItems.map((item) => item.name)
         : Array.isArray(dictionary.items) ? dictionary.items.filter((item): item is string => typeof item === "string") : [],
-      dictionaryItems: normalizedItems
+      dictionaryItems: normalizedItems.map((item) => ({ ...item, referencedCount: item.usageCount, deletePolicy: item.isSystem || item.source !== "STORE" || item.usageCount > 0 ? "DISABLE_ONLY" : "DELETE_OR_DISABLE" }))
     };
   }
 
+  private serializeTemplate(template: Prisma.DictionaryTemplateGetPayload<{ include: { templateItems: true } }>, readOnly = true) {
+    const items = [...template.templateItems].sort((left, right) => left.sortOrder - right.sortOrder || left.code.localeCompare(right.code));
+    return { ...template, storeId: null, source: "HQ_TEMPLATE" as const, inherited: true, readOnly, items: items.map((item) => item.name), dictionaryItems: items.map((item) => ({ ...item, source: "HQ_TEMPLATE" as const, isSystem: false, referencedCount: item.usageCount, deletePolicy: "DISABLE_ONLY" as const })) };
+  }
   private async ensureDefaults(storeId: string) {
     for (const item of DEFAULT_DICTIONARIES) {
       const existing = await this.prisma.dictionary.findUnique({ where: { storeId_code: { storeId, code: item.code } } });
@@ -111,12 +124,27 @@ export class DictionariesService {
 
   async list(user: AuthenticatedSettingsUser, storeId?: string) {
     const actor = await this.actor(user);
+    if (actor.isAuditor && !storeId) {
+      const [rows, templates] = await Promise.all([
+        this.prisma.dictionary.findMany({ orderBy: { createdAt: "asc" }, include: { dictionaryItems: true } }),
+        this.prisma.dictionaryTemplate.findMany({ orderBy: { createdAt: "asc" }, include: { templateItems: true } })
+      ]);
+      return [...templates.map((row) => this.serializeTemplate(row, false)), ...rows.map((row) => this.serialize(row))];
+    }
     const targetStoreId = storeId ?? actor.storeMember?.storeId;
     if (!targetStoreId) throw new ForbiddenException("未绑定门店");
     await this.assertStoreReader(actor, targetStoreId);
+    const cacheKey = `${actor.id}:${targetStoreId}`;
+    const cached = this.listCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
     await this.ensureDefaults(targetStoreId);
-    const rows = await this.prisma.dictionary.findMany({ where: { storeId: targetStoreId }, orderBy: { createdAt: "asc" }, include: { dictionaryItems: true } });
-    return rows.map((row) => this.serialize(row));
+    const [rows, templates] = await Promise.all([
+      this.prisma.dictionary.findMany({ where: { storeId: targetStoreId }, orderBy: { createdAt: "asc" }, include: { dictionaryItems: true } }),
+      this.prisma.dictionaryTemplate.findMany({ where: { status: DictionaryStatus.ACTIVE }, orderBy: { createdAt: "asc" }, include: { templateItems: true } })
+    ]);
+    const value = [...templates.map((row) => this.serializeTemplate(row, true)), ...rows.map((row) => this.serialize(row))];
+    this.listCache.set(cacheKey, { expiresAt: Date.now() + 5 * 60 * 1000, value });
+    return value;
   }
 
   async create(user: AuthenticatedSettingsUser, dto: CreateDictionaryDto) {
@@ -135,6 +163,8 @@ export class DictionariesService {
       }
     });
     const dictionaryItems = await this.syncItems(row.id, dto.items);
+    await this.recordAudit((await this.actor(user)).id, "settings.dictionary.created", row.id, row.storeId, { code: row.code, name: row.name });
+    this.listCache.clear();
     return this.serialize({ ...row, dictionaryItems });
   }
 
@@ -168,18 +198,30 @@ export class DictionariesService {
         FIXED_DICTIONARY_CODES.has(row.code),
         DEFAULT_DICTIONARIES.find((item) => item.code === row.code)?.itemCodes
       );
+    await this.recordAudit((await this.actor(user)).id, "settings.dictionary.updated", row.id, row.storeId, { code: row.code, status: row.status });
+    this.listCache.clear();
     return this.serialize({ ...row, dictionaryItems });
   }
 
-  async remove(user: AuthenticatedSettingsUser, id: string) {
+  async remove(user: AuthenticatedSettingsUser, id: string, reason: string) {
     const dictionary = await this.prisma.dictionary.findUnique({ where: { id } });
     if (!dictionary) throw new NotFoundException("字典不存在");
-    await this.assertManager(user, dictionary.storeId);
-    if (FIXED_DICTIONARY_CODES.has(dictionary.code)) throw new BadRequestException("系统固定字典不可删除");
+    const actor = await this.assertManager(user, dictionary.storeId);
+    if (!reason?.trim()) {
+      await this.recordFailure(actor.id, "settings.dictionary.disabled", id, dictionary.storeId, "停用字典必须填写原因");
+      throw new BadRequestException("停用字典必须填写原因");
+    }
+    if (FIXED_DICTIONARY_CODES.has(dictionary.code)) {
+      await this.recordFailure(actor.id, "settings.dictionary.disabled", id, dictionary.storeId, "系统固定字典不可删除");
+      throw new BadRequestException("系统固定字典不可删除");
+    }
     const row = await this.prisma.dictionary.update({ where: { id }, data: { status: DictionaryStatus.INACTIVE } });
+    await this.recordAudit(actor.id, "settings.dictionary.disabled", row.id, row.storeId, { code: row.code, reason: reason.trim() });
     const dictionaryItems = await this.prisma.dictionaryItem.findMany({ where: { dictionaryId: row.id } });
+    this.listCache.clear();
     return this.serialize({ ...row, dictionaryItems });
   }
+
 
 
   private async getItemOrThrow(id: string) {
@@ -195,17 +237,39 @@ export class DictionariesService {
     return this.prisma.dictionaryItem.findMany({ where: { dictionaryId }, orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }, { code: "asc" }] });
   }
 
+  async importItems(user: AuthenticatedSettingsUser, dictionaryId: string, items: Array<{ code: string; name: string; sortOrder?: number }>) {
+    const dictionary = await this.prisma.dictionary.findUnique({ where: { id: dictionaryId } });
+    if (!dictionary) throw new NotFoundException("字典不存在");
+    const actor = await this.assertManager(user, dictionary.storeId);
+    if (dictionary.source !== "STORE" || !dictionary.allowCustomItems) throw new BadRequestException("当前字典不允许导入自定义项");
+    const normalized = items.map((item, index) => ({ code: item.code.trim(), name: item.name.trim(), sortOrder: item.sortOrder ?? index })).filter((item) => item.code && item.name);
+    if (normalized.length !== items.length) throw new BadRequestException("导入项编码和名称不能为空");
+    const codes = new Set<string>();
+    if (normalized.some((item) => codes.has(item.code) || codes.add(item.code) === undefined)) throw new ConflictException("导入文件包含重复编码，整批未导入");
+    const [existing, inherited] = await Promise.all([
+      this.prisma.dictionaryItem.findMany({ where: { dictionaryId, code: { in: normalized.map((item) => item.code) } }, select: { code: true } }),
+      this.prisma.dictionaryTemplateItem.findMany({ where: { code: { in: normalized.map((item) => item.code) }, template: { status: DictionaryStatus.ACTIVE } }, select: { code: true } })
+    ]);
+    if (existing.length || inherited.length) { await this.recordFailure(actor.id, "settings.dictionary.items.imported", dictionaryId, dictionary.storeId, "编码已存在，请更换编码"); throw new ConflictException("编码已存在，请更换编码"); }
+    return this.prisma.$transaction(async (tx) => { const created = []; for (const item of normalized) created.push(await tx.dictionaryItem.create({ data: { dictionaryId, code: item.code, name: item.name, sortOrder: item.sortOrder, source: "STORE", updatedById: actor.id } })); await tx.dictionary.update({ where: { id: dictionaryId }, data: { version: { increment: 1 }, updatedById: actor.id } }); await tx.auditEvent.create({ data: { action: "settings.dictionary.items.imported", actorId: actor.id, storeId: dictionary.storeId, targetType: "Dictionary", targetId: dictionaryId, metadata: { count: created.length, mode: "ADD_ONLY" } } }); this.listCache.clear(); return created; });
+  }
   async createItem(user: AuthenticatedSettingsUser, dictionaryId: string, dto: CreateDictionaryItemDto) {
     const dictionary = await this.prisma.dictionary.findUnique({ where: { id: dictionaryId } });
     if (!dictionary) throw new NotFoundException("字典不存在");
     const actor = await this.assertManager(user, dictionary.storeId);
     if (!dictionary.allowCustomItems || dictionary.source !== "STORE") throw new BadRequestException("当前字典不允许新增字典项");
     if (dto.parentId && !dictionary.allowHierarchy) throw new BadRequestException("当前字典不支持层级");
-    const duplicate = await this.prisma.dictionaryItem.findFirst({ where: { dictionaryId, parentId: dto.parentId ?? null, code: dto.code.trim() } });
-    if (duplicate) throw new ConflictException("同一层级下字典编码已存在");
+    const code = dto.code.trim();
+    const [duplicate, inherited] = await Promise.all([
+      this.prisma.dictionaryItem.findFirst({ where: { dictionaryId, parentId: dto.parentId ?? null, code } }),
+      this.prisma.dictionaryTemplateItem.findFirst({ where: { code, template: { status: DictionaryStatus.ACTIVE } } })
+    ]);
+    if (duplicate || inherited) { await this.recordFailure(actor.id, "settings.dictionary.item.created", dictionaryId, dictionary.storeId, "编码已存在，请更换编码", { code }); throw new ConflictException("编码已存在，请更换编码"); }
     return this.prisma.$transaction(async (tx) => {
-      const item = await tx.dictionaryItem.create({ data: { dictionaryId, parentId: dto.parentId ?? null, code: dto.code.trim(), name: dto.name.trim(), sortOrder: dto.sortOrder ?? 0, status: dto.status ?? DictionaryStatus.ACTIVE, source: "STORE", disabledReason: dto.disabledReason, updatedById: actor.id } });
+      const item = await tx.dictionaryItem.create({ data: { dictionaryId, parentId: dto.parentId ?? null, code, name: dto.name.trim(), sortOrder: dto.sortOrder ?? 0, status: dto.status ?? DictionaryStatus.ACTIVE, source: "STORE", disabledReason: dto.disabledReason, updatedById: actor.id } });
       await tx.dictionary.update({ where: { id: dictionaryId }, data: { version: { increment: 1 }, updatedById: actor.id } });
+      await tx.auditEvent.create({ data: { action: "settings.dictionary.item.created", actorId: actor.id, storeId: dictionary.storeId, targetType: "DictionaryItem", targetId: item.id, metadata: { code: item.code } } });
+      this.listCache.clear();
       return item;
     });
   }
@@ -213,31 +277,40 @@ export class DictionariesService {
   async updateItem(user: AuthenticatedSettingsUser, id: string, dto: UpdateDictionaryItemDto) {
     const item = await this.getItemOrThrow(id);
     const actor = await this.assertManager(user, item.dictionary.storeId);
+    const inheritedDisabled = item.dictionary.source === "STORE" && dto.status === DictionaryStatus.ACTIVE ? await this.prisma.dictionaryTemplateItem.findFirst({ where: { code: item.code, status: DictionaryStatus.INACTIVE, template: { status: DictionaryStatus.ACTIVE } } }) : null;
+    if ((item.status === DictionaryStatus.INACTIVE && dto.status === DictionaryStatus.ACTIVE && item.dictionary.source !== "STORE") || inheritedDisabled) throw new BadRequestException("总部已禁用项不可重新启用");
+    if (dto.status === DictionaryStatus.INACTIVE && !dto.disabledReason?.trim()) { await this.recordFailure(actor.id, "settings.dictionary.item.disabled", id, item.dictionary.storeId, "停用字典项必须填写原因"); throw new BadRequestException("停用字典项必须填写原因"); }
     const statusOnly = dto.status !== undefined && dto.name === undefined && dto.parentId === undefined && dto.sortOrder === undefined;
     if (item.dictionary.source !== "STORE" || item.isSystem) {
       if (!item.dictionary.allowDisableItems || !statusOnly) throw new BadRequestException("系统字典项仅允许启停");
     }
-    if (dto.version !== undefined && dto.version !== item.dictionary.version) throw new ConflictException("字典已被其他人修改，请刷新后重试");
+    if (dto.version !== undefined && dto.version !== item.dictionary.version) { await this.recordFailure(actor.id, "settings.dictionary.item.updated", id, item.dictionary.storeId, "字典已被其他人修改，请刷新后重试"); throw new ConflictException("字典已被其他人修改，请刷新后重试"); }
     if (dto.parentId !== undefined && !item.dictionary.allowHierarchy) throw new BadRequestException("当前字典不支持层级");
     if (dto.parentId === id) throw new BadRequestException("父级不能是自身");
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.dictionaryItem.update({ where: { id }, data: { ...(dto.name === undefined ? {} : { name: dto.name.trim() }), ...(dto.parentId === undefined ? {} : { parentId: dto.parentId }), ...(dto.sortOrder === undefined ? {} : { sortOrder: dto.sortOrder }), ...(dto.status === undefined ? {} : { status: dto.status }), ...(dto.disabledReason === undefined ? {} : { disabledReason: dto.disabledReason }), updatedById: actor.id } });
       await tx.dictionary.update({ where: { id: item.dictionaryId }, data: { version: { increment: 1 }, updatedById: actor.id } });
+      await tx.auditEvent.create({ data: { action: dto.status === DictionaryStatus.INACTIVE ? "settings.dictionary.item.disabled" : "settings.dictionary.item.updated", actorId: actor.id, storeId: item.dictionary.storeId, targetType: "DictionaryItem", targetId: id, metadata: { status: dto.status } } });
+      this.listCache.clear();
       return updated;
     });
   }
 
-  async setItemStatus(user: AuthenticatedSettingsUser, id: string, status: DictionaryStatus, reason?: string) {
-    return this.updateItem(user, id, { status, disabledReason: reason });
+  async setItemStatus(user: AuthenticatedSettingsUser, id: string, status: DictionaryStatus, reason?: string, version?: number) {
+    return this.updateItem(user, id, { status, disabledReason: reason, version });
   }
 
-  async removeItem(user: AuthenticatedSettingsUser, id: string) {
+  async removeItem(user: AuthenticatedSettingsUser, id: string, reason?: string) {
     const item = await this.getItemOrThrow(id);
-    await this.assertManager(user, item.dictionary.storeId);
+    const actor = await this.assertManager(user, item.dictionary.storeId);
+    if (!reason?.trim()) { await this.recordFailure(actor.id, "settings.dictionary.item.deleted", id, item.dictionary.storeId, "删除字典项必须填写原因"); throw new BadRequestException("删除字典项必须填写原因"); }
     if (item.isSystem || item.source !== "STORE") throw new BadRequestException("系统字典项不可删除");
-    if (item.usageCount > 0) throw new BadRequestException("已被业务数据引用，只能停用不能删除");
+    if (item.usageCount > 0) { await this.recordFailure(actor.id, "settings.dictionary.item.deleted", id, item.dictionary.storeId, "已被业务数据引用，只能停用不能删除", { usageCount: item.usageCount }); throw new BadRequestException("已被业务数据引用，只能停用不能删除"); }
     if (await this.prisma.dictionaryItem.count({ where: { parentId: id } })) throw new BadRequestException("存在子级字典项，请先处理子级");
-    return this.prisma.dictionaryItem.delete({ where: { id } });
+    const deleted = await this.prisma.dictionaryItem.delete({ where: { id } });
+    await this.recordAudit(actor.id, "settings.dictionary.item.deleted", deleted.id, item.dictionary.storeId, { code: item.code, reason: reason?.trim() });
+    this.listCache.clear();
+    return deleted;
   }
   private async syncItems(dictionaryId: string, names: readonly string[], isSystem = false, stableCodes?: readonly string[]) {
     const normalizedNames = [...new Set(names.map((name) => name.trim()).filter(Boolean))];

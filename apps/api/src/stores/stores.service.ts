@@ -5,7 +5,8 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
-import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
+import { DictionaryStatus, StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { normalizePagination } from "../common/pagination";
 import { CreateStoreDto } from "./dto/create-store.dto";
@@ -13,6 +14,10 @@ import { SubmitStoreDto } from "./dto/submit-store.dto";
 import { ReviewStoreDto } from "./dto/review-store.dto";
 import { ListStoresDto } from "./dto/list-stores.dto";
 import { ChangeManagerDto } from "./dto/change-manager.dto";
+import {
+  CreateFinancialEntityDto,
+  UpdateStoreCrossStoreConfigDto
+} from "./dto/cross-store-config.dto";
 import { ChangeStoreManagerUseCase } from "./use-cases/change-store-manager.use-case";
 import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
 import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
@@ -43,11 +48,25 @@ export class StoresService {
     if (existingMember) throw new BadRequestException("该用户已是其他门店的成员");
 
     const store = await this.prisma.$transaction(async (tx) => {
+      const financialEntity = dto.financialEntityId
+        ? await tx.financialEntity.findUnique({ where: { id: dto.financialEntityId } })
+        : await tx.financialEntity.create({
+          data: {
+            code: `FE_${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`,
+            name: `${dto.name}财务主体`
+          }
+        });
+      if (!financialEntity || financialEntity.status !== DictionaryStatus.ACTIVE) {
+        throw new BadRequestException("财务主体不存在或已停用");
+      }
+
       const store = await tx.store.create({
         data: {
           name: dto.name,
           status: StoreStatus.DRAFTED,
-          createdById: auditorId
+          createdById: auditorId,
+          financialEntityId: financialEntity.id,
+          crossStoreConstructionEnabled: dto.crossStoreConstructionEnabled ?? false
         }
       });
 
@@ -175,6 +194,86 @@ export class StoresService {
     };
   }
 
+  async listEligibleExecutionStores(userId: string, isAuditor: boolean, sourceStoreId: string) {
+    const [sourceStore, member] = await Promise.all([
+      this.prisma.store.findUnique({
+        where: { id: sourceStoreId },
+        select: { financialEntityId: true, crossStoreConstructionEnabled: true }
+      }),
+      this.prisma.storeMember.findUnique({ where: { userId } })
+    ]);
+    if (!sourceStore) throw new NotFoundException("来源门店不存在");
+    if (!isAuditor && member?.storeId !== sourceStoreId) throw new ForbiddenException("无权限");
+    if (!sourceStore.crossStoreConstructionEnabled) return [];
+
+    return this.prisma.store.findMany({
+      where: {
+        id: { not: sourceStoreId },
+        financialEntityId: sourceStore.financialEntityId,
+        crossStoreConstructionEnabled: true,
+        status: StoreStatus.PUBLISHED
+      },
+      select: { id: true, name: true, address: true },
+      orderBy: { name: "asc" }
+    });
+  }
+
+  async listFinancialEntities(isAuditor: boolean) {
+    if (!isAuditor) throw new ForbiddenException("无权限");
+    return this.prisma.financialEntity.findMany({
+      orderBy: [{ status: "asc" }, { name: "asc" }],
+      include: {
+        stores: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            crossStoreConstructionEnabled: true
+          },
+          orderBy: { name: "asc" }
+        }
+      }
+    });
+  }
+
+  async createFinancialEntity(isAuditor: boolean, dto: CreateFinancialEntityDto) {
+    if (!isAuditor) throw new ForbiddenException("无权限");
+    const code = dto.code.trim().toUpperCase();
+    const name = dto.name.trim();
+    if (!code || !name) throw new BadRequestException("财务主体编码和名称不能为空");
+    const existing = await this.prisma.financialEntity.findUnique({ where: { code } });
+    if (existing) throw new BadRequestException("财务主体编码已存在");
+    return this.prisma.financialEntity.create({ data: { code, name } });
+  }
+
+  async updateCrossStoreConfig(
+    isAuditor: boolean,
+    storeId: string,
+    dto: UpdateStoreCrossStoreConfigDto
+  ) {
+    if (!isAuditor) throw new ForbiddenException("无权限");
+    const [store, financialEntity] = await Promise.all([
+      this.prisma.store.findUnique({ where: { id: storeId }, select: { id: true } }),
+      this.prisma.financialEntity.findUnique({ where: { id: dto.financialEntityId } })
+    ]);
+    if (!store) throw new NotFoundException("门店不存在");
+    if (!financialEntity || financialEntity.status !== DictionaryStatus.ACTIVE) {
+      throw new BadRequestException("财务主体不存在或已停用");
+    }
+    return this.prisma.store.update({
+      where: { id: storeId },
+      data: {
+        financialEntityId: financialEntity.id,
+        crossStoreConstructionEnabled: dto.enabled ?? true
+      },
+      select: {
+        id: true,
+        name: true,
+        financialEntityId: true,
+        crossStoreConstructionEnabled: true
+      }
+    });
+  }
   // ─── 管理员：待审核提交列表 ────────────────────────────────────────────────
 
   async listPendingSubmissions(isAuditor: boolean) {
@@ -275,6 +374,8 @@ export class StoresService {
       id: store.id,
       name: store.name,
       status: store.status,
+      financialEntityId: store.financialEntityId,
+      crossStoreConstructionEnabled: store.crossStoreConstructionEnabled,
       address: store.address,
       description: store.description,
       createdAt: store.createdAt,

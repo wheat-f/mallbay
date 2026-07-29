@@ -7,7 +7,7 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, CustomerContactRole, CustomerVehicleStatus, OrderStatus, Prisma, ProductStatus, ProductUnit } from "@prisma/client";
+import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, CrossStoreTaskStatus, CustomerContactRole, CustomerVehicleStatus, DictionaryStatus, NotificationType, OrderStatus, Prisma, ProductStatus, ProductUnit, StorePosition, StoreStatus } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../../common/policies/permission.policy";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PricingService } from "../../pricing/pricing.service";
@@ -53,6 +53,8 @@ export class CreateOrderUseCase {
       throw new ForbiddenException("无权限指定其他销售人员");
     }
     const salesPersonId = dto.salesPersonId ?? user.id;
+    const executionStoreId = dto.executionStoreId?.trim() || dto.storeId;
+    const isCrossStore = executionStoreId !== dto.storeId;
     const constructionAddress = normalizeOptionalText(dto.constructionAddress);
     const appointmentTimeSlot = normalizeOptionalText(dto.appointmentTimeSlot);
     if (dto.constructionLocation === ConstructionLocation.OUTSIDE && !constructionAddress) {
@@ -78,10 +80,31 @@ export class CreateOrderUseCase {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const [sourceStore, executionStore] = await Promise.all([
+        tx.store.findUnique({
+          where: { id: dto.storeId },
+          select: { id: true, name: true, status: true, financialEntityId: true, crossStoreConstructionEnabled: true }
+        }),
+        tx.store.findUnique({
+          where: { id: executionStoreId },
+          select: { id: true, name: true, status: true, financialEntityId: true, crossStoreConstructionEnabled: true }
+        })
+      ]);
+      if (!sourceStore || !executionStore) throw new BadRequestException("来源门店或执行门店不存在");
+      if (isCrossStore && (
+        sourceStore.financialEntityId !== executionStore.financialEntityId ||
+        sourceStore.status !== StoreStatus.PUBLISHED ||
+        executionStore.status !== StoreStatus.PUBLISHED ||
+        !sourceStore.crossStoreConstructionEnabled ||
+        !executionStore.crossStoreConstructionEnabled
+      )) {
+        throw new BadRequestException("执行门店必须与来源门店属于同一财务主体，且双方已启用跨店施工");
+      }
+
       const heldCapacityReservation = dto.capacityReservationId
         ? await tx.capacityReservation.findUnique({ where: { id: dto.capacityReservationId } })
         : null;
-      if (dto.capacityReservationId && (!heldCapacityReservation || heldCapacityReservation.storeId !== dto.storeId ||
+      if (dto.capacityReservationId && (!heldCapacityReservation || heldCapacityReservation.storeId !== executionStoreId ||
         heldCapacityReservation.sourceType !== CapacityReservationSourceType.QUOTE ||
         heldCapacityReservation.constructionLocation !== dto.constructionLocation ||
         heldCapacityReservation.constructionType !== dto.constructionType ||
@@ -95,7 +118,7 @@ export class CreateOrderUseCase {
       const capacityReservation = dto.appointmentDate && !heldCapacityReservation
         ? await this.reserveDailyCapacity(
           tx,
-          dto.storeId,
+          executionStoreId,
           dto.appointmentDate,
           dto.constructionLocation,
           dto.constructionType
@@ -144,8 +167,29 @@ export class CreateOrderUseCase {
         throw new BadRequestException("订单包含不存在或已停用的产品");
       }
       const productsById = new Map(products.map((product) => [product.id, product]));
+      const crossStoreMappings = isCrossStore
+        ? await tx.crossStoreProductMapping.findMany({
+          where: {
+            sourceProductId: { in: productIds },
+            executionStoreId,
+            financialEntityId: sourceStore.financialEntityId,
+            status: DictionaryStatus.ACTIVE,
+            executionProduct: { storeId: executionStoreId, status: ProductStatus.ACTIVE }
+          },
+          include: { executionProduct: true }
+        })
+        : [];
+      const mappingsByProductId = new Map(crossStoreMappings.map((mapping) => [mapping.sourceProductId, mapping]));
+      if (isCrossStore && mappingsByProductId.size !== productIds.length) {
+        throw new BadRequestException("部分产品尚未配置执行门店产品映射，不能提交跨店施工订单");
+      }
       for (const item of dto.items) {
         const product = productsById.get(item.productId);
+        const mapping = mappingsByProductId.get(item.productId);
+        const selectedUnit = product ? resolveOrderSalesUnit(product, item.salesUnit) : item.salesUnit;
+        if (isCrossStore && mapping?.sourceSalesUnit !== selectedUnit) {
+          throw new BadRequestException(`产品 ${product?.name ?? item.productId} 的销售单位与跨店映射不一致`);
+        }
         const precision = product?.quantityPrecision ?? 3;
         if (countDecimalPlaces(item.quantity) > precision) {
           throw new BadRequestException("产品 " + (product?.name ?? item.productId) + " 数量最多支持 " + precision + " 位小数");
@@ -186,6 +230,7 @@ export class CreateOrderUseCase {
       const order = await tx.order.create({
         data: {
           storeId: dto.storeId,
+          executionStoreId,
           orderNo: this.orderNumber.next(),
           customerId: dto.customerId,
           vehicleId: vehicle.id,
@@ -220,6 +265,74 @@ export class CreateOrderUseCase {
           };
         })
       });
+
+      const crossStoreTask = isCrossStore
+        ? await tx.crossStoreConstructionTask.create({
+          data: {
+            orderId: order.id,
+            sourceStoreId: dto.storeId,
+            executionStoreId,
+            status: CrossStoreTaskStatus.PENDING_ACCEPTANCE,
+            createdById: user.id,
+            requirementsSnapshot: {
+              constructionType: dto.constructionType,
+              constructionLocation: dto.constructionLocation,
+              constructionAddress,
+              appointmentDate: dto.appointmentDate,
+              appointmentTimeSlot,
+              vehicleId: vehicle.id,
+              vehiclePlate: vehicle.carPlate,
+              vehicleBrand: null,
+              vehicleModel: vehicle.carModel,
+              items: dto.items.map((item) => {
+                const product = productsById.get(item.productId)!;
+                const mapping = mappingsByProductId.get(item.productId)!;
+                return {
+                  sourceProductId: item.productId,
+                  sourceProductName: product.name,
+                  executionProductId: mapping.executionProductId,
+                  executionProductName: mapping.executionProduct.name,
+                  quantity: item.quantity,
+                  sourceSalesUnit: mapping.sourceSalesUnit,
+                  executionInventoryUnit: mapping.executionInventoryUnit,
+                  executionRequiredQuantity: roundQuantity(
+                    item.quantity * resolveExecutionQuantityPerSourceUnit(mapping.conversionSnapshot),
+                    mapping.executionProduct.quantityPrecision
+                  ),
+                  conversionSnapshot: mapping.conversionSnapshot
+                };
+              })
+            } as Prisma.InputJsonValue,
+            sourceContactSnapshot: contactSnapshot as Prisma.InputJsonValue
+          }
+        })
+        : null;
+
+      if (crossStoreTask) {
+        const recipients = await tx.storeMember.findMany({
+          where: {
+            storeId: executionStoreId,
+            position: { in: [StorePosition.MANAGER, StorePosition.SCHEDULER] }
+          },
+          select: { userId: true }
+        });
+        if (recipients.length) {
+          await tx.notification.createMany({
+            data: recipients.map(({ userId }) => ({
+              userId,
+              type: NotificationType.CROSS_STORE_TASK_CREATED,
+              payload: {
+                taskId: crossStoreTask.id,
+                orderId: order.id,
+                orderNo: order.orderNo,
+                sourceStoreId: dto.storeId,
+                sourceStoreName: sourceStore.name,
+                executionStoreId
+              } as Prisma.InputJsonValue
+            }))
+          });
+        }
+      }
 
       await tx.orderAmount.create({
         data: {
@@ -273,7 +386,7 @@ export class CreateOrderUseCase {
       if (capacityReservation) {
         if (typeof tx.capacityReservation?.create === "function") await tx.capacityReservation.create({
           data: {
-            storeId: dto.storeId,
+            storeId: executionStoreId,
             dailyCapacityId: capacityReservation.dailyCapacityId,
             date: capacityReservation.date,
             constructionLocation: dto.constructionLocation,
@@ -291,7 +404,7 @@ export class CreateOrderUseCase {
         });
       }
 
-      return order;
+      return { ...order, crossStoreTask };
     });
   }
 
@@ -515,6 +628,20 @@ function createDefaultOrderNumberGenerator(): OrderNumberGenerator {
   };
 }
 
+
+function resolveExecutionQuantityPerSourceUnit(snapshot: Prisma.JsonValue | null) {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return 1;
+  const raw = (snapshot as Prisma.JsonObject).executionQuantityPerSourceUnit;
+  const factor = Number(raw);
+  if (!Number.isFinite(factor) || factor <= 0) {
+    throw new BadRequestException("跨店产品映射的数量换算快照无效，请重新维护映射");
+  }
+  return factor;
+}
+
+function roundQuantity(value: number, precision: number) {
+  return Number(value.toFixed(Math.max(0, Math.min(6, precision))));
+}
 
 function countDecimalPlaces(value: number) {
   if (!Number.isFinite(value)) return Number.POSITIVE_INFINITY;

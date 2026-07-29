@@ -12,6 +12,16 @@ import type {
 import { request, requestMultipart } from "../../lib/request";
 import { encryptPassword } from "./credential-encryption";
 
+export type AuthSession = {
+  id: string;
+  deviceName: string;
+  userAgent: string | null;
+  ipAddress: string | null;
+  lastSeenAt: string;
+  createdAt: string;
+  current: boolean;
+};
+
 export const authApi = {
   publicKey: () =>
     request<AuthPublicKeyResponse>("/auth/public-key", {
@@ -61,7 +71,9 @@ export const authApi = {
     request<{ success: boolean }>("/auth/logout", {
       method: "POST"
     }),
-  me: () => request<AuthResponse["user"]>("/auth/me")
+  me: () => request<AuthResponse["user"]>("/auth/me"),
+  sessions: () => request<AuthSession[]>("/auth/sessions"),
+  revokeSession: (id: string) => request<{ success: boolean }>(`/auth/sessions/${id}`, { method: "DELETE" })
 };
 
 export const userApi = {

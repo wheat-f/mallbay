@@ -18,7 +18,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { userApi } from "../../src/lib/api";
+import { authApi, userApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 
 type ProfileDrawerState =
@@ -272,6 +272,29 @@ export default function ProfilePage() {
   const [drawerState, setDrawerState] = useState<ProfileDrawerState | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [sessions, setSessions] = useState<Awaited<ReturnType<typeof authApi.sessions>>>([]);
+
+  const loadSessions = useCallback(async () => {
+    try {
+      setSessions(await authApi.sessions());
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "设备会话加载失败");
+    }
+  }, [message]);
+
+  useEffect(() => {
+    if (hasHydrated && user) void loadSessions();
+  }, [hasHydrated, loadSessions, user]);
+
+  const revokeSession = async (id: string) => {
+    try {
+      await authApi.revokeSession(id);
+      await loadSessions();
+      message.success("设备会话已撤销");
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "设备会话撤销失败");
+    }
+  };
 
   // 路由保护（也处理旧格式 session）
   useEffect(() => {
@@ -477,6 +500,19 @@ export default function ProfilePage() {
               </div>
               <div className="profile-avatar-tip">点击上传 · 最大 2 MB · JPG / PNG / WebP</div>
             </div>
+          </Card>
+
+          <Card className="profile-security-status-card" title="登录设备" extra={<SafetyCertificateOutlined />}>
+            <Typography.Paragraph type="secondary">仅展示当前账号仍有效的登录设备，可随时撤销异常会话。</Typography.Paragraph>
+            {sessions.length === 0 ? <Typography.Text type="secondary">暂无设备记录</Typography.Text> : sessions.map((session) => (
+              <div key={session.id} className="profile-info-row">
+                <div>
+                  <strong>{session.deviceName}{session.current ? "（当前设备）" : ""}</strong>
+                  <div><Typography.Text type="secondary">{session.ipAddress ?? "未知 IP"} · {new Date(session.lastSeenAt).toLocaleString("zh-CN")}</Typography.Text></div>
+                </div>
+                {!session.current ? <Button type="link" danger size="small" onClick={() => void revokeSession(session.id)}>撤销</Button> : null}
+              </div>
+            ))}
           </Card>
 
           <Card className="profile-security-status-card profile-action-list" title="快捷操作">

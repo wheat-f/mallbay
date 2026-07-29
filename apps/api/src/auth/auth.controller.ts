@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
+  Param,
   Post,
   Req,
   Res,
@@ -21,6 +23,7 @@ type AuthRequest = Request & {
   user: {
     id: string;
     username: string;
+    sessionId?: string;
   };
 };
 
@@ -38,22 +41,22 @@ export class AuthController {
   }
 
   @Post("register")
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
-    const session = await this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const session = await this.authService.register(dto, getDeviceContext(req));
     this.setRefreshTokenCookie(res, session.refreshToken);
     return session;
   }
 
   @Post("login")
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const session = await this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const session = await this.authService.login(dto, getDeviceContext(req));
     this.setRefreshTokenCookie(res, session.refreshToken);
     return session;
   }
 
   @Post("wechat-login")
-  async wechatLogin(@Body() dto: WechatLoginDto, @Res({ passthrough: true }) res: Response) {
-    const session = await this.authService.loginWithWechatCode(dto);
+  async wechatLogin(@Body() dto: WechatLoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const session = await this.authService.loginWithWechatCode(dto, getDeviceContext(req));
     this.setRefreshTokenCookie(res, session.refreshToken);
     return session;
   }
@@ -69,7 +72,7 @@ export class AuthController {
       throw new UnauthorizedException("无效的刷新令牌");
     }
 
-    const session = await this.authService.refresh(refreshToken);
+    const session = await this.authService.refresh(refreshToken, getDeviceContext(req));
     this.setRefreshTokenCookie(res, session.refreshToken);
     return session;
   }
@@ -83,9 +86,21 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Post("logout")
   async logout(@Req() req: AuthRequest, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.logout(req.user.id);
+    const result = await this.authService.logout(req.user.id, req.user.sessionId);
     res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getRefreshTokenCookieOptions());
     return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("sessions")
+  sessions(@Req() req: AuthRequest) {
+    return this.authService.listSessions(req.user.id, req.user.sessionId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete("sessions/:id")
+  revokeSession(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.authService.revokeSession(req.user.id, id);
   }
 
   private setRefreshTokenCookie(res: Response, refreshToken: string) {
@@ -94,6 +109,12 @@ export class AuthController {
       maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE
     });
   }
+}
+
+function getDeviceContext(req: Request) {
+  const forwarded = req.headers["x-forwarded-for"];
+  const ipAddress = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : req.ip;
+  return { userAgent: req.headers["user-agent"], ipAddress };
 }
 
 function getRefreshTokenCookieOptions(): CookieOptions {

@@ -7,6 +7,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { multiplyMoneyCents } from "../pricing/domain/money";
 import type { AuthenticatedConstructionUser } from "./construction.service";
 import { ApproveCostAdjustmentDto, BatchConfirmCostSettlementDto, ConfirmCostSettlementDto, CreateCostAdjustmentDto, ListCostSettlementsDto, WorkCostDeclarationDto } from "./dto/construction.dto";
+import { loadPublishedFinanceSettlementPolicy } from "../settings/finance-settlement-policy";
 
 const settlementInclude = Prisma.validator<Prisma.ConstructionCostSettlementInclude>()({
   order: { include: { amount: true, vehicle: true } },
@@ -34,7 +35,7 @@ export class ConstructionCostSettlementService {
     const snapshot = readPricingSnapshot(record.order.amount?.pricingOutputSnapshot);
     const standardWorkMinutes = snapshot.costEstimate.standardWorkMinutes ?? 0;
     const assignedIds = record.assignments.map((assignment) => assignment.workerUserId);
-    const members = assignedIds.length ? await this.prisma.storeMember.findMany({ where: { storeId: record.storeId, userId: { in: assignedIds } }, select: { userId: true, position: true } }) : [];
+    const members = assignedIds.length ? await this.prisma.storeMember.findMany({ where: { userId: { in: assignedIds } }, select: { userId: true, position: true } }) : [];
     const commissionSnapshots = assignedIds.length ? await this.prisma.workerCommissionSnapshot.findMany({ where: { recordId, workerUserId: { in: assignedIds } }, select: { workerUserId: true, amountCents: true } }) : [];
     const memberByUser = new Map(members.map((member) => [member.userId, member]));
     const commissionByUser = new Map(commissionSnapshots.map((line) => [line.workerUserId, line.amountCents]));
@@ -99,7 +100,7 @@ export class ConstructionCostSettlementService {
     const settlement = await this.find(id);
     if (settlement.status !== ConstructionCostSettlementStatus.PENDING_CONFIRMATION) throw new BadRequestException("成本已确认，不能直接修改工时申报");
     const workerLine = settlement.workerLines.find((line) => line.workerUserId === actor.id);
-    if (!workerLine || !PermissionPolicy.canWorkOnConstructionTask(actor, settlement.storeId, actor.id)) throw new ForbiddenException("只能申报本人施工任务的工时偏差");
+    if (!workerLine) throw new ForbiddenException("只能申报本人施工任务的工时偏差");
     if (dto.declaredWorkMinutes !== workerLine.standardMinutes && !dto.varianceReasonCode?.trim()) throw new BadRequestException("申报工时与标准工时不一致时，必须选择偏差原因");
     const updated = await this.prisma.constructionCostWorkerLine.update({
       where: { id: workerLine.id },
@@ -128,7 +129,7 @@ export class ConstructionCostSettlementService {
       }
     });
     if (!settlement) throw new NotFoundException("该施工任务尚未生成成本确认记录");
-    if (!PermissionPolicy.canWorkOnConstructionTask(actor, settlement.storeId, actor.id) || !settlement.constructionRecord.assignments.some((item) => item.workerUserId === actor.id)) throw new ForbiddenException("只能查看本人施工任务的工时申报");
+    if (!settlement.constructionRecord.assignments.some((item) => item.workerUserId === actor.id)) throw new ForbiddenException("只能查看本人施工任务的工时申报");
     const workerLine = settlement.workerLines[0];
     if (!workerLine) throw new ForbiddenException("当前施工任务未分配到本人");
     return {
@@ -154,8 +155,10 @@ export class ConstructionCostSettlementService {
       dto.workerLines,
       settlement.order.amount?.constructionChargeCents ?? settlement.order.amount?.laborCostCents ?? 0
     );
+    const policy = await loadPublishedFinanceSettlementPolicy(this.prisma, settlement.storeId);
     const actualMaterial = await this.calculateActualMaterialCost(settlement.orderId);
-    if (actualMaterial.hasMissingCost) throw new BadRequestException("订单存在尚未补录实际入库价的出库批次，请采购员补录后再确认成本");
+    if (actualMaterial.hasMissingCost && policy.missingCostPolicy === "BLOCK_CONFIRMATION") throw new BadRequestException("订单存在尚未补录实际入库价的出库批次，请采购员补录后再确认成本");
+    if (actualMaterial.hasMissingCost) throw new BadRequestException("实际成本缺失时不能确认结算，需先补录入库成本");
     const actualMaterialCostCents = actualMaterial.totalCents;
     // Personal commission is maintained by the commission module. A manager
     // confirming work hours must not be able to replace it through the browser

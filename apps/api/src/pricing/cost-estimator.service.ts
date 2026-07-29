@@ -5,6 +5,7 @@ import { estimateCosts } from "./domain/cost-estimator";
 import { EstimateCostDto } from "./dto/estimate-cost.dto";
 import type { PricingAuthenticatedUser } from "./pricing.service";
 import { unitConversionFactor } from "./domain/unit-conversion";
+import { loadPublishedFinanceSettlementPolicy } from "../settings/finance-settlement-policy";
 
 @Injectable()
 export class CostEstimatorService {
@@ -33,6 +34,7 @@ export class CostEstimatorService {
       orderBy: { createdAt: "desc" }
     });
     const productById = new Map(products.map((product) => [product.id, product]));
+    const policy = await loadPublishedFinanceSettlementPolicy(this.prisma, dto.storeId);
     const costs: Record<string, { weightedAverageCents?: number; recentCents?: number; standardCents?: number }> = {};
     for (const line of dto.lines) {
       const product = productById.get(line.productId)!;
@@ -40,10 +42,11 @@ export class CostEstimatorService {
       // 标准材料成本按库存基础单位维护；卷入库、米销售时不能从销售单位折算。
       const standardFactor = unitConversionFactor(product.inventoryUnit, targetUnit, product);
       costs[line.productId] = {
-        standardCents: product.standardCostCents == null || standardFactor == null
+        standardCents: !policy.standardMaterialFallback || product.standardCostCents == null || standardFactor == null
           ? undefined
           : Math.round(product.standardCostCents / standardFactor)
       };
+      if (!policy.actualInboundPricePriority) continue;
       const productBatches = batches.filter((batch) => batch.productId === line.productId);
       const usable = productBatches
         .map((batch) => {

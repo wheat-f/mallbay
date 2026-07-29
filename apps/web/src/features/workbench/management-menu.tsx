@@ -57,6 +57,7 @@ export const managementMenuItems: ManagementMenuItem[] = [
   { key: "construction-role-costs", label: "岗位成本标准", href: "/orders/pricing/construction-costs/rates", icon: <WalletOutlined />, positions: ["FINANCE"] },
   { key: "sales-quotes", label: "报价审批", href: "/orders/quotes", icon: <AuditOutlined />, positions: ["MANAGER", "SALES"] },
   { key: "products", label: "产品管理", href: "/products", icon: <ShopOutlined />, positions: ["MANAGER", "PURCHASING", "FINANCE"] },
+  { key: "cross-store-construction", label: "跨店施工协作", href: "/construction/cross-store", icon: <TeamOutlined />, positions: ["MANAGER", "SCHEDULER", "PURCHASING"] },
   { key: "construction", label: "施工管理", href: "/construction/assignments", icon: <ToolOutlined />, positions: ["MANAGER", "SCHEDULER"] },
   { key: "construction-schedules", label: "施工排班", href: "/construction/schedules", icon: <CalendarOutlined />, positions: ["MANAGER", "SCHEDULER"] },
   { key: "construction-leave-approvals", label: "请假审批", href: "/construction/leave-approvals", icon: <FormOutlined />, positions: ["MANAGER", "SCHEDULER"] },
@@ -104,6 +105,7 @@ export function getActiveManagementMenuKey(pathname: string) {
   if (pathname.startsWith("/construction/leaves")) return "construction-leaves";
   if (pathname.startsWith("/construction/materials")) return "construction-materials";
   if (pathname.startsWith("/construction/cost-settlements")) return "construction-cost-settlements";
+  if (pathname.startsWith("/construction/cross-store")) return "cross-store-construction";
   if (pathname.startsWith("/construction/profile")) return "construction-profile";
   if (pathname.startsWith("/after-sales/tasks")) return "after-sales-tasks";
   if (pathname.startsWith("/customers")) return "customers";
@@ -128,3 +130,5 @@ export function getActiveManagementMenuKey(pathname: string) {
   if (pathname.startsWith("/profile")) return "profile";
   return "workbench";
 }
+
+

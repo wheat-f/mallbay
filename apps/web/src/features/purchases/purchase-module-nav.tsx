@@ -3,6 +3,7 @@
 import {
   CheckCircleOutlined,
   HomeOutlined,
+  RollbackOutlined,
   ShoppingCartOutlined,
   TeamOutlined
 } from "@ant-design/icons";
@@ -30,6 +31,13 @@ const PURCHASE_MODULE_NAV_ITEMS = [
     label: "采购订单",
     description: "审批、取消、到货验收和订单明细",
     icon: <ShoppingCartOutlined />
+  },
+  {
+    key: "returns",
+    href: "/returns",
+    label: "退货处理",
+    description: "销售退货、采购退货和结算",
+    icon: <RollbackOutlined />
   },
   {
     key: "suppliers",
@@ -72,6 +80,7 @@ function resolveActiveKey(pathname: string | null) {
   if (pathname.startsWith("/purchases/requirements")) return "requirements";
   if (pathname.startsWith("/purchases/inbound")) return "orders";
   if (pathname.startsWith("/purchases/suppliers")) return "suppliers";
+  if (pathname.startsWith("/returns")) return "returns";
   if (pathname.startsWith("/purchases/orders")) return "orders";
   return "overview";
 }

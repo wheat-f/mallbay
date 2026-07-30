@@ -17,6 +17,7 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { ProductsModule } from "./products/products.module";
 import { PricingModule } from "./pricing/pricing.module";
 import { PurchasesModule } from "./purchases/purchases.module";
+import { ReturnsModule } from "./returns/returns.module";
 import { RebatesModule } from "./rebates/rebates.module";
 import { ReportsModule } from "./reports/reports.module";
 import { SettingsModule } from "./settings/settings.module";
@@ -49,6 +50,7 @@ import { HealthController } from "./health.controller";
     PricingModule,
     SalesQuotesModule,
     PurchasesModule,
+    ReturnsModule,
     OrdersModule,
     UsersModule,
     StoresModule,

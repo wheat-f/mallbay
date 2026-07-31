@@ -148,7 +148,7 @@ test("inventory matching page treats outbound products as completed instead of s
   assert.match(matchingPageSource, /库存匹配、锁库和出库已完成。/);
   assert.match(matchingPageSource, /row\.pendingQuantity/);
   assert.match(matchingPageSource, /row\.outboundQuantity/);
-  assert.match(matchingPageSource, /disabled=\{!canManageInventory \|\| !activeSelectedOrderId \|\| !hasPendingProducts\}/);
+  assert.match(matchingPageSource, /disabled=\{!canManageInventory \|\| !hasPendingProducts \|\| isAllocating\}/);
   assert.doesNotMatch(matchingPageSource, /待选产品/);
 });
 

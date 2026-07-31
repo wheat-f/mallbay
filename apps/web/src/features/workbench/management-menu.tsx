@@ -31,6 +31,13 @@ export type ManagementMenuItem = {
   auditorOnly?: boolean;
 };
 
+export type ManagementMenuGroup = {
+  key: string;
+  label: string;
+  icon: ReactNode;
+  items: ManagementMenuItem[];
+};
+
 const storePositions: StorePosition[] = [
   "MANAGER",
   "SALES",
@@ -77,6 +84,21 @@ export const managementMenuItems: ManagementMenuItem[] = [
   { key: "settings", label: "系统设置", href: "/settings", icon: <SettingOutlined />, positions: ["MANAGER"], auditorOnly: true }
 ];
 
+const managementMenuGroupDefinitions: Array<{ key: string; label: string; icon: ReactNode; itemKeys: string[] }> = [
+  { key: "customer-sales", label: "客户与销售", icon: <TeamOutlined />, itemKeys: ["customers", "orders", "sales-quotes"] },
+  { key: "product-pricing", label: "产品与定价", icon: <ShopOutlined />, itemKeys: ["products", "pricing", "construction-charge-standards", "construction-role-costs"] },
+  {
+    key: "construction",
+    label: "施工履约",
+    icon: <ToolOutlined />,
+    itemKeys: ["construction-tasks", "construction", "cross-store-construction", "construction-schedules", "construction-leaves", "construction-leave-approvals", "construction-materials", "construction-profile", "after-sales-tasks", "construction-cost-settlements"]
+  },
+  { key: "inventory-purchase", label: "库存与采购", icon: <AppstoreOutlined />, itemKeys: ["inventory", "purchases"] },
+  { key: "warranty-after-sales", label: "质保与售后", icon: <FileProtectOutlined />, itemKeys: ["warranties", "after-sales"] },
+  { key: "finance-business", label: "财务与经营", icon: <WalletOutlined />, itemKeys: ["finance-expenses", "finance", "invoices", "rebates", "reports"] },
+  { key: "people-system", label: "人员与系统", icon: <SettingOutlined />, itemKeys: ["members", "admin", "settings"] }
+];
+
 export function getManagementMenuItems(input: {
   position?: StorePosition | null;
   isAuditor?: boolean | null;
@@ -93,6 +115,22 @@ export function getManagementMenuItems(input: {
       ...item,
       href: item.key === "workbench" && storeId ? `/workbench/${storeId}` : item.href
     }));
+}
+
+export function getManagementMenuGroups(input: {
+  position?: StorePosition | null;
+  isAuditor?: boolean | null;
+  storeId?: string | null;
+}) {
+  const items = getManagementMenuItems(input);
+  return managementMenuGroupDefinitions
+    .map((group) => ({
+      ...group,
+      items: group.itemKeys
+        .map((key) => items.find((item) => item.key === key))
+        .filter((item): item is ManagementMenuItem => Boolean(item))
+    }))
+    .filter((group) => group.items.length > 0);
 }
 
 export function getActiveManagementMenuKey(pathname: string) {
@@ -130,5 +168,3 @@ export function getActiveManagementMenuKey(pathname: string) {
   if (pathname.startsWith("/profile")) return "profile";
   return "workbench";
 }
-
-

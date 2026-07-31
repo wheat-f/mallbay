@@ -2,15 +2,24 @@
 
 ## 整体流程
 
-```
-git push test
-  → 构建镜像，推送到阿里云 ACR
-  → 自动部署到 Test ECS
+当前 `.github/workflows/deploy.yml` 的触发规则：
 
-git push main（或 test → main PR 合并）
-  → 构建镜像，推送到阿里云 ACR
-  → 自动部署到 Production ECS
 ```
+Pull Request（任意目标分支）
+  → Verify Store Flow（API 测试、流程测试、Web 测试、类型检查、生产构建）
+
+push main 或 push codex/**
+  → Verify Store Flow
+  → 构建并推送 API 镜像
+  → 构建并推送 Web 测试镜像（非 main）
+  → 部署 Test（非 main）
+
+push main
+  → 构建并推送 Web Production 镜像
+  → 部署 Production
+```
+
+`workflow_dispatch` 可手动触发工作流。Test/Production 的部署条件和 Secrets 以 `.github/workflows/deploy.yml` 为准，不再以旧的 `test` 分支说明为准。
 
 同一套 `docker-compose.prod.yml` 同时服务两个环境，差异完全通过各自 ECS 上的 `.env` 文件承载。
 
@@ -173,11 +182,11 @@ docker compose -f docker-compose.prod.yml logs -f api
 
 ```bash
 # 1. 开发完成，推到 test 分支 → 自动部署 Test
-git push origin test
+git push origin codex/<branch>
 
 # 2. 在 Test 验收通过后，合并到 main → 自动部署 Production
 git checkout main
-git merge test
+git merge codex/<branch>
 git push origin main
 ```
 

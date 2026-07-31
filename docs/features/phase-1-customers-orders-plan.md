@@ -1521,7 +1521,7 @@ git commit -m "feat: add phase one management pages"
 在 `docs/README.md` 增加以下入口：
 
 ```md
-- [features/phase-1-customers-orders.md](./features/phase-1-customers-orders.md)：Phase 1 客户、订单、产品和收款功能说明。
+- [features/phase-1-customers-orders.md](./phase-1-customers-orders.md)：Phase 1 客户、订单、产品和收款功能说明。
 ```
 
 - [x] **步骤 3：运行完整验证**

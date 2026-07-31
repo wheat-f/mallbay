@@ -507,9 +507,9 @@ Create `docs/features/phase-6-mini-program-requirements-coverage.md` with:
 - 文档状态：待真机验收
 - 适用范围：`apps/mini` 师傅端任务、施工拍照、离线队列、请假、排班、物料、售后任务、微信登录
 - 来源依据：
-  - [漆面保护膜施工管理系统建设方案](./paint-protection-film-system-plan.md)
-  - [Phase 6 微信小程序与离线功能说明](./phase-6-mini-offline.md)
-  - [Phase 6 微信小程序联调与发布实施计划](./phase-6-mini-program-integration-plan.md)
+  - [漆面保护膜施工管理系统建设方案](../../features/paint-protection-film-system-plan.md)
+  - [Phase 6 微信小程序与离线功能说明](../../features/phase-6-mini-offline.md)
+  - [Phase 6 微信小程序联调与发布实施计划](../../features/phase-6-mini-program-integration-plan.md)
 
 ## 覆盖结论
 
@@ -556,7 +556,7 @@ Create `docs/features/phase-6-mini-program-requirements-coverage.md` with:
 Add this line to `docs/README.md` near the other Phase 6 entries:
 
 ```markdown
-- [features/phase-6-mini-program-requirements-coverage.md](./features/phase-6-mini-program-requirements-coverage.md)：Phase 6 微信小程序需求覆盖矩阵与验收记录。
+- [features/phase-6-mini-program-requirements-coverage.md](../../features/phase-6-mini-program-requirements-coverage.md)：Phase 6 微信小程序需求覆盖矩阵与验收记录。
 ```
 
 - [ ] **Step 3: Update mini README capability wording**
@@ -686,4 +686,3 @@ Two execution options:
 
 1. **Subagent-Driven (recommended)** - Dispatch a fresh subagent per task, review between tasks, fast iteration.
 2. **Inline Execution** - Execute tasks in this session using executing-plans, batch execution with checkpoints.
-

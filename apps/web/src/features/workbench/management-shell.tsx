@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Avatar, Dropdown, Input, Space, Tag, Typography } from "antd";
 import { HomeOutlined, LogoutOutlined, SearchOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
@@ -9,7 +9,7 @@ import { authApi } from "../../lib/api";
 import { NotificationBell } from "../../components/NotificationBell";
 import { canAccessSystemSettings } from "../settings/access";
 import { useAuthStore } from "../../stores/auth-store";
-import { getActiveManagementMenuKey, getManagementMenuItems } from "./management-menu";
+import { getActiveManagementMenuKey, getManagementMenuGroups, getManagementMenuItems } from "./management-menu";
 
 const POSITION_LABEL: Record<string, string> = {
   MANAGER: "店长",
@@ -108,6 +108,42 @@ export function ManagementShell({ children }: { children: ReactNode }) {
     isAuditor: user?.isAuditor,
     storeId: storeMember?.store.id
   }).filter((item) => item.key !== "settings" || canAccessSettings);
+  const menuGroups = getManagementMenuGroups({
+    position: storeMember?.position,
+    isAuditor: user?.isAuditor,
+    storeId: storeMember?.store.id
+  })
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.key !== "settings" || canAccessSettings)
+    }))
+    .filter((group) => group.items.length > 0);
+  const activeGroupKey = menuGroups.find((group) => group.items.some((item) => item.key === activeKey))?.key;
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const storedKeys = JSON.parse(window.localStorage.getItem("mallbay.management-menu.expanded-groups") ?? "[]") as string[];
+      setExpandedGroupKeys((current) => Array.from(new Set([...current, ...storedKeys])));
+    } catch {
+      // Ignore malformed local navigation state and use the current route as the source of truth.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeGroupKey) return;
+    setExpandedGroupKeys((current) => current.includes(activeGroupKey) ? current : [...current, activeGroupKey]);
+  }, [activeGroupKey]);
+
+  useEffect(() => {
+    window.localStorage.setItem("mallbay.management-menu.expanded-groups", JSON.stringify(expandedGroupKeys));
+  }, [expandedGroupKeys]);
+
+  const toggleGroup = (groupKey: string) => {
+    setExpandedGroupKeys((current) => current.includes(groupKey)
+      ? current.filter((key) => key !== groupKey)
+      : [...current, groupKey]);
+  };
   const mobileMenuItems = (() => {
     const primaryItems = menuItems.slice(0, 4);
     const activeItem = menuItems.find((item) => item.key === activeKey);
@@ -161,7 +197,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
         </button>
 
         <nav className="management-nav" aria-label="主导航">
-          {menuItems.map((item) => {
+          {menuItems.filter((item) => item.key === "workbench").map((item) => {
             const active = activeKey === item.key;
             return (
               <button
@@ -173,6 +209,43 @@ export function ManagementShell({ children }: { children: ReactNode }) {
                 <span className="management-nav-icon">{item.icon}</span>
                 <span className="management-nav-label">{item.label}</span>
               </button>
+            );
+          })}
+          {menuGroups.map((group) => {
+            const expanded = expandedGroupKeys.includes(group.key);
+            const active = group.items.some((item) => item.key === activeKey);
+            return (
+              <div key={group.key} className={`management-nav-group${active ? " management-nav-group-active" : ""}`}>
+                <button
+                  type="button"
+                  className="management-nav-group-toggle"
+                  aria-expanded={expanded}
+                  aria-controls={`management-nav-group-${group.key}`}
+                  onClick={() => toggleGroup(group.key)}
+                >
+                  <span className="management-nav-icon">{group.icon}</span>
+                  <span className="management-nav-label">{group.label}</span>
+                  <span className="management-nav-caret" aria-hidden="true">{expanded ? "⌃" : "⌄"}</span>
+                </button>
+                {expanded ? (
+                  <div id={`management-nav-group-${group.key}`} className="management-nav-submenu">
+                    {group.items.map((item) => {
+                      const itemActive = activeKey === item.key;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className={`management-nav-item management-nav-subitem${itemActive ? " management-nav-item-active" : ""}`}
+                          onClick={() => router.push(item.href)}
+                        >
+                          <span className="management-nav-icon">{item.icon}</span>
+                          <span className="management-nav-label">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </nav>

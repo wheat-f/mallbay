@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { getActiveManagementMenuKey, getManagementMenuItems } from "./management-menu";
+import { getActiveManagementMenuKey, getManagementMenuGroups, getManagementMenuItems } from "./management-menu";
 
 test("management menu maps manager role to full prototype sidebar", () => {
   const items = getManagementMenuItems({ position: "MANAGER", storeId: "store-1" });
@@ -112,4 +112,24 @@ test("active management menu key follows route groups", () => {
   assert.equal(getActiveManagementMenuKey("/members"), "members");
   assert.equal(getActiveManagementMenuKey("/settings"), "settings");
   assert.equal(getActiveManagementMenuKey("/profile"), "profile");
+});
+test("management menu groups visible items by business domain", () => {
+  const groups = getManagementMenuGroups({ position: "MANAGER", storeId: "store-1" });
+  assert.deepEqual(groups.map((group) => group.label), [
+    "客户与销售",
+    "产品与定价",
+    "施工履约",
+    "库存与采购",
+    "质保与售后",
+    "财务与经营",
+    "人员与系统"
+  ]);
+  assert.deepEqual(groups.find((group) => group.key === "customer-sales")?.items.map((item) => item.label), ["客户管理", "销售订单", "报价审批"]);
+  assert.equal(groups.some((group) => group.items.length === 0), false);
+});
+
+test("management menu groups keep role filtering and hide empty domains", () => {
+  const groups = getManagementMenuGroups({ position: "SALES", storeId: "store-1" });
+  assert.deepEqual(groups.map((group) => group.label), ["客户与销售", "财务与经营"]);
+  assert.deepEqual(groups.find((group) => group.key === "finance-business")?.items.map((item) => item.label), ["费用申请", "报表分析"]);
 });

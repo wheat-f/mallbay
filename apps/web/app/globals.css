@@ -490,6 +490,59 @@ body {
   white-space: nowrap;
 }
 
+.management-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.management-nav-group-toggle {
+  display: flex;
+  min-height: 44px;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  border-radius: var(--mb-radius-md);
+  background: transparent;
+  color: rgb(209 228 255 / 0.74);
+  padding: 0 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.management-nav-group-toggle:hover,
+.management-nav-group-active .management-nav-group-toggle {
+  background: rgb(230 240 248 / 0.12);
+  color: var(--mb-on-primary);
+}
+
+.management-nav-group-active .management-nav-group-toggle {
+  color: var(--mb-primary-fixed);
+}
+
+.management-nav-caret {
+  margin-left: auto;
+  color: currentColor;
+  font-size: 12px;
+}
+
+.management-nav-submenu {
+  display: grid;
+  gap: 2px;
+  padding: 0 0 5px 12px;
+}
+
+.management-nav-subitem {
+  min-height: 38px;
+  padding: 0 12px 0 16px;
+  font-size: 13px;
+}
+
+.management-nav-subitem .management-nav-icon {
+  font-size: 16px;
+}
 .management-user-card {
   display: flex;
   align-items: center;

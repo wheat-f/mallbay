@@ -137,3 +137,23 @@ MUST：
 - Value Object 表达已校验的领域概念，例如 `StorePhotoSet`。
 - API 响应必须使用显式契约，放在 `packages/shared` 或本地 response mapper 中。
 - Prisma model 保持为持久化实体。
+## 当前代码实现映射
+
+以下模块清单以 `apps/api/src/` 当前目录为准，新增模块应继续遵循 feature-first 组织：
+
+| 领域 | 代码目录 | 主要职责 |
+|---|---|---|
+| 身份与门店 | `auth`、`users`、`stores`、`members` | 登录、会话、门店生命周期、成员与岗位 |
+| 客户与订单 | `customers`、`products`、`orders`、`sales-quotes` | 客户车辆、产品、报价、订单、收款和订单审计 |
+| 履约 | `inventory`、`purchases`、`construction` | 批次库存、采购、人工锁库/出库、派工、施工、质检和返工 |
+| 交付与售后 | `warranties`、`after-sales`、`commissions` | 质保卡、最终交付、售后工单、施工和售后提成 |
+| 经营财务 | `finance`、`invoices`、`rebates`、`reports` | 费用、报销、发票、返利、报表和经营汇总 |
+| 平台能力 | `notifications`、`settings`、`prisma`、`common` | 站内待办、系统设置、数据库和公共能力 |
+
+订单最终交付的领域规则集中在：
+
+- `apps/api/src/orders/domain/order-workflow.ts`：根据现有订单状态、施工、质检、质保和收款数据派生当前阶段及能力。
+- `apps/api/src/orders/domain/order-delivery.ts`：在事务内完成质保生成/激活、订单完成、审计和待办关闭。
+- `apps/api/src/construction/construction.service.ts`：施工完工、质检、返工记录和复检入口。
+
+架构文档不得把施工记录 `COMPLETED` 描述为订单已完成；订单只有在尾款结清并完成最终交付事务后才进入 `OrderStatus.COMPLETED`。

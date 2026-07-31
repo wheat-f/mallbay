@@ -1,5 +1,5 @@
 @startuml
-title MallBay 门店运营端到端业务流程
+title MallBay 当前订单端到端业务流程
 
 skinparam shadowing false
 skinparam backgroundColor #FFFFFF
@@ -19,135 +19,93 @@ skinparam note {
 
 start
 
-partition "审核员 / 平台" {
-  :创建门店草稿;
-  :邀请或指定店长;
-}
-
-partition "店长 / 门店管理" {
-  :完善门店资料;
-  :提交门店审核;
-}
-
-partition "审核员 / 平台" {
-  if (门店资料审核通过?) then (是)
-    :发布门店;
-  else (否)
-    :驳回并记录原因;
-    stop
-  endif
-}
-
-partition "店长 / 门店管理" {
-  :配置成员与岗位权限;
-  :维护产品、施工产能、仓库、供应商等主数据;
-}
-
 partition "销售 / 客户订单" {
-  :新建或维护客户档案;
-  :录入客户车辆;
-  :创建销售订单;
-  :选择产品和施工方案;
-  :记录订金、全款或尾款;
+  :选择或创建客户与车辆;
+  :创建订单（允许零定金）;
+  :记录产品、施工方案和应收金额;
 }
 
 partition "库存 / 采购" {
-  :订单库存匹配;
+  :查看订单需求和可用批次;
   if (库存是否充足?) then (充足)
-    :锁定库存批次;
+    :人工选择批次和数量锁库;
   else (缺货)
     :生成采购需求;
-    :采购需求列表处理;
-    :从采购需求创建采购订单;
-    :按供应商拆分数量和预计到货日;
-    :采购订单审批;
-    if (供应商到货是否可验收?) then (验收)
-      :选择验收物料、批次和存放仓库;
-      :验收入库;
-      :写入 InventoryBatch;
-      :写入 InventoryMovement(PURCHASE_IN);
-    else (拒收)
-      :填写拒收原因;
-      :取消采购订单并写审计日志;
-      stop
-    endif
+    :创建并审批采购订单;
+    :采购到货;
+    :采购/店长人工确认入库;
     :重新进行库存匹配;
-    :锁定库存批次;
+    :人工选择批次和数量锁库;
   endif
+  :出库;
 }
 
 partition "施工 / 车间" {
-  :进入施工派工;
-  :读取施工产能与人员排班;
-  if (可派工?) then (是)
-    :分配施工人员;
-    :施工人员接单;
-    :上传施工前照片;
-    :记录施工过程;
-    :上传施工后照片;
-    :质检或责任判定;
-  else (否)
-    :调整预约或等待产能释放;
-    stop
+  :派工;
+  :施工人员领取物料;
+  :上传施工前、施工中、施工后照片;
+  :开工并记录施工过程;
+  :施工完成;
+}
+
+partition "质检 / 返工" {
+  if (质检是否通过?) then (通过)
+    :进入待交付阶段;
+  else (不通过)
+    :进入独立返工状态;
+    :复用施工记录快照和审计事件记录返工;
+    :返工后重新质检;
+    if (复检通过?) then (通过)
+      :进入待交付阶段;
+    else (不通过)
+      :继续返工并保留历史记录;
+    endif
   endif
 }
 
-partition "库存 / 采购" {
-  :施工使用库存出库;
-  :更新库存批次可用量;
-  :写入 InventoryMovement(ORDER_OUT);
-}
-
-partition "销售 / 客户订单" {
-  :确认订单完工;
-  if (尾款是否已结清?) then (是)
-    :订单进入完成状态;
+partition "质保 / 收款" {
+  :质检通过后允许生成质保卡;
+  if (尾款是否结清?) then (是)
+    :系统自动执行最终交付事务;
+    :无质保卡则自动创建并同时生效;
+    :已有待生效质保卡改为 ACTIVE;
+    :质保起始日写为最终交付日;
+    :订单标记 COMPLETED;
+    :关闭尾款待办并写入审计;
   else (否)
-    :提醒收款;
-    :记录尾款;
-    :订单进入完成状态;
+    :生成 PENDING_ACTIVATION 待生效质保卡;
+    :生成销售/财务站内尾款待办;
+    :等待尾款结清;
   endif
 }
 
 partition "客服 / 质保售后" {
-  :生成或录入质保单;
   :客户后续反馈;
   if (是否产生售后?) then (是)
     :创建售后单;
-    :派单处理;
-    :上传问题照片和施工后对比;
-    :责任判定;
-    :记录处理结果;
-    :售后关闭;
+    :派单、上传问题证据、责任判定和处理;
+    :关闭售后单;
   else (否)
-    :保留质保档案;
+    :保留质保和施工追溯;
   endif
 }
 
 partition "财务 / 经营分析" {
-  :处理发票申请;
-  :处理返利申请;
-  :记录费用和报销;
-  :结算施工/销售提成;
-  :生成报表分析;
-}
-
-partition "店长 / 门店管理" {
-  :查看工作台、报表和异常提醒;
-  :复盘客户、订单、库存、采购、施工、售后和财务数据;
+  :处理收款、发票、返利、费用和报销;
+  :生成经营报表和提成数据;
 }
 
 stop
 
 legend right
   |= 关键数据落点 |
-  | 客户 | Customer / CustomerVehicle |
   | 订单 | Order / OrderItem / OrderPayment |
-  | 库存 | Warehouse / InventoryBatch / InventoryMovement |
+  | 库存 | InventoryBatch / InventoryAllocation / InventoryMovement |
   | 采购 | PurchaseRequirement / PurchaseOrder |
-  | 施工 | ConstructionRecord / ConstructionAssignment |
-  | 质保售后 | Warranty / AfterSale |
-  | 财务 | Invoice / CustomerRebate / PaymentRecord |
+  | 施工 | ConstructionRecord / ConstructionAssignment / AuditEvent |
+  | 质保 | Warranty（PENDING_ACTIVATION / ACTIVE / EXPIRED / VOIDED） |
+  | 待办 | Notification（todoKey / handledAt） |
+  | 售后财务 | AfterSale / Invoice / CustomerRebate / PaymentRecord |
 endlegend
 
 @enduml

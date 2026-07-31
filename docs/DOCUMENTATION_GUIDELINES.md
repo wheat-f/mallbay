@@ -16,6 +16,7 @@ MUST：
 ```text
 docs/
   README.md                       文档索引
+  current-system-overview.md     当前代码、流程、环境和验证基线
   DOCUMENTATION_GUIDELINES.md     文档规范
   deploy-setup.md                 当前部署配置说明
   governance/                     工程治理、架构和协作规范
@@ -88,7 +89,7 @@ MUST：
 禁止：
 
 ```md
-[API 规范](API.md)
+[API 规范](./governance/API_GUIDELINES.md)
 ```
 
 ## 维护规范

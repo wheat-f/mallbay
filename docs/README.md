@@ -1,6 +1,13 @@
 # MallBay 文档索引
 
 本文档是 MallBay 项目文档入口。新增文档前请先阅读 [DOCUMENTATION_GUIDELINES.md](./DOCUMENTATION_GUIDELINES.md)。
+> 当前实现以 [current-system-overview.md](./current-system-overview.md) 为准。`phase-*`、`*-plan`、`*-review` 和 `qa/release-evidence` 文档主要保留历史方案、实施记录或发布证据，不代表全部当前行为。
+
+## 当前实现与研发入口
+
+- [current-system-overview.md](./current-system-overview.md)：当前代码、业务流程、环境、迁移和验证命令的权威概览。
+- [features/order-end-to-end-flow-optimization-prd-final.md](./features/order-end-to-end-flow-optimization-prd-final.md)：订单全流程优化的最终 PRD和已确认业务规则。
+- [qa/end-to-end-flow-checklist.md](./qa/end-to-end-flow-checklist.md)：当前端到端验收清单。
 
 ## 文档目录
 

@@ -1,6 +1,6 @@
 # MallBay PlantUML Diagrams
 
-本目录保存 MallBay 项目的 PlantUML 源文件，用于架构沟通、需求评审和代码变更说明。
+本目录保存 MallBay 项目的 PlantUML 源文件，用于架构沟通、需求评审和代码变更说明。业务流程图以当前代码和 [current-system-overview.md](../current-system-overview.md) 为准。
 
 ## 图清单
 

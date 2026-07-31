@@ -849,6 +849,7 @@ enum PurchaseOrderStatus {
 }
 
 enum WarrantyStatus {
+  PENDING_ACTIVATION
   ACTIVE
   EXPIRED
   VOIDED
@@ -1794,6 +1795,7 @@ model OrderPayment {
   createdById       String
   createdAt         DateTime    @default(now())
   customerReceiptId String?
+  idempotencyKey    String?
 
   order               Order                               @relation(fields: [orderId], references: [id], onDelete: Cascade)
   account             PaymentAccount                      @relation(fields: [accountId], references: [id])
@@ -1804,6 +1806,7 @@ model OrderPayment {
   @@index([orderId])
   @@index([accountId])
   @@index([customerReceiptId])
+  @@unique([orderId, idempotencyKey])
 }
 
 model CustomerStatement {
@@ -1994,6 +1997,9 @@ model ConstructionRecord {
   qualityNote        String?
   qualityCheckedById String?
   qualityCheckedAt   DateTime?
+  reworkCount        Int                    @default(0)
+  currentReworkReason String?
+  currentResponsibilityType String?
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 
@@ -2150,8 +2156,8 @@ model LeaveRequest {
   id           String             @id @default(cuid())
   storeId      String
   workerId     String
-  startDate    DateTime           @db.Date
-  endDate      DateTime           @db.Date
+  startDate   DateTime        @db.Date
+  endDate     DateTime        @db.Date
   leaveType    String?
   reason       String?
   status       LeaveRequestStatus @default(PENDING)
@@ -2530,8 +2536,8 @@ model Warranty {
   warrantyNo  String         @unique
   status      WarrantyStatus @default(ACTIVE)
   scope       String
-  startDate   DateTime       @db.Date
-  endDate     DateTime       @db.Date
+  startDate   DateTime?      @db.Date
+  endDate     DateTime?      @db.Date
   createdById String
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
@@ -3035,6 +3041,7 @@ enum NotificationType {
   CROSS_STORE_TASK_SUBMITTED // 执行门店已提交来源门店验收
   CROSS_STORE_TASK_COMPLETED // 来源门店已完成验收
   CROSS_STORE_TASK_CANCELLED // 协作任务已取消
+  ORDER_BALANCE_DUE // 订单尾款待收
 }
 
 model AuthSession {
@@ -3059,6 +3066,8 @@ model Notification {
   type    NotificationType
   payload Json // 各类型自定义的附加数据，例如 storeId、storeName、reviewNote 等
   isRead  Boolean          @default(false)
+  todoKey   String?   @unique
+  handledAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

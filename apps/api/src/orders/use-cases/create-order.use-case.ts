@@ -384,7 +384,8 @@ export class CreateOrderUseCase {
             paymentType: dto.deposit.paymentType,
             amountCents: dto.deposit.amountCents,
             paidAt: new Date(dto.deposit.paidAt),
-            createdById: user.id
+            createdById: user.id,
+            idempotencyKey: "INITIAL_DEPOSIT"
           }
         });
       }

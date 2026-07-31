@@ -348,7 +348,7 @@ test("OrdersService list includes vehicle amount and sales person summaries for 
     customer: { select: { id: true, name: true, companyName: true, contactPerson: true } },
     vehicle: { select: { id: true, carPlate: true, carModel: true, carColor: true } },
     salesPerson: { select: { id: true, username: true, nickname: true } },
-    constructionRecord: { select: { status: true } },
+    constructionRecord: { select: { status: true, qualityResult: true } },
     amount: true
   });
 });

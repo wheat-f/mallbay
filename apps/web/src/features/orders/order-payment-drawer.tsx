@@ -64,7 +64,8 @@ export function OrderPaymentDrawer({ open, order, storeId, onClose, onSuccess }:
         accountId: values.accountId,
         paymentType: values.paymentType,
         amountCents: yuanToCents(values.amountYuan),
-        paidAt: values.paidAt.toISOString()
+        paidAt: values.paidAt.toISOString(),
+        idempotencyKey: crypto.randomUUID()
       }),
     onSuccess: async () => {
       message.success("收款已记录");

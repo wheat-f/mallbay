@@ -30,6 +30,18 @@ export class NotificationsController {
     );
   }
 
+@Get("todos")
+  todos(
+    @Req() req: AuthRequest,
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string
+  ) {
+    return this.notificationsService.listTodos(
+      req.user.id,
+      page ? Number(page) : 1,
+      pageSize ? Number(pageSize) : 20
+    );
+  }
   @Get("unread-count")
   unreadCount(@Req() req: AuthRequest) {
     return this.notificationsService.unreadCount(req.user.id);

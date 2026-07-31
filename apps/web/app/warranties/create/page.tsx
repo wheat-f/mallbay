@@ -14,6 +14,7 @@ type WarrantyOrderOption = {
   id: string;
   orderNo?: string | null;
   status?: string | null;
+  constructionRecord?: { qualityResult?: string | null } | null;
   appointmentDate?: string | null;
   customer?: {
     name?: string | null;
@@ -67,7 +68,7 @@ function CreateWarrantyContent() {
 
   const completedOrdersQuery = useQuery({
     queryKey: ["warranties", "completed-orders", storeId],
-    queryFn: () => orderApi.list({ storeId: storeId!, status: "COMPLETED", page: 1, pageSize: 100 }),
+    queryFn: () => orderApi.list({ storeId: storeId!, status: "IN_CONSTRUCTION", page: 1, pageSize: 100 }),
     enabled: Boolean(storeId)
   });
   const orderDetailQuery = useQuery({
@@ -76,7 +77,7 @@ function CreateWarrantyContent() {
     enabled: Boolean(selectedOrderId)
   });
   const completedOrders = useMemo(
-    () => (completedOrdersQuery.data?.items ?? []) as WarrantyOrderOption[],
+    () => (completedOrdersQuery.data?.items ?? []).filter((order) => (order as WarrantyOrderOption).constructionRecord?.qualityResult === "PASS") as WarrantyOrderOption[],
     [completedOrdersQuery.data?.items]
   );
   const completedOrderOptions = completedOrders.map((order) => ({
@@ -88,20 +89,12 @@ function CreateWarrantyContent() {
     | undefined;
   const firstProduct = selectedOrder?.items?.[0]?.product;
   const warrantyYears = firstProduct?.warrantyYears ?? 5;
-  const startDate = Form.useWatch("startDate", form);
 
   useEffect(() => {
     if (initialOrderId && completedOrders.some((order) => order.id === initialOrderId)) {
       form.setFieldValue("orderId", initialOrderId);
     }
   }, [completedOrders, form, initialOrderId]);
-
-  useEffect(() => {
-    if (!form.getFieldValue("startDate")) {
-      const fallbackDate = selectedOrder?.appointmentDate?.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
-      form.setFieldValue("startDate", fallbackDate ?? new Date().toISOString().slice(0, 10));
-    }
-  }, [form, selectedOrder?.appointmentDate]);
 
   const createWarranty = useMutation({
     mutationFn: (values: CreateWarrantyPayload) => warrantiesApi.createFromOrder(values),
@@ -164,16 +157,14 @@ function CreateWarrantyContent() {
                     value={firstProduct ? [firstProduct.brand, firstProduct.name, firstProduct.model].filter(Boolean).join(" / ") : "依据订单产品自动匹配"}
                   />
                   <ReadonlyField label="质保年限" value={`${warrantyYears} 年`} />
-                  <ReadonlyField label="质保到期日期 (自动计算)" value={startDate ? addYears(startDate, warrantyYears) : "按起始日期自动计算"} />
+                  <ReadonlyField label="质保生效与到期" value="尾款结清后按最终交付日生效，并按质保年限计算到期日" />
                 </div>
               </div>
 
               <Form.Item name="scope" label="质保范围 (依据厂家标准)" rules={[{ required: true, message: "请输入质保范围" }]}>
                 <Input placeholder="黄变 / 开裂 / 脱胶 / 起泡" />
               </Form.Item>
-              <Form.Item name="startDate" label="起始日期">
-                <Input placeholder="默认使用施工完工日期或当天日期" />
-              </Form.Item>
+
               <div className="finance-form-actions">
                 <Button onClick={() => router.push("/warranties")}>取消</Button>
                 <Button type="primary" htmlType="submit" icon={<FileProtectOutlined />} loading={createWarranty.isPending}>
@@ -200,7 +191,7 @@ function CreateWarrantyContent() {
                 { label: "施工类型", value: selectedOrder?.constructionType ?? "-" },
                 { label: "预约时间", value: selectedOrder ? formatAppointment(selectedOrder) : "-" },
                 { label: "质保范围", value: form.getFieldValue("scope") ?? "-" },
-                { label: "起始日期", value: startDate ?? "-" }
+                { label: "生效日期", value: "尾款结清后的最终交付日" }
               ].map((row) => (
                 <div key={row.label}>
                   <span>{row.label}</span>

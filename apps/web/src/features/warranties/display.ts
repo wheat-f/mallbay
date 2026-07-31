@@ -1,6 +1,7 @@
 import type { BusinessOrderSummary } from "@mallbay/shared";
 
 export const WARRANTY_STATUS_LABELS: Record<string, string> = {
+  PENDING_ACTIVATION: "待生效",
   ACTIVE: "生效中",
   EXPIRED: "已过期",
   VOIDED: "已作废"

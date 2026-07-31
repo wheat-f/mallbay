@@ -39,7 +39,7 @@ export class CreateOrderDepositDto {
 
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   amountCents!: number;
 
   @IsEnum(PaymentType)

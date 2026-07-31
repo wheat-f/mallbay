@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { OrderStatus, Prisma, StorePosition, WarrantyStatus } from "@prisma/client";
+import { Prisma, QualityCheckResult, StorePosition, WarrantyStatus } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import type { CreateWarrantyDto, ListWarrantiesDto } from "./dto/warranty.dto";
@@ -27,22 +27,15 @@ export class WarrantiesService {
       if (!PermissionPolicy.canCreateWarranty(actor, order.storeId)) {
         throw new ForbiddenException("无权限");
       }
-      if (order.status !== OrderStatus.COMPLETED && order.status !== OrderStatus.WARRANTIED) {
-        throw new BadRequestException("只有已完工订单可以生成质保");
+      if (order.constructionRecord?.qualityResult !== QualityCheckResult.PASS) {
+        throw new BadRequestException("只有质检通过订单可以生成质保");
       }
-      if (order.status === OrderStatus.WARRANTIED) {
-        const existing = await tx.warranty.findUnique({
-          where: { orderId: order.id },
-          include: { photos: true }
-        });
-        if (existing) return existing;
-        throw new BadRequestException("订单状态已是质保中，但质保卡不存在，请先修复订单数据");
-      }
+      const existing = await tx.warranty.findUnique({
+        where: { orderId: order.id },
+        include: { photos: true }
+      });
+      if (existing) return existing;
 
-      const startDate = normalizeDate(dto.startDate ?? new Date().toISOString());
-      const endDate = dto.endDate
-        ? normalizeDate(dto.endDate)
-        : addYears(startDate, Math.max(1, ...order.items.map((item) => item.product.warrantyYears ?? 1)));
       const warranty = await tx.warranty.create({
         data: {
           storeId: order.storeId,
@@ -50,10 +43,10 @@ export class WarrantiesService {
           customerId: order.customerId,
           vehicleId: order.vehicleId,
           warrantyNo: buildWarrantyNo(),
-          status: WarrantyStatus.ACTIVE,
+          status: WarrantyStatus.PENDING_ACTIVATION,
           scope: dto.scope,
-          startDate,
-          endDate,
+          startDate: null,
+          endDate: null,
           createdById: actor.id,
           photos: {
             create: (order.constructionRecord?.photos ?? []).map((photo) => ({
@@ -70,10 +63,6 @@ export class WarrantiesService {
         storeId: order.storeId,
         targetId: warranty.id,
         metadata: { orderId: order.id, warrantyNo: warranty.warrantyNo }
-      });
-      await tx.order.update({
-        where: { id: order.id },
-        data: { status: OrderStatus.WARRANTIED }
       });
       return warranty;
     });

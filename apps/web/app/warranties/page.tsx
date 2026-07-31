@@ -26,6 +26,7 @@ type OrderWorkRow = {
   id: string;
   orderNo?: string | null;
   status?: OrderStatus | null;
+  constructionRecord?: { qualityResult?: string | null } | null;
   appointmentDate?: string | null;
   appointmentTimeSlot?: string | null;
   customer?: {
@@ -44,10 +45,11 @@ type OrderWorkRow = {
   } | null;
 };
 
-type WarrantyStatusFilter = "ALL" | WarrantyStatus;
+type WarrantyStatusFilter = "ALL" | WarrantyStatus | "PENDING_ACTIVATION";
 
 const WARRANTY_STATUS_OPTIONS: Array<{ value: WarrantyStatusFilter; label: string }> = [
   { value: "ALL", label: "全部质保" },
+  { value: "PENDING_ACTIVATION", label: "待生效" },
   { value: "ACTIVE", label: "生效中" },
   { value: "EXPIRED", label: "已过期" },
   { value: "VOIDED", label: "已作废" }
@@ -68,7 +70,7 @@ export default function WarrantiesPage() {
   });
   const completedOrdersQuery = useQuery({
     queryKey: ["warranties", "completed-orders", storeId],
-    queryFn: () => orderApi.list({ storeId: storeId!, status: "COMPLETED", page: 1, pageSize: 100 }),
+    queryFn: () => orderApi.list({ storeId: storeId!, status: "IN_CONSTRUCTION", page: 1, pageSize: 100 }),
     enabled: Boolean(storeId)
   });
 
@@ -79,7 +81,7 @@ export default function WarrantiesPage() {
     return map;
   }, [warrantyRows]);
   const completedOrderRows = useMemo(
-    () => (completedOrdersQuery.data?.items ?? []) as OrderWorkRow[],
+    () => (completedOrdersQuery.data?.items ?? []).filter((order) => (order as OrderWorkRow).constructionRecord?.qualityResult === "PASS") as OrderWorkRow[],
     [completedOrdersQuery.data?.items]
   );
   const pendingGenerationRows = useMemo(

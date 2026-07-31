@@ -233,19 +233,6 @@ function InventoryMatchingContent() {
     onError: (error: Error) => message.error(error.message)
   });
 
-  const lockOrder = useMutation({
-    mutationFn: (orderId: string) => inventoryApi.lockOrder(orderId),
-    onSuccess: async () => {
-      message.success("订单库存匹配完成");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["inventory-order-match", activeSelectedOrderId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-batches", storeId] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-movements", storeId] })
-      ]);
-    },
-    onError: (error: Error) => message.error(error.message)
-  });
-
   const createOrderAllocations = useMutation({
     mutationFn: (values: AllocationFormValues) => {
       if (!activeSelectedOrderId) throw new Error("请先选择待匹配订单");
@@ -652,13 +639,7 @@ function InventoryMatchingContent() {
                       >
                         确认锁定
                       </Button>
-                      <Button
-                        disabled={!canManageInventory || !activeSelectedOrderId || !hasPendingProducts}
-                        loading={lockOrder.isPending}
-                        onClick={() => activeSelectedOrderId && lockOrder.mutate(activeSelectedOrderId)}
-                      >
-                        自动匹配库存
-                      </Button>
+
                     </Space>
                   </Form>
                 ) : (

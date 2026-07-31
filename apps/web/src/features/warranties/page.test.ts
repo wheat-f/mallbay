@@ -8,7 +8,7 @@ test("warranties home uses warranty cards as the primary list", () => {
   assert.match(pageSource, /title="质保管理"/);
   assert.match(pageSource, /title="质保卡列表"/);
   assert.match(pageSource, /warrantiesApi\.list\(storeId!\)/);
-  assert.match(pageSource, /orderApi\.list\(\{ storeId: storeId!, status: "COMPLETED", page: 1, pageSize: 100 \}\)/);
+  assert.match(pageSource, /orderApi\.list\(\{ storeId: storeId!, status: "IN_CONSTRUCTION", page: 1, pageSize: 100 \}\)/);
   assert.match(pageSource, /warrantyStatusFilter/);
   assert.match(pageSource, /质保状态/);
   assert.match(pageSource, /质保编号 \/ 订单号 \/ 客户 \/ 车牌 \/ 范围/);
@@ -37,7 +37,7 @@ test("warranties create page selects completed orders and previews extracted ord
 
   const pageSource = readFileSync(createPath, "utf8");
 
-  assert.match(pageSource, /status: "COMPLETED"/);
+  assert.match(pageSource, /status: "IN_CONSTRUCTION"/);
   assert.match(pageSource, /placeholder="选择已完工工单"/);
   assert.match(pageSource, /系统自动提取信息 \(来自工单\)/);
   assert.match(pageSource, /客户姓名/);

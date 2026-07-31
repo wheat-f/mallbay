@@ -169,6 +169,11 @@ export class QualityCheckDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  responsibilityType?: string;
 }
 
 export class UpsertWorkerProfileDto {

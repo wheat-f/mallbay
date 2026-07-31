@@ -895,7 +895,7 @@ export class CustomersService {
 
   private buildArchiveSummary(
     customer: {
-      warranties?: Array<{ status: string; endDate: Date }>;
+      warranties?: Array<{ status: string; endDate: Date | null }>;
       afterSales?: Array<{ status: string; responsibility: string }>;
     },
     orderStats: {
@@ -945,6 +945,7 @@ export class CustomersService {
     expiringSoonThreshold.setDate(now.getDate() + 30);
     const activeWarranties = warranties.filter((warranty) => warranty.status === "ACTIVE");
     const expiringSoonCount = activeWarranties.filter((warranty) => {
+      if (!warranty.endDate) return false;
       const endDate = new Date(warranty.endDate);
       return endDate >= now && endDate <= expiringSoonThreshold;
     }).length;

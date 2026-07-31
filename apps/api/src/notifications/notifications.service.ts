@@ -50,4 +50,13 @@ export class NotificationsService {
     });
     return { success: true };
   }
+  async listTodos(userId: string, page = 1, pageSize = 20) {
+    const pagination = normalizePagination(page, pageSize);
+    const where = { userId, type: NotificationType.ORDER_BALANCE_DUE, handledAt: null };
+    const [total, items] = await Promise.all([
+      this.prisma.notification.count({ where }),
+      this.prisma.notification.findMany({ where, orderBy: { createdAt: "desc" }, skip: pagination.skip, take: pagination.pageSize })
+    ]);
+    return { total, page: pagination.page, pageSize: pagination.pageSize, items };
+  }
 }

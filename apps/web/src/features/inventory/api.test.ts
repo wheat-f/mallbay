@@ -27,26 +27,6 @@ test("inventoryApi.createBatch posts JSON to /inventory/batches", async () => {
   }
 });
 
-test("inventoryApi.lockOrder posts to /inventory/orders/:orderId/lock", async () => {
-  const calls: unknown[] = [];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input, init) => {
-    calls.push({ input, init });
-    return new Response(JSON.stringify({ locked: [] }), {
-      status: 200,
-      headers: { "content-type": "application/json" }
-    });
-  };
-  try {
-    await inventoryApi.lockOrder("order-1");
-
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/orders/order-1/lock");
-    assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
 test("inventoryApi.outboundOrder posts selected outbound lines", async () => {
   const calls: unknown[] = [];
   const originalFetch = globalThis.fetch;

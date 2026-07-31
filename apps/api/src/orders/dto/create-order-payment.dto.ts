@@ -1,8 +1,11 @@
 import { Type } from "class-transformer";
-import { IsDateString, IsEnum, IsInt, IsString, Min } from "class-validator";
+import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Min } from "class-validator";
 import { PaymentType } from "@prisma/client";
 
 export class CreateOrderPaymentDto {
+  @IsString()
+  @IsOptional()
+  idempotencyKey?: string;
   @IsString()
   accountId!: string;
 

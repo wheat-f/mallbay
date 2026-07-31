@@ -189,10 +189,7 @@ export class CrossStoreConstructionService {
           version: { increment: 1 }
         }
       });
-      await tx.order.update({
-        where: { id: task.orderId },
-        data: { status: OrderStatus.COMPLETED }
-      });
+
       return completedTask;
     });
     await this.notifyStore(task.executionStoreId, NotificationType.CROSS_STORE_TASK_COMPLETED, {
@@ -414,6 +411,3 @@ function mergeSnapshotRemark(snapshot: Prisma.JsonValue, remark: string): Prisma
     executionAcceptanceRemark: remark.trim()
   };
 }
-
-
-

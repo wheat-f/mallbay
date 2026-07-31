@@ -18,6 +18,7 @@ import type { MulterFile } from "../users/multer-file.type";
 import { OssService } from "../users/oss.service";
 import { ConstructionCostSettlementService } from "./construction-cost-settlement.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { ensureBalanceTodos, finalizeOrderDelivery } from "../orders/domain/order-delivery";
 import {
   AssignOrderDto,
   CompleteConstructionDto,
@@ -323,10 +324,10 @@ export class ConstructionService {
         });
         return completedRecord;
       })
-      : await this.prisma.order.update({ where: { id: record.orderId }, data: { status: OrderStatus.COMPLETED } }).then(async () => this.prisma.constructionRecord.update({
+      : await this.prisma.constructionRecord.update({
         where: { id: record.id },
         data: { status: ConstructionTaskStatus.COMPLETED, completedAt, actualMinutes, overtimeMinutes }
-      }));
+      });
     await this.createCommissionSnapshots(actor.id, record);
     await this.costSettlements?.initializeForCompletedRecord(record.id, actor.id);
     if (isCrossStore) {
@@ -371,26 +372,78 @@ export class ConstructionService {
     if (!PermissionPolicy.canQualityCheckConstruction(actor, record.storeId)) {
       throw new ForbiddenException("无权限");
     }
+    const checkedAt = new Date();
     if (dto.result === QualityCheckResult.REWORK_REQUIRED) {
-      await this.prisma.order.update({
-        where: { id: record.orderId },
-        data: { status: OrderStatus.IN_CONSTRUCTION }
-      });
+      if (!dto.note?.trim()) throw new BadRequestException("质检不通过必须填写返工原因");
+      if (!dto.responsibilityType?.trim()) throw new BadRequestException("质检不通过必须填写责任类型");
     }
-    return this.prisma.constructionRecord.update({
-      where: { id: recordId },
-      data: {
-        qualityResult: dto.result,
-        qualityNote: dto.note,
-        qualityCheckedById: actor.id,
-        qualityCheckedAt: new Date(),
-        status: dto.result === QualityCheckResult.REWORK_REQUIRED
-          ? ConstructionTaskStatus.IN_CONSTRUCTION
-          : ConstructionTaskStatus.COMPLETED
+    const isRecheck = record.qualityResult === QualityCheckResult.REWORK_REQUIRED;
+    const update = dto.result === QualityCheckResult.REWORK_REQUIRED
+      ? {
+          qualityResult: dto.result,
+          qualityNote: dto.note,
+          qualityCheckedById: actor.id,
+          qualityCheckedAt: checkedAt,
+          status: ConstructionTaskStatus.IN_CONSTRUCTION,
+          reworkCount: { increment: 1 },
+          currentReworkReason: dto.note!.trim(),
+          currentResponsibilityType: dto.responsibilityType?.trim() ?? null
+        }
+      : {
+          qualityResult: dto.result,
+          qualityNote: dto.note,
+          qualityCheckedById: actor.id,
+          qualityCheckedAt: checkedAt,
+          status: ConstructionTaskStatus.COMPLETED,
+          currentReworkReason: null,
+          currentResponsibilityType: null
+        };
+    const transaction = (this.prisma as unknown as {
+      $transaction?: <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>;
+    }).$transaction ?? (async <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) => fn(this.prisma as never));
+    const updated = await transaction(async (tx: Prisma.TransactionClient) => {
+      if (dto.result === QualityCheckResult.REWORK_REQUIRED) {
+        await tx.order.update({ where: { id: record.orderId }, data: { status: OrderStatus.IN_CONSTRUCTION } });
       }
+      const next = await tx.constructionRecord.update({ where: { id: recordId }, data: update });
+      if (dto.result === QualityCheckResult.PASS && typeof tx.orderAmount?.findUnique === "function") {
+        const amount = await tx.orderAmount.findUnique({
+          where: { orderId: record.orderId },
+          select: { outstandingCents: true }
+        });
+        if (amount && amount.outstandingCents <= 0 && typeof tx.warranty?.create === "function") {
+          await finalizeOrderDelivery(tx, record.orderId, actor.id);
+        } else if (typeof tx.notification?.createMany === "function") {
+          await ensureBalanceTodos(tx, record.orderId);
+        }
+      }
+      const events = dto.result === QualityCheckResult.REWORK_REQUIRED
+        ? ["QUALITY_CHECK_FAILED", "REWORK_STARTED"]
+        : (isRecheck ? ["REWORK_COMPLETED", "QUALITY_RECHECKED"] : ["QUALITY_CHECK_PASSED"]);
+      for (const action of events) {
+        if (!tx.auditEvent?.create) continue;
+        await tx.auditEvent.create({
+          data: {
+            action,
+            actorId: actor.id,
+            storeId: record.storeId,
+            targetType: "order",
+            targetId: record.orderId,
+            metadata: {
+              orderId: record.orderId,
+              constructionRecordId: record.id,
+              originalQualityResult: record.qualityResult,
+              recheckResult: dto.result,
+              reworkReason: dto.note ?? null,
+              responsibilityType: dto.responsibilityType ?? null
+            }
+          }
+        });
+      }
+      return next;
     });
+    return updated;
   }
-
   async getOrderMaterials(user: AuthenticatedConstructionUser, orderId: string) {
     const actor = await this.withStoreMember(user);
     const record = await this.findRecordForOrder(orderId);

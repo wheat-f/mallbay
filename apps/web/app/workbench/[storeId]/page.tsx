@@ -26,7 +26,7 @@ import type { DailyCapacitySummary, InventoryBatchSummary, ReportSummary, Warran
 import { useParams, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
-import { constructionApi, inventoryApi, memberApi, orderApi, reportsApi, storeApi, warrantiesApi } from "../../../src/lib/api";
+import { constructionApi, inventoryApi, memberApi, notificationApi, orderApi, reportsApi, storeApi, warrantiesApi } from "../../../src/lib/api";
 import { getWorkbenchSections, type StorePosition } from "../../../src/features/workbench/navigation";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { yuanCurrency } from "../../../src/features/orders/order-display";
@@ -79,6 +79,7 @@ type ExceptionItem = {
 };
 
 type TaskRow = {
+  orderId?: string;
   type: string;
   ref: string;
   owner: string;
@@ -642,6 +643,11 @@ export default function WorkbenchPage() {
     queryFn: () => orderApi.list({ storeId, status: "PENDING_DISPATCH", page: 1, pageSize: 1 }),
     enabled: Boolean(store)
   });
+  const balanceTodoQuery = useQuery({
+    queryKey: ["workbench-balance-todos", storeId, currentPosition],
+    queryFn: () => notificationApi.listTodos(1, 20),
+    enabled: Boolean(store)
+  });
   const capacityQuery = useQuery({
     queryKey: ["workbench-capacity", storeId, todayDate],
     queryFn: () => constructionApi.capacities({ storeId, from: todayDate, to: todayDate }),
@@ -686,6 +692,11 @@ export default function WorkbenchPage() {
     afterSalesCount: summary?.afterSales ?? 0,
     currentPosition: store?.currentMember.position ?? ""
   });
+  const balanceTodoRows: TaskRow[] = (balanceTodoQuery.data?.items ?? []).map((todo) => {
+    const payload = todo.payload as { orderId?: string; orderNo?: string; outstandingCents?: number };
+    return { orderId: payload.orderId, type: "尾款待收", ref: payload.orderNo ?? "订单尾款", owner: POSITION_LABEL[currentPosition ?? ""] ?? "销售/财务", due: payload.outstandingCents ? yuanCurrency(payload.outstandingCents) : "待结清", status: todo.isRead ? "已读未处理" : "待处理" };
+  });
+  const allTaskRows = [...balanceTodoRows, ...taskRows];
   const trendBars = buildWorkbenchTrendBars(summary);
 
   const removeMutation = useMutation({
@@ -833,8 +844,8 @@ export default function WorkbenchPage() {
                     <span>截止时间</span>
                     <span>状态</span>
                   </div>
-                  {taskRows.length > 0 ? (
-                    taskRows.map((task) => (
+                  {allTaskRows.length > 0 ? (
+                    allTaskRows.map((task) => (
                       <button
                         key={`${task.type}-${task.ref}`}
                         type="button"
@@ -843,6 +854,7 @@ export default function WorkbenchPage() {
                           if (task.type === "施工派单") router.push("/construction/assignments");
                           if (task.type === "售后跟进") router.push("/after-sales");
                           if (task.type === "费用审批") router.push("/finance");
+                          if (task.type === "尾款待收" && task.orderId) router.push(`/orders/${task.orderId}`);
                         }}
                       >
                         <span>{task.type}</span>

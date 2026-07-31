@@ -10,6 +10,8 @@ import {
   OrderStatus,
   PaymentDirection,
   PaymentRecordType,
+  NotificationType,
+  QualityCheckResult,
   Prisma,
   ProductStatus,
   ProductUnit,
@@ -24,6 +26,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { multiplyMoneyCents } from "../pricing/domain/money";
 import { AuditLogService, type AuditEvent } from "../observability/audit-log.service";
 import { OrderPolicy } from "./domain/order-policy";
+import { deriveOrderWorkflow } from "./domain/order-workflow";
+import { ensureBalanceTodos, finalizeOrderDelivery } from "./domain/order-delivery";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { CopyOrderToDraftDto } from "./dto/copy-order.dto";
 import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
@@ -94,7 +98,7 @@ export class OrdersService {
           customer: { select: { id: true, name: true, companyName: true, contactPerson: true } },
           vehicle: { select: { id: true, carPlate: true, carModel: true, carColor: true } },
           salesPerson: { select: { id: true, username: true, nickname: true } },
-          constructionRecord: { select: { status: true } },
+          constructionRecord: { select: { status: true, qualityResult: true } },
           amount: true
         }
       })
@@ -128,7 +132,7 @@ export class OrdersService {
       include: {
         customer: { select: { name: true, companyName: true, contactPerson: true } },
         vehicle: { select: { carPlate: true, carModel: true, carColor: true } },
-        constructionRecord: { select: { status: true } },
+        constructionRecord: { select: { status: true, qualityResult: true } },
         costSettlement: canViewCosts ? {
           select: {
             status: true,
@@ -210,6 +214,8 @@ export class OrdersService {
         items: { include: { product: true, inventoryAllocations: true } },
         amount: true,
         payments: { orderBy: { paidAt: "desc" }, include: { account: true } },
+        constructionRecord: { select: { status: true, qualityResult: true } },
+        warranty: { select: { status: true } },
         amendmentRequests: { orderBy: { createdAt: "desc" } }
       }
     });
@@ -224,7 +230,17 @@ export class OrdersService {
       amount: order.amount ? {
         ...(canViewCosts ? order.amount : redactOrderAmount(order.amount)),
         pricingMode: getOrderPricingMode(order.amount)
-      } : null
+      } : null,
+      historicalWarning: ((order.status === OrderStatus.COMPLETED || order.status === OrderStatus.WARRANTIED) && order.constructionRecord?.qualityResult == null)
+        ? "历史完成，质检记录缺失"
+        : null,
+      workflow: deriveOrderWorkflow({
+        status: order.status,
+        amount: order.amount,
+        constructionRecord: order.constructionRecord,
+        inventoryAllocations: order.items.flatMap((item) => item.inventoryAllocations),
+        warranty: order.warranty
+      })
     };
   }
 
@@ -349,6 +365,19 @@ export class OrdersService {
       if (!OrderPolicy.canManagePayment(actor, order.storeId)) {
         throw new ForbiddenException("无权限");
       }
+      if (!Number.isInteger(dto.amountCents) || dto.amountCents <= 0) {
+        throw new BadRequestException("收款金额必须大于 0");
+      }
+      const idempotencyKey = dto.idempotencyKey?.trim() || createHash("sha256")
+        .update(JSON.stringify({ orderId, accountId: dto.accountId, paymentType: dto.paymentType, amountCents: dto.amountCents, paidAt: dto.paidAt }))
+        .digest("hex");
+      const orderPaymentClient = tx.orderPayment as unknown as {
+        findUnique?: (args: unknown) => Promise<{ id: string } | null>;
+      };
+      const existingPayment = await orderPaymentClient.findUnique?.({
+        where: { orderId_idempotencyKey: { orderId, idempotencyKey } }
+      });
+      if (existingPayment) return existingPayment;
 
       const account = await tx.paymentAccount.findUnique({ where: { id: dto.accountId } });
       if (!account || account.storeId !== order.storeId || !account.isActive) {
@@ -362,7 +391,8 @@ export class OrdersService {
           paymentType: dto.paymentType,
           amountCents: dto.amountCents,
           paidAt: new Date(dto.paidAt),
-          createdById: actor.id
+          createdById: actor.id,
+          idempotencyKey
         }
       });
 
@@ -400,6 +430,12 @@ export class OrdersService {
         }
       });
 
+      if (outstandingCents <= 0) {
+        await finalizeOrderDelivery(tx, orderId, actor.id);
+      } else {
+        await ensureBalanceTodos(tx, orderId);
+      }
+
       return payment;
     });
   }
@@ -426,7 +462,9 @@ export class OrdersService {
         include: {
           items: { include: { inventoryAllocations: true } },
           amount: true,
-          amendmentRequests: { where: { status: OrderAmendmentStatus.APPROVED }, select: { id: true } }
+          constructionRecord: { select: { status: true, qualityResult: true } },
+        warranty: { select: { status: true } },
+        amendmentRequests: { where: { status: OrderAmendmentStatus.APPROVED }, select: { id: true } }
         }
       });
       if (!order?.amount) {
@@ -632,6 +670,23 @@ export class OrdersService {
     return updated;
   }
 
+  async cancelOrder(user: AuthenticatedOrderUser, orderId: string, dto: ReturnOrderDto) {
+    const actor = await this.withStoreMember(user);
+    const reason = dto.reason?.trim();
+    if (!reason) throw new BadRequestException("取消订单必须填写原因");
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, storeId: true, salesPersonId: true, status: true } });
+      if (!order) throw new NotFoundException("订单不存在");
+      if (!PermissionPolicy.isAdmin(actor) && !PermissionPolicy.isStoreManager(actor, order.storeId)) throw new ForbiddenException("无权限");
+      if (order.status === OrderStatus.CANCELLED) return { id: order.id, status: order.status };
+      if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.WARRANTIED) throw new BadRequestException("当前订单阶段不允许取消");
+      const updated = await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.CANCELLED }, select: { id: true, status: true } });
+      await tx.notification.updateMany({ where: { type: NotificationType.ORDER_BALANCE_DUE, todoKey: { contains: ":" + order.id + ":" }, handledAt: null }, data: { handledAt: new Date() } });
+      await tx.auditEvent.create({ data: { action: "ORDER_CANCELLED", actorId: actor.id, storeId: order.storeId, targetType: "order", targetId: order.id, metadata: { orderId: order.id, reason, beforeStatus: order.status, afterStatus: OrderStatus.CANCELLED } } });
+      return updated;
+    });
+  }
+
   async returnToPendingDispatch(user: AuthenticatedOrderUser, orderId: string, dto: ReturnOrderDto) {
     const actor = await this.withStoreMember(user);
     const reason = dto.reason?.trim();
@@ -682,6 +737,65 @@ export class OrdersService {
       await persistAuditEvent(tx, auditEvent);
       this.auditLog.record(auditEvent);
       return updated;
+    });
+  }
+
+  async listHistoricalVerification(user: AuthenticatedOrderUser, storeId: string, q?: string) {
+    const actor = await this.withStoreMember(user);
+    if (!PermissionPolicy.isAdmin(actor) && !PermissionPolicy.isStoreManager(actor, storeId)) throw new ForbiddenException("无权限");
+    const keyword = q?.trim();
+    const orders = await this.prisma.order.findMany({
+      where: {
+        storeId,
+        status: { in: [OrderStatus.COMPLETED, OrderStatus.WARRANTIED] },
+        AND: [
+          { OR: [{ constructionRecord: { is: null } }, { constructionRecord: { is: { qualityResult: null } } }] },
+          ...(keyword ? [{ OR: [
+            { orderNo: { contains: keyword, mode: "insensitive" as const } },
+            { customer: { name: { contains: keyword, mode: "insensitive" as const } } },
+            { vehicle: { carPlate: { contains: keyword, mode: "insensitive" as const } } }
+          ] }] : [])
+        ]
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        customer: { select: { name: true, companyName: true, contactPerson: true } },
+        vehicle: { select: { carPlate: true, carModel: true } },
+        salesPerson: { select: { id: true, username: true, nickname: true } },
+        constructionRecord: { select: { id: true, qualityResult: true } }
+      }
+    });
+    const events = await this.prisma.auditEvent.findMany({
+      where: { action: "HISTORICAL_ORDER_VERIFIED", targetType: "order", targetId: { in: orders.map((order) => order.id) } },
+      orderBy: { createdAt: "desc" }
+    });
+    const verified = new Set(events.map((event) => event.targetId).filter(Boolean));
+    return orders.map((order) => ({
+      ...order,
+      historicalWarning: "历史完成，质检记录缺失",
+      verified: verified.has(order.id),
+      verification: events.find((event) => event.targetId === order.id) ?? null
+    }));
+  }
+
+  async markHistoricalVerified(user: AuthenticatedOrderUser, orderId: string, note?: string) {
+    const actor = await this.withStoreMember(user);
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { constructionRecord: { select: { qualityResult: true } } } });
+    if (!order) throw new NotFoundException("订单不存在");
+    if (!PermissionPolicy.isAdmin(actor) && !PermissionPolicy.isStoreManager(actor, order.storeId)) throw new ForbiddenException("无权限");
+    if (order.status !== OrderStatus.COMPLETED && order.status !== OrderStatus.WARRANTIED) throw new BadRequestException("仅历史完成订单可核验");
+    if (order.constructionRecord?.qualityResult != null) throw new BadRequestException("该订单已有质检结果，无需历史核验");
+    const existing = await this.prisma.auditEvent.findFirst({ where: { action: "HISTORICAL_ORDER_VERIFIED", targetType: "order", targetId: order.id }, orderBy: { createdAt: "desc" } });
+    if (existing) return existing;
+    return this.prisma.auditEvent.create({
+      data: {
+        action: "HISTORICAL_ORDER_VERIFIED",
+        actorId: actor.id,
+        storeId: order.storeId,
+        targetType: "order",
+        targetId: order.id,
+        metadata: { orderId: order.id, note: note?.trim() ?? "", verifiedAt: new Date().toISOString() }
+      }
     });
   }
 
@@ -844,10 +958,10 @@ export class OrdersService {
 
   private buildSearchConditions(q: string): Prisma.OrderWhereInput[] {
     const conditions: Prisma.OrderWhereInput[] = [
-      { orderNo: { contains: q, mode: "insensitive" } },
-      { customer: { name: { contains: q, mode: "insensitive" } } },
-      { customer: { companyName: { contains: q, mode: "insensitive" } } },
-      { vehicle: { carPlate: { contains: q, mode: "insensitive" } } }
+      { orderNo: { contains: q, mode: "insensitive" as const } },
+      { customer: { name: { contains: q, mode: "insensitive" as const } } },
+      { customer: { companyName: { contains: q, mode: "insensitive" as const } } },
+      { vehicle: { carPlate: { contains: q, mode: "insensitive" as const } } }
     ];
     if (/^1\d{10}$/.test(q)) {
       conditions.push({ customer: { phoneHash: hashSensitiveField(q) } });
@@ -1022,7 +1136,7 @@ function getEffectiveOrderStatus(
   if (orderStatus === OrderStatus.CANCELLED || orderStatus === OrderStatus.WARRANTIED) {
     return orderStatus;
   }
-  if (constructionStatus === "COMPLETED") return OrderStatus.COMPLETED;
+  // Construction completion is only the quality-gate boundary. Final delivery completes the order.\n  if (constructionStatus === "COMPLETED") return OrderStatus.IN_CONSTRUCTION;
   if (constructionStatus === "IN_CONSTRUCTION") return OrderStatus.IN_CONSTRUCTION;
   if (constructionStatus === "DISPATCHED") return OrderStatus.DISPATCHED;
   return orderStatus;

@@ -107,6 +107,8 @@ type OrderDetail = {
     } | null;
   } | null;
   payments?: { id: string; paymentType: string; amountCents: number; paidAt: string; account?: { name: string } }[];
+  historicalWarning?: string | null;
+  workflow?: { currentStage?: string; capabilities?: { canCollectBalance?: boolean; canGenerateWarranty?: boolean; canStartRework?: boolean; canCompleteOrder?: boolean } };
   amendmentRequests?: Array<{
     id: string;
     status: "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED" | "CANCELLED";
@@ -331,8 +333,9 @@ export default function OrderDetailPage() {
       && (hasEditableOutstandingAmount || hasApprovedAmendment)
       && (order.amount?.pricingMode !== "ACTIVE" || hasApprovedAmendment)
   );
+  const canCollectBalance = order?.workflow?.capabilities?.canCollectBalance ?? ((order?.amount?.outstandingCents ?? 0) > 0);
   const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH" && canOperateFulfillment;
-  const orderSteps = getOrderSteps(order?.status);
+  const orderSteps = getOrderSteps(order?.workflow?.currentStage ?? order?.status);
   const fulfillmentInventorySummary = getFulfillmentInventorySummary(order?.items ?? []);
   const fulfillmentCanEnterConstruction = fulfillmentInventorySummary.canEnterConstruction;
   const fulfillmentPrimaryActionLabel = fulfillmentCanEnterConstruction ? "确认提交，进入施工派工" : "确认提交，进入库房匹配";
@@ -412,7 +415,7 @@ export default function OrderDetailPage() {
                   <span className="order-detail-eyebrow">销售订单详情</span>
                   <h1>
                     订单 {order?.orderNo ?? "-"}
-                    {order ? <Tag>{getOrderStatusLabel(order.status)}</Tag> : null}
+                    {order ? <Tag>{getWorkflowStageLabel(order.workflow?.currentStage) ?? getOrderStatusLabel(order.status)}</Tag> : null}
                   </h1>
                   <p>
                     {[
@@ -424,6 +427,7 @@ export default function OrderDetailPage() {
                   </p>
                 </div>
               </div>
+              {order?.historicalWarning ? <Alert type="warning" showIcon message={order.historicalWarning} description="系统不会自动补造质检记录；请由店长或管理员进入历史核验列表处理。" className="mb-4" /> : null}
               <div className="order-detail-actions">
                 {canCopyOrder ? (
                   <Button icon={<CopyOutlined />} onClick={() => {
@@ -448,7 +452,7 @@ export default function OrderDetailPage() {
                     确认派工流转
                   </Button>
                 ) : null}
-                <Button icon={<CreditCardOutlined />} onClick={openOrderPaymentEntry}>
+                <Button icon={<CreditCardOutlined />} onClick={openOrderPaymentEntry} disabled={!canCollectBalance}>
                   记录收款
                 </Button>
                 <Button icon={<FileTextOutlined />} onClick={openOrderInvoiceEntry}>
@@ -1169,6 +1173,25 @@ function formatDateOnly(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toISOString().slice(0, 10);
+}
+
+function getWorkflowStageLabel(stage?: string) {
+  const labels: Record<string, string> = {
+    PENDING_INVENTORY_CONFIRM: "待库存确认",
+    PENDING_OUTBOUND: "待出库",
+    PENDING_DISPATCH: "待派工",
+    PENDING_MATERIAL_PICKUP: "待领取物料",
+    IN_CONSTRUCTION: "施工中",
+    PENDING_QUALITY: "待质检",
+    REWORKING: "返工中",
+    PENDING_WARRANTY: "待生成质保",
+    PENDING_BALANCE: "待收尾款",
+    PENDING_DELIVERY: "待最终交付",
+    COMPLETED: "已完成",
+    HISTORICAL_VERIFICATION: "历史待核验",
+    CANCELLED: "已取消"
+  };
+  return stage ? labels[stage] : undefined;
 }
 
 function getOrderSteps(status?: string) {

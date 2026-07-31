@@ -137,6 +137,7 @@ export type OrderPaymentPayload = {
   paymentType: PaymentType;
   amountCents: number;
   paidAt: string;
+  idempotencyKey?: string;
 };
 
 export type CopyOrderToDraftPayload = {
@@ -258,4 +259,3 @@ function toQueryString(query: Record<string, string | number | boolean | undefin
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
 }
-

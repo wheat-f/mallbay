@@ -330,9 +330,6 @@ export const inventoryApi = {
       body: JSON.stringify({ batches: payloads })
     }),
 
-  lockOrder: (orderId: string) =>
-    request<unknown>(`/inventory/orders/${orderId}/lock`, { method: "POST" }),
-
   outboundOrder: (orderId: string, payload: OutboundOrderInventoryPayload) =>
     request<unknown>(`/inventory/orders/${orderId}/outbound`, {
       method: "POST",

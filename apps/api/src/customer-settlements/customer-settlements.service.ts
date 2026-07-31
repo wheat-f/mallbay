@@ -341,7 +341,8 @@ export class CustomerSettlementsService {
             amountCents: allocation.amountCents,
             paidAt: new Date(dto.receivedAt),
             createdById: actor.id,
-            customerReceiptId: receipt.id
+            customerReceiptId: receipt.id,
+            idempotencyKey: `CUSTOMER_RECEIPT:${receipt.id}`
           }
         });
         await tx.orderAmount.update({

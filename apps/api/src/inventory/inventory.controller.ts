@@ -177,11 +177,6 @@ export class InventoryController {
     return this.inventory.receivePurchaseItemBatches(req.user, id, dto);
   }
 
-  @Post("orders/:orderId/lock")
-  lockOrderInventory(@Req() req: AuthRequest, @Param("orderId") orderId: string) {
-    return this.inventory.lockOrderInventory(req.user, orderId);
-  }
-
   @Post("orders/:orderId/outbound")
   outboundOrderInventory(
     @Req() req: AuthRequest,

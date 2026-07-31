@@ -19,12 +19,14 @@ test("WarrantiesService creates warranty from completed order with construction 
         status: OrderStatus.COMPLETED,
         items: [{ product: { name: "PPF", warrantyYears: 5 } }],
         constructionRecord: {
+          qualityResult: "PASS",
           photos: [{ id: "photo-1", url: "https://oss/photo-before.jpg" }]
         }
       }),
       update: async (args: unknown) => writes.push(args)
     },
     warranty: {
+      findUnique: async () => null,
       create: async (args: unknown) => {
         writes.push(args);
         return {
@@ -52,7 +54,7 @@ test("WarrantiesService creates warranty from completed order with construction 
 
   assert.equal(result.id, "warranty-1");
   assert.equal(JSON.stringify(writes).includes("photo-before.jpg"), true);
-  assert.equal(JSON.stringify(writes).includes(OrderStatus.WARRANTIED), true);
+  assert.equal(JSON.stringify(writes).includes(WarrantyStatus.PENDING_ACTIVATION), true);
 });
 
 test("WarrantiesService looks up active warranty by warranty number for customer query", async () => {
@@ -92,7 +94,7 @@ test("WarrantiesService returns the existing warranty for an idempotent retry", 
           vehicleId: "vehicle-1",
           status: OrderStatus.WARRANTIED,
           items: [],
-          constructionRecord: { photos: [] }
+          constructionRecord: { qualityResult: "PASS", photos: [] }
         })
       },
       warranty: {

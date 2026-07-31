@@ -37,6 +37,16 @@ export class OrdersController {
     return this.orders.exportDetails(req.user, query);
   }
 
+  @Get("historical-verification")
+  listHistoricalVerification(@Req() req: AuthRequest, @Query("storeId") storeId: string, @Query("q") q?: string) {
+    return this.orders.listHistoricalVerification(req.user, storeId, q);
+  }
+
+  @Post(":id/historical-verification")
+  markHistoricalVerified(@Req() req: AuthRequest, @Param("id") id: string, @Body() body: { note?: string }) {
+    return this.orders.markHistoricalVerified(req.user, id, body?.note);
+  }
+
   @Get(":id/audit-events")
   listAuditEvents(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.orders.listAuditEvents(req.user, id);
@@ -59,6 +69,11 @@ export class OrdersController {
     @Body() dto: UpdateOrderCommercialsDto
   ) {
     return this.orders.updateCommercials(req.user, id, dto);
+  }
+
+  @Post(":id/cancel")
+  cancelOrder(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ReturnOrderDto) {
+    return this.orders.cancelOrder(req.user, id, dto);
   }
 
   @Post(":id/return-to-pending")

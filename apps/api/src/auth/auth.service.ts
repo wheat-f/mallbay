@@ -243,7 +243,6 @@ export class AuthService {
     const payload: TokenPayload = {
       sub: user.id,
       username: user.username,
-      isAuditor: user.isAuditor,
       sessionId
     };
 

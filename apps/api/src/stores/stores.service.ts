@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Inject,
+  Optional,
   Injectable,
   NotFoundException
 } from "@nestjs/common";
@@ -23,6 +24,7 @@ import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submissio
 import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
 import { DictionariesService } from "../settings/dictionaries.service";
+import { PermissionsService } from "../permissions/permissions.service";
 
 @Injectable()
 export class StoresService {
@@ -32,13 +34,15 @@ export class StoresService {
     @Inject(SubmitStoreForReviewUseCase) private readonly submitStoreForReview: SubmitStoreForReviewUseCase,
     @Inject(ChangeStoreManagerUseCase) private readonly changeStoreManager: ChangeStoreManagerUseCase,
     @Inject(SetStoreFrozenUseCase) private readonly setStoreFrozen: SetStoreFrozenUseCase,
-    @Inject(DictionariesService) private readonly dictionaries: DictionariesService
+    @Inject(DictionariesService) private readonly dictionaries: DictionariesService,
+    @Optional() @Inject(PermissionsService) private readonly permissions?: PermissionsService
   ) {}
 
   // ─── 管理员：创建门店并指派店长 ────────────────────────────────────────────
 
   async createStore(auditorId: string, isAuditor: boolean, dto: CreateStoreDto) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
+    if (this.permissions) await this.assertPermission(auditorId, "store", "write");
+    else if (!isAuditor) throw new ForbiddenException("无权限");
 
     const manager = await this.prisma.user.findUnique({ where: { id: dto.managerId } });
     if (!manager) throw new NotFoundException("指定的用户不存在");
@@ -105,6 +109,63 @@ export class StoresService {
     return this.reviewStoreSubmission.execute(auditorId, isAuditor, submissionId, dto);
   }
 
+  private async assertPermission(actorId: string, permission: string, action: string, storeId?: string) {
+    if (this.permissions) {
+      const allowed = await this.permissions.authorize(actorId, permission, action, storeId ? { storeId } : {});
+      if (!allowed) throw new ForbiddenException("无权限");
+      return;
+    }
+  }
+
+  async listEligibleExecutionStoresForUser(actorId: string, sourceStoreId: string) {
+    await this.assertPermission(actorId, "store", "read", sourceStoreId);
+    return this.listEligibleExecutionStores(actorId, true, sourceStoreId);
+  }
+
+  async listFinancialEntitiesForUser(actorId: string) {
+    await this.assertPermission(actorId, "store", "write");
+    return this.listFinancialEntities(true);
+  }
+
+  async createFinancialEntityForUser(actorId: string, dto: CreateFinancialEntityDto) {
+    await this.assertPermission(actorId, "store", "write");
+    return this.createFinancialEntity(true, dto);
+  }
+
+  async updateCrossStoreConfigForUser(actorId: string, storeId: string, dto: UpdateStoreCrossStoreConfigDto) {
+    await this.assertPermission(actorId, "store", "write", storeId);
+    return this.updateCrossStoreConfig(true, storeId, dto);
+  }
+
+  async listAllStoresForUser(actorId: string, dto: ListStoresDto) {
+    await this.assertPermission(actorId, "store", "write");
+    return this.listAllStores(true, dto);
+  }
+
+  async listPendingSubmissionsForUser(actorId: string) {
+    await this.assertPermission(actorId, "store", "write");
+    return this.listPendingSubmissions(true);
+  }
+
+  async getAdminStoreDetailForUser(actorId: string, storeId: string) {
+    await this.assertPermission(actorId, "store", "write");
+    return this.getAdminStoreDetail(true, storeId);
+  }
+
+  async reviewSubmissionForUser(actorId: string, submissionId: string, dto: ReviewStoreDto) {
+    await this.assertPermission(actorId, "store", "write");
+    return this.reviewSubmission(actorId, true, submissionId, dto);
+  }
+
+  async setFrozenForUser(actorId: string, storeId: string, frozen: boolean) {
+    await this.assertPermission(actorId, "store", "write", storeId);
+    return this.setFrozen(true, storeId, frozen);
+  }
+
+  async changeManagerForUser(actorId: string, storeId: string, dto: ChangeManagerDto) {
+    await this.assertPermission(actorId, "store", "write", storeId);
+    return this.changeManager(true, storeId, dto);
+  }
   // ─── 公开门店列表 ──────────────────────────────────────────────────────────
 
   async listPublishedStores(dto: ListStoresDto) {

@@ -190,8 +190,9 @@ export class AfterSalesService {
       select: { id: true, storeId: true, status: true }
     });
     if (!afterSale) throw new NotFoundException("售后单不存在");
-    const isAssignedWorker =
-      actor.storeMember?.position === StorePosition.CONSTRUCTION || actor.storeMember?.position === StorePosition.APPRENTICE;
+    const isAssignedWorker = PermissionPolicy.hasRuntimeSnapshot(actor.id)
+      ? PermissionPolicy.canRuntime(actor, "after-sales", "write", afterSale.storeId, actor.id)
+      : actor.storeMember?.position === StorePosition.CONSTRUCTION || actor.storeMember?.position === StorePosition.APPRENTICE;
     if (!isAssignedWorker) {
       throw new ForbiddenException("无权限");
     }
@@ -423,11 +424,12 @@ export class AfterSalesService {
   }
 
   private isFinanceOrAdmin(actor: UserWithStoreMember, storeId: string) {
+    if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) return PermissionPolicy.canRuntime(actor, "finance", "write", storeId);
     return Boolean(actor.isAuditor || (actor.storeMember?.storeId === storeId && actor.storeMember.position === "FINANCE"));
   }
 
   private isStoreManagerOrAdmin(actor: UserWithStoreMember, storeId: string) {
-    return Boolean(actor.isAuditor || (actor.storeMember?.storeId === storeId && actor.storeMember.position === "MANAGER"));
+    return PermissionPolicy.isStoreManager(actor, storeId);
   }
 
   private async createPhotoEvidence(
@@ -480,6 +482,12 @@ function buildAfterSalesListScope(actor: UserWithStoreMember, storeId: string) {
     assignments?: { some: { workerUserId: string } };
     order?: { salesPersonId: string };
   } = { storeId };
+  if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) {
+    if (!PermissionPolicy.canViewStoreData(actor, storeId) || !PermissionPolicy.canRuntime(actor, "after-sales", "read", storeId)) return { storeId: "__no_store__" };
+    if (PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) { where.order = { salesPersonId: actor.id }; return where; }
+    if (PermissionPolicy.hasRuntimeRole(actor, ["CONSTRUCTION", "APPRENTICE"], storeId)) { where.assignments = { some: { workerUserId: actor.id } }; }
+    return where;
+  }
   if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
     where.order = { salesPersonId: actor.id };
     return where;
@@ -500,6 +508,12 @@ function buildAfterSalesDetailScope(actor: UserWithStoreMember, id: string) {
     assignments?: { some: { workerUserId: string } };
     order?: { salesPersonId: string };
   } = { id };
+  if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) {
+    if (!PermissionPolicy.canRuntime(actor, "after-sales", "read", actor.storeMember?.storeId ?? "", actor.id)) return { id, storeId: "__no_store__" };
+    if (PermissionPolicy.hasRuntimeRole(actor, ["SALES"], actor.storeMember?.storeId)) where.order = { salesPersonId: actor.id };
+    if (PermissionPolicy.hasRuntimeRole(actor, ["CONSTRUCTION", "APPRENTICE"], actor.storeMember?.storeId)) where.assignments = { some: { workerUserId: actor.id } };
+    return where;
+  }
   if (!actor.isAuditor) {
     where.storeId = actor.storeMember?.storeId ?? "__no_store__";
   }

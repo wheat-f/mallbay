@@ -641,7 +641,10 @@ export class OrdersService {
       where: { id: requestId, orderId }, include: { order: { include: { amount: true, payments: { orderBy: { paidAt: "desc" }, take: 1 } } } }
     });
     if (!request?.order.amount) throw new NotFoundException("改单申请不存在");
-    if (!PermissionPolicy.canViewStoreData(actor, request.storeId) || (!actor.isAuditor && actor.storeMember?.position !== StorePosition.FINANCE)) {
+    const canApproveAmendment = PermissionPolicy.hasRuntimeSnapshot(actor.id)
+      ? PermissionPolicy.canRuntime(actor, "finance", "write", request.storeId)
+      : Boolean(actor.isAuditor || actor.storeMember?.position === StorePosition.FINANCE);
+    if (!PermissionPolicy.canViewStoreData(actor, request.storeId) || !canApproveAmendment) {
       throw new ForbiddenException("仅财务可审批改单申请");
     }
     if (request.requestedById === actor.id) throw new ForbiddenException("申请人不能审批自己的改单申请");
@@ -935,7 +938,10 @@ export class OrdersService {
     if (paymentFilter) {
       where.amount = { is: paymentFilter };
     }
-    if (!user.isAuditor && user.storeMember?.position === "SALES") {
+    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
+      if (!PermissionPolicy.canRuntime(user, "orders", "read", dto.storeId)) throw new ForbiddenException("无权限");
+      if (PermissionPolicy.hasRuntimeRole(user, ["SALES"], dto.storeId)) where.salesPersonId = user.id;
+    } else if (!user.isAuditor && user.storeMember?.position === "SALES") {
       where.salesPersonId = user.id;
     }
     const invoiceableFilter: Prisma.OrderWhereInput | undefined = dto.invoiceable ? {
@@ -1004,7 +1010,9 @@ export class OrdersService {
     if (!PermissionPolicy.canViewStoreData(user, storeId)) {
       throw new ForbiddenException("无权限");
     }
-    if (!user.isAuditor && user.storeMember?.position === "SALES" && user.id !== salesPersonId) {
+    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
+      if (!PermissionPolicy.canRuntime(user, "orders", "read", storeId, salesPersonId)) throw new ForbiddenException("无权限");
+    } else if (!user.isAuditor && user.storeMember?.position === "SALES" && user.id !== salesPersonId) {
       throw new ForbiddenException("无权限");
     }
   }
@@ -1057,6 +1065,7 @@ function maskAccountNo(value: unknown) {
 }
 
 function canManageOrderCommercials(user: UserWithStoreMember, storeId: string, salesPersonId: string) {
+  if (PermissionPolicy.hasRuntimeSnapshot(user.id)) return PermissionPolicy.canRuntime(user, "orders", "write", storeId, salesPersonId);
   if (PermissionPolicy.isAdmin(user) || PermissionPolicy.isStoreManager(user, storeId)) return true;
   if (PermissionPolicy.isStoreMember(user, storeId) && user.storeMember?.position === CUSTOMER_SERVICE) return true;
   return PermissionPolicy.isStoreMember(user, storeId) &&

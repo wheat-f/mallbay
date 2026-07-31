@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Optional,
   NotFoundException,
   UnauthorizedException
 } from "@nestjs/common";
@@ -16,6 +17,7 @@ import { ChangePasswordDto } from "./dto/change-password.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { AuthService } from "../auth/auth.service";
+import { PermissionsService } from "../permissions/permissions.service";
 
 // 管理员重置密码后的初始密码
 const RESET_PASSWORD_DEFAULT = "Test1234!";
@@ -24,7 +26,8 @@ const RESET_PASSWORD_DEFAULT = "Test1234!";
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly authService: AuthService
+    private readonly authService: AuthService,
+    @Optional() private readonly permissions?: PermissionsService
   ) {}
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -134,7 +137,9 @@ export class UsersService {
 
   // 管理员搜索用户（按用户名模糊匹配）
   async searchUsers(currentUserId: string, isAuditor: boolean, keyword: string) {
-    if (!isAuditor) {
+    if (this.permissions) {
+      if (!(await this.permissions.authorize(currentUserId, "users", "read"))) throw new ForbiddenException("无权限");
+    } else if (!isAuditor) {
       throw new ForbiddenException("无权限");
     }
 
@@ -153,6 +158,12 @@ export class UsersService {
     });
   }
 
+  async resetPasswordForUser(actorId: string, dto: ResetPasswordDto) {
+    if (this.permissions) {
+      if (!(await this.permissions.authorize(actorId, "users", "write"))) throw new ForbiddenException("无权限");
+    }
+    return this.resetPassword(true, dto);
+  }
   // 管理员重置用户密码为初始密码
   async resetPassword(isAuditor: boolean, dto: ResetPasswordDto) {
     if (!isAuditor) {

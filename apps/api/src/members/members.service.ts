@@ -2,10 +2,12 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Optional,
   NotFoundException
 } from "@nestjs/common";
 import { InvitationStatus, StorePosition, StoreStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { PermissionsService } from "../permissions/permissions.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { InviteMemberDto } from "./dto/invite-member.dto";
 
@@ -13,7 +15,8 @@ import { InviteMemberDto } from "./dto/invite-member.dto";
 export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
+    @Optional() private readonly permissions?: PermissionsService
   ) {}
 
   // ─── 店长：搜索可邀请的用户 ────────────────────────────────────────────────
@@ -226,6 +229,10 @@ export class MembersService {
   // ─── 工具：断言当前用户是指定门店的店长 ───────────────────────────────────
 
   private async assertManager(userId: string, storeId: string) {
+    if (this.permissions) {
+      const allowed = await this.permissions.authorize(userId, "settings", "write", { storeId });
+      if (allowed) return { userId, storeId, position: StorePosition.MANAGER };
+    }
     const member = await this.prisma.storeMember.findUnique({ where: { userId } });
     if (!member || member.storeId !== storeId || member.position !== StorePosition.MANAGER) {
       throw new ForbiddenException("仅店长可执行此操作");

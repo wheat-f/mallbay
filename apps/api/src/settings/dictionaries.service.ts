@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { DictionaryMode, DictionaryStatus, Prisma } from "@prisma/client";
 import type { UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
+import { PermissionsService } from "../permissions/permissions.service";
 import { CreateDictionaryDto, CreateDictionaryItemDto, UpdateDictionaryDto, UpdateDictionaryItemDto, DictionaryCatalogQueryDto, DictionaryItemsQueryDto } from "./dto/dictionary.dto";
 import { normalizePagination } from "../common/pagination";
 
@@ -61,7 +62,7 @@ export type AuthenticatedSettingsUser = UserWithStoreMember & { username?: strin
 export class DictionariesService {
   private readonly listCache = new Map<string, { expiresAt: number; value: any }>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly permissions: PermissionsService) {}
 
   private async actor(user: AuthenticatedSettingsUser) {
     if (user.storeMember !== undefined) return user;
@@ -71,8 +72,8 @@ export class DictionariesService {
 
   private async assertManager(user: AuthenticatedSettingsUser, storeId: string) {
     const actor = await this.actor(user);
-    // HQ/auditor accounts are read-only for store configuration in this phase.
-    if (!actor.storeMember || actor.storeMember.storeId !== storeId || actor.storeMember.position !== "MANAGER") {
+    // Legacy position !== "MANAGER" guard is now represented by the published settings.write permission.
+    if (!(await this.permissions.authorize(actor.id, "settings", "write", { storeId }))) {
       throw new ForbiddenException("仅当前门店店长可维护门店基础字典");
     }
     return actor;
@@ -80,7 +81,7 @@ export class DictionariesService {
 
   private async assertStoreReader(user: AuthenticatedSettingsUser, storeId: string) {
     const actor = await this.actor(user);
-    if (actor.isAuditor) return actor;
+    if (await this.permissions.authorize(actor.id, "settings", "read", { storeId })) return actor;
     if (!actor.storeMember || actor.storeMember.storeId !== storeId) {
       throw new ForbiddenException("无权读取其他门店的基础字典");
     }
@@ -131,7 +132,7 @@ export class DictionariesService {
 
   async list(user: AuthenticatedSettingsUser, storeId?: string) {
     const actor = await this.actor(user);
-    if (actor.isAuditor && !storeId) {
+    if (await this.permissions.authorize(actor.id, "settings", "read") && !storeId) {
       const [rows, templates] = await Promise.all([
         this.prisma.dictionary.findMany({ orderBy: { createdAt: "asc" }, include: { dictionaryItems: true } }),
         this.prisma.dictionaryTemplate.findMany({ orderBy: { createdAt: "asc" }, include: { templateItems: true } })
@@ -163,7 +164,7 @@ export class DictionariesService {
   }
 
   async previewDefaultBackfill(user: AuthenticatedSettingsUser, storeId: string) {
-    if (!(await this.actor(user)).isAuditor) throw new ForbiddenException("仅总部管理员可补齐默认字典");
+    if (!(await this.permissions.authorize(user.id, "settings", "write"))) throw new ForbiddenException("仅总部管理员可补齐默认字典");
     const missing: Array<{ code: string; name: string; itemCount: number; missingItems?: string[] }> = [];
     for (const definition of DEFAULT_DICTIONARIES) {
       const dictionary = await this.prisma.dictionary.findUnique({ where: { storeId_code: { storeId, code: definition.code } }, include: { dictionaryItems: { select: { code: true, name: true } } } });
@@ -180,7 +181,7 @@ export class DictionariesService {
 
   async backfillDefaults(user: AuthenticatedSettingsUser, storeId: string) {
     const actor = await this.actor(user);
-    if (!actor.isAuditor) throw new ForbiddenException("仅总部管理员可补齐默认字典");
+    if (!(await this.permissions.authorize(actor.id, "settings", "write"))) throw new ForbiddenException("仅总部管理员可补齐默认字典");
     const preview = await this.previewDefaultBackfill(user, storeId);
     const result = await this.initializeDefaultsForStore(storeId, actor.id);
     return { ...result, missingBefore: preview.missingCount, missingItemCountBefore: preview.missingItemCount };
@@ -189,7 +190,7 @@ export class DictionariesService {
   async catalog(user: AuthenticatedSettingsUser, query: DictionaryCatalogQueryDto, storeId?: string) {
     const actor = await this.actor(user);
     const targetStoreId = storeId ?? actor.storeMember?.storeId;
-    if (!targetStoreId && !actor.isAuditor) throw new ForbiddenException("未绑定门店");
+    if (!targetStoreId && !(await this.permissions.authorize(actor.id, "settings", "read"))) throw new ForbiddenException("未绑定门店");
     if (targetStoreId) await this.assertStoreReader(actor, targetStoreId);
     const { page, pageSize, skip } = normalizePagination(query.page, query.pageSize);
     const keyword = query.keyword?.trim();

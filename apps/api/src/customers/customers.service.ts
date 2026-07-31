@@ -11,7 +11,7 @@ import {
 import { CustomerNoteType, Gender, Prisma } from "@prisma/client";
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { normalizePagination } from "../common/pagination";
-import { type UserWithStoreMember } from "../common/policies/permission.policy";
+import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { CustomerPolicy } from "./domain/customer.policy";
 import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
@@ -739,6 +739,10 @@ export class CustomersService {
   }
 
   private buildScopedWhere(user: UserWithStoreMember, storeId: string): Prisma.CustomerWhereInput {
+    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
+      if (!PermissionPolicy.canRuntime(user, "customers", "read", storeId)) throw new ForbiddenException("无权限");
+      return PermissionPolicy.hasRuntimeRole(user, ["SALES"], storeId) ? { storeId, ownerUserId: user.id } : { storeId };
+    }
     if (user.isAuditor) {
       return { storeId };
     }

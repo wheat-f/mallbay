@@ -132,7 +132,9 @@ export class WarrantiesService {
 
 function buildWarrantyListScope(actor: UserWithStoreMember, storeId: string) {
   const where: { storeId: string; order?: { salesPersonId: string } } = { storeId };
-  if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
+  if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) {
+    if (PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) where.order = { salesPersonId: actor.id };
+  } else if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
     where.order = { salesPersonId: actor.id };
   }
   return where;
@@ -140,6 +142,7 @@ function buildWarrantyListScope(actor: UserWithStoreMember, storeId: string) {
 
 function canViewWarrantyRecord(actor: UserWithStoreMember, storeId: string, salesPersonId: string) {
   if (!PermissionPolicy.canViewWarranty(actor, storeId)) return false;
+  if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) return PermissionPolicy.canRuntime(actor, "warranties", "read", storeId, salesPersonId);
   if (actor.isAuditor || actor.storeMember?.position !== StorePosition.SALES) return true;
   return actor.id === salesPersonId;
 }

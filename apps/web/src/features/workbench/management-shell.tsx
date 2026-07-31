@@ -3,12 +3,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Avatar, Dropdown, Input, Space, Tag, Typography } from "antd";
 import { HomeOutlined, LogoutOutlined, SearchOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined } from "@ant-design/icons";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { authApi } from "../../lib/api";
 import { NotificationBell } from "../../components/NotificationBell";
 import { canAccessSystemSettings } from "../settings/access";
 import { useAuthStore } from "../../stores/auth-store";
+import { permissionsApi } from "../permissions/api";
 import { getActiveManagementMenuKey, getManagementMenuGroups, getManagementMenuItems } from "./management-menu";
 
 const POSITION_LABEL: Record<string, string> = {
@@ -97,21 +98,24 @@ export function ManagementShell({ children }: { children: ReactNode }) {
   const user = useAuthStore((state) => state.user);
   const clearSession = useAuthStore((state) => state.clearSession);
   const storeMember = user?.storeMember;
+  const permissionsQuery = useQuery({ queryKey: ["auth-permissions", storeMember?.store.id], queryFn: () => permissionsApi.me(storeMember?.store.id), enabled: Boolean(user?.id) });
+  const runtimePermissions = permissionsQuery.data?.permissions;
   const displayName = user?.nickname ?? user?.username ?? "用户";
   const activeKey = getActiveManagementMenuKey(pathname);
-  const canAccessSettings = canAccessSystemSettings({
-    position: storeMember?.position,
-    isAuditor: user?.isAuditor
-  });
+  const canAccessSettings = runtimePermissions
+    ? runtimePermissions.some((permission) => permission.code === "settings" && permission.actions.includes("read"))
+    : canAccessSystemSettings({ position: storeMember?.position, isAuditor: user?.isAuditor });
   const menuItems = getManagementMenuItems({
     position: storeMember?.position,
     isAuditor: user?.isAuditor,
-    storeId: storeMember?.store.id
+    storeId: storeMember?.store.id,
+    permissions: runtimePermissions
   }).filter((item) => item.key !== "settings" || canAccessSettings);
   const menuGroups = getManagementMenuGroups({
     position: storeMember?.position,
     isAuditor: user?.isAuditor,
-    storeId: storeMember?.store.id
+    storeId: storeMember?.store.id,
+    permissions: runtimePermissions
   })
     .map((group) => ({
       ...group,

@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { PrismaModule } from "../prisma/prisma.module";
+import { PermissionsModule } from "../permissions/permissions.module";
 import { DictionariesController } from "./dictionaries.controller";
 import { DictionariesService } from "./dictionaries.service";
 import { SettingsController } from "./settings.controller";
@@ -15,5 +16,5 @@ import { OssConnectionService } from "./oss-connection.service";
 import { SettingsMigrationReviewsController } from "./migration-reviews.controller";
 import { SettingsMigrationReviewsService } from "./migration-reviews.service";
 
-@Module({ imports: [PrismaModule], controllers: [DictionariesController, SettingsController, ConfigVersionsController, SettingsAuditController, DictionaryTemplatesController, OssConnectionController, SettingsMigrationReviewsController], providers: [DictionariesService, SettingsAccessService, ConfigVersionsService, SettingsAuditService, DictionaryTemplatesService, OssConnectionService, SettingsMigrationReviewsService], exports: [DictionariesService, SettingsAccessService] })
+@Module({ imports: [PrismaModule, PermissionsModule], controllers: [DictionariesController, SettingsController, ConfigVersionsController, SettingsAuditController, DictionaryTemplatesController, OssConnectionController, SettingsMigrationReviewsController], providers: [DictionariesService, SettingsAccessService, ConfigVersionsService, SettingsAuditService, DictionaryTemplatesService, OssConnectionService, SettingsMigrationReviewsService], exports: [DictionariesService, SettingsAccessService] })
 export class SettingsModule {}

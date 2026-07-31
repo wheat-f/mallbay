@@ -17,6 +17,7 @@ import {
   StorePosition
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { PermissionPolicy } from "../common/policies/permission.policy";
 import { NotificationsService } from "../notifications/notifications.service";
 import type { AuthenticatedConstructionUser } from "./construction.service";
 import {
@@ -332,60 +333,47 @@ export class CrossStoreConstructionService {
   }
 
   private assertStoreViewer(user: AuthenticatedConstructionUser, storeId: string) {
-    if (!user.isAuditor && user.storeMember?.storeId !== storeId) {
-      throw new ForbiddenException("无权限");
+    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
+      if (!PermissionPolicy.canRuntime(user as never, "construction", "read", storeId)) throw new ForbiddenException("无权限");
+      return;
     }
+    if (!user.isAuditor && user.storeMember?.storeId !== storeId) throw new ForbiddenException("无权限");
   }
 
-  private assertTaskViewer(
-    user: AuthenticatedConstructionUser,
-    sourceStoreId: string,
-    executionStoreId: string
-  ) {
-    if (
-      !user.isAuditor &&
-      user.storeMember?.storeId !== sourceStoreId &&
-      user.storeMember?.storeId !== executionStoreId
-    ) {
-      throw new ForbiddenException("无权限");
+  private assertTaskViewer(user: AuthenticatedConstructionUser, sourceStoreId: string, executionStoreId: string) {
+    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
+      if (!PermissionPolicy.canRuntime(user as never, "construction", "read", sourceStoreId) && !PermissionPolicy.canRuntime(user as never, "construction", "read", executionStoreId)) throw new ForbiddenException("无权限");
+      return;
     }
+    if (!user.isAuditor && user.storeMember?.storeId !== sourceStoreId && user.storeMember?.storeId !== executionStoreId) throw new ForbiddenException("无权限");
   }
 
   private assertExecutionOperator(user: AuthenticatedConstructionUser, storeId: string) {
-    if (user.isAuditor) return;
-    if (
-      user.storeMember?.storeId !== storeId ||
-      (user.storeMember.position !== StorePosition.MANAGER &&
-        user.storeMember.position !== StorePosition.SCHEDULER)
-    ) {
-      throw new ForbiddenException("仅执行门店店长或施工主管可操作");
+    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
+      if (!PermissionPolicy.canRuntime(user as never, "construction", "write", storeId)) throw new ForbiddenException("仅执行门店店长或施工主管可操作");
+      return;
     }
+    if (user.isAuditor) return;
+    if (user.storeMember?.storeId !== storeId || (user.storeMember.position !== StorePosition.MANAGER && user.storeMember.position !== StorePosition.SCHEDULER)) throw new ForbiddenException("仅执行门店店长或施工主管可操作");
   }
 
   private assertSourceManager(user: AuthenticatedConstructionUser, storeId: string) {
-    if (user.isAuditor) return;
-    if (
-      user.storeMember?.storeId !== storeId ||
-      user.storeMember.position !== StorePosition.MANAGER
-    ) {
-      throw new ForbiddenException("仅来源门店店长可操作");
+    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
+      if (!PermissionPolicy.canRuntime(user as never, "construction", "write", storeId)) throw new ForbiddenException("仅来源门店店长可操作");
+      return;
     }
+    if (user.isAuditor) return;
+    if (user.storeMember?.storeId !== storeId || user.storeMember.position !== StorePosition.MANAGER) throw new ForbiddenException("仅来源门店店长可操作");
   }
 
-  private assertEitherStoreManager(
-    user: AuthenticatedConstructionUser,
-    sourceStoreId: string,
-    executionStoreId: string
-  ) {
-    if (user.isAuditor) return;
-    if (
-      user.storeMember?.position !== StorePosition.MANAGER ||
-      (user.storeMember.storeId !== sourceStoreId && user.storeMember.storeId !== executionStoreId)
-    ) {
-      throw new ForbiddenException("仅协作双方门店店长可维护产品映射");
+  private assertEitherStoreManager(user: AuthenticatedConstructionUser, sourceStoreId: string, executionStoreId: string) {
+    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
+      if (!PermissionPolicy.canRuntime(user as never, "construction", "write", sourceStoreId) && !PermissionPolicy.canRuntime(user as never, "construction", "write", executionStoreId)) throw new ForbiddenException("仅协作双方门店店长可维护产品映射");
+      return;
     }
+    if (user.isAuditor) return;
+    if (user.storeMember?.position !== StorePosition.MANAGER || (user.storeMember.storeId !== sourceStoreId && user.storeMember.storeId !== executionStoreId)) throw new ForbiddenException("仅协作双方门店店长可维护产品映射");
   }
-
   private async notifyStore(storeId: string, type: NotificationType, payload: object) {
     const recipients = await this.prisma.storeMember.findMany({
       where: {

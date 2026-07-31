@@ -15,6 +15,7 @@ import { ObservabilityModule } from "./observability/observability.module";
 import { OrdersModule } from "./orders/orders.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ProductsModule } from "./products/products.module";
+import { PermissionsModule } from "./permissions/permissions.module";
 import { PricingModule } from "./pricing/pricing.module";
 import { PurchasesModule } from "./purchases/purchases.module";
 import { ReturnsModule } from "./returns/returns.module";
@@ -47,6 +48,7 @@ import { HealthController } from "./health.controller";
     ReportsModule,
     SettingsModule,
     ProductsModule,
+    PermissionsModule,
     PricingModule,
     SalesQuotesModule,
     PurchasesModule,

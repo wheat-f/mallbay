@@ -15,7 +15,8 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "settings:migrate": "tsx scripts/migrate-settings-workbench.ts",
     "settings:migrate:domains": "tsx scripts/migrate-settings-domains.ts",
-    "settings:migrate:finance-settlement": "tsx scripts/migrate-finance-settlement.ts"
+    "settings:migrate:finance-settlement": "tsx scripts/migrate-finance-settlement.ts",
+    "permissions:migrate": "tsx --tsconfig tsconfig.app.json scripts/migrate-permissions.ts"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.21",

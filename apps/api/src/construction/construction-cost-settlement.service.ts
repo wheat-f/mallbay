@@ -441,6 +441,7 @@ export class ConstructionCostSettlementService {
   }
 
   private isFinanceOrAdmin(user: UserWithStoreMember, storeId: string) {
+    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) return PermissionPolicy.canRuntime(user, "finance", "write", storeId);
     return Boolean(user.isAuditor || (user.storeMember?.storeId === storeId && user.storeMember.position === "FINANCE"));
   }
 

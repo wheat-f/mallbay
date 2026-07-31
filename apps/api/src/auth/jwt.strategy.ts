@@ -17,7 +17,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return {
       id: payload.sub,
       username: payload.username,
-      isAuditor: payload.isAuditor,
+      // PermissionInterceptor resolves the effective role-derived value at runtime.
+      isAuditor: false,
       sessionId: payload.sessionId
     };
   }

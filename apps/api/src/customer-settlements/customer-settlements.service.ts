@@ -669,9 +669,7 @@ export class CustomerSettlementsService {
   }
 
   private assertCanReverseReceipt(actor: UserWithStoreMember, storeId: string) {
-    const isFinance = PermissionPolicy.isStoreMember(actor, storeId) &&
-      actor.storeMember?.position === StorePosition.FINANCE;
-    if (!actor.isAuditor && !isFinance) {
+    if (!PermissionPolicy.canManageFinance(actor, storeId)) {
       throw new ForbiddenException("仅财务可以执行收款红冲");
     }
   }

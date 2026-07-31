@@ -147,6 +147,7 @@ export class ConstructionCostConfigService {
   }
 
   private canViewRateDetails(user: UserWithStoreMember, storeId: string) {
+    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) return PermissionPolicy.canRuntime(user, "finance", "write", storeId);
     return user.isAuditor || (
       PermissionPolicy.isStoreMember(user, storeId) &&
       user.storeMember?.position === StorePosition.FINANCE

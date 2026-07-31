@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { DictionaryStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { PermissionsService } from "../permissions/permissions.service";
 import type { AuthenticatedSettingsUser } from "./dictionaries.service";
 import { CreateDictionaryTemplateDto, CreateDictionaryTemplateItemDto, SetDictionaryTemplateItemStatusDto, UpdateDictionaryTemplateDto, UpdateDictionaryTemplateItemDto } from "./dto/dictionary-template.dto";
 import { DictionaryCatalogQueryDto, DictionaryItemsQueryDto } from "./dto/dictionary.dto";
@@ -8,15 +9,20 @@ import { normalizePagination } from "../common/pagination";
 
 @Injectable()
 export class DictionaryTemplatesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly permissions: PermissionsService) {}
 
-  private assertHq(user: AuthenticatedSettingsUser) {
-    if (!user.isAuditor) throw new ForbiddenException("仅总部管理员可维护总部字典模板");
+  private async assertHq(user: AuthenticatedSettingsUser) {
+    if (this.permissions) {
+      if (!(await this.permissions.authorize(user.id, "settings", "write"))) throw new ForbiddenException("仅总部管理员可维护总部字典模板");
+    } else if (!user.isAuditor) {
+      throw new ForbiddenException("仅总部管理员可维护总部字典模板");
+    }
     return user;
   }
 
   private async assertReader(user: AuthenticatedSettingsUser) {
-    if (user.isAuditor || user.storeMember) return;
+    if (this.permissions && await this.permissions.authorize(user.id, "settings", "read", { storeId: user.storeMember?.storeId })) return;
+    if (!this.permissions && (user.isAuditor || user.storeMember)) return;
     const member = await this.prisma.storeMember.findUnique({
       where: { userId: user.id },
       select: { id: true, storeId: true },
@@ -36,7 +42,7 @@ export class DictionaryTemplatesService {
   }
 
   async list(user: AuthenticatedSettingsUser) {
-    this.assertHq(user);
+    await this.assertHq(user);
     const rows = await this.prisma.dictionaryTemplate.findMany({ orderBy: { createdAt: "asc" }, include: { templateItems: true } });
     return rows.map((row) => this.serialize(row));
   }
@@ -80,7 +86,7 @@ export class DictionaryTemplatesService {
     return { items: items.map((item) => ({ ...item, source: "HQ_TEMPLATE" as const, isSystem: false })), total, page, pageSize, dictionaryVersion: template.version, parent };
   }
   async previewImportItems(user: AuthenticatedSettingsUser, templateId: string, items: Array<{ code: string; name: string; sortOrder?: number; parentId?: string | null; status?: DictionaryStatus }>) {
-    this.assertHq(user);
+    await this.assertHq(user);
     const template = await this.prisma.dictionaryTemplate.findUnique({ where: { id: templateId } });
     if (!template) throw new NotFoundException("总部字典模板不存在");
     const normalized = items.map((item, index) => ({ code: item.code?.trim() ?? "", name: item.name?.trim() ?? "", sortOrder: item.sortOrder ?? index, parentId: item.parentId ?? null, status: item.status ?? DictionaryStatus.ACTIVE }));
@@ -98,13 +104,13 @@ export class DictionaryTemplatesService {
   }
 
   async commitImportItems(user: AuthenticatedSettingsUser, templateId: string, items: Array<{ code: string; name: string; sortOrder?: number; parentId?: string | null; status?: DictionaryStatus }>, version?: number) {
-    this.assertHq(user);
+    await this.assertHq(user);
     const template = await this.prisma.dictionaryTemplate.findUnique({ where: { id: templateId } });
     if (!template) throw new NotFoundException("总部字典模板不存在");
     if (version !== undefined && version !== template.version) throw new ConflictException("总部模板已被其他人修改，请重新预览");
     const preview = await this.previewImportItems(user, templateId, items);
     if (!preview.canCommit) throw new BadRequestException({ message: "导入预览存在错误，整批未提交", errors: preview.errors });
-    const actor = this.assertHq(user);
+    const actor = await this.assertHq(user);
     const normalized = items.map((item, index) => ({ code: item.code.trim(), name: item.name.trim(), sortOrder: item.sortOrder ?? index, parentId: item.parentId ?? null, status: item.status ?? DictionaryStatus.ACTIVE }));
     const existing = await this.prisma.dictionaryTemplateItem.findMany({ where: { templateId, code: { in: normalized.map((item) => item.code) } } });
     const existingMap = new Map(existing.map((item) => [item.code, item]));
@@ -121,7 +127,7 @@ export class DictionaryTemplatesService {
     });
   }
   async create(user: AuthenticatedSettingsUser, dto: CreateDictionaryTemplateDto) {
-    const actor = this.assertHq(user);
+    const actor = await this.assertHq(user);
     const code = dto.code.trim().toUpperCase();
     const duplicate = await this.prisma.dictionaryTemplate.findUnique({ where: { code } });
     if (duplicate) throw new ConflictException("总部模板编码已存在，请更换编码");
@@ -136,7 +142,7 @@ export class DictionaryTemplatesService {
   }
 
   async update(user: AuthenticatedSettingsUser, id: string, dto: UpdateDictionaryTemplateDto) {
-    const actor = this.assertHq(user);
+    const actor = await this.assertHq(user);
     const current = await this.prisma.dictionaryTemplate.findUnique({ where: { id } });
     if (!current) throw new NotFoundException("总部字典模板不存在");
     if (dto.version !== undefined && dto.version !== current.version) throw new ConflictException("总部模板已被其他人修改，请刷新后重试");
@@ -149,7 +155,7 @@ export class DictionaryTemplatesService {
   }
 
   async createItem(user: AuthenticatedSettingsUser, templateId: string, dto: CreateDictionaryTemplateItemDto) {
-    const actor = this.assertHq(user);
+    const actor = await this.assertHq(user);
     const template = await this.prisma.dictionaryTemplate.findUnique({ where: { id: templateId } });
     if (!template) throw new NotFoundException("总部字典模板不存在");
     if (!template.allowHierarchy && dto.parentId) throw new BadRequestException("当前模板不支持层级");
@@ -165,7 +171,7 @@ export class DictionaryTemplatesService {
   }
 
   async updateItem(user: AuthenticatedSettingsUser, itemId: string, dto: UpdateDictionaryTemplateItemDto) {
-    const actor = this.assertHq(user);
+    const actor = await this.assertHq(user);
     const item = await this.prisma.dictionaryTemplateItem.findUnique({ where: { id: itemId }, include: { template: true } });
     if (!item) throw new NotFoundException("总部模板字典项不存在");
     if (dto.version !== undefined && dto.version !== item.template.version) throw new ConflictException("总部模板已被其他人修改，请刷新后重试");
@@ -179,7 +185,7 @@ export class DictionaryTemplatesService {
     return { ...updated, source: "HQ_TEMPLATE" as const, isSystem: false };
   }
   async updateItemStatus(user: AuthenticatedSettingsUser, itemId: string, dto: SetDictionaryTemplateItemStatusDto) {
-    const actor = this.assertHq(user);
+    const actor = await this.assertHq(user);
     const item = await this.prisma.dictionaryTemplateItem.findUnique({ where: { id: itemId }, include: { template: true } });
     if (!item) throw new NotFoundException("总部模板字典项不存在");
     if (dto.status === DictionaryStatus.INACTIVE && !dto.reason?.trim()) throw new BadRequestException("停用字典项必须填写原因");

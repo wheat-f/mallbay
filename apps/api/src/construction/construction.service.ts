@@ -113,15 +113,12 @@ export class ConstructionService {
       throw new ForbiddenException("无权限");
     }
     const where: Prisma.ConstructionRecordWhereInput = { storeId: query.storeId };
-    if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
-      where.order = { salesPersonId: actor.id };
-    }
-    if (
-      !actor.isAuditor &&
-      (actor.storeMember?.position === StorePosition.CONSTRUCTION ||
-        actor.storeMember?.position === StorePosition.APPRENTICE)
-    ) {
-      where.assignments = { some: { workerUserId: actor.id } };
+    if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) {
+      if (PermissionPolicy.hasRuntimeRole(actor, ["SALES"], query.storeId)) where.order = { salesPersonId: actor.id };
+      if (PermissionPolicy.hasRuntimeRole(actor, ["CONSTRUCTION", "APPRENTICE"], query.storeId)) where.assignments = { some: { workerUserId: actor.id } };
+    } else {
+      if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) where.order = { salesPersonId: actor.id };
+      if (!actor.isAuditor && (actor.storeMember?.position === StorePosition.CONSTRUCTION || actor.storeMember?.position === StorePosition.APPRENTICE)) where.assignments = { some: { workerUserId: actor.id } };
     }
     return this.prisma.constructionRecord.findMany({
       where,
@@ -762,7 +759,9 @@ export class ConstructionService {
     if (!PermissionPolicy.canViewStoreData(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
-    const canReviewLeaves = actor.isAuditor || actor.storeMember?.position === StorePosition.MANAGER || actor.storeMember?.position === StorePosition.SCHEDULER;
+    const canReviewLeaves = PermissionPolicy.hasRuntimeSnapshot(actor.id)
+      ? PermissionPolicy.canRuntime(actor, "construction", "write", storeId)
+      : actor.isAuditor || actor.storeMember?.position === StorePosition.MANAGER || actor.storeMember?.position === StorePosition.SCHEDULER;
     return this.prisma.leaveRequest.findMany({
       where: { storeId, ...(canReviewLeaves ? {} : { workerId: actor.id }) },
       orderBy: { createdAt: "desc" },
@@ -787,9 +786,11 @@ export class ConstructionService {
     }
     const applicantMember = await this.prisma.storeMember.findFirst({ where: { storeId: leave.storeId, userId: leave.workerId }, select: { position: true } });
     const isApplicantSupervisor = applicantMember?.position === StorePosition.SCHEDULER;
-    const canReview = isApplicantSupervisor
-      ? PermissionPolicy.isStoreManager(actor, leave.storeId)
-      : actor.isAuditor || (actor.storeMember?.storeId === leave.storeId && actor.storeMember?.position === StorePosition.SCHEDULER);
+    const canReview = PermissionPolicy.hasRuntimeSnapshot(actor.id)
+      ? PermissionPolicy.canRuntime(actor, "construction", "write", leave.storeId)
+      : isApplicantSupervisor
+        ? PermissionPolicy.isStoreManager(actor, leave.storeId)
+        : actor.isAuditor || (actor.storeMember?.storeId === leave.storeId && actor.storeMember?.position === StorePosition.SCHEDULER);
     if (!canReview || actor.id === leave.workerId) {
       throw new ForbiddenException("无权限");
     }
@@ -818,11 +819,13 @@ export class ConstructionService {
   async upsertSchedule(user: AuthenticatedConstructionUser, dto: UpsertScheduleDto) {
     const actor = await this.withStoreMember(user);
     const position = actor.storeMember?.position;
-    const canUpdateOwnSchedule = (
-      actor.storeMember?.storeId === dto.storeId &&
-      (position === StorePosition.CONSTRUCTION || position === StorePosition.APPRENTICE) &&
-      actor.id === dto.workerId
-    );
+    const canUpdateOwnSchedule = PermissionPolicy.hasRuntimeSnapshot(actor.id)
+      ? Boolean(PermissionPolicy.hasRuntimeRole(actor, ["CONSTRUCTION", "APPRENTICE"], dto.storeId) && actor.id === dto.workerId)
+      : (
+        actor.storeMember?.storeId === dto.storeId &&
+        (position === StorePosition.CONSTRUCTION || position === StorePosition.APPRENTICE) &&
+        actor.id === dto.workerId
+      );
     if (!PermissionPolicy.canDispatchConstruction(actor, dto.storeId) && !canUpdateOwnSchedule) {
       throw new ForbiddenException("无权限");
     }
@@ -841,7 +844,9 @@ export class ConstructionService {
     }
 
     const position = actor.storeMember?.position;
-    const isWorker = position === StorePosition.CONSTRUCTION || position === StorePosition.APPRENTICE;
+    const isWorker = PermissionPolicy.hasRuntimeSnapshot(actor.id)
+      ? Boolean(PermissionPolicy.hasRuntimeRole(actor, ["CONSTRUCTION", "APPRENTICE"], query.storeId))
+      : position === StorePosition.CONSTRUCTION || position === StorePosition.APPRENTICE;
     if (!isWorker && !PermissionPolicy.canDispatchConstruction(actor, query.storeId)) {
       throw new ForbiddenException("无权限");
     }
@@ -850,7 +855,7 @@ export class ConstructionService {
       where: {
         storeId: query.storeId,
         date: buildDateRange(query.from, query.to),
-        workerId: isWorker && !actor.isAuditor ? actor.id : undefined
+        workerId: isWorker && !PermissionPolicy.isAdmin(actor) ? actor.id : undefined
       },
       orderBy: { date: "asc" },
       include: { worker: { select: { username: true, nickname: true } } }

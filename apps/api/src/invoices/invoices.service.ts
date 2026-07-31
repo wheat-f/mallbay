@@ -256,7 +256,13 @@ export class InvoicesService {
 
 function buildInvoiceListScope(actor: UserWithStoreMember, storeId: string): Prisma.InvoiceWhereInput {
   const where: Prisma.InvoiceWhereInput = { storeId };
-  if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
+  if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) {
+    if (!PermissionPolicy.canRuntime(actor, "finance", "read", storeId)) return { storeId: "__no_store__" };
+    if (PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) where.OR = [
+      { order: { salesPersonId: actor.id } },
+      { allocations: { some: { order: { salesPersonId: actor.id } } } }
+    ];
+  } else if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
     where.OR = [
       { order: { salesPersonId: actor.id } },
       { allocations: { some: { order: { salesPersonId: actor.id } } } }

@@ -206,7 +206,7 @@ export class ReportsService {
     this.assertCanViewOperationalReports(actor, storeId);
 
     const dateRange = reportDateRange(query.dateFrom, query.dateTo);
-    const isSales = !actor.isAuditor && actor.storeMember?.position === StorePosition.SALES;
+    const isSales = PermissionPolicy.hasRuntimeSnapshot(actor.id) ? Boolean(PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) : !actor.isAuditor && actor.storeMember?.position === StorePosition.SALES;
     const salesPersonId = isSales ? actor.id : query.salesPersonId;
     const orderWhere = buildOperationalOrderWhere(storeId, query, dateRange, salesPersonId);
     const orders = await this.prisma.order.findMany({
@@ -262,7 +262,7 @@ export class ReportsService {
     if (!storeId) {
       return { salesPeople: [], constructionPeople: [], constructionTypes: [], productCategories: [], orderStatuses: [] };
     }
-    const isSales = !actor.isAuditor && actor.storeMember?.position === StorePosition.SALES;
+    const isSales = PermissionPolicy.hasRuntimeSnapshot(actor.id) ? Boolean(PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) : !actor.isAuditor && actor.storeMember?.position === StorePosition.SALES;
     const [members, constructionTypes, productCategories, orderStatuses] = await Promise.all([
       this.prisma.storeMember.findMany({
         where: {
@@ -304,7 +304,7 @@ export class ReportsService {
 
 function buildReportQueryScope(actor: UserWithStoreMember, storeId: string | undefined) {
   const storeWhere = storeId ? { storeId } : {};
-  const isSales = !actor.isAuditor && actor.storeMember?.position === StorePosition.SALES;
+  const isSales = PermissionPolicy.hasRuntimeSnapshot(actor.id) ? Boolean(PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) : !actor.isAuditor && actor.storeMember?.position === StorePosition.SALES;
   if (!isSales) {
     return {
       orderWhere: storeWhere,

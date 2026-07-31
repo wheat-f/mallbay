@@ -109,6 +109,6 @@ export class UsersController {
   // 管理员专用：重置用户密码
   @Post("reset-password")
   resetPassword(@Req() req: AuthRequest, @Body() dto: ResetPasswordDto) {
-    return this.usersService.resetPassword(req.user.isAuditor, dto);
+    return this.usersService.resetPasswordForUser(req.user.id, dto);
   }
 }

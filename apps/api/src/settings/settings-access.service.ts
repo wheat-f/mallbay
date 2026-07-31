@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { PermissionsService } from "../permissions/permissions.service";
 import { SETTINGS_CAPABILITIES, type SettingsAction, type SettingsCapability, type SettingsDomain } from "./settings-capabilities";
 
 export type SettingsUser = { id: string; isAuditor?: boolean; storeMember?: { storeId: string; position: string } | null };
@@ -7,7 +8,7 @@ export type SettingsCapabilityView = SettingsCapability & { allowed: boolean; sc
 
 @Injectable()
 export class SettingsAccessService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly permissions?: PermissionsService) {}
 
   async resolveUser(user: SettingsUser) {
     if (user.storeMember !== undefined) return user;
@@ -17,7 +18,11 @@ export class SettingsAccessService {
 
   async getCapabilities(user: SettingsUser): Promise<SettingsCapabilityView[]> {
     const actor = await this.resolveUser(user);
-    return SETTINGS_CAPABILITIES.filter((capability) => this.canView(actor, capability)).map((capability) => ({
+    const visible: SettingsCapability[] = [];
+    for (const capability of SETTINGS_CAPABILITIES) {
+      if (await this.canUsePublishedPermission(actor, capability, "view")) visible.push(capability);
+    }
+    return visible.map((capability) => ({
       ...capability,
       allowed: true,
       scopeId: this.scopeId(actor, capability.domain)
@@ -46,7 +51,7 @@ export class SettingsAccessService {
   async assert(user: SettingsUser, code: string, action: SettingsAction, requestedScopeId?: string) {
     const actor = await this.resolveUser(user);
     const capability = SETTINGS_CAPABILITIES.find((item) => item.code === code);
-    if (!capability || !this.canAction(actor, capability, action)) {
+    if (!capability || (this.permissions ? !(await this.canUsePublishedPermission(actor, capability, action)) : !this.canAction(actor, capability, action))) {
       throw new ForbiddenException("当前角色无权访问该设置");
     }
     const scopeId = this.scopeId(actor, capability.domain);
@@ -55,6 +60,13 @@ export class SettingsAccessService {
       throw new ForbiddenException("无权访问其他门店的设置");
     }
     return { actor, capability, scopeId: isHeadquartersRead ? (requestedScopeId ?? null) : scopeId };
+  }
+
+  private async canUsePublishedPermission(actor: Awaited<ReturnType<SettingsAccessService["resolveUser"]>>, capability: SettingsCapability, action: SettingsAction) {
+    if (!this.permissions) return this.canAction(actor, capability, action);
+    const permissionAction = action === "view" || action === "audit" ? "read" : "write";
+    const storeId = capability.domain === "STORE" || capability.domain === "FINANCE" ? actor.storeMember?.storeId : undefined;
+    return this.permissions.authorize(actor.id, "settings", permissionAction, { storeId });
   }
 
   private canView(actor: Awaited<ReturnType<SettingsAccessService["resolveUser"]>>, capability: SettingsCapability) {

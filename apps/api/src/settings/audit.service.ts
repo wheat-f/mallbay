@@ -1,28 +1,32 @@
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { PermissionsService } from "../permissions/permissions.service";
 import { SettingsAccessService, type SettingsUser } from "./settings-access.service";
 
 type AuditQuery = { action?: string; from?: string; to?: string; limit?: number; offset?: number; page?: number; pageSize?: number; domain?: string };
 
 @Injectable()
 export class SettingsAuditService {
-  constructor(private readonly prisma: PrismaService, private readonly access: SettingsAccessService) {}
+  constructor(private readonly prisma: PrismaService, private readonly access: SettingsAccessService, private readonly permissions: PermissionsService) {}
 
   async list(user: SettingsUser, input: AuditQuery) {
     const actor = await this.access.resolveUser(user);
-    const canGlobal = Boolean(actor.isAuditor);
-    if (!canGlobal && (!actor.storeMember || !["MANAGER", "FINANCE"].includes(actor.storeMember.position))) {
+    const canGlobal = await this.permissions.authorize(actor.id, "settings", "read");
+    const storeId = actor.storeMember?.storeId;
+    const canFinance = Boolean(storeId && await this.permissions.authorize(actor.id, "finance", "read", { storeId }));
+    if (!canGlobal && !canFinance && (!actor.storeMember || !["MANAGER", "FINANCE"].includes(actor.storeMember.position))) {
       throw new ForbiddenException("当前角色无权访问审计");
     }
     const requestedDomain = input.domain?.trim().toUpperCase();
-    if (requestedDomain && !canGlobal && actor.storeMember?.position === "FINANCE" && requestedDomain !== "FINANCE") {
+    // Legacy position === "FINANCE" && requestedDomain !== "FINANCE" rule is now permission-backed.
+    if (requestedDomain && !canGlobal && canFinance && requestedDomain !== "FINANCE") {
       throw new ForbiddenException("财务只能访问财务审计");
     }
-    if (requestedDomain === "FINANCE" && !canGlobal && actor.storeMember?.position !== "FINANCE") {
+    if (requestedDomain === "FINANCE" && !canGlobal && !canFinance) {
       throw new ForbiddenException("当前角色无权访问财务审计");
     }
-    if (!canGlobal && actor.storeMember?.position === "FINANCE" && !requestedDomain) {
+    if (!canGlobal && canFinance && !requestedDomain) {
       input = { ...input, domain: "FINANCE" };
     }
 
@@ -90,11 +94,12 @@ export class SettingsAuditService {
       if (!page.rows.length) break;
     }
     const actor = await this.access.resolveUser(user);
+    const canGlobal = await this.permissions.authorize(actor.id, "settings", "read");
     await this.prisma.auditEvent.create({
       data: {
         action: "settings.audit.exported",
         actorId: actor.id,
-        storeId: actor.isAuditor ? null : actor.storeMember?.storeId,
+        storeId: canGlobal ? null : actor.storeMember?.storeId,
         targetType: "SettingsAuditExport",
         metadata: { count: rows.length, filters: input as Prisma.InputJsonValue }
       }

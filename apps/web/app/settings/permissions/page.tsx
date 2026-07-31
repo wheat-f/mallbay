@@ -1,10 +1,125 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Alert, Button, Card, Checkbox, Result, Space, Spin, Table, Tag, Typography, App } from "antd";
+
+import { useEffect, useMemo, useState } from "react";
+import { Alert, App, Button, Card, Checkbox, Result, Space, Spin, Table, Tag, Typography } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
-import { settingsApi, type ConfigVersion } from "../../../src/features/settings/api";
+import { permissionsApi, type PermissionDefinition, type PermissionPolicy, type PermissionRole } from "../../../src/features/permissions/api";
 import { SettingsCapabilityGuard } from "../../../src/features/settings/capability-guard";
-const roles=["总部管理员","店长","财务","销售","客服","施工主管","师傅"]; const modules=["客户","销售单","施工","库存","财务","审计"];
-type Matrix=Record<string,Record<string,boolean>>; const seed:Matrix=Object.fromEntries(roles.map((role)=>[role,Object.fromEntries(modules.map((module)=>[module,role==="总部管理员"||role==="店长"&&module!=="财务"||role==="财务"&&module==="财务"]))]));
-export default function PermissionsPage(){const router=useRouter();const {message}=App.useApp();const [matrix,setMatrix]=useState<Matrix>(seed);const [draft,setDraft]=useState<ConfigVersion|null>(null);const [loading,setLoading]=useState(true);const [saving,setSaving]=useState(false);const [error,setError]=useState<string|null>(null);useEffect(()=>{settingsApi.configVersions("settings.permissions","global").then((result)=>{const versions=result.rows;const current=versions.find((v)=>v.status==="DRAFT"||v.status==="VALIDATION_FAILED")??versions.find((v)=>v.status==="PUBLISHED");if(current){setMatrix((current.payload.matrix as Matrix)??seed);if(current.status==="DRAFT"||current.status==="VALIDATION_FAILED")setDraft(current);}}).catch((reason)=>setError(reason instanceof Error?reason.message:"权限矩阵加载失败")).finally(()=>setLoading(false));},[]);const persistDraft=async()=>{const next=draft?await settingsApi.updateConfigVersion(draft.id,{payload:{matrix},expectedVersion:draft.version}):await settingsApi.createConfigVersion({domain:"HQ",capabilityCode:"settings.permissions",scopeId:"global",payload:{matrix}});setDraft(next);return next;};const save=async()=>{setSaving(true);setError(null);try{const next=await persistDraft();message.success(`权限矩阵草稿 v${next.version} 已保存`);}catch(reason){setError(reason instanceof Error?reason.message:"草稿保存失败");}finally{setSaving(false);}};const publish=async()=>{setSaving(true);setError(null);try{const next=await persistDraft();const checked=await settingsApi.validateConfigVersion(next.id);if(Object.keys(checked.errors??{}).length)throw new Error(Object.values(checked.errors).join("；"));const published=await settingsApi.publishConfigVersion(next.id);setDraft(null);message.success(`权限矩阵 v${published.version} 已发布`);}catch(reason){setError(reason instanceof Error?reason.message:"校验或发布失败");}finally{setSaving(false);}};if(loading)return <Spin description="正在加载权限矩阵…"/>;if(error)return <Alert type="error" showIcon message={error}/>;return <SettingsCapabilityGuard capabilityCodes={["settings.permissions"]}><div className="management-page settings-workspace"><Space direction="vertical" size={20} style={{width:"100%"}}><Button icon={<ArrowLeftOutlined/>} onClick={()=>router.push("/settings")}>返回职责工作台</Button><div><Typography.Title level={2}>角色与权限</Typography.Title><Typography.Paragraph type="secondary">权限修改先保存草稿，再执行服务端校验和发布；总部管理员发布后新请求立即使用新权限。</Typography.Paragraph></div><Card extra={<Tag color={draft?"gold":"green"}>{draft?`草稿 v${draft.version}`:"已发布"}</Tag>}><Table pagination={false} rowKey="role" dataSource={roles.map((role)=>({role}))} columns={[{title:"角色",dataIndex:"role",fixed:"left" as const},{title:"能力",render:(_,record)=>modules.map((module)=><Space key={module} style={{marginRight:16}}><Checkbox checked={Boolean(matrix[record.role]?.[module])} onChange={(event)=>setMatrix((current)=>({...current,[record.role]:{...current[record.role],[module]:event.target.checked}}))}/>{module}</Space>)}]}/><Space style={{marginTop:20}}><Button loading={saving} onClick={()=>void save()}>保存草稿</Button><Button type="primary" loading={saving} onClick={()=>void publish()}>校验并发布</Button></Space></Card></Space></div></SettingsCapabilityGuard>;}
+
+type Grant = { roleCode: string; permissionCode: string; action: string; scope: string };
+
+function grantKey(grant: Grant) {
+  return [grant.roleCode, grant.permissionCode, grant.action, grant.scope].join("|");
+}
+
+export default function PermissionsPage() {
+  const router = useRouter();
+  const { message } = App.useApp();
+  const [roles, setRoles] = useState<PermissionRole[]>([]);
+  const [catalog, setCatalog] = useState<PermissionDefinition[]>([]);
+  const [policy, setPolicy] = useState<PermissionPolicy | null>(null);
+  const [grants, setGrants] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([permissionsApi.roles(), permissionsApi.catalog(), permissionsApi.currentPolicy()])
+      .then(([nextRoles, nextCatalog, nextPolicy]) => {
+        setRoles(nextRoles);
+        setCatalog(nextCatalog);
+        setPolicy(nextPolicy);
+        setGrants(new Set(nextPolicy?.payload.grants?.map(grantKey) ?? []));
+      })
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "权限矩阵加载失败"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const activeRoles = useMemo(() => roles.filter((role) => role.status === "ACTIVE"), [roles]);
+  const toggle = (role: PermissionRole, definition: PermissionDefinition, action: string) => {
+    const scope = role.code === "HQ_ADMIN" ? "GLOBAL" : "STORE";
+    const key = grantKey({ roleCode: role.code, permissionCode: definition.code, action, scope });
+    setGrants((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const saveDraft = async (publish = false) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = {
+        grants: [...grants].map((value) => {
+          const [roleCode, permissionCode, action, scope] = value.split("|");
+          return { roleCode, permissionCode, action, scope };
+        })
+      };
+      const draft = await permissionsApi.createDraft(payload, policy?.version);
+      if (!publish) {
+        setPolicy(draft);
+        message.success("权限矩阵草稿已保存");
+        return;
+      }
+      const checked = await permissionsApi.validate(draft.id);
+      const published = await permissionsApi.publish(checked.id, checked.version);
+      setPolicy(published);
+      message.success("权限矩阵已发布，后端权限立即生效");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "权限矩阵保存或发布失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <Spin description="正在加载权限矩阵…" />;
+  if (error) return <Alert type="error" showIcon message={error} />;
+  if (!activeRoles.length || !catalog.length) return <Result status="info" title="暂无可维护的角色或权限目录" />;
+
+  return (
+    <SettingsCapabilityGuard capabilityCodes={["settings.permissions"]}>
+      <div className="management-page settings-workspace">
+        <Space direction="vertical" size={20} style={{ width: "100%" }}>
+          <Space><Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/settings")}>返回职责工作台</Button><Button onClick={() => router.push("/settings/role-bindings")}>维护人员角色绑定</Button></Space>
+          <div>
+            <Typography.Title level={2}>角色与权限</Typography.Title>
+            <Typography.Paragraph type="secondary">
+              权限目录和角色来自服务端；修改先保存草稿，校验通过后发布，发布后的结果同时控制后端接口。
+            </Typography.Paragraph>
+          </div>
+          <Card extra={<Tag color={policy ? "green" : "gold"}>{policy ? "当前版本 v" + policy.version : "未发布"}</Tag>}>
+            <Table
+              pagination={{ pageSize: 20 }}
+              rowKey="code"
+              dataSource={catalog}
+              scroll={{ x: Math.max(800, activeRoles.length * 150) }}
+              columns={[
+                { title: "权限目录", dataIndex: "name", fixed: "left" as const, render: (name: string, item: PermissionDefinition) => <Space direction="vertical" size={0}><strong>{name}</strong><Typography.Text type="secondary">{item.code}</Typography.Text></Space> },
+                ...activeRoles.map((role) => ({
+                  title: role.name,
+                  key: role.code,
+                  render: (_: unknown, item: PermissionDefinition) => (
+                    <Space direction="vertical" size={4}>
+                      {item.actions.map((action) => {
+                        const scope = role.code === "HQ_ADMIN" ? "GLOBAL" : "STORE";
+                        const checked = grants.has(grantKey({ roleCode: role.code, permissionCode: item.code, action, scope }));
+                        return <Checkbox key={action} checked={checked} onChange={() => toggle(role, item, action)}>{action === "read" ? "查看" : action === "write" ? "编辑" : action}</Checkbox>;
+                      })}
+                    </Space>
+                  )
+                }))
+              ]}
+            />
+            <Space style={{ marginTop: 20 }}>
+              <Button loading={saving} onClick={() => void saveDraft(false)}>保存草稿</Button>
+              <Button type="primary" loading={saving} onClick={() => void saveDraft(true)}>校验并发布</Button>
+            </Space>
+          </Card>
+        </Space>
+      </div>
+    </SettingsCapabilityGuard>
+  );
+}

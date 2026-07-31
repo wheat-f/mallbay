@@ -3,6 +3,8 @@ import { DictionaryStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthenticatedSettingsUser } from "./dictionaries.service";
 import { CreateDictionaryTemplateDto, CreateDictionaryTemplateItemDto, SetDictionaryTemplateItemStatusDto, UpdateDictionaryTemplateDto, UpdateDictionaryTemplateItemDto } from "./dto/dictionary-template.dto";
+import { DictionaryCatalogQueryDto, DictionaryItemsQueryDto } from "./dto/dictionary.dto";
+import { normalizePagination } from "../common/pagination";
 
 @Injectable()
 export class DictionaryTemplatesService {
@@ -11,6 +13,15 @@ export class DictionaryTemplatesService {
   private assertHq(user: AuthenticatedSettingsUser) {
     if (!user.isAuditor) throw new ForbiddenException("仅总部管理员可维护总部字典模板");
     return user;
+  }
+
+  private async assertReader(user: AuthenticatedSettingsUser) {
+    if (user.isAuditor || user.storeMember) return;
+    const member = await this.prisma.storeMember.findUnique({
+      where: { userId: user.id },
+      select: { id: true, storeId: true },
+    });
+    if (!member) throw new ForbiddenException("无权读取总部字典模板");
   }
 
   private serialize(template: Prisma.DictionaryTemplateGetPayload<{ include: { templateItems: true } }>) {
@@ -30,6 +41,85 @@ export class DictionaryTemplatesService {
     return rows.map((row) => this.serialize(row));
   }
 
+  async catalog(user: AuthenticatedSettingsUser, query: DictionaryCatalogQueryDto) {
+    await this.assertReader(user);
+    const { page, pageSize, skip } = normalizePagination(query.page, query.pageSize);
+    const keyword = query.keyword?.trim();
+    const where = keyword ? { OR: [{ name: { contains: keyword, mode: "insensitive" as const } }, { code: { contains: keyword, mode: "insensitive" as const } }] } : {};
+    const [total, rows] = await Promise.all([
+      this.prisma.dictionaryTemplate.count({ where }),
+      this.prisma.dictionaryTemplate.findMany({ where, orderBy: [{ createdAt: "asc" }, { code: "asc" }], skip, take: pageSize })
+    ]);
+    const counts = await this.prisma.dictionaryTemplateItem.groupBy({ by: ["templateId", "status"], where: { templateId: { in: rows.map((row) => row.id) } }, _count: { _all: true } });
+    const countMap = new Map<string, { active: number; inactive: number }>();
+    for (const count of counts) {
+      const current = countMap.get(count.templateId) ?? { active: 0, inactive: 0 };
+      current[count.status === DictionaryStatus.ACTIVE ? "active" : "inactive"] = count._count._all;
+      countMap.set(count.templateId, current);
+    }
+    return { items: rows.map((row) => ({ ...row, source: "HQ_TEMPLATE" as const, activeItemCount: countMap.get(row.id)?.active ?? 0, inactiveItemCount: countMap.get(row.id)?.inactive ?? 0 })), total, page, pageSize };
+  }
+
+  async listItems(user: AuthenticatedSettingsUser, templateId: string, query: DictionaryItemsQueryDto) {
+    await this.assertReader(user);
+    const template = await this.prisma.dictionaryTemplate.findUnique({ where: { id: templateId } });
+    if (!template) throw new NotFoundException("总部字典模板不存在");
+    const { page, pageSize, skip } = normalizePagination(query.page, query.pageSize);
+    const keyword = query.keyword?.trim();
+    const where = {
+      templateId,
+      parentId: query.parentId ?? null,
+      ...(query.status ? { status: query.status } : {}),
+      ...(keyword ? { OR: [{ name: { contains: keyword, mode: "insensitive" as const } }, { code: { contains: keyword, mode: "insensitive" as const } }] } : {})
+    };
+    const [total, items, parent] = await Promise.all([
+      this.prisma.dictionaryTemplateItem.count({ where }),
+      this.prisma.dictionaryTemplateItem.findMany({ where, orderBy: [{ sortOrder: "asc" }, { code: "asc" }], skip, take: pageSize }),
+      query.parentId ? this.prisma.dictionaryTemplateItem.findUnique({ where: { id: query.parentId }, select: { id: true, code: true, name: true, parentId: true } }) : Promise.resolve(null)
+    ]);
+    return { items: items.map((item) => ({ ...item, source: "HQ_TEMPLATE" as const, isSystem: false })), total, page, pageSize, dictionaryVersion: template.version, parent };
+  }
+  async previewImportItems(user: AuthenticatedSettingsUser, templateId: string, items: Array<{ code: string; name: string; sortOrder?: number; parentId?: string | null; status?: DictionaryStatus }>) {
+    this.assertHq(user);
+    const template = await this.prisma.dictionaryTemplate.findUnique({ where: { id: templateId } });
+    if (!template) throw new NotFoundException("总部字典模板不存在");
+    const normalized = items.map((item, index) => ({ code: item.code?.trim() ?? "", name: item.name?.trim() ?? "", sortOrder: item.sortOrder ?? index, parentId: item.parentId ?? null, status: item.status ?? DictionaryStatus.ACTIVE }));
+    const errors: Array<{ code: string; message: string }> = [];
+    const seen = new Set<string>();
+    for (const item of normalized) {
+      if (!item.code || !item.name) errors.push({ code: item.code, message: "编码和名称不能为空" });
+      if (seen.has(item.code)) errors.push({ code: item.code, message: "文件内编码重复" });
+      seen.add(item.code);
+      if (item.parentId && !template.allowHierarchy) errors.push({ code: item.code, message: "当前模板不支持层级" });
+    }
+    const existing = await this.prisma.dictionaryTemplateItem.findMany({ where: { templateId, code: { in: normalized.map((item) => item.code).filter(Boolean) } } });
+    const existingMap = new Map(existing.map((item) => [item.code, item]));
+    return { templateId, dictionaryVersion: template.version, canCommit: errors.length === 0, summary: { total: normalized.length, create: normalized.filter((item) => !existingMap.has(item.code)).length, update: normalized.filter((item) => existingMap.has(item.code)).length, error: errors.length }, changes: normalized.map((item) => ({ code: item.code, name: item.name, action: existingMap.has(item.code) ? "UPDATE" as const : "CREATE" as const })), errors };
+  }
+
+  async commitImportItems(user: AuthenticatedSettingsUser, templateId: string, items: Array<{ code: string; name: string; sortOrder?: number; parentId?: string | null; status?: DictionaryStatus }>, version?: number) {
+    this.assertHq(user);
+    const template = await this.prisma.dictionaryTemplate.findUnique({ where: { id: templateId } });
+    if (!template) throw new NotFoundException("总部字典模板不存在");
+    if (version !== undefined && version !== template.version) throw new ConflictException("总部模板已被其他人修改，请重新预览");
+    const preview = await this.previewImportItems(user, templateId, items);
+    if (!preview.canCommit) throw new BadRequestException({ message: "导入预览存在错误，整批未提交", errors: preview.errors });
+    const actor = this.assertHq(user);
+    const normalized = items.map((item, index) => ({ code: item.code.trim(), name: item.name.trim(), sortOrder: item.sortOrder ?? index, parentId: item.parentId ?? null, status: item.status ?? DictionaryStatus.ACTIVE }));
+    const existing = await this.prisma.dictionaryTemplateItem.findMany({ where: { templateId, code: { in: normalized.map((item) => item.code) } } });
+    const existingMap = new Map(existing.map((item) => [item.code, item]));
+    return this.prisma.$transaction(async (tx) => {
+      const created: unknown[] = []; const updated: unknown[] = [];
+      for (const item of normalized) {
+        const current = existingMap.get(item.code);
+        if (current) updated.push(await tx.dictionaryTemplateItem.update({ where: { id: current.id }, data: { name: item.name, sortOrder: item.sortOrder, parentId: item.parentId, status: item.status, updatedById: actor.id } }));
+        else created.push(await tx.dictionaryTemplateItem.create({ data: { templateId, code: item.code, name: item.name, sortOrder: item.sortOrder, parentId: item.parentId, status: item.status, updatedById: actor.id } }));
+      }
+      const updatedTemplate = await tx.dictionaryTemplate.update({ where: { id: templateId }, data: { version: { increment: 1 }, updatedById: actor.id } });
+      await tx.auditEvent.create({ data: { action: "settings.dictionary.template.items.imported", actorId: actor.id, storeId: null, targetType: "DictionaryTemplate", targetId: templateId, metadata: { created: created.length, updated: updated.length, version: updatedTemplate.version } } });
+      return { created, updated, version: updatedTemplate.version };
+    });
+  }
   async create(user: AuthenticatedSettingsUser, dto: CreateDictionaryTemplateDto) {
     const actor = this.assertHq(user);
     const code = dto.code.trim().toUpperCase();

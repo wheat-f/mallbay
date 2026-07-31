@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuard
 import { DictionaryStatus } from "@prisma/client";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { CreateDictionaryDto, CreateDictionaryItemDto, ImportDictionaryItemsDto, SetDictionaryItemStatusDto, UpdateDictionaryDto, UpdateDictionaryItemDto, DeleteDictionaryItemDto, DisableDictionaryDto } from "./dto/dictionary.dto";
+import { CreateDictionaryDto, CreateDictionaryItemDto, ImportDictionaryItemsDto, SetDictionaryItemStatusDto, UpdateDictionaryDto, UpdateDictionaryItemDto, DeleteDictionaryItemDto, DisableDictionaryDto, DictionaryCatalogQueryDto, DictionaryItemsQueryDto } from "./dto/dictionary.dto";
 import { DictionariesService, type AuthenticatedSettingsUser } from "./dictionaries.service";
 
 type AuthRequest = Request & { user: AuthenticatedSettingsUser };
@@ -15,12 +15,25 @@ export class DictionariesController {
   @Get()
   list(@Req() req: AuthRequest, @Query("storeId") storeId?: string) { return this.dictionaries.list(req.user, storeId); }
 
+  @Get("defaults/backfill/preview")
+  previewDefaultBackfill(@Req() req: AuthRequest, @Query("storeId") storeId: string) { return this.dictionaries.previewDefaultBackfill(req.user, storeId); }
+
+  @Post("defaults/backfill")
+  backfillDefaults(@Req() req: AuthRequest, @Body("storeId") storeId: string) { return this.dictionaries.backfillDefaults(req.user, storeId); }
+
+  @Get("catalog")
+  catalog(@Req() req: AuthRequest, @Query() query: DictionaryCatalogQueryDto, @Query("storeId") storeId?: string) { return this.dictionaries.catalog(req.user, query, storeId); }
   @Post()
   create(@Req() req: AuthRequest, @Body() dto: CreateDictionaryDto) { return this.dictionaries.create(req.user, dto); }
 
   @Get(":id/items")
-  listItems(@Req() req: AuthRequest, @Param("id") id: string) { return this.dictionaries.listItems(req.user, id); }
+  listItems(@Req() req: AuthRequest, @Param("id") id: string, @Query() query: DictionaryItemsQueryDto) { return this.dictionaries.listItems(req.user, id, query); }
 
+  @Post(":id/items/import/preview")
+  previewImport(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ImportDictionaryItemsDto) { return this.dictionaries.previewImportItems(req.user, id, dto.items); }
+
+  @Post(":id/items/import/commit")
+  commitImport(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ImportDictionaryItemsDto) { return this.dictionaries.commitImportItems(req.user, id, dto.items, dto.version); }
   @Post(":id/items/import")
   importItems(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ImportDictionaryItemsDto) { return this.dictionaries.importItems(req.user, id, dto.items); }
 

@@ -11,12 +11,13 @@ import { useAuthStore } from "../../src/stores/auth-store";
 const DOMAIN_ICONS: Record<SettingsDomain, React.ReactNode> = { HQ: <LockOutlined />, STORE: <ShopOutlined />, FINANCE: <BankOutlined />, OWN: <UserOutlined /> };
 const PATHS: Record<string, string> = {
   "settings.dictionary": "/settings/dictionaries",
+  "store.dictionary": "/settings/dictionaries",
   "settings.permissions": "/settings/permissions",
   "settings.security": "/settings/security",
-  "store.profile": "/settings/store",
-  "store.operations": "/settings/store",
-  "store.notifications": "/settings/store",
-  "store.capacity": "/settings/store",
+  "store.profile": "/settings/store?capability=store.profile",
+  "store.operations": "/settings/store?capability=store.operations",
+  "store.notifications": "/settings/store?capability=store.notifications",
+  "store.capacity": "/settings/store?capability=store.capacity",
   "settings.audit.global": "/settings/audit",
   "finance.audit": "/settings/audit?domain=FINANCE",
   "finance.labor_cost": "/settings/finance",
@@ -50,7 +51,7 @@ export default function SettingsPage() {
 
   const groups = useMemo(() => groupCapabilities(capabilities), [capabilities]);
   const openCapability = (code: string) => { const next = [code, ...recentAccess.filter((item) => item !== code)].slice(0, 5); setRecentAccess(next); window.localStorage.setItem("settings-recent-access", JSON.stringify(next)); const path = PATHS[code]; if (path) router.push(path); };
-  if (!hydrated || loading) return <div className="management-page settings-workspace"><Spin size="large" tip="正在加载我的职责…" /></div>;
+  if (!hydrated || loading) return <div className="management-page settings-workspace"><Spin size="large" description="正在加载我的职责…" /></div>;
   if (error) return <div className="management-page settings-workspace"><Alert type="error" showIcon message="无法加载系统设置" description={error} action={<Button onClick={() => window.location.reload()}>重新加载</Button>} /></div>;
   if (!groups.length) return <div className="management-page settings-workspace"><Result status="403" title="当前角色无权访问系统设置" subTitle="请联系管理员确认你的职责与门店归属。" extra={<Button type="primary" onClick={() => router.push("/dashboard")}>返回首页</Button>} /></div>;
 
@@ -61,7 +62,7 @@ export default function SettingsPage() {
     </header>
     {(recentAccess.length > 0 || recentChanges.length > 0) ? <Space align="start" size={16} wrap style={{ width: "100%", marginBottom: 20 }}>
       {recentAccess.length > 0 ? <Card title="最近访问" size="small"><Space wrap>{recentAccess.map((code) => <Button key={code} type="link" onClick={() => openCapability(code)}>{capabilities.find((item) => item.code === code)?.name ?? code}</Button>)}</Space></Card> : null}
-      {recentChanges.length > 0 ? <Card title="最近变更" size="small"><List size="small" dataSource={recentChanges} renderItem={(row) => <List.Item><Space><Tag color="blue">{row.action}</Tag><Typography.Text>{row.targetType}</Typography.Text><Typography.Text type="secondary">{new Date(row.createdAt).toLocaleString("zh-CN")}</Typography.Text></Space></List.Item>} /></Card> : null}
+      {recentChanges.length > 0 ? <Card title="最近变更" size="small"><List size="small" dataSource={recentChanges} renderItem={(row) => <List.Item><Space><Tag color="blue">{row.actionLabel}</Tag><Typography.Text>{row.targetTypeLabel} · {row.targetName}</Typography.Text><Typography.Text type="secondary">{new Date(row.createdAt).toLocaleString("zh-CN")}</Typography.Text></Space></List.Item>} /></Card> : null}
     </Space> : null}
     <div className="settings-workbench-grid">
       {groups.map((group) => <section key={group.domain} className="settings-domain-section">

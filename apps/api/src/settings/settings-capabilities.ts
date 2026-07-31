@@ -15,6 +15,7 @@ export const SETTINGS_CAPABILITIES: readonly SettingsCapability[] = [
   { code: "settings.dictionary", name: "基础字典模板", domain: "HQ", actions: ["view", "create", "edit", "validate", "publish"], scope: "global" },
   { code: "settings.security", name: "安全策略", domain: "HQ", actions: ["view", "create", "edit", "validate", "publish"], scope: "global" },
   { code: "settings.audit.global", name: "全局审计", domain: "HQ", actions: ["view", "audit"], scope: "global" },
+  { code: "store.dictionary", name: "门店基础字典", domain: "STORE", actions: ["view", "create", "edit"], scope: "store" },
   { code: "store.profile", name: "门店资料", domain: "STORE", actions: ["view", "create", "edit", "validate", "publish"], scope: "store" },
   { code: "store.operations", name: "业务开关与容量", domain: "STORE", actions: ["view", "create", "edit", "validate", "publish"], scope: "store" },
   { code: "store.notifications", name: "通知与 OSS", domain: "STORE", actions: ["view", "create", "edit", "validate", "publish"], scope: "store" },

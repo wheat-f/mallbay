@@ -4,7 +4,7 @@ import { SettingsAccessService } from "./settings-access.service";
 function service(member?: { storeId: string; position: string } | null) { return new SettingsAccessService({ storeMember: { findUnique: async () => member } } as never); }
 test("capabilities are scoped to the actor role", async () => {
   const manager = await service({ storeId: "store-a", position: "MANAGER" }).getCapabilities({ id: "u1", isAuditor: false });
-  assert.ok(manager.some((item) => item.domain === "STORE")); assert.equal(manager.some((item) => item.domain === "HQ"), false);
+  assert.ok(manager.some((item) => item.domain === "STORE")); assert.equal(manager.some((item) => item.domain === "HQ"), false); assert.ok(manager.some((item) => item.code === "store.dictionary"));
   const finance = await service({ storeId: "store-a", position: "FINANCE" }).getCapabilities({ id: "u2", isAuditor: false });
   assert.ok(finance.some((item) => item.domain === "FINANCE")); assert.equal(finance.some((item) => item.domain === "STORE"), false);
   const auditor = await service(undefined).getCapabilities({ id: "u3", isAuditor: true }); assert.ok(auditor.some((item) => item.domain === "HQ"));

@@ -22,6 +22,7 @@ import { ChangeStoreManagerUseCase } from "./use-cases/change-store-manager.use-
 import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
 import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
+import { DictionariesService } from "../settings/dictionaries.service";
 
 @Injectable()
 export class StoresService {
@@ -30,7 +31,8 @@ export class StoresService {
     @Inject(ReviewStoreSubmissionUseCase) private readonly reviewStoreSubmission: ReviewStoreSubmissionUseCase,
     @Inject(SubmitStoreForReviewUseCase) private readonly submitStoreForReview: SubmitStoreForReviewUseCase,
     @Inject(ChangeStoreManagerUseCase) private readonly changeStoreManager: ChangeStoreManagerUseCase,
-    @Inject(SetStoreFrozenUseCase) private readonly setStoreFrozen: SetStoreFrozenUseCase
+    @Inject(SetStoreFrozenUseCase) private readonly setStoreFrozen: SetStoreFrozenUseCase,
+    @Inject(DictionariesService) private readonly dictionaries: DictionariesService
   ) {}
 
   // ─── 管理员：创建门店并指派店长 ────────────────────────────────────────────
@@ -80,6 +82,8 @@ export class StoresService {
 
       return store;
     });
+
+    await this.dictionaries.initializeDefaultsForStore(store.id, auditorId);
 
     return store;
   }

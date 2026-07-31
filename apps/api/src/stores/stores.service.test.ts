@@ -10,6 +10,7 @@ import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submissio
 import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
 import { StoreRepository } from "./repositories/store.repository";
+import { DictionariesService } from "../settings/dictionaries.service";
 
 test("listPublishedStores caps pageSize at 100", async () => {
   let capturedTake = 0;
@@ -47,7 +48,8 @@ test("StoresService receives PrismaService through Nest injection", async () => 
       { provide: ReviewStoreSubmissionUseCase, useValue: {} },
       { provide: SubmitStoreForReviewUseCase, useValue: {} },
       { provide: ChangeStoreManagerUseCase, useValue: {} },
-      { provide: SetStoreFrozenUseCase, useValue: {} }
+      { provide: SetStoreFrozenUseCase, useValue: {} },
+      { provide: DictionariesService, useValue: {} }
     ]
   }).compile();
 

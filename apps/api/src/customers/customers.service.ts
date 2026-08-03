@@ -8,7 +8,7 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { CustomerNoteType, Gender, Prisma } from "@prisma/client";
+import { CustomerNoteType, Gender, OrderStatus, Prisma, SettingsConfigStatus } from "@prisma/client";
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { normalizePagination } from "../common/pagination";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
@@ -106,6 +106,13 @@ export class CustomersService {
       where.OR = this.buildSearchConditions(q);
     }
 
+    if (dto.systemTag || dto.customTagId) {
+      const allItems = await this.prisma.customer.findMany({ where, orderBy: { updatedAt: "desc" }, include: { vehicles: { take: 3, orderBy: { updatedAt: "desc" } }, users: { take: 5, orderBy: { updatedAt: "desc" } }, tags: { orderBy: { createdAt: "desc" } }, owner: { select: { id: true, username: true, nickname: true } } } });
+      const thresholds = await this.getTagThresholds();
+      const decoratedItems = (await Promise.all(allItems.map((customer) => this.decorateCustomer(customer, dto.systemTag, dto.customTagId, thresholds)))).filter((item): item is NonNullable<typeof item> => item !== null);
+      return { total: decoratedItems.length, page, pageSize, items: decoratedItems.slice(skip, skip + pageSize) };
+    }
+    const thresholds = await this.getTagThresholds();
     const [total, items] = await Promise.all([
       this.prisma.customer.count({ where }),
       this.prisma.customer.findMany({
@@ -116,6 +123,7 @@ export class CustomersService {
         include: {
           vehicles: { take: 3, orderBy: { updatedAt: "desc" } },
           users: { take: 5, orderBy: { updatedAt: "desc" } },
+          tags: { orderBy: { createdAt: "desc" } },
           owner: { select: { id: true, username: true, nickname: true } }
         }
       })
@@ -125,7 +133,7 @@ export class CustomersService {
       total,
       page,
       pageSize,
-      items: items.map((customer) => this.sanitizeCustomer(customer))
+      items: (await Promise.all(items.map((customer) => this.decorateCustomer(customer, dto.systemTag, dto.customTagId, thresholds)))).filter((item): item is NonNullable<typeof item> => item !== null)
     };
   }
 
@@ -151,7 +159,7 @@ export class CustomersService {
       }
     });
 
-    return customers.map((customer) => this.sanitizeCustomer(customer));
+    return Promise.all(customers.map((customer) => this.decorateCustomer(customer)));
   }
 
   async detail(user: AuthenticatedCustomerUser, id: string) {
@@ -238,16 +246,14 @@ export class CustomersService {
       })
     ]);
 
+    const decoratedCustomer = await this.decorateCustomer(customer);
+    if (!decoratedCustomer) throw new NotFoundException("客户标签计算失败");
     return {
-      ...this.sanitizeCustomer(customer),
-      archiveSummary: this.buildArchiveSummary(
-        customer,
-        orderStats,
-        amountStats,
-        constructionTypeStats,
-        consumptionTrendOrders,
-        recentConstructionRecords
-      )
+      ...decoratedCustomer,
+      archiveSummary: {
+        ...this.buildArchiveSummary(customer, orderStats, amountStats, constructionTypeStats, consumptionTrendOrders, recentConstructionRecords),
+        systemTags: decoratedCustomer.systemTags
+      }
     };
   }
 
@@ -425,7 +431,7 @@ export class CustomersService {
     const identity = this.normalizeVehicleIdentity(dto.carPlate, dto.vin);
     await this.assertVehicleIdentityAvailable(customer.storeId, identity);
     await this.assertContactBelongsToCustomer(dto.defaultContactId, customer.id);
-    const vehicle = await this.prisma.$transaction(async (tx) => {
+    const vehicle = await this.runTransaction(async (tx: any) => {
       const created = await tx.customerVehicle.create({
         data: {
           storeId: customer.storeId,
@@ -481,7 +487,7 @@ export class CustomersService {
     );
     await this.assertContactBelongsToCustomer(dto.defaultContactId, vehicle.customerId);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.runTransaction(async (tx: any) => {
       const result = await tx.customerVehicle.update({
         where: { id },
         data: {
@@ -565,7 +571,7 @@ export class CustomersService {
         vehicle.id
       );
     }
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.runTransaction(async (tx: any) => {
       const result = await tx.customerVehicle.update({
         where: { id },
         data: status === "INACTIVE"
@@ -598,7 +604,7 @@ export class CustomersService {
     if (!target) throw new NotFoundException("目标客户不存在");
     if (target.storeId !== vehicle.customer.storeId) throw new BadRequestException("车辆只能转移给同门店客户");
     if (target.id === vehicle.customerId) throw new BadRequestException("车辆已属于该客户");
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.runTransaction(async (tx: any) => {
       const result = await tx.customerVehicle.update({
         where: { id },
         data: { customerId: target.id, defaultContactId: null, department: null }
@@ -642,7 +648,7 @@ export class CustomersService {
     if (!companyUser) {
       throw new BadRequestException("请输入联系人姓名");
     }
-    const created = await this.prisma.$transaction(async (tx) => {
+    const created = await this.runTransaction(async (tx: any) => {
       if (companyUser.isDefault) {
         await tx.customerUser.updateMany({ where: { customerId: customer.id }, data: { isDefault: false } });
       }
@@ -671,21 +677,20 @@ export class CustomersService {
   async createTag(user: AuthenticatedCustomerUser, dto: CreateCustomerTagDto) {
     const customer = await this.assertCanEditCustomer(user, dto.customerId);
     const label = dto.label.trim();
-    if (!label) {
-      throw new BadRequestException("请输入客户标签");
+    if (!label) throw new BadRequestException("请输入客户标签");
+    if (Array.from(label).length > 30) throw new BadRequestException("客户标签最多 30 个字符");
+    if (["新客户", "老客户", "高价值客户", "VIP 客户", "重点关注客户"].includes(label)) {
+      throw new ConflictException("该名称为系统标签保留名称");
     }
     try {
-      return await this.prisma.customerTag.create({
-        data: {
-          customerId: customer.id,
-          createdById: user.id,
-          label
-        }
+      const created = await this.runTransaction(async (tx: any) => {
+        const tag = await tx.customerTag.create({ data: { customerId: customer.id, createdById: user.id, label } });
+        if (tx.auditEvent?.create) await tx.auditEvent.create({ data: { action: "customer.custom_tag.created", actorId: user.id, storeId: customer.storeId, targetType: "CustomerTag", targetId: tag.id, metadata: { customerId: customer.id, label } } });
+        return tag;
       });
+      return created;
     } catch (error) {
-      if (this.isUniqueConstraintError(error)) {
-        throw new ConflictException("客户标签已存在");
-      }
+      if (this.isUniqueConstraintError(error)) throw new ConflictException("客户标签已存在");
       throw error;
     }
   }
@@ -702,7 +707,10 @@ export class CustomersService {
     if (!CustomerPolicy.canEdit(actor, tag.customer.storeId, tag.customer.ownerUserId)) {
       throw new ForbiddenException("无权限");
     }
-    await this.prisma.customerTag.delete({ where: { id } });
+    await this.runTransaction(async (tx: any) => {
+      await tx.customerTag.delete({ where: { id } });
+      if (tx.auditEvent?.create) await tx.auditEvent.create({ data: { action: "customer.custom_tag.deleted", actorId: user.id, storeId: tag.customer.storeId, targetType: "CustomerTag", targetId: id, metadata: { customerId: tag.customerId, label: tag.label } } });
+    });
     return { id };
   }
 
@@ -888,6 +896,11 @@ export class CustomersService {
     return date;
   }
 
+  private runTransaction<T>(callback: (tx: any) => Promise<T>) {
+    const prisma = this.prisma as any;
+    return prisma.$transaction ? prisma.$transaction(callback) : callback(prisma);
+  }
+
   private isUniqueConstraintError(error: unknown) {
     return (
       typeof error === "object" &&
@@ -995,14 +1008,7 @@ export class CustomersService {
       },
       construction: {
         recentRecords: this.buildRecentConstructionRecords(recentConstructionRecords)
-      },
-      systemTags: this.buildSystemTags({
-        orderCount: orderStats._count._all,
-        totalAmountCents,
-        outstandingCents,
-        openAfterSalesCount,
-        expiringSoonCount
-      })
+      }
     };
   }
 
@@ -1076,34 +1082,84 @@ export class CustomersService {
     return parts.length > 0 ? parts.join(" / ") : "-";
   }
 
+  private async decorateCustomer<T extends {
+    id: string;
+    phoneEncrypted?: unknown;
+    phoneHash?: unknown;
+    vehicles?: Array<{ vinEncrypted?: unknown; vinHash?: unknown }>;
+    users?: Array<{ phoneEncrypted?: unknown; phoneHash?: unknown }>;
+    tags?: Array<{ id: string; label: string; createdById?: string | null; createdAt: Date }>;
+  }>(customer: T, systemTagFilter?: string, customTagId?: string, providedThresholds?: { highValueThresholdCents: number; vipThresholdCents: number }) {
+    const [completedOrderStats, completedAmount, outstandingStats, openAfterSalesCount, expiringSoonCount, thresholds] = await Promise.all([
+      this.prisma.order.aggregate({ where: { customerId: customer.id, status: OrderStatus.COMPLETED }, _count: { _all: true } }),
+      this.prisma.orderAmount.aggregate({ where: { order: { customerId: customer.id, status: OrderStatus.COMPLETED } }, _sum: { paidAmountCents: true } }),
+      this.prisma.orderAmount.aggregate({ where: { order: { customerId: customer.id } }, _sum: { outstandingCents: true } }),
+      (this.prisma as any).afterSale?.count ? this.prisma.afterSale.count({ where: { order: { customerId: customer.id }, status: { in: ["OPEN", "ASSIGNED"] } } }) : Promise.resolve(0),
+      (this.prisma as any).warranty?.count ? this.prisma.warranty.count({ where: { order: { customerId: customer.id }, status: "ACTIVE", endDate: { gte: new Date(), lt: this.addCalendarDays(new Date(), 30) } } }) : Promise.resolve(0),
+      providedThresholds ?? this.getTagThresholds()
+    ]);
+    const systemTags = this.buildSystemTags({
+      completedOrderCount: completedOrderStats._count._all,
+      completedPaidAmountCents: completedAmount._sum.paidAmountCents ?? 0,
+      highValueThresholdCents: thresholds.highValueThresholdCents,
+      vipThresholdCents: thresholds.vipThresholdCents,
+      outstandingCents: outstandingStats._sum.outstandingCents ?? 0,
+      openAfterSalesCount,
+      expiringSoonCount
+    });
+    const customTags = (customer.tags ?? []).map((tag) => ({ id: tag.id, label: tag.label, createdBy: tag.createdById ?? undefined, createdAt: tag.createdAt.toISOString() }));
+    if (systemTagFilter && !systemTags.some((tag) => tag.code === systemTagFilter)) return null;
+    if (customTagId && !customTags.some((tag) => tag.id === customTagId)) return null;
+    return { ...this.sanitizeCustomer(customer), systemTags, customTags };
+  }
+
+  private async getTagThresholds() {
+    const row = await (this.prisma as any).settingsConfigVersion?.findFirst?.({
+      where: { capabilityCode: "customer.tags", scopeId: "global", status: SettingsConfigStatus.PUBLISHED },
+      orderBy: { version: "desc" },
+      select: { payload: true }
+    });
+    const payload = row?.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? row.payload as Record<string, unknown> : {};
+    const highValueThresholdCents = this.readPositiveThreshold(payload.highValueThresholdCents, 500_000);
+    const vipThresholdCents = this.readPositiveThreshold(payload.vipThresholdCents, 1_000_000);
+    return { highValueThresholdCents, vipThresholdCents: Math.max(vipThresholdCents, highValueThresholdCents + 1) };
+  }
+
+  private readPositiveThreshold(value: unknown, fallback: number) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : fallback;
+  }
+
+  private addCalendarDays(value: Date, days: number) {
+    const result = new Date(value);
+    result.setDate(result.getDate() + days);
+    return result;
+  }
   private buildSystemTags(input: {
-    orderCount: number;
-    totalAmountCents: number;
+    completedOrderCount: number;
+    completedPaidAmountCents: number;
+    highValueThresholdCents: number;
+    vipThresholdCents: number;
     outstandingCents: number;
     openAfterSalesCount: number;
     expiringSoonCount: number;
   }) {
-    const tags: Array<{ code: string; label: string }> = [];
-    if (input.orderCount === 0) {
-      tags.push({ code: "NEW_CUSTOMER", label: "新客户" });
-    }
-    if (input.orderCount >= 2) {
-      tags.push({ code: "OLD_CUSTOMER", label: "老客户" });
-    }
-    if (input.totalAmountCents >= 500_000) {
-      tags.push({ code: "HIGH_VALUE", label: "高价值客户" });
-    }
-    if (input.totalAmountCents >= 1_000_000) {
-      tags.push({ code: "VIP", label: "VIP 客户" });
-    }
-    if (
-      input.outstandingCents > 0 ||
-      input.openAfterSalesCount > 0 ||
-      input.expiringSoonCount > 0
-    ) {
-      tags.push({ code: "KEY_FOLLOW_UP", label: "重点关注客户" });
-    }
+    const tags: Array<{ code: string; label: string; level: string; reasons: string[] }> = [];
+    if (input.completedOrderCount === 0) tags.push({ code: "NEW_CUSTOMER", label: "新客户", level: "CUSTOMER_STAGE", reasons: ["暂无已完成订单"] });
+    else tags.push({ code: "OLD_CUSTOMER", label: "老客户", level: "CUSTOMER_STAGE", reasons: ["存在已完成订单"] });
+    if (input.completedPaidAmountCents >= input.vipThresholdCents) tags.push({ code: "VIP", label: "VIP 客户", level: "VALUE", reasons: [`累计已完成订单实收金额 ${this.formatAmount(input.completedPaidAmountCents)} 元，达到 VIP 阈值 ${this.formatAmount(input.vipThresholdCents)} 元`] });
+    else if (input.completedPaidAmountCents >= input.highValueThresholdCents) tags.push({ code: "HIGH_VALUE", label: "高价值客户", level: "VALUE", reasons: [`累计已完成订单实收金额 ${this.formatAmount(input.completedPaidAmountCents)} 元，达到高价值阈值 ${this.formatAmount(input.highValueThresholdCents)} 元`] });
+    const followUpReasons = [
+      ...(input.outstandingCents > 0 ? ["存在未结清尾款"] : []),
+      ...(input.openAfterSalesCount > 0 ? ["存在未关闭售后单"] : []),
+      ...(input.expiringSoonCount > 0 ? ["质保将在 30 天内到期"] : [])
+    ];
+    if (followUpReasons.length > 0) tags.push({ code: "KEY_FOLLOW_UP", label: "重点关注客户", level: "WARNING", reasons: followUpReasons });
     return tags;
+  }
+
+  private formatAmount(cents: number) {
+    return (cents / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   private buildSearchConditions(q: string): Prisma.CustomerWhereInput[] {

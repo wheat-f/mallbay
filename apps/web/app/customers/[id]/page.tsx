@@ -68,6 +68,8 @@ type CustomerDetail = {
   owner?: { username?: string | null; nickname?: string | null } | null;
   referrer?: { id: string; name?: string | null; companyName?: string | null; contactPerson?: string | null } | null;
   tags?: CustomerTag[];
+  systemTags?: SystemCustomerTag[];
+  customTags?: CustomerTag[];
   vehicles?: CustomerVehicle[];
   users?: CustomerContact[];
   notes?: CustomerNote[];
@@ -115,6 +117,13 @@ type CustomerNote = {
 type CustomerTag = {
   id: string;
   label: string;
+};
+
+type SystemCustomerTag = {
+  code: string;
+  label: string;
+  level: string;
+  reasons: string[];
 };
 
 type CustomerOrder = {
@@ -176,7 +185,7 @@ type CustomerArchiveSummary = {
     closedCount: number;
     responsibilityDistribution: Record<string, number>;
   };
-  systemTags: Array<{ code: string; label: string }>;
+  systemTags: SystemCustomerTag[];
 };
 
 type EditCustomerFormValues = Partial<CreateCustomerPayload>;
@@ -464,7 +473,7 @@ export default function CustomerDetailPage() {
               <div className="customer-detail-title-row">
                 <h1>{getCustomerDisplayName(customer)}</h1>
                 <Tag>{customer.customerType === "COMPANY" ? "企业客户" : "个人客户"}</Tag>
-                {(summary?.systemTags ?? []).slice(0, 2).map((tag) => (
+                {(customer.systemTags ?? summary?.systemTags ?? []).map((tag) => (
                   <Tag key={tag.code} color={tag.code === "KEY_FOLLOW_UP" ? "red" : "blue"}>
                     {tag.label}
                   </Tag>
@@ -768,8 +777,16 @@ export default function CustomerDetailPage() {
               </Card>
 
               <Card className="customer-detail-card customer-tags-card" title="客户标签">
+                <Typography.Text strong>系统标签</Typography.Text>
                 <div className="customer-tag-cloud">
-                  {(customer.tags ?? []).map((tag) => (
+                  {(customer.systemTags ?? summary?.systemTags ?? []).map((tag) => (
+                    <Tag key={tag.code} color={tag.code === "KEY_FOLLOW_UP" ? "red" : "blue"} title={tag.reasons?.join("；")}>{tag.label}</Tag>
+                  ))}
+                  {(customer.systemTags ?? summary?.systemTags ?? []).length === 0 ? <Typography.Text type="secondary">暂无系统标签</Typography.Text> : null}
+                </div>
+                <Typography.Text strong className="block mt-4">人工标签</Typography.Text>
+                <div className="customer-tag-cloud">
+                  {(customer.customTags ?? customer.tags ?? []).map((tag) => (
                     <Tag
                       key={tag.id}
                       closable
@@ -781,7 +798,7 @@ export default function CustomerDetailPage() {
                       {tag.label}
                     </Tag>
                   ))}
-                  {(customer.tags ?? []).length === 0 ? <Typography.Text type="secondary">暂无自定义标签</Typography.Text> : null}
+                  {(customer.customTags ?? customer.tags ?? []).length === 0 ? <Typography.Text type="secondary">暂无自定义标签</Typography.Text> : null}
                 </div>
                 <Form<TagFormValues> form={tagForm} layout="vertical" onFinish={(values) => tagMutation.mutate(values)}>
                   <Form.Item name="label" rules={[{ required: true, whitespace: true, message: "请输入标签" }]}>

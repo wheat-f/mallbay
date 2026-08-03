@@ -74,6 +74,8 @@ export type CustomerListQuery = {
   q?: string;
   page?: number;
   pageSize?: number;
+  systemTag?: string;
+  customTagId?: string;
 };
 
 export type CustomerOrderContext = {

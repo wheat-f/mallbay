@@ -7,7 +7,7 @@ import type { CapabilityView } from "../../../src/features/settings/workbench-mo
 
 const PATHS: Record<string, string> = {
   "store.dictionary": "/settings/dictionaries",
-  "settings.permissions": "/settings/permissions", "settings.dictionary": "/settings/dictionaries", "settings.security": "/settings/security", "settings.audit.global": "/settings/audit",
+  "settings.permissions": "/settings/permissions", "settings.dictionary": "/settings/dictionaries", "settings.security": "/settings/security", "customer.tags": "/settings/customer-tags", "settings.audit.global": "/settings/audit",
   "store.profile": "/settings/store?capability=store.profile", "store.operations": "/settings/store?capability=store.operations", "store.notifications": "/settings/store?capability=store.notifications", "store.capacity": "/settings/store?capability=store.capacity",
   "finance.labor_cost": "/settings/finance", "finance.settlement": "/settings/finance", "finance.accounts": "/settings/finance", "finance.audit": "/settings/audit?domain=FINANCE", "account.profile": "/profile"
 };

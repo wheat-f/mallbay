@@ -20,4 +20,12 @@ export class ListCustomersDto {
   @IsInt()
   @Min(1)
   pageSize?: number = 20;
+
+  @IsOptional()
+  @IsString()
+  systemTag?: string;
+
+  @IsOptional()
+  @IsString()
+  customTagId?: string;
 }

@@ -135,6 +135,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "store.dictionary": "门店基础字典",
   "settings.permissions": "角色与权限",
   "settings.security": "安全策略",
+  "customer.tags": "客户标签规则",
   "settings.audit.global": "全局审计",
   "store.profile": "门店资料",
   "store.operations": "门店运营",

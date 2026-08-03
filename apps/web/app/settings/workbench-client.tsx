@@ -14,6 +14,7 @@ const PATHS: Record<string, string> = {
   "store.dictionary": "/settings/dictionaries",
   "settings.permissions": "/settings/permissions",
   "settings.security": "/settings/security",
+  "customer.tags": "/settings/customer-tags",
   "store.profile": "/settings/store?capability=store.profile",
   "store.operations": "/settings/store?capability=store.operations",
   "store.notifications": "/settings/store?capability=store.notifications",

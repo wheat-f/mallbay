@@ -471,7 +471,7 @@ test("CustomersService detail returns generated archive summary from orders warr
   ]);
   assert.deepEqual(
     result.archiveSummary.systemTags.map((tag) => tag.code),
-    ["OLD_CUSTOMER", "HIGH_VALUE", "VIP", "KEY_FOLLOW_UP"]
+    ["OLD_CUSTOMER", "HIGH_VALUE", "KEY_FOLLOW_UP"]
   );
 });
 

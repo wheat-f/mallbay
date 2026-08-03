@@ -43,6 +43,8 @@ type CustomerRow = CustomerArchiveLike & {
   vehicles?: CustomerVehicle[];
   users?: CustomerUser[];
   tags?: { id: string; label: string }[];
+  systemTags?: { code: string; label: string; level?: string; reasons?: string[] }[];
+  customTags?: { id: string; label: string; createdBy?: string; createdAt?: string }[];
 };
 
 type CustomerUser = {
@@ -115,8 +117,8 @@ export default function CustomersPage() {
   const [vehicleForm] = Form.useForm<VehicleFormValues>();
 
   const customersQuery = useQuery({
-    queryKey: ["customers", storeId, search],
-    queryFn: () => customerApi.list({ storeId: storeId!, page: 1, pageSize: 20, q: search }),
+    queryKey: ["customers", storeId, search, tagFilter],
+    queryFn: () => customerApi.list({ storeId: storeId!, page: 1, pageSize: 20, q: search, systemTag: tagFilter }),
     enabled: Boolean(storeId),
     staleTime: 10_000
   });
@@ -132,10 +134,8 @@ export default function CustomersPage() {
     () =>
       rows.filter((row) => {
         const metrics = getCustomerAutoArchiveMetrics(row);
-        const tags = getCustomerTags(row, metrics.systemTagLabels).map((tag) => tag.label);
 
         if (customerTypeFilter && row.customerType !== customerTypeFilter) return false;
-        if (tagFilter && !tags.includes(tagFilter)) return false;
         if (valueFilter === "OVER_10000" && metrics.totalAmountCents < 1_000_000) return false;
         if (valueFilter === "OVER_50000" && metrics.totalAmountCents < 5_000_000) return false;
         if (warrantyFilter === "ACTIVE" && metrics.activeWarrantyCount <= 0) return false;
@@ -148,7 +148,7 @@ export default function CustomersPage() {
   );
   const customerSummary = useMemo(() => {
     const vehicleCount = rows.reduce((sum, row) => sum + (row.vehicles?.length ?? 0), 0);
-    const taggedCount = rows.filter((row) => getCustomerTags(row, getCustomerAutoArchiveMetrics(row).systemTagLabels).length > 0).length;
+    const taggedCount = rows.filter((row) => getCustomerTags(row).length > 0).length;
     return {
       total: customersQuery.data?.total ?? rows.length,
       vehicleCount,
@@ -398,10 +398,10 @@ export default function CustomersPage() {
                 value={tagFilter}
                 onChange={(value) => setTagFilter(value)}
                 options={[
-                  { label: "VIP客户", value: "VIP客户" },
-                  { label: "高价值客户", value: "高价值客户" },
-                  { label: "老客户", value: "老客户" },
-                  { label: "新客户", value: "新客户" }
+                  { label: "VIP客户", value: "VIP" },
+                  { label: "高价值客户", value: "HIGH_VALUE" },
+                  { label: "老客户", value: "OLD_CUSTOMER" },
+                  { label: "新客户", value: "NEW_CUSTOMER" }
                 ]}
               />
             </div>
@@ -460,7 +460,7 @@ export default function CustomersPage() {
               {filteredRows.length > 0 ? (
                 filteredRows.map((row) => {
                   const metrics = getCustomerAutoArchiveMetrics(row);
-                  const tags = getCustomerTags(row, metrics.systemTagLabels);
+                  const tags = getCustomerTags(row);
 
                   return (
                     <article key={row.id} className="customers-mobile-card" onClick={() => setSelectedCustomer(row)}>
@@ -630,22 +630,22 @@ export default function CustomersPage() {
                   }
                 },
                 {
-                  title: "客户标签",
-                  width: 120,
-                  render: (_, row) => {
-                    const tags = getCustomerTags(row, getCustomerAutoArchiveMetrics(row).systemTagLabels);
-                    return tags.length > 0 ? (
-                      <div className="customers-tag-list">
-                        {tags.map((tag) => (
-                          <Tag key={tag.label} color={tag.color}>
-                            {tag.label}
-                          </Tag>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="customers-muted">未打标签</span>
-                    );
-                  }
+                  title: "系统标签",
+                  width: 150,
+                  render: (_, row) => row.systemTags?.length ? (
+                    <div className="customers-tag-list">
+                      {row.systemTags.map((tag) => <Tag key={tag.code} color={tag.code === "KEY_FOLLOW_UP" ? "red" : "blue"} title={tag.reasons?.join("；")}>{tag.label}</Tag>)}
+                    </div>
+                  ) : <span className="customers-muted">暂无系统标签</span>
+                },
+                {
+                  title: "人工标签",
+                  width: 150,
+                  render: (_, row) => row.customTags?.length ? (
+                    <div className="customers-tag-list">
+                      {row.customTags.map((tag) => <Tag key={tag.id}>{tag.label}</Tag>)}
+                    </div>
+                  ) : <span className="customers-muted">未打标签</span>
                 },
                 {
                   title: "操作",
@@ -1211,7 +1211,7 @@ export default function CustomersPage() {
 
 function CustomerDetailDrawer({ customer }: { customer: CustomerRow }) {
   const metrics = getCustomerAutoArchiveMetrics(customer);
-  const tags = getCustomerTags(customer, metrics.systemTagLabels);
+  const tags = getCustomerTags(customer);
   const vehicles = customer.vehicles ?? [];
   const companyUsers = customer.users ?? [];
 
@@ -1370,20 +1370,13 @@ function getVehicleActionLabel(row: CustomerRow) {
   return (row.vehicles?.length ?? 0) > 0 ? "编辑车辆" : "新增车辆";
 }
 
-function getCustomerTags(row: CustomerRow, systemTagLabels: string[]) {
-  const labels = new Set<string>();
-  for (const tag of row.tags ?? []) {
-    if (tag.label) labels.add(tag.label);
+function getCustomerTags(row: CustomerRow) {
+  const labels = new Map<string, { label: string; color: string }>();
+  for (const tag of row.systemTags ?? []) labels.set(tag.label, { label: tag.label, color: getTagColor(tag.label) });
+  for (const tag of row.customTags ?? row.tags ?? []) {
+    if (tag.label && !labels.has(tag.label)) labels.set(tag.label, { label: tag.label, color: getTagColor(tag.label) });
   }
-  for (const label of systemTagLabels) labels.add(label.replace(/\s+/g, ""));
-  if ((row.vehicles?.length ?? 0) > 1) labels.add("老客户");
-  if (row.customerType === "COMPANY") labels.add("高价值客户");
-  if (isWithinRecentDays(row.createdAt, 30)) labels.add("新客户");
-
-  return Array.from(labels).slice(0, 3).map((label) => ({
-    label,
-    color: getTagColor(label)
-  }));
+  return Array.from(labels.values()).slice(0, 3);
 }
 
 function getTagColor(label: string) {

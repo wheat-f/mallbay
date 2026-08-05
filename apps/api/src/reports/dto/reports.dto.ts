@@ -44,4 +44,20 @@ export class OperationalReportQueryDto extends ReportQueryDto {
   @IsOptional()
   @IsString()
   orderStatus?: string;
+
+  @IsOptional()
+  @IsIn(["实际", "标准", "待补齐"])
+  costSource?: "实际" | "标准" | "待补齐";
+
+  @IsOptional()
+  @IsIn(["已收清", "部分收款", "未收款"])
+  collectionStatus?: "已收清" | "部分收款" | "未收款";
+
+  @IsOptional()
+  @IsString()
+  afterSaleStatus?: string;
+
+  @IsOptional()
+  @IsString()
+  afterSaleResponsibility?: string;
 }

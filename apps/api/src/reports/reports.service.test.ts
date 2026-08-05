@@ -509,3 +509,25 @@ test("ReportsService lets sales summarize only their own sales performance", asy
     args: { where: { storeId: "store-1", order: { salesPersonId: "sales-1" } } }
   });
 });
+
+test("ReportsService rejects an operational date range longer than 366 days before querying data", async () => {
+  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never);
+  await assert.rejects(
+    service.operational(
+      { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
+      { storeId: "store-1", dateFrom: "2025-01-01", dateTo: "2026-01-02" }
+    ),
+    (error: unknown) => error instanceof Error && error.message === "REPORT_DATE_RANGE_TOO_LARGE"
+  );
+});
+
+test("ReportsService rejects reversed operational date ranges", async () => {
+  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never);
+  await assert.rejects(
+    service.operational(
+      { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
+      { storeId: "store-1", dateFrom: "2026-08-31", dateTo: "2026-08-01" }
+    ),
+    (error: unknown) => error instanceof Error && error.message === "REPORT_DATE_RANGE_TOO_LARGE"
+  );
+});

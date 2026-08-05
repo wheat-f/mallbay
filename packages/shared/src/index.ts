@@ -584,6 +584,19 @@ export type OperationalReportFilters = {
   constructionType?: string;
   productCategory?: string;
   orderStatus?: string;
+  costSource?: "实际" | "标准" | "待补齐";
+  collectionStatus?: "已收清" | "部分收款" | "未收款";
+  afterSaleStatus?: string;
+  afterSaleResponsibility?: string;
+};
+
+export type ReportTargetView = "sales" | "construction" | "finance" | "project" | "afterSalesWorker" | "afterSalesBreakdown";
+export type ReportModuleState = { status: "ready" | "error"; errorCode?: string };
+export type MetricComparison = {
+  status: "comparable" | "new" | "unchanged" | "unavailable";
+  changeBps: number | null;
+  currentCents: number;
+  previousCents: number | null;
 };
 
 export type OperationalReport = {
@@ -595,7 +608,7 @@ export type OperationalReport = {
     amountCents: number;
     receivedCents: number;
     costCents: number;
-    grossProfitCents: number;
+    grossProfitCents: number | null;
     accruedCommissionCents: number;
     confirmedCommissionCents: number;
     settledCommissionCents: number;
@@ -624,8 +637,8 @@ export type OperationalReport = {
     status: string;
     amountCents: number;
     receivedCents: number;
-    materialCostCents: number;
-    constructionCostCents: number;
+    materialCostCents: number | null;
+    constructionCostCents: number | null;
     totalCostCents: number | null;
     grossProfitCents: number | null;
     costSource: "实际" | "标准" | "待补齐";
@@ -643,13 +656,35 @@ export type OperationalReport = {
     afterSales: number;
     constructionOrders: number;
     afterSaleRateBps: number;
-    materialCostCents: number;
+    materialCostCents: number | null;
     laborCostCents: number;
     refundCompensationCents: number;
     outsourceCostCents: number;
     supplierRecoveryCents: number;
   }>;
   afterSaleBreakdown: Array<{ category: string; afterSales: number; proportionBps: number }>;
+  summary: {
+    orders: number;
+    amountCents: number;
+    receivedCents: number;
+    outstandingCents: number;
+    afterSalesCount: number;
+    afterSalesExpenseCents: number;
+    constructionOrderCount: number;
+    grossProfitCents: number | null;
+    costCompletenessBps: number;
+    metricCompleteness: "complete" | "incomplete";
+    knownCostOrderCount: number;
+    pendingCostOrderCount: number;
+    knownCostGrossProfitCents: number | null;
+    coverage: { ordersWithMissingBusinessDate: number; paymentsWithMissingEntryDate: number; costsWithMissingConfirmationDate: number; afterSalesWithMissingConfirmationDate: number };
+  };
+  comparison: { amount: MetricComparison; received: MetricComparison; outstanding: MetricComparison; grossProfit: MetricComparison };
+  trendGranularity: "day" | "week" | "month";
+  generatedAt: string;
+  modules: { summary: ReportModuleState; trend: ReportModuleState; insights: ReportModuleState; details: ReportModuleState };
+  trend: Array<{ period: string; orders: number; amountCents: number; receivedCents: number; outstandingCents: number; afterSalesCount: number; afterSalesExpenseCents: number; constructionOrderCount: number; grossProfitCents: number | null; costCompletenessBps: number; metricCompleteness: "complete" | "incomplete"; knownCostOrderCount: number; pendingCostOrderCount: number; knownCostGrossProfitCents: number | null }>;
+  insights: Array<{ severity: "WARNING"; title: string; evidence: string; action: string; targetView?: ReportTargetView; filters?: OperationalReportFilters }>;
 };
 
 export type OperationalReportFilterOptions = {
@@ -658,6 +693,8 @@ export type OperationalReportFilterOptions = {
   constructionTypes: string[];
   productCategories: string[];
   orderStatuses: string[];
+  afterSaleStatuses: string[];
+  afterSaleResponsibilities: string[];
 };
 
 export type AuthUser = {

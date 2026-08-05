@@ -279,6 +279,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
           <Input
             className="management-global-search"
             prefix={<SearchOutlined />}
+            aria-label="全局搜索"
             placeholder={getManagementSearchPlaceholder(pathname)}
             allowClear
           />
@@ -291,7 +292,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
                 placement="bottomRight"
                 menu={{ items: roleMenuItems }}
               >
-                <button className="management-role-switcher" type="button">
+                <button className="management-role-switcher" type="button" aria-haspopup="menu" aria-label={`切换当前角色，当前为${roleSwitcherLabel}`}>
                   <span>{roleSwitcherLabel}</span>
                   <UserSwitchOutlined />
                 </button>
@@ -322,6 +323,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
               key={item.key}
               type="button"
               className={`management-mobile-nav-item${active ? " management-mobile-nav-item-active" : ""}`}
+              aria-current={active ? "page" : undefined}
               onClick={() => router.push(item.href)}
             >
               <span className="management-mobile-nav-icon">{item.icon}</span>

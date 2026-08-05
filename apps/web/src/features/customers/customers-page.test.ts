@@ -50,6 +50,9 @@ test("customers page opens a prototype right-side customer detail drawer from ta
   assert.match(pageSource, /企业用户/);
   assert.match(pageSource, /消费概览/);
   assert.match(pageSource, /查看完整历史/);
+  assert.match(pageSource, /维护人工标签/);
+  assert.match(pageSource, /customer-detail-drawer/);
+  assert.match(pageSource, /customerApi\.detail\(selectedCustomer!\.id\)/);
   assert.match(pageSource, /orders\/create\?customerId=/);
   assert.doesNotMatch(pageSource, /onClick=\{\(\) => router\.push\(`\/customers\/\$\{row\.id\}`\)\}/);
 });

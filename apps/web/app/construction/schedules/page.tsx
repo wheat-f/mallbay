@@ -133,8 +133,8 @@ export default function ConstructionSchedulesPage() {
             <div className="construction-schedule-week-head">
               <Typography.Title level={2}>{monthLabel}</Typography.Title>
               <div>
-                <Button shape="circle" icon={<LeftOutlined />} onClick={() => handleDateSelect(date.subtract(7, "day"))} />
-                <Button shape="circle" icon={<RightOutlined />} onClick={() => handleDateSelect(date.add(7, "day"))} />
+                <Button shape="circle" aria-label="查看上一周排班" icon={<LeftOutlined />} onClick={() => handleDateSelect(date.subtract(7, "day"))} />
+                <Button shape="circle" aria-label="查看下一周排班" icon={<RightOutlined />} onClick={() => handleDateSelect(date.add(7, "day"))} />
               </div>
             </div>
             <div className="construction-schedule-week-grid">

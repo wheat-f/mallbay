@@ -8,6 +8,7 @@ import {
   FileTextOutlined,
   PlusOutlined,
   SearchOutlined,
+  TagOutlined,
   UploadOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -115,6 +116,12 @@ export default function CustomersPage() {
   const [createForm] = Form.useForm<CreateCustomerFormValues>();
   const [editForm] = Form.useForm<EditCustomerFormValues>();
   const [vehicleForm] = Form.useForm<VehicleFormValues>();
+  const selectedCustomerDetailQuery = useQuery({
+    queryKey: ["customer-detail-drawer", selectedCustomer?.id],
+    queryFn: () => customerApi.detail(selectedCustomer!.id) as Promise<CustomerRow>,
+    enabled: Boolean(selectedCustomer?.id),
+    staleTime: 15_000
+  });
 
   const customersQuery = useQuery({
     queryKey: ["customers", storeId, search, tagFilter],
@@ -727,11 +734,16 @@ export default function CustomersPage() {
                 <Button type="primary" icon={<FileTextOutlined />} onClick={() => router.push(`/orders/create?customerId=${selectedCustomer.id}`)}>
                   新建订单
                 </Button>
+                <Button icon={<TagOutlined />} onClick={() => router.push(`/customers/${selectedCustomer.id}`)}>
+                  维护人工标签
+                </Button>
               </div>
             ) : null
           }
         >
-          {selectedCustomer ? <CustomerDetailDrawer customer={selectedCustomer} /> : null}
+          {selectedCustomer ? (
+            <CustomerDetailDrawer customer={selectedCustomerDetailQuery.data ?? selectedCustomer} />
+          ) : null}
         </Drawer>
 
         <Drawer

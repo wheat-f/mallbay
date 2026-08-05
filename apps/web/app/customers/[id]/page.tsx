@@ -608,10 +608,19 @@ export default function CustomerDetailPage() {
                     <div key={row.month} className="customer-trend-row">
                       <div>
                         <strong>{row.month}</strong>
-                        <span>{row.orderCountLabel} / 已收 {row.paidAmountLabel}</span>
+                        <span>
+                          {row.orderCountLabel} / 已收 {row.paidAmountLabel} / 待收 {row.outstandingAmountLabel}
+                        </span>
                       </div>
-                      <div className="customer-trend-meter">
-                        <i style={{ width: `${row.percentOfMax}%` }} />
+                      <div
+                        className="customer-trend-meter"
+                        role="progressbar"
+                        aria-label={`${row.month} 消费金额占比`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={row.percentOfMax}
+                      >
+                        <i aria-hidden="true" style={{ width: `${row.percentOfMax}%` }} />
                       </div>
                       <b>{row.totalAmountLabel}</b>
                     </div>

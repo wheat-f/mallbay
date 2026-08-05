@@ -794,7 +794,7 @@ export default function WorkbenchPage() {
                         <span>{item.label}</span>
                         <strong className={`workbench-tone-${item.tone}`}>{item.value}</strong>
                       </div>
-                      <div className="workbench-capacity-track">
+                      <div className="workbench-capacity-track" role="progressbar" aria-label={`${item.label}施工容量`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={item.percent}>
                         <i className={`workbench-capacity-bar workbench-bg-${item.tone}`} style={{ width: `${item.percent}%` }} />
                       </div>
                       <div className="workbench-capacity-foot">
@@ -836,13 +836,13 @@ export default function WorkbenchPage() {
 
             <section className="workbench-bottom-grid">
               <Card className="workbench-task-board" title="待处理任务">
-                <div className="workbench-task-table">
-                  <div className="workbench-task-row workbench-task-head">
-                    <span>任务类型</span>
-                    <span>关联事项</span>
-                    <span>负责人</span>
-                    <span>截止时间</span>
-                    <span>状态</span>
+                <div className="workbench-task-table" role="table" aria-label="待处理任务">
+                  <div className="workbench-task-row workbench-task-head" role="row">
+                    <span role="columnheader">任务类型</span>
+                    <span role="columnheader">关联事项</span>
+                    <span role="columnheader">负责人</span>
+                    <span role="columnheader">截止时间</span>
+                    <span role="columnheader">状态</span>
                   </div>
                   {allTaskRows.length > 0 ? (
                     allTaskRows.map((task) => (
@@ -850,6 +850,7 @@ export default function WorkbenchPage() {
                         key={`${task.type}-${task.ref}`}
                         type="button"
                         className="workbench-task-row"
+                        role="row"
                         onClick={() => {
                           if (task.type === "施工派单") router.push("/construction/assignments");
                           if (task.type === "售后跟进") router.push("/after-sales");
@@ -857,11 +858,11 @@ export default function WorkbenchPage() {
                           if (task.type === "尾款待收" && task.orderId) router.push(`/orders/${task.orderId}`);
                         }}
                       >
-                        <span>{task.type}</span>
-                        <span>{task.ref}</span>
-                        <span>{task.owner}</span>
-                        <span>{task.due}</span>
-                        <Tag color={task.status === "待处理" ? "warning" : "processing"}>{task.status}</Tag>
+                        <span role="cell">{task.type}</span>
+                        <span role="cell">{task.ref}</span>
+                        <span role="cell">{task.owner}</span>
+                        <span role="cell">{task.due}</span>
+                        <Tag role="cell" color={task.status === "待处理" ? "warning" : "processing"}>{task.status}</Tag>
                       </button>
                     ))
                   ) : (
@@ -895,7 +896,7 @@ export default function WorkbenchPage() {
               <div className="workbench-side-stack">
                 <Card className="workbench-trend-card" title="销售与施工趋势">
                   {trendBars.length > 0 ? (
-                    <div className="workbench-trend-bars">
+                    <div className="workbench-trend-bars" role="img" aria-label="销售与施工趋势柱状图">
                       {trendBars.map(([label, height]) => (
                         <div key={label} className="workbench-trend-bar-item">
                           <span style={{ height: `${height}%` }} />
@@ -962,6 +963,7 @@ export default function WorkbenchPage() {
                               <Button
                                 size="small" danger type="text"
                                 icon={<DeleteOutlined />}
+                                aria-label={`移除${m.user.nickname ?? m.user.username}`}
                                 loading={removeMutation.isPending}
                               />
                             </Popconfirm>

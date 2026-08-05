@@ -325,19 +325,18 @@ export default function CustomerSettlementPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="customer-settlement-page">
+      <Card className="customer-settlement-hero">
+        <div className="customer-settlement-hero-content">
           <div>
-            <Typography.Text type="secondary">客户管理 / 企业结算</Typography.Text>
-            <Typography.Title level={2} style={{ margin: "6px 0" }}>
+            <Typography.Title level={2} className="customer-settlement-title">
               {customer.companyName ?? customer.name ?? "企业客户"} · 对账与统一收款
             </Typography.Title>
-            <Typography.Text type="secondary">
+            <Typography.Text type="secondary" className="customer-settlement-description">
               一车一订单保持不变；此处按企业汇总对账，并把一笔收款逐单分摊。
             </Typography.Text>
           </div>
-          <Space wrap>
+          <Space wrap className="customer-settlement-actions">
             <Button
               icon={<ArrowLeftOutlined />}
               onClick={() => router.push(`/customers/${customerId}`)}
@@ -362,11 +361,17 @@ export default function CustomerSettlementPage() {
             ) : null}
           </Space>
         </div>
+        {canManageReceipts && summary.outstandingCents <= 0 ? (
+          <Typography.Text type="secondary" className="customer-settlement-action-note">
+            当前对账期间没有待收金额，登记统一收款暂不可用。
+          </Typography.Text>
+        ) : null}
       </Card>
 
-      <Card title="对账期间">
-        <Space wrap>
+      <Card title="对账期间" className="customer-settlement-period-card">
+        <div className="customer-settlement-period-content">
           <DatePicker.RangePicker
+            className="customer-settlement-period-picker"
             value={period}
             allowClear={false}
             onChange={(value) => {
@@ -380,17 +385,26 @@ export default function CustomerSettlementPage() {
           <Typography.Text type="secondary">
             默认本月；对账单只纳入期间内已完工或已质保订单。
           </Typography.Text>
-        </Space>
+        </div>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card><Statistic title="订单数" value={summary.orders} suffix="单" /></Card>
-        <Card><Statistic title="应收金额" value={summary.receivableCents / 100} precision={2} prefix="¥" /></Card>
-        <Card><Statistic title="已收金额" value={summary.receivedCents / 100} precision={2} prefix="¥" /></Card>
-        <Card><Statistic title="待收金额" value={summary.outstandingCents / 100} precision={2} prefix="¥" /></Card>
+      <div className="customer-settlement-summary-grid" aria-label="对账汇总">
+        <Card className="customer-settlement-summary-card">
+          <Statistic title="订单数" value={summary.orders} suffix="单" />
+        </Card>
+        <Card className="customer-settlement-summary-card">
+          <Statistic title="应收金额" value={summary.receivableCents / 100} precision={2} prefix="¥" />
+        </Card>
+        <Card className="customer-settlement-summary-card customer-settlement-summary-card-success">
+          <Statistic title="已收金额" value={summary.receivedCents / 100} precision={2} prefix="¥" />
+        </Card>
+        <Card className="customer-settlement-summary-card customer-settlement-summary-card-warning">
+          <Statistic title="待收金额" value={summary.outstandingCents / 100} precision={2} prefix="¥" />
+        </Card>
       </div>
 
       <Card
+        className="customer-settlement-section-card"
         title="可对账订单"
         extra={
           <Button
@@ -404,7 +418,11 @@ export default function CustomerSettlementPage() {
           </Button>
         }
       >
-        <Table<SettlementOrder>
+        <div className="customer-settlement-selection-bar" aria-live="polite">
+          <span>仅显示当前期间内已完工或已质保的订单</span>
+          <strong>已选择 {selectedStatementOrders.length} 单</strong>
+        </div>
+<Table<SettlementOrder>
           rowKey="id"
           loading={candidatesQuery.isLoading}
           dataSource={candidates}
@@ -454,7 +472,7 @@ export default function CustomerSettlementPage() {
         />
       </Card>
 
-      <Card title="对账单记录">
+      <Card title="对账单记录" className="customer-settlement-section-card">
         <Table<CustomerStatement>
           rowKey="id"
           loading={statementsQuery.isLoading}
@@ -525,7 +543,7 @@ export default function CustomerSettlementPage() {
       </Card>
 
       {canManageReceipts ? (
-        <Card title="统一收款与红冲记录">
+        <Card title="统一收款与红冲记录" className="customer-settlement-section-card">
           <Alert
             showIcon
             type="info"

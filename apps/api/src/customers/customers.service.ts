@@ -110,7 +110,7 @@ export class CustomersService {
       const allItems = await this.prisma.customer.findMany({ where, orderBy: { updatedAt: "desc" }, include: { vehicles: { take: 3, orderBy: { updatedAt: "desc" } }, users: { take: 5, orderBy: { updatedAt: "desc" } }, tags: { orderBy: { createdAt: "desc" } }, owner: { select: { id: true, username: true, nickname: true } } } });
       const thresholds = await this.getTagThresholds();
       const decoratedItems = (await Promise.all(allItems.map((customer) => this.decorateCustomer(customer, dto.systemTag, dto.customTagId, thresholds)))).filter((item): item is NonNullable<typeof item> => item !== null);
-      return { total: decoratedItems.length, page, pageSize, items: decoratedItems.slice(skip, skip + pageSize) };
+      return { total: decoratedItems.length, page, pageSize, items: await this.attachListConsumptionSummaries(decoratedItems.slice(skip, skip + pageSize)) };
     }
     const thresholds = await this.getTagThresholds();
     const [total, items] = await Promise.all([
@@ -129,11 +129,12 @@ export class CustomersService {
       })
     ]);
 
+    const decoratedItems = (await Promise.all(items.map((customer) => this.decorateCustomer(customer, dto.systemTag, dto.customTagId, thresholds)))).filter((item): item is NonNullable<typeof item> => item !== null);
     return {
       total,
       page,
       pageSize,
-      items: (await Promise.all(items.map((customer) => this.decorateCustomer(customer, dto.systemTag, dto.customTagId, thresholds)))).filter((item): item is NonNullable<typeof item> => item !== null)
+      items: await this.attachListConsumptionSummaries(decoratedItems)
     };
   }
 
@@ -1012,7 +1013,57 @@ export class CustomersService {
     };
   }
 
-  private buildConsumptionTrend(orders: Array<{
+  private async attachListConsumptionSummaries<T extends { id: string }>(items: T[]) {
+    if (items.length === 0) return items;
+    const orders = await this.prisma.order.findMany({
+      where: {
+        customerId: { in: items.map((item) => item.id) },
+        status: { not: OrderStatus.CANCELLED }
+      },
+      select: {
+        customerId: true,
+        createdAt: true,
+        amount: {
+          select: {
+            totalAmountCents: true,
+            paidAmountCents: true,
+            outstandingCents: true
+          }
+        }
+      }
+    });
+    const grouped = new Map<string, Array<{
+      createdAt: Date;
+      amount?: {
+        totalAmountCents: number;
+        paidAmountCents: number;
+        outstandingCents: number;
+      } | null;
+    }>>();
+    for (const order of orders) {
+      const customerOrders = grouped.get(order.customerId) ?? [];
+      customerOrders.push(order);
+      grouped.set(order.customerId, customerOrders);
+    }
+    return items.map((item) => {
+      const customerOrders = grouped.get(item.id) ?? [];
+      const totalAmountCents = customerOrders.reduce((sum, order) => sum + (order.amount?.totalAmountCents ?? 0), 0);
+      const paidAmountCents = customerOrders.reduce((sum, order) => sum + (order.amount?.paidAmountCents ?? 0), 0);
+      const outstandingCents = customerOrders.reduce((sum, order) => sum + (order.amount?.outstandingCents ?? 0), 0);
+      return {
+        ...item,
+        archiveSummary: {
+          consumption: {
+            orderCount: customerOrders.length,
+            totalAmountCents,
+            paidAmountCents,
+            outstandingCents,
+            trend: this.buildConsumptionTrend(customerOrders)
+          }
+        }
+      };
+    });
+  }  private buildConsumptionTrend(orders: Array<{
     createdAt: Date;
     amount?: {
       totalAmountCents: number;

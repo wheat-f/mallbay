@@ -800,3 +800,64 @@ test("CustomersService rejects sales editing another sales user's customer", asy
     { name: "ForbiddenException" }
   );
 });
+test("CustomersService includes in-transit orders in list consumption summaries", async () => {
+  const prisma = {
+    order: {
+      findMany: async (args: unknown) => {
+        assert.deepEqual(args, {
+          where: {
+            customerId: { in: ["customer-1"] },
+            status: { not: "CANCELLED" }
+          },
+          select: {
+            customerId: true,
+            createdAt: true,
+            amount: {
+              select: {
+                totalAmountCents: true,
+                paidAmountCents: true,
+                outstandingCents: true
+              }
+            }
+          }
+        });
+        return [
+          {
+            customerId: "customer-1",
+            createdAt: new Date("2026-07-01T00:00:00.000Z"),
+            amount: { totalAmountCents: 800_000, paidAmountCents: 200_000, outstandingCents: 600_000 }
+          },
+          {
+            customerId: "customer-1",
+            createdAt: new Date("2026-07-02T00:00:00.000Z"),
+            amount: { totalAmountCents: 300_000, paidAmountCents: 300_000, outstandingCents: 0 }
+          }
+        ];
+      }
+    }
+  };
+  const service = new CustomersService(prisma as never, {
+    encrypt: (value: string) => `enc:${value}`,
+    hash: (value: string) => `hash:${value}`
+  });
+  const attachSummaries = (service as unknown as {
+    attachListConsumptionSummaries: (items: Array<{ id: string }>) => Promise<Array<{ archiveSummary?: { consumption?: { orderCount: number; totalAmountCents: number; outstandingCents: number } } }>>;
+  }).attachListConsumptionSummaries.bind(service);
+
+  const [result] = await attachSummaries([{ id: "customer-1" }]);
+  assert.deepEqual(result.archiveSummary?.consumption, {
+    orderCount: 2,
+    totalAmountCents: 1_100_000,
+    paidAmountCents: 500_000,
+    outstandingCents: 600_000,
+    trend: [
+      {
+        month: "2026-07",
+        orderCount: 2,
+        totalAmountCents: 1_100_000,
+        paidAmountCents: 500_000,
+        outstandingCents: 600_000
+      }
+    ]
+  });
+});

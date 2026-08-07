@@ -19,6 +19,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { PermissionPolicy } from "../common/policies/permission.policy";
 import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationDispatcher } from "../notifications/notification-dispatcher";
 import type { AuthenticatedConstructionUser } from "./construction.service";
 import {
   CancelCrossStoreTaskDto,
@@ -33,7 +34,8 @@ import {
 export class CrossStoreConstructionService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Optional() private readonly notifications?: NotificationsService
+    @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcher
   ) {}
 
   async list(user: AuthenticatedConstructionUser, query: ListCrossStoreTasksDto) {
@@ -384,7 +386,8 @@ export class CrossStoreConstructionService {
     });
     await Promise.all(
       recipients.map(({ userId }) =>
-        this.notifications?.send(userId, type, payload)
+        this.notificationDispatcher?.dispatch({ userId, type, payload })
+          ?? this.notifications?.send(userId, type, payload)
       )
     );
   }

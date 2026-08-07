@@ -109,6 +109,11 @@ export class OrdersController {
     return this.orders.addPayment(req.user, id, dto);
   }
 
+  @Post(":id/final-delivery")
+  finalizeDelivery(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.orders.finalizeDelivery(req.user, id);
+  }
+
   @Get(":id/payments")
   listPayments(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.orders.listPayments(req.user, id);

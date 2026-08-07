@@ -2293,6 +2293,7 @@ model InventoryMovement {
   conversionRate   Float?
   sourceType       String?
   sourceId         String?
+  idempotencyKey   String?
   returnId         String?
   sourceDetailId   String?
   note             String?
@@ -2316,6 +2317,7 @@ model InventoryMovement {
   @@index([productId])
   @@index([warehouseId])
   @@index([sourceType, sourceId])
+  @@unique([storeId, sourceType, sourceId, idempotencyKey])
 }
 
 model OrderInventoryAllocation {
@@ -3086,6 +3088,7 @@ model AuditEvent {
   storeId    String?
   targetType String
   targetId   String?
+  idempotencyKey String?
   metadata   Json    @default("{}")
 
   createdAt DateTime @default(now())
@@ -3094,6 +3097,7 @@ model AuditEvent {
   @@index([targetType, targetId, createdAt(sort: Desc)])
   @@index([actorId, createdAt(sort: Desc)])
   @@index([action])
+  @@unique([action, targetType, targetId, idempotencyKey])
 }
 
 enum InventoryStatus {

@@ -9,6 +9,8 @@ import { InvitationStatus, StorePosition, StoreStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { PermissionsService } from "../permissions/permissions.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationDispatcher } from "../notifications/notification-dispatcher";
+import { AccessContext } from "../permissions/domain/access-context";
 import { InviteMemberDto } from "./dto/invite-member.dto";
 
 @Injectable()
@@ -16,7 +18,9 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    @Optional() private readonly permissions?: PermissionsService
+    @Optional() private readonly permissions?: PermissionsService,
+    @Optional() private readonly accessContext?: AccessContext,
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcher
   ) {}
 
   // ─── 店长：搜索可邀请的用户 ────────────────────────────────────────────────
@@ -91,7 +95,7 @@ export class MembersService {
       }
     });
 
-    await this.notifications.send(dto.userId, "STORE_INVITATION", {
+    await this.dispatchNotification(dto.userId, "STORE_INVITATION", {
       invitationId: invitation.id,
       storeId,
       storeName: store.name,
@@ -139,7 +143,7 @@ export class MembersService {
     });
 
     // 通知邀请人
-    await this.notifications.send(invitation.invitedById, "INVITATION_ACCEPTED", {
+    await this.dispatchNotification(invitation.invitedById, "INVITATION_ACCEPTED", {
       storeId: invitation.storeId,
       storeName: invitation.store.name,
       invitedUserId: userId
@@ -167,7 +171,7 @@ export class MembersService {
       data: { status: InvitationStatus.REJECTED }
     });
 
-    await this.notifications.send(invitation.invitedById, "INVITATION_REJECTED", {
+    await this.dispatchNotification(invitation.invitedById, "INVITATION_REJECTED", {
       storeId: invitation.storeId,
       storeName: invitation.store.name,
       invitedUserId: userId
@@ -204,7 +208,7 @@ export class MembersService {
 
     await this.prisma.storeMember.delete({ where: { id: member.id } });
 
-    await this.notifications.send(targetUserId, "REMOVED_FROM_STORE", {
+    await this.dispatchNotification(targetUserId, "REMOVED_FROM_STORE", {
       storeId,
       storeName: store.name,
       reason: "已被店长移出门店"
@@ -229,8 +233,10 @@ export class MembersService {
   // ─── 工具：断言当前用户是指定门店的店长 ───────────────────────────────────
 
   private async assertManager(userId: string, storeId: string) {
-    if (this.permissions) {
-      const allowed = await this.permissions.authorize(userId, "settings", "write", { storeId });
+    if (this.accessContext || this.permissions) {
+      const allowed = this.accessContext
+        ? await this.accessContext.can(userId, "settings", "write", { storeId })
+        : await this.permissions!.authorize(userId, "settings", "write", { storeId });
       if (allowed) return { userId, storeId, position: StorePosition.MANAGER };
     }
     const member = await this.prisma.storeMember.findUnique({ where: { userId } });
@@ -238,5 +244,14 @@ export class MembersService {
       throw new ForbiddenException("仅店长可执行此操作");
     }
     return member;
+  }
+
+  private dispatchNotification(
+    userId: string,
+    type: "STORE_INVITATION" | "INVITATION_ACCEPTED" | "INVITATION_REJECTED" | "REMOVED_FROM_STORE",
+    payload: object
+  ) {
+    return this.notificationDispatcher?.dispatch({ userId, type, payload })
+      ?? this.notifications.send(userId, type, payload);
   }
 }

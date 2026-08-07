@@ -5,12 +5,13 @@ import { PositionCostRateVersionStatus, PricingRolloutMode, PricingRuleSetStatus
 import type { PricingAuthenticatedUser } from "./pricing.service";
 import { SetPricingRolloutDto } from "./dto/pricing-rollout.dto";
 import { AuditLogService } from "../observability/audit-log.service";
+import { AuditEventWriter } from "../observability/audit-event-writer";
 import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 
 @Injectable()
 export class PricingRolloutService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter) {}
 
   async get(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
@@ -95,6 +96,7 @@ export class PricingRolloutService {
   }
 
   private async recordAudit(event: AuditEvent) {
+    if (this.auditWriter) return this.auditWriter.writeTransactional(this.prisma, event);
     this.audit?.record(event);
     await persistAuditEvent(this.prisma, event);
   }

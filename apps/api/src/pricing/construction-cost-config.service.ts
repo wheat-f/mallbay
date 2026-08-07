@@ -3,6 +3,7 @@ import { DictionaryStatus, PositionCostRateVersionStatus, StorePosition } from "
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService, type AuditEvent } from "../observability/audit-log.service";
+import { AuditEventWriter } from "../observability/audit-event-writer";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 import type { PricingAuthenticatedUser } from "./pricing.service";
 import {
@@ -15,7 +16,7 @@ import {
 /** Master data and finance rate cards used by versioned construction standards. */
 @Injectable()
 export class ConstructionCostConfigService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter) {}
 
   async listServiceItems(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
@@ -161,6 +162,7 @@ export class ConstructionCostConfigService {
   }
 
   private async recordAudit(event: AuditEvent) {
+    if (this.auditWriter) return this.auditWriter.writeTransactional(this.prisma, event);
     this.audit?.record(event);
     await persistAuditEvent(this.prisma, event);
   }

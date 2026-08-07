@@ -6,12 +6,13 @@ import type { PricingAuthenticatedUser } from "./pricing.service";
 import { PricingRulesService } from "./pricing-rules.service";
 import { CopyPricingTemplateDto, CreatePricingTemplateDto, CreatePricingTemplateVersionDto } from "./dto/pricing-template.dto";
 import { AuditLogService } from "../observability/audit-log.service";
+import { AuditEventWriter } from "../observability/audit-event-writer";
 import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 
 @Injectable()
 export class PricingTemplateService {
-  constructor(private readonly prisma: PrismaService, private readonly pricingRules: PricingRulesService, @Optional() private readonly audit?: AuditLogService) {}
+  constructor(private readonly prisma: PrismaService, private readonly pricingRules: PricingRulesService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter) {}
 
   async list(user: PricingAuthenticatedUser) {
     const actor = await this.withStoreMember(user);
@@ -80,6 +81,7 @@ export class PricingTemplateService {
   }
 
   private async recordAudit(event: AuditEvent) {
+    if (this.auditWriter) return this.auditWriter.writeTransactional(this.prisma, event);
     this.audit?.record(event);
     await persistAuditEvent(this.prisma, event);
   }

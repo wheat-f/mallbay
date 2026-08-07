@@ -2,7 +2,7 @@ import { PermissionRoleType, PermissionScopeType, Prisma } from "@prisma/client"
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../src/prisma/prisma.service";
 
-process.env.DATABASE_URL ??= "postgresql://postgres:postgres@localhost:5432/mallbay?schema=public";
+process.env.DATABASE_URL ??= "postgresql://postgres:postgres@localhost:55432/mallbay?schema=public";
 const prisma = new PrismaService(new ConfigService({ DATABASE_URL: process.env.DATABASE_URL }));
 
 const roleDefinitions: Record<string, { name: string; grants: Array<[string, string, string]> }> = {

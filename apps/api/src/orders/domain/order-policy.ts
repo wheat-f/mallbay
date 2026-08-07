@@ -13,6 +13,10 @@ export class OrderPolicy {
     return PermissionPolicy.canManageOrderPayment(user, storeId);
   }
 
+  static canFinalizeDelivery(user: UserWithStoreMember, storeId: string) {
+    return PermissionPolicy.isAdmin(user) || PermissionPolicy.isStoreManager(user, storeId);
+  }
+
   static canCreatePaymentAccount(user: UserWithStoreMember, storeId: string) {
     return PermissionPolicy.canManageOrderPayment(user, storeId) ||
       PermissionPolicy.canCreateOrder(user, storeId);

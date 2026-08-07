@@ -8,9 +8,10 @@ import { ConstructionCostSettlementService } from "./construction-cost-settlemen
 import { CrossStoreConstructionService } from "./cross-store-construction.service";
 import { ObservabilityModule } from "../observability/observability.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { OrdersModule } from "../orders/orders.module";
 
 @Module({
-  imports: [PrismaModule, UsersModule, ObservabilityModule, NotificationsModule],
+  imports: [PrismaModule, UsersModule, ObservabilityModule, NotificationsModule, OrdersModule],
   controllers: [ConstructionController],
   providers: [ConstructionService, CapacityReservationService, ConstructionCostSettlementService, CrossStoreConstructionService],
   exports: [ConstructionService, CapacityReservationService, ConstructionCostSettlementService, CrossStoreConstructionService]

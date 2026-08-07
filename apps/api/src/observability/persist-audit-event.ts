@@ -22,6 +22,7 @@ export async function persistAuditEvent(prisma: AuditEventWriter, event: AuditEv
       storeId,
       targetType: event.targetType,
       targetId: event.targetId,
+      ...(event.idempotencyKey ? { idempotencyKey: event.idempotencyKey } : {}),
       metadata: removeUndefined(event.metadata ?? {}) as Prisma.InputJsonObject
     }
   });

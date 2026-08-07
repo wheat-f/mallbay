@@ -76,7 +76,7 @@ export default function PermissionsPage() {
   };
 
   if (loading) return <Spin description="正在加载权限矩阵…" />;
-  if (error) return <Alert type="error" showIcon message={error} />;
+  if (error) return <Alert type="error" showIcon title={error} />;
   if (!activeRoles.length || !catalog.length) return <Result status="info" title="暂无可维护的角色或权限目录" />;
 
   return (

@@ -7,7 +7,7 @@ type EnvPathOptions = {
 };
 
 export const PRISMA_CLI_DATABASE_URL_PLACEHOLDER =
-  "postgresql://mallbay:mallbay@localhost:5432/mallbay?schema=public";
+  "postgresql://mallbay:mallbay@localhost:55432/mallbay?schema=public";
 
 export function getApiEnvFilePaths() {
   return buildApiEnvFilePaths({

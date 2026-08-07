@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { NotificationType } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { normalizePagination } from "../common/pagination";
 
@@ -7,10 +8,22 @@ import { normalizePagination } from "../common/pagination";
 export class NotificationsService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async send(userId: string, type: keyof typeof NotificationType, payload: object) {
-    return this.prisma.notification.create({
-      data: { userId, type: type as NotificationType, payload }
-    });
+  async send(userId: string, type: keyof typeof NotificationType, payload: object, dedupeKey?: string) {
+    if (dedupeKey) {
+      const existing = await this.prisma.notification.findUnique({ where: { todoKey: dedupeKey } });
+      if (existing) return existing;
+    }
+    try {
+      return await this.prisma.notification.create({
+        data: { userId, type: type as NotificationType, payload, todoKey: dedupeKey }
+      });
+    } catch (error) {
+      if (dedupeKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const existing = await this.prisma.notification.findUnique({ where: { todoKey: dedupeKey } });
+        if (existing) return existing;
+      }
+      throw error;
+    }
   }
 
   async list(userId: string, page = 1, pageSize = 20) {

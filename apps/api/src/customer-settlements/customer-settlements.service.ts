@@ -3,7 +3,8 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
-  NotFoundException
+  NotFoundException,
+  Optional
 } from "@nestjs/common";
 import {
   CustomerReceiptStatus,
@@ -16,6 +17,8 @@ import {
   StorePosition
 } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import { AuditEventWriter } from "../observability/audit-event-writer";
+import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -42,7 +45,10 @@ const SETTLED_ORDER_STATUSES = [OrderStatus.COMPLETED, OrderStatus.WARRANTIED];
 
 @Injectable()
 export class CustomerSettlementsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly auditWriter?: AuditEventWriter
+  ) {}
 
   async listStatementCandidates(
     user: AuthenticatedSettlementUser,
@@ -149,7 +155,7 @@ export class CustomerSettlementsService {
         },
         include: statementInclude
       });
-      await persistAuditEvent(tx, {
+      await this.recordAudit(tx, {
         action: "CUSTOMER_STATEMENT_CREATED",
         actorId: actor.id,
         targetType: "customerStatement",
@@ -189,7 +195,7 @@ export class CustomerSettlementsService {
         },
         include: statementInclude
       });
-      await persistAuditEvent(tx, {
+      await this.recordAudit(tx, {
         action: "CUSTOMER_STATEMENT_CONFIRMED",
         actorId: actor.id,
         targetType: "customerStatement",
@@ -223,7 +229,7 @@ export class CustomerSettlementsService {
         data: { status: CustomerStatementStatus.VOIDED, voidReason: reason },
         include: statementInclude
       });
-      await persistAuditEvent(tx, {
+      await this.recordAudit(tx, {
         action: "CUSTOMER_STATEMENT_VOIDED",
         actorId: actor.id,
         targetType: "customerStatement",
@@ -367,7 +373,7 @@ export class CustomerSettlementsService {
           occurredAt: new Date(dto.receivedAt)
         }
       });
-      await persistAuditEvent(tx, {
+      await this.recordAudit(tx, {
         action: "CUSTOMER_RECEIPT_POSTED",
         actorId: actor.id,
         targetType: "customerReceipt",
@@ -479,7 +485,7 @@ export class CustomerSettlementsService {
         });
       }
 
-      await persistAuditEvent(tx, {
+      await this.recordAudit(tx, {
         action: fullyReversed
           ? "CUSTOMER_RECEIPT_FULLY_REVERSED"
           : "CUSTOMER_RECEIPT_PARTIALLY_REVERSED",
@@ -683,6 +689,14 @@ export class CustomerSettlementsService {
       select: { storeId: true, position: true }
     });
     return { id: user.id, isAuditor: user.isAuditor, storeMember };
+  }
+
+  private async recordAudit(
+    prisma: Parameters<typeof persistAuditEvent>[0],
+    event: AuditEvent
+  ) {
+    if (this.auditWriter) return this.auditWriter.writeTransactional(prisma, event);
+    return persistAuditEvent(prisma, event);
   }
 }
 

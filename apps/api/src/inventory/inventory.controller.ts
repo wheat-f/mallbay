@@ -26,6 +26,7 @@ import {
   UpdateSupplierDto
 } from "./dto/inventory.dto";
 import { InventoryService, type AuthenticatedInventoryUser } from "./inventory.service";
+import { InventoryLedger } from "./domain/inventory-ledger";
 
 type AuthRequest = Request & {
   user: AuthenticatedInventoryUser;
@@ -34,7 +35,10 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("inventory")
 export class InventoryController {
-  constructor(private readonly inventory: InventoryService) {}
+  constructor(
+    private readonly inventory: InventoryService,
+    private readonly ledger: InventoryLedger
+  ) {}
 
   @Get("batches")
   listBatches(@Req() req: AuthRequest, @Query() query: ListInventoryDto) {
@@ -121,7 +125,7 @@ export class InventoryController {
     @Param("orderId") orderId: string,
     @Body() dto: CreateOrderInventoryAllocationsDto
   ) {
-    return this.inventory.createOrderInventoryAllocations(req.user, orderId, dto);
+    return this.ledger.reserve(req.user, { orderId, allocations: dto });
   }
 
   @Get("purchase-orders")
@@ -165,7 +169,7 @@ export class InventoryController {
 
   @Post("purchase-orders/items/:id/receive")
   receivePurchaseItem(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ReceivePurchaseItemDto) {
-    return this.inventory.receivePurchaseItem(req.user, id, dto);
+    return this.ledger.receive(req.user, { purchaseOrderItemId: id, receipt: dto });
   }
 
   @Post("purchase-orders/items/:id/receive-batches")
@@ -174,7 +178,7 @@ export class InventoryController {
     @Param("id") id: string,
     @Body() dto: ReceivePurchaseItemBatchesDto
   ) {
-    return this.inventory.receivePurchaseItemBatches(req.user, id, dto);
+    return this.ledger.receiveBatches(req.user, { purchaseOrderItemId: id, receipt: dto });
   }
 
   @Post("orders/:orderId/outbound")
@@ -183,16 +187,16 @@ export class InventoryController {
     @Param("orderId") orderId: string,
     @Body() dto: OutboundOrderInventoryDto
   ) {
-    return this.inventory.outboundOrderInventory(req.user, orderId, dto);
+    return this.ledger.outbound(req.user, { orderId, outbound: dto });
   }
 
   @Post("orders/:orderId/release")
   releaseOrderInventory(@Req() req: AuthRequest, @Param("orderId") orderId: string) {
-    return this.inventory.releaseOrderInventory(req.user, orderId);
+    return this.ledger.release(req.user, { orderId });
   }
 
   @Post("stock-operations")
   createStockOperation(@Req() req: AuthRequest, @Body() dto: CreateStockOperationDto) {
-    return this.inventory.createStockOperation(req.user, dto);
+    return this.ledger.adjust(req.user, dto);
   }
 }

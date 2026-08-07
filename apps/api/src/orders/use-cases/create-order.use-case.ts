@@ -10,7 +10,7 @@ import {
 import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, CrossStoreTaskStatus, CustomerContactRole, CustomerVehicleStatus, DictionaryStatus, NotificationType, OrderStatus, Prisma, ProductStatus, ProductUnit, StorePosition, StoreStatus } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../../common/policies/permission.policy";
 import { PrismaService } from "../../prisma/prisma.service";
-import { PricingService } from "../../pricing/pricing.service";
+import { PricingDecision } from "../../pricing/domain/pricing-decision";
 import { multiplyMoneyCents } from "../../pricing/domain/money";
 import { CreateOrderDto } from "../dto/create-order.dto";
 
@@ -39,8 +39,8 @@ export class CreateOrderUseCase {
     @Inject(ORDER_NUMBER_GENERATOR)
     orderNumber?: OrderNumberGenerator,
     @Optional()
-    @Inject(PricingService)
-    private readonly pricing?: PricingService
+    @Inject(PricingDecision)
+    private readonly pricing?: PricingDecision
   ) {
     this.orderNumber = orderNumber ?? createDefaultOrderNumberGenerator();
   }

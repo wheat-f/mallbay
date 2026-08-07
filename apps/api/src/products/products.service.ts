@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma, ProductStatus, ProductUnit } from "@prisma/client";
 import { normalizePagination } from "../common/pagination";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import { AuditEventWriter } from "../observability/audit-event-writer";
+import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProductDto } from "./dto/create-product.dto";
@@ -15,7 +17,10 @@ export type AuthenticatedProductUser = UserWithStoreMember & {
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly auditWriter?: AuditEventWriter
+  ) {}
 
   async create(user: AuthenticatedProductUser, dto: CreateProductDto) {
     const actor = await this.withStoreMember(user);
@@ -46,7 +51,7 @@ export class ProductsService {
         status: ProductStatus.ACTIVE
       }
     });
-    await persistAuditEvent(this.prisma, {
+    await this.recordAudit({
       action: "product_created",
       actorId: actor.id,
       targetType: "Product",
@@ -148,7 +153,7 @@ export class ProductsService {
       data: dto
     });
     if (dto.basePriceCents !== undefined && dto.basePriceCents !== product.basePriceCents) {
-      await persistAuditEvent(this.prisma, {
+      await this.recordAudit({
         action: "product_suggested_price_updated",
         actorId: actor.id,
         targetType: "Product",
@@ -162,7 +167,7 @@ export class ProductsService {
       });
     }
     if (dto.standardCostCents !== undefined && dto.standardCostCents !== product.standardCostCents) {
-      await persistAuditEvent(this.prisma, {
+      await this.recordAudit({
         action: "product_standard_material_cost_updated",
         actorId: actor.id,
         targetType: "Product",
@@ -194,7 +199,7 @@ export class ProductsService {
     }
     const updated = await this.prisma.product.update({ where: { id }, data: { standardCostCents } });
     if (standardCostCents !== product.standardCostCents) {
-      await persistAuditEvent(this.prisma, {
+      await this.recordAudit({
         action: "product_standard_material_cost_updated",
         actorId: actor.id,
         targetType: "Product",
@@ -261,7 +266,7 @@ export class ProductsService {
       const previous = product.unitSuggestedPrices.find((item) => item.salesUnit === price.salesUnit);
       const nextActive = price.isActive ?? true;
       if (previous?.suggestedPriceCents === price.suggestedPriceCents && previous.isActive === nextActive) continue;
-      await persistAuditEvent(this.prisma, {
+      await this.recordAudit({
         action: "product_unit_suggested_price_updated",
         actorId: actor.id,
         targetType: "Product",
@@ -301,6 +306,11 @@ export class ProductsService {
     if (!PermissionPolicy.canManageProduct(user, storeId)) {
       throw new ForbiddenException("无权限");
     }
+  }
+
+  private async recordAudit(event: AuditEvent) {
+    if (this.auditWriter) return this.auditWriter.writeTransactional(this.prisma, event);
+    return persistAuditEvent(this.prisma, event);
   }
 
   private assertCanManageSuggestedPrices(user: UserWithStoreMember, storeId: string) {

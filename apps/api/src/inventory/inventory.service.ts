@@ -91,6 +91,7 @@ type StockOperationInput = {
   movementType: InventoryMovementType;
   quantity: number;
   note?: string;
+  idempotencyKey?: string;
 };
 
 type ReceivePurchaseItemBatchesResult = {
@@ -1242,6 +1243,17 @@ export class InventoryService {
       if (!PermissionPolicy.canManagePurchase(actor, item.purchaseOrder.storeId)) {
         throw new ForbiddenException("无权限");
       }
+      if (dto.idempotencyKey) {
+        const existingMovement = await tx.inventoryMovement.findFirst({
+          where: {
+            storeId: item.purchaseOrder.storeId,
+            sourceType: "PURCHASE_ORDER_ITEM",
+            sourceId: purchaseOrderItemId,
+            idempotencyKey: dto.idempotencyKey
+          }
+        });
+        if (existingMovement) return existingMovement;
+      }
       if (item.purchaseOrder.status === PurchaseOrderStatus.DRAFT) {
         throw new BadRequestException("采购订单审批通过后才能入库");
       }
@@ -1388,6 +1400,7 @@ export class InventoryService {
           conversionRate: baseQuantityPerPackage,
           sourceType: "PURCHASE_ORDER_ITEM",
           sourceId: purchaseOrderItemId,
+          idempotencyKey: dto.idempotencyKey,
           warehouseId: warehouse?.id,
           warehouseName: warehouse?.name ?? normalizeOptionalText(dto.warehouseName),
           createdById: actor.id,
@@ -1972,6 +1985,17 @@ export class InventoryService {
       if (!PermissionPolicy.canManageInventory(actor, batch.storeId)) {
         throw new ForbiddenException("无权限");
       }
+      if (dto.idempotencyKey) {
+        const existingMovement = await tx.inventoryMovement.findFirst({
+          where: {
+            storeId: batch.storeId,
+            sourceType: "STOCK_OPERATION",
+            sourceId: batch.id,
+            idempotencyKey: dto.idempotencyKey
+          }
+        });
+        if (existingMovement) return existingMovement;
+      }
       if (dto.quantity <= 0) {
         throw new BadRequestException("出入库数量必须大于 0");
       }
@@ -2008,6 +2032,7 @@ export class InventoryService {
           unit: batch.unit,
           sourceType: "STOCK_OPERATION",
           sourceId: batch.id,
+          idempotencyKey: dto.idempotencyKey,
           createdById: actor.id,
           note: dto.note
         }

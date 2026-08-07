@@ -30,5 +30,5 @@ function getDatabaseUrl() {
     if (value) return value.replace(/^['"]|['"]$/g, "");
   }
 
-  return "postgresql://postgres:postgres@localhost:5432/mallbay?schema=public";
+  return "postgresql://postgres:postgres@localhost:55432/mallbay?schema=public";
 }

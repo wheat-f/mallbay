@@ -1,20 +1,26 @@
-import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { PermissionsService } from "../permissions/permissions.service";
+import { AccessContext } from "../permissions/domain/access-context";
 import { SettingsAccessService, type SettingsUser } from "./settings-access.service";
 
 type AuditQuery = { action?: string; from?: string; to?: string; limit?: number; offset?: number; page?: number; pageSize?: number; domain?: string };
 
 @Injectable()
 export class SettingsAuditService {
-  constructor(private readonly prisma: PrismaService, private readonly access: SettingsAccessService, private readonly permissions: PermissionsService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly access: SettingsAccessService,
+    private readonly permissions: PermissionsService,
+    @Optional() private readonly accessContext?: AccessContext
+  ) {}
 
   async list(user: SettingsUser, input: AuditQuery) {
     const actor = await this.access.resolveUser(user);
-    const canGlobal = await this.permissions.authorize(actor.id, "settings", "read");
+    const canGlobal = await this.authorize(actor.id, "settings", "read");
     const storeId = actor.storeMember?.storeId;
-    const canFinance = Boolean(storeId && await this.permissions.authorize(actor.id, "finance", "read", { storeId }));
+    const canFinance = Boolean(storeId && await this.authorize(actor.id, "finance", "read", { storeId }));
     if (!canGlobal && !canFinance && (!actor.storeMember || !["MANAGER", "FINANCE"].includes(actor.storeMember.position))) {
       throw new ForbiddenException("当前角色无权访问审计");
     }
@@ -94,7 +100,7 @@ export class SettingsAuditService {
       if (!page.rows.length) break;
     }
     const actor = await this.access.resolveUser(user);
-    const canGlobal = await this.permissions.authorize(actor.id, "settings", "read");
+    const canGlobal = await this.authorize(actor.id, "settings", "read");
     await this.prisma.auditEvent.create({
       data: {
         action: "settings.audit.exported",
@@ -105,6 +111,12 @@ export class SettingsAuditService {
       }
     });
     return { rows };
+  }
+
+  private authorize(userId: string, capability: string, action: string, context: { storeId?: string } = {}) {
+    return this.accessContext
+      ? this.accessContext.can(userId, capability, action, context)
+      : this.permissions.authorize(userId, capability, action, context);
   }
 }
 

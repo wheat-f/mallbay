@@ -53,7 +53,7 @@ export default function SettingsPage() {
   const groups = useMemo(() => groupCapabilities(capabilities), [capabilities]);
   const openCapability = (code: string) => { const next = [code, ...recentAccess.filter((item) => item !== code)].slice(0, 5); setRecentAccess(next); window.localStorage.setItem("settings-recent-access", JSON.stringify(next)); const path = PATHS[code]; if (path) router.push(path); };
   if (!hydrated || loading) return <div className="management-page settings-workspace"><Spin size="large" description="正在加载我的职责…" /></div>;
-  if (error) return <div className="management-page settings-workspace"><Alert type="error" showIcon message="无法加载系统设置" description={error} action={<Button onClick={() => window.location.reload()}>重新加载</Button>} /></div>;
+  if (error) return <div className="management-page settings-workspace"><Alert type="error" showIcon title="无法加载系统设置" description={error} action={<Button onClick={() => window.location.reload()}>重新加载</Button>} /></div>;
   if (!groups.length) return <div className="management-page settings-workspace"><Result status="403" title="当前角色无权访问系统设置" subTitle="请联系管理员确认你的职责与门店归属。" extra={<Button type="primary" onClick={() => router.push("/dashboard")}>返回首页</Button>} /></div>;
 
   return <div className="management-page settings-workspace">

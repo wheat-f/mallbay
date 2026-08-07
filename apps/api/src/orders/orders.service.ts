@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { createHash } from "node:crypto";
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   ConstructionTaskStatus,
   ConstructionLocation,
@@ -25,9 +25,11 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { multiplyMoneyCents } from "../pricing/domain/money";
 import { AuditLogService, type AuditEvent } from "../observability/audit-log.service";
+import { AuditEventWriter } from "../observability/audit-event-writer";
 import { OrderPolicy } from "./domain/order-policy";
 import { deriveOrderWorkflow } from "./domain/order-workflow";
 import { ensureBalanceTodos, finalizeOrderDelivery } from "./domain/order-delivery";
+import { OrderLifecycle } from "./domain/order-lifecycle";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { CopyOrderToDraftDto } from "./dto/copy-order.dto";
 import { CreateOrderPaymentDto } from "./dto/create-order-payment.dto";
@@ -70,12 +72,15 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly createOrderUseCase: CreateOrderUseCase,
-    private readonly auditLog: AuditLogService
+    private readonly auditLog: AuditLogService,
+    @Optional() private readonly orderLifecycle?: OrderLifecycle,
+    @Optional() private readonly auditWriter?: AuditEventWriter
   ) {}
 
   async create(user: AuthenticatedOrderUser, dto: CreateOrderDto) {
     const actor = await this.withStoreMember(user);
-    return this.createOrderUseCase.execute(actor, dto);
+    return this.orderLifecycle?.createOrder(actor, dto)
+      ?? this.createOrderUseCase.execute(actor, dto);
   }
 
   async list(user: AuthenticatedOrderUser, dto: ListOrdersDto) {
@@ -234,7 +239,7 @@ export class OrdersService {
       historicalWarning: ((order.status === OrderStatus.COMPLETED || order.status === OrderStatus.WARRANTIED) && order.constructionRecord?.qualityResult == null)
         ? "历史完成，质检记录缺失"
         : null,
-      workflow: deriveOrderWorkflow({
+      workflow: (this.orderLifecycle?.getLifecycle ?? this.orderLifecycle?.derive ?? deriveOrderWorkflow).call(this.orderLifecycle, {
         status: order.status,
         amount: order.amount,
         constructionRecord: order.constructionRecord,
@@ -430,13 +435,28 @@ export class OrdersService {
         }
       });
 
-      if (outstandingCents <= 0) {
-        await finalizeOrderDelivery(tx, orderId, actor.id);
-      } else {
-        await ensureBalanceTodos(tx, orderId);
-      }
+      // 收款完成只形成现金事实；最终交付必须由归属门店店长/管理员
+      // 通过显式 final-delivery command 执行，不能被财务收款动作隐式触发。
+      await (this.orderLifecycle?.ensureBalanceTodos(tx, orderId) ?? ensureBalanceTodos(tx, orderId));
 
       return payment;
+    });
+  }
+
+  async finalizeDelivery(user: AuthenticatedOrderUser, orderId: string) {
+    const actor = await this.withStoreMember(user);
+    if (this.orderLifecycle) {
+      return this.orderLifecycle.transition(actor, orderId, { type: "FINAL_DELIVERY" });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({ where: { id: orderId }, select: { storeId: true } });
+      if (!order) throw new NotFoundException("订单不存在");
+      if (!OrderPolicy.canFinalizeDelivery(actor, order.storeId)) {
+        throw new ForbiddenException("仅归属门店店长或管理员可以最终交付");
+      }
+      return this.orderLifecycle
+        ? this.orderLifecycle.finalizeDelivery(tx, orderId, actor.id)
+        : finalizeOrderDelivery(tx, orderId, actor.id);
     });
   }
 
@@ -582,8 +602,7 @@ export class OrdersService {
           }
         }
       };
-      await persistAuditEvent(tx, auditEvent);
-      this.auditLog.record(auditEvent);
+      await this.writeAuditTransactional(tx, auditEvent);
 
       return { id: orderId };
     });
@@ -625,8 +644,7 @@ export class OrdersService {
       action: "ORDER_AMENDMENT_REQUESTED", actorId: actor.id, targetType: "order", targetId: orderId,
       metadata: { storeId: order.storeId, requestId: request.id, reason, settledAt }
     };
-    await persistAuditEvent(this.prisma, auditEvent);
-    this.auditLog.record(auditEvent);
+    await this.writeAuditTransactional(this.prisma, auditEvent);
     return request;
   }
 
@@ -666,8 +684,7 @@ export class OrdersService {
           scope: "COMMERCIALS_ONLY"
         }
       };
-      await persistAuditEvent(tx, auditEvent);
-      this.auditLog.record(auditEvent);
+      await this.writeAuditTransactional(tx, auditEvent);
       return next;
     });
     return updated;
@@ -677,6 +694,9 @@ export class OrdersService {
     const actor = await this.withStoreMember(user);
     const reason = dto.reason?.trim();
     if (!reason) throw new BadRequestException("取消订单必须填写原因");
+    if (this.orderLifecycle) {
+      return this.orderLifecycle.transition(actor, orderId, { type: "CANCEL", reason });
+    }
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, storeId: true, salesPersonId: true, status: true } });
       if (!order) throw new NotFoundException("订单不存在");
@@ -695,6 +715,9 @@ export class OrdersService {
     const reason = dto.reason?.trim();
     if (!reason) {
       throw new BadRequestException("反审核退回必须填写原因");
+    }
+    if (this.orderLifecycle) {
+      return this.orderLifecycle.transition(actor, orderId, { type: "RETURN_TO_PENDING_DISPATCH", reason });
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -737,8 +760,7 @@ export class OrdersService {
           afterStatus: OrderStatus.PENDING_DISPATCH
         }
       };
-      await persistAuditEvent(tx, auditEvent);
-      this.auditLog.record(auditEvent);
+      await this.writeAuditTransactional(tx, auditEvent);
       return updated;
     });
   }
@@ -914,8 +936,7 @@ export class OrdersService {
         after: pickPaymentAccountAuditFields(data, changedFields)
       }
     };
-    await persistAuditEvent(this.prisma, auditEvent);
-    this.auditLog.record(auditEvent);
+    await this.writeAuditTransactional(this.prisma, auditEvent);
 
     return updated;
   }
@@ -1047,6 +1068,20 @@ export class OrdersService {
       ...event,
       actor: event.actorId ? actorMap.get(event.actorId) : undefined
     }));
+  }
+
+  private writeAudit(event: AuditEvent) {
+    return this.auditWriter?.write(event) ?? this.auditLog.record(event);
+  }
+
+  private async writeAuditTransactional(
+    prisma: Parameters<typeof persistAuditEvent>[0],
+    event: AuditEvent
+  ) {
+    if (this.auditWriter) return this.auditWriter.writeTransactional(prisma, event);
+    await persistAuditEvent(prisma, event);
+    this.auditLog.record(event);
+    return { accepted: true, event };
   }
 }
 
@@ -1208,6 +1243,7 @@ async function syncOrderItemsForCommercialUpdate(
     assertCanRemoveCommercialOrderItem(item);
     await tx.orderItem.deleteMany({ where: { id: item.id } });
   }
+
 }
 
 function assertCanRemoveCommercialOrderItem(item: ExistingCommercialOrderItem) {

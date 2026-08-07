@@ -1,6 +1,7 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable, Optional } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { PermissionsService } from "../permissions/permissions.service";
+import { AccessContext } from "../permissions/domain/access-context";
 import { SETTINGS_CAPABILITIES, type SettingsAction, type SettingsCapability, type SettingsDomain } from "./settings-capabilities";
 
 export type SettingsUser = { id: string; isAuditor?: boolean; storeMember?: { storeId: string; position: string } | null };
@@ -8,7 +9,11 @@ export type SettingsCapabilityView = SettingsCapability & { allowed: boolean; sc
 
 @Injectable()
 export class SettingsAccessService {
-  constructor(private readonly prisma: PrismaService, private readonly permissions?: PermissionsService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions?: PermissionsService,
+    @Optional() private readonly accessContext?: AccessContext
+  ) {}
 
   async resolveUser(user: SettingsUser) {
     if (user.storeMember !== undefined) return user;
@@ -63,10 +68,12 @@ export class SettingsAccessService {
   }
 
   private async canUsePublishedPermission(actor: Awaited<ReturnType<SettingsAccessService["resolveUser"]>>, capability: SettingsCapability, action: SettingsAction) {
-    if (!this.permissions) return this.canAction(actor, capability, action);
+    if (!this.permissions && !this.accessContext) return this.canAction(actor, capability, action);
     const permissionAction = action === "view" || action === "audit" ? "read" : "write";
     const storeId = capability.domain === "STORE" || capability.domain === "FINANCE" ? actor.storeMember?.storeId : undefined;
-    return this.permissions.authorize(actor.id, "settings", permissionAction, { storeId });
+    return this.accessContext
+      ? this.accessContext.can(actor.id, "settings", permissionAction, { storeId })
+      : this.permissions!.authorize(actor.id, "settings", permissionAction, { storeId });
   }
 
   private canView(actor: Awaited<ReturnType<SettingsAccessService["resolveUser"]>>, capability: SettingsCapability) {

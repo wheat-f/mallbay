@@ -1821,6 +1821,50 @@ test("InventoryService applies manual stock operations with explicit movement ty
   assert.equal(serialized.includes(InventoryMovementType.DAMAGE_OUT), true);
 });
 
+test("InventoryService returns the original movement for a repeated stock operation idempotency key", async () => {
+  let batchUpdates = 0;
+  let movementCreates = 0;
+  const original = { id: "movement-1", quantity: 1.5 };
+  const tx = {
+    inventoryBatch: {
+      findUnique: async () => ({
+        id: "batch-1",
+        storeId: "store-1",
+        productId: "product-1",
+        unit: ProductUnit.METER,
+        availableQuantity: 20
+      }),
+      update: async () => { batchUpdates += 1; }
+    },
+    inventoryMovement: {
+      findFirst: async () => original,
+      create: async () => { movementCreates += 1; return original; }
+    }
+  };
+  const service = new InventoryService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (client: unknown) => Promise<unknown>) => fn(tx)
+  } as never);
+
+  const result = await service.createStockOperation(
+    {
+      id: "purchasing-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
+    },
+    {
+      batchId: "batch-1",
+      movementType: InventoryMovementType.DAMAGE_OUT,
+      quantity: 1.5,
+      idempotencyKey: "stock-op-1"
+    }
+  );
+
+  assert.deepEqual(result, original);
+  assert.equal(batchUpdates, 0);
+  assert.equal(movementCreates, 0);
+});
+
 test("InventoryService partially outbounds locked inventory by selected unit", async () => {
   const writes: unknown[] = [];
   const tx = {

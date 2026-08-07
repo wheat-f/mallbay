@@ -184,7 +184,7 @@ export default function DictionarySettingsPage() {
   return <SettingsCapabilityGuard capabilityCodes={["settings.dictionary", "store.dictionary"]}><div className="management-page settings-workspace"><Space direction="vertical" size={20} style={{ width: "100%" }}>
     <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/settings")}>返回职责工作台</Button>
     <div><Typography.Title level={2}>基础字典模板</Typography.Title><Typography.Paragraph type="secondary">目录按需加载，字典项支持服务端分页、搜索和逐项维护；变更即时生效并自动记录版本。</Typography.Paragraph></div>
-    {error ? <Alert type="error" showIcon message={error} action={<Button onClick={() => void loadDirectory(true)}>重新加载</Button>} /> : null}
+    {error ? <Alert type="error" showIcon title={error} action={<Button onClick={() => void loadDirectory(true)}>重新加载</Button>} /> : null}
     <div style={{ display: "grid", gridTemplateColumns: "280px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
       <Card title="字典目录" extra={<Button icon={<ReloadOutlined />} onClick={() => void loadDirectory(false)} />}>
         <Input.Search placeholder="搜索名称或编码" allowClear onChange={(event) => setDirectoryKeyword(event.target.value)} />
@@ -195,6 +195,6 @@ export default function DictionarySettingsPage() {
       </Card>
     </div>
     <Modal open={Boolean(editing)} title={editing?.item ? "编辑字典项" : "新增字典项"} confirmLoading={saving} onCancel={() => setEditing(undefined)} onOk={() => void saveItem()} okText="保存"><Space direction="vertical" style={{ width: "100%" }}><Input value={code} disabled={Boolean(editing?.item)} placeholder="字典编码（不可重复）" onChange={(event) => setCode(event.target.value)} /><Input value={name} placeholder="显示名称" onChange={(event) => setName(event.target.value)} /></Space></Modal>
-    <Modal open={Boolean(importPreview)} title="导入预览" onCancel={() => setImportPreview(undefined)} onOk={() => void commitImport()} okButtonProps={{ disabled: !importPreview?.canCommit }} okText="确认提交"><Space direction="vertical" style={{ width: "100%" }}><Typography.Text>共 {importPreview?.summary.total} 条：新增 {importPreview?.summary.create}，更新 {importPreview?.summary.update}，错误 {importPreview?.summary.error}</Typography.Text>{importPreview?.errors.length ? <Alert type="error" message="存在错误，无法提交" description={<ul>{importPreview.errors.slice(0, 10).map((item) => <li key={`${item.code}-${item.message}`}>{item.code || "空编码"}：{item.message}</li>)}</ul>} /> : <Alert type="success" message="预览通过，确认后整批提交" />}</Space></Modal>
+    <Modal open={Boolean(importPreview)} title="导入预览" onCancel={() => setImportPreview(undefined)} onOk={() => void commitImport()} okButtonProps={{ disabled: !importPreview?.canCommit }} okText="确认提交"><Space direction="vertical" style={{ width: "100%" }}><Typography.Text>共 {importPreview?.summary.total} 条：新增 {importPreview?.summary.create}，更新 {importPreview?.summary.update}，错误 {importPreview?.summary.error}</Typography.Text>{importPreview?.errors.length ? <Alert type="error" title="存在错误，无法提交" description={<ul>{importPreview.errors.slice(0, 10).map((item) => <li key={`${item.code}-${item.message}`}>{item.code || "空编码"}：{item.message}</li>)}</ul>} /> : <Alert type="success" title="预览通过，确认后整批提交" />}</Space></Modal>
   </Space></div></SettingsCapabilityGuard>;
 }

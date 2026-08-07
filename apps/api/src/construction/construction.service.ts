@@ -18,7 +18,9 @@ import type { MulterFile } from "../users/multer-file.type";
 import { OssService } from "../users/oss.service";
 import { ConstructionCostSettlementService } from "./construction-cost-settlement.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { ensureBalanceTodos, finalizeOrderDelivery } from "../orders/domain/order-delivery";
+import { NotificationDispatcher } from "../notifications/notification-dispatcher";
+import { ensureBalanceTodos } from "../orders/domain/order-delivery";
+import { OrderLifecycle } from "../orders/domain/order-lifecycle";
 import {
   AssignOrderDto,
   CompleteConstructionDto,
@@ -52,8 +54,18 @@ export class ConstructionService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional() @Inject(OssService) private readonly oss?: OssService,
     @Optional() private readonly costSettlements?: ConstructionCostSettlementService,
-    @Optional() private readonly notifications?: NotificationsService
-  ) {}
+    @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly orderLifecycle?: OrderLifecycle,
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcher
+  ) {
+    this.orderLifecycle?.registerConstructionHandler(async (actor, orderId, command) => {
+      if (command.type === "DISPATCH") return this.assignOrderInternal(actor, orderId, command.input as AssignOrderDto);
+      if (command.type === "START_CONSTRUCTION") return this.startOrderInternal(actor, orderId, command.input as StartConstructionDto);
+      if (command.type === "COMPLETE_CONSTRUCTION") return this.completeOrderForOrderInternal(actor, orderId, command.input as CompleteConstructionDto);
+      if (command.type === "QUALITY_CHECK") return this.qualityCheckInternal(actor, command.recordId, command.input as QualityCheckDto);
+      throw new BadRequestException("不支持的施工履约状态");
+    });
+  }
 
   async listCapacities(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
     const actor = await this.withStoreMember(user);
@@ -129,6 +141,13 @@ export class ConstructionService {
 
   async assignOrder(user: AuthenticatedConstructionUser, orderId: string, dto: AssignOrderDto) {
     const actor = await this.withStoreMember(user);
+    if (this.orderLifecycle) {
+      return this.orderLifecycle.transition(actor, orderId, { type: "DISPATCH", input: dto });
+    }
+    return this.assignOrderInternal(actor, orderId, dto);
+  }
+
+  private async assignOrderInternal(actor: UserWithStoreMember, orderId: string, dto: AssignOrderDto) {
     const workerIds = [...new Set(dto.workerUserIds)];
     if (workerIds.length < 1 || workerIds.length > 3) {
       throw new BadRequestException("施工人员必须为 1 到 3 人");
@@ -224,6 +243,13 @@ export class ConstructionService {
 
   async startOrder(user: AuthenticatedConstructionUser, orderId: string, dto: StartConstructionDto = {}) {
     const actor = await this.withStoreMember(user);
+    if (this.orderLifecycle) {
+      return this.orderLifecycle.transition(actor, orderId, { type: "START_CONSTRUCTION", input: dto });
+    }
+    return this.startOrderInternal(actor, orderId, dto);
+  }
+
+  private async startOrderInternal(actor: UserWithStoreMember, orderId: string, dto: StartConstructionDto = {}) {
     const record = await this.findRecordForOrder(orderId);
     this.assertAssignedWorker(actor, record);
     if (record.order.status !== OrderStatus.DISPATCHED) {
@@ -280,11 +306,21 @@ export class ConstructionService {
   async completeOrder(user: AuthenticatedConstructionUser, recordId: string, dto: CompleteConstructionDto) {
     const actor = await this.withStoreMember(user);
     const record = await this.findRecord(recordId);
+    if (this.orderLifecycle) {
+      return this.orderLifecycle.transition(actor, record.orderId, { type: "COMPLETE_CONSTRUCTION", input: dto });
+    }
     return this.completeRecord(actor, record, dto);
   }
 
   async completeOrderForOrder(user: AuthenticatedConstructionUser, orderId: string, dto: CompleteConstructionDto) {
     const actor = await this.withStoreMember(user);
+    if (this.orderLifecycle) {
+      return this.orderLifecycle.transition(actor, orderId, { type: "COMPLETE_CONSTRUCTION", input: dto });
+    }
+    return this.completeOrderForOrderInternal(actor, orderId, dto);
+  }
+
+  private async completeOrderForOrderInternal(actor: UserWithStoreMember, orderId: string, dto: CompleteConstructionDto) {
     const record = await this.findRecordForOrder(orderId);
     return this.completeRecord(actor, record, dto);
   }
@@ -332,7 +368,7 @@ export class ConstructionService {
         where: { storeId: record.order.storeId, position: StorePosition.MANAGER },
         select: { userId: true }
       });
-      await Promise.all(recipients.map(({ userId }) => this.notifications?.send(
+      await Promise.all(recipients.map(({ userId }) => this.dispatchNotification(
         userId,
         NotificationType.CROSS_STORE_TASK_SUBMITTED,
         { orderId: record.orderId, constructionRecordId: record.id }
@@ -365,6 +401,14 @@ export class ConstructionService {
 
   async qualityCheck(user: AuthenticatedConstructionUser, recordId: string, dto: QualityCheckDto) {
     const actor = await this.withStoreMember(user);
+    if (this.orderLifecycle) {
+      const record = await this.findRecord(recordId);
+      return this.orderLifecycle.transition(actor, record.orderId, { type: "QUALITY_CHECK", recordId, input: dto });
+    }
+    return this.qualityCheckInternal(actor, recordId, dto);
+  }
+
+  private async qualityCheckInternal(actor: UserWithStoreMember, recordId: string, dto: QualityCheckDto) {
     const record = await this.findRecord(recordId);
     if (!PermissionPolicy.canQualityCheckConstruction(actor, record.storeId)) {
       throw new ForbiddenException("无权限");
@@ -408,10 +452,10 @@ export class ConstructionService {
           where: { orderId: record.orderId },
           select: { outstandingCents: true }
         });
-        if (amount && amount.outstandingCents <= 0 && typeof tx.warranty?.create === "function") {
-          await finalizeOrderDelivery(tx, record.orderId, actor.id);
-        } else if (typeof tx.notification?.createMany === "function") {
-          await ensureBalanceTodos(tx, record.orderId);
+        // 质检只形成质量事实；最终交付必须由归属门店店长/管理员
+        // 通过订单 final-delivery command 显式执行。
+        if (amount && typeof tx.notification?.createMany === "function") {
+          await (this.orderLifecycle?.ensureBalanceTodos(tx, record.orderId) ?? ensureBalanceTodos(tx, record.orderId));
         }
       }
       const events = dto.result === QualityCheckResult.REWORK_REQUIRED
@@ -742,7 +786,7 @@ export class ConstructionService {
       },
       select: { userId: true }
     });
-    await Promise.all(approvers.map((approver) => this.notifications?.send(approver.userId, "LEAVE_APPROVAL_REQUIRED", {
+    await Promise.all(approvers.map((approver) => this.dispatchNotification(approver.userId, "LEAVE_APPROVAL_REQUIRED", {
       storeId: dto.storeId,
       leaveId: leave.id,
       workerId: dto.workerId,
@@ -807,7 +851,7 @@ export class ConstructionService {
         reviewedBy: { select: { id: true, username: true, nickname: true } }
       }
     });
-    await this.notifications?.send(leave.workerId, dto.status === "APPROVED" ? "LEAVE_APPROVED" : "LEAVE_REJECTED", {
+    await this.dispatchNotification(leave.workerId, dto.status === "APPROVED" ? "LEAVE_APPROVED" : "LEAVE_REJECTED", {
       storeId: leave.storeId,
       leaveId: leave.id,
       reviewNote: dto.reviewNote?.trim() || "",
@@ -1002,6 +1046,11 @@ export class ConstructionService {
       isAuditor: user.isAuditor,
       storeMember: member
     };
+  }
+
+  private dispatchNotification(userId: string, type: keyof typeof NotificationType, payload: object) {
+    return this.notificationDispatcher?.dispatch({ userId, type, payload })
+      ?? this.notifications?.send(userId, type, payload);
   }
 }
 

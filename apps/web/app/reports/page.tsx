@@ -36,7 +36,22 @@ function currentMonthRange() { const now = dayjs(); return { dateFrom: now.start
 
 function money(value: number | null | undefined) { return value == null ? "待补齐" : yuanCurrency(value); }
 
-function comparisonLabel(item: OperationalReport["comparison"]["amount"]) { if (item.status === "new") return "新增"; if (item.status === "unchanged") return "无变化"; if (item.status === "unavailable" || item.changeBps == null) return "暂无可比"; return (item.changeBps >= 0 ? "+" : "") + (item.changeBps / 100).toFixed(1) + "%"; }
+function comparisonLabel(item: OperationalReport["comparison"]["amount"]) {
+  if (item.status === "new") return "新增";
+  if (item.status === "unchanged") return "无变化";
+  if (item.status === "unavailable" || item.changeBps == null) {
+    return item.reason === "NO_PREVIOUS_PERIOD" ? "暂无上期" : item.reason === "INCOMPLETE_METRIC" ? "成本待补齐" : "暂无可比";
+  }
+  return (item.changeBps >= 0 ? "+" : "") + (item.changeBps / 100).toFixed(1) + "%";
+}
+
+function operationalErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("REPORT_DATE_RANGE_INVALID")) return "日期格式无效或开始日期晚于结束日期，请修正筛选范围。";
+  if (message.includes("REPORT_DATE_RANGE_TOO_LARGE")) return "日期范围不能超过 366 天，请缩小查询范围。";
+  if (message.includes("无权限") || message.includes("Forbidden")) return "当前账号没有查看该报表范围的权限，请切换门店或联系管理员。";
+  return "请检查筛选条件或稍后重试。";
+}
 
 function dateRangeDays(dateFrom?: string, dateTo?: string) { if (!dateFrom || !dateTo) return 0; return dayjs(dateTo).diff(dayjs(dateFrom), "day") + 1; }
 
@@ -143,10 +158,10 @@ export default function ReportsPage() {
         </div>
       </Card>
 
-      {dateRangeInvalid && <Alert type="warning" showIcon message="开始日期不能晚于结束日期，请重新选择日期范围" />}
-      {dateRangeTooLarge && <Alert type="warning" showIcon message="日期范围不能超过 366 天，请缩小范围" />}
-      {drilldownApplied && <Alert type="info" showIcon message="已应用分析条件" action={<Button size="small" onClick={() => { setDrilldownApplied(false); setFilters({ storeId, dateBasis: "DEFAULT", ...currentMonthRange() }); }}>清除条件</Button>} />}
-      {reportQuery.isError && <Alert type="error" showIcon message="报表加载失败" description="请检查筛选条件或稍后重试。" action={<Button size="small" onClick={() => void reportQuery.refetch()}>重试</Button>} />}
+      {dateRangeInvalid && <Alert type="warning" showIcon title="开始日期不能晚于结束日期，请重新选择日期范围" />}
+      {dateRangeTooLarge && <Alert type="warning" showIcon title="日期范围不能超过 366 天，请缩小范围" />}
+      {drilldownApplied && <Alert type="info" showIcon title="已应用分析条件" action={<Button size="small" onClick={() => { setDrilldownApplied(false); setFilters({ storeId, dateBasis: "DEFAULT", ...currentMonthRange() }); }}>清除条件</Button>} />}
+      {reportQuery.isError && <Alert type="error" showIcon title="报表加载失败" description={operationalErrorMessage(reportQuery.error)} action={<Button size="small" onClick={() => void reportQuery.refetch()}>重试</Button>} />}
 
       {reportQuery.isLoading && <Card className="reports-loading-card"><Skeleton active paragraph={{ rows: 3 }} /></Card>}
       <section className="reports-bento-grid">
@@ -157,16 +172,19 @@ export default function ReportsPage() {
       </section>
 
       {report && <Card title="本期经营结论" className="reports-insights-card">
+        {report.modules.insights.status !== "ready" && <Alert type="warning" showIcon title="经营洞察部分不可用" description={report.modules.insights.errorCode ?? "请调整筛选范围后重试。"} />}
         {report.insights.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前数据暂未触发经营异常结论" /> : report.insights.map((insight, index) => (
-          <Alert key={insight.title + index} type="warning" showIcon message={insight.title} description={<Space direction="vertical" size={4}><span>{insight.evidence}</span><Button type="link" onClick={() => { if (insight.targetView) setView(insight.targetView as ReportView); if (insight.filters) setFilters((current) => ({ ...current, ...insight.filters })); setDrilldownApplied(true); }}>查看对应明细</Button></Space>} />
+          <Alert key={insight.title + index} type="warning" showIcon title={insight.title} description={<Space direction="vertical" size={4}><span>{insight.evidence}</span><Button type="link" onClick={() => { if (insight.targetView) setView(insight.targetView as ReportView); if (insight.filters) setFilters((current) => ({ ...current, ...insight.filters })); setDrilldownApplied(true); }}>查看对应明细</Button></Space>} />
         ))}
       </Card>}
       {report && <Card title="趋势分析" extra={<Tag>按{report.trendGranularity === "day" ? "日" : report.trendGranularity === "week" ? "周" : "月"}聚合</Tag>} className="reports-trend-card">
+        {report.modules.trend.status !== "ready" && <Alert type="warning" showIcon title="趋势数据存在缺失" description={report.modules.trend.errorCode ?? "部分指标暂不可用。"} />}
         <Space wrap><span>趋势指标</span><Select value={trendMetric} options={["amountCents", "receivedCents", "outstandingCents", "grossProfitCents"].map((value) => ({ value, label: trendMetricLabel(value as TrendMetric) }))} onChange={setTrendMetric} /></Space>
         <TrendChart trend={report.trend} metric={trendMetric} onPointClick={(period) => { const start = dayjs(period); const end = report.trendGranularity === "day" ? start : report.trendGranularity === "week" ? start.add(6, "day") : start.endOf("month"); setFilters((current) => ({ ...current, dateFrom: start.format("YYYY-MM-DD"), dateTo: end.format("YYYY-MM-DD") })); setDrilldownApplied(true); }} />
         <Space wrap><Tag>订单 {report.summary.orders} 单</Tag><Tag color={report.summary.metricCompleteness === "complete" ? "green" : "orange"}>成本完整度 {(report.summary.costCompletenessBps / 100).toFixed(1)}%</Tag>{report.summary.metricCompleteness === "incomplete" && <Tag color="orange">毛利待补齐 {report.summary.pendingCostOrderCount} 单</Tag>}</Space>
       </Card>}
       {report && <ContributionRiskSummary report={report} onView={(nextView) => { setView(nextView); setDrilldownApplied(true); }} />}
+      {report && report.modules.details.truncated && <Alert type="info" showIcon title={`明细已限制展示前 2,000 行，共 ${report.modules.details.rowCount ?? 0} 行`} description="摘要、趋势和经营洞察仍基于完整查询结果计算。导出当前视图将使用当前返回的明细结果。" />}
       <Card className="reports-detail-card" title="经营分析明细" extra={<Button icon={<DownloadOutlined />} onClick={() => void exportCurrentView()} disabled={!report || reportQuery.isFetching || dateRangeTooLarge || dateRangeInvalid}>导出当前视图</Button>}>
         <Tabs activeKey={currentView} onChange={(key) => setView(key as ReportView)} items={availableViews.map((item) => ({ key: item.key, label: item.label }))} />
         <Typography.Paragraph type="secondary">
@@ -256,6 +274,7 @@ function OperationalReportTable({ view, loading, report }: { view: ReportView; l
 function buildExportSummaryRows(report: Awaited<ReturnType<typeof reportsApi.operational>>, filterSummary: string) {
   return [
     { 类别: "查询条件", 指标: "筛选范围", 数值: filterSummary },
+    { 类别: "查询条件", 指标: "日期口径", 数值: report.dateBasis },
     { 类别: "查询条件", 指标: "数据更新时间", 数值: report.generatedAt },
     { 类别: "核心指标", 指标: "订单金额", 数值: money(report.summary.amountCents) },
     { 类别: "核心指标", 指标: "实际收款", 数值: money(report.summary.receivedCents) },
@@ -267,6 +286,7 @@ function buildExportSummaryRows(report: Awaited<ReturnType<typeof reportsApi.ope
     { 类别: "对比", 指标: "毛利较上期", 数值: comparisonLabel(report.comparison.grossProfit) },
     { 类别: "数据覆盖", 指标: "成本完整度", 数值: `${(report.summary.costCompletenessBps / 100).toFixed(1)}%` },
     { 类别: "数据覆盖", 指标: "待补齐成本订单", 数值: report.summary.pendingCostOrderCount },
+    { 类别: "数据覆盖", 指标: "明细返回情况", 数值: report.modules.details.truncated ? `已截断，${report.modules.details.rowCount ?? 0} 行中返回 2,000 行` : `完整返回，共 ${report.modules.details.rowCount ?? 0} 行` },
     { 类别: "数据覆盖", 指标: "缺失日期记录", 数值: report.summary.coverage.ordersWithMissingBusinessDate + report.summary.coverage.paymentsWithMissingEntryDate + report.summary.coverage.costsWithMissingConfirmationDate + report.summary.coverage.afterSalesWithMissingConfirmationDate },
     ...report.insights.map((insight) => ({ 类别: "经营结论", 指标: insight.title, 数值: `${insight.evidence}；动作：${insight.action}` }))
   ];

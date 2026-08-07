@@ -2,10 +2,13 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
-  NotFoundException
+  NotFoundException,
+  Optional
 } from "@nestjs/common";
 import { NotificationsService } from "../../notifications/notifications.service";
+import { NotificationDispatcher } from "../../notifications/notification-dispatcher";
 import { AuditLogService } from "../../observability/audit-log.service";
+import { AuditEventWriter } from "../../observability/audit-event-writer";
 import { ChangeManagerDto } from "../dto/change-manager.dto";
 import { StoreRepository } from "../repositories/store.repository";
 
@@ -14,7 +17,9 @@ export class ChangeStoreManagerUseCase {
   constructor(
     private readonly stores: StoreRepository,
     private readonly notifications: NotificationsService,
-    private readonly auditLog: AuditLogService
+    private readonly auditLog: AuditLogService,
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcher,
+    @Optional() private readonly auditWriter?: AuditEventWriter
   ) {}
 
   async execute(isAuditor: boolean, storeId: string, dto: ChangeManagerDto) {
@@ -43,7 +48,7 @@ export class ChangeStoreManagerUseCase {
       currentManagerId: currentManager?.id,
       existingNewManagerMemberId: newManagerMember?.id
     });
-    this.auditLog.record({
+    this.writeAudit({
       action: "STORE_MANAGER_CHANGED",
       targetType: "store",
       targetId: storeId,
@@ -54,13 +59,25 @@ export class ChangeStoreManagerUseCase {
     });
 
     if (currentManager) {
-      await this.notifications.send(currentManager.userId, "REMOVED_FROM_STORE", {
+      await (this.notificationDispatcher?.dispatch({
+        userId: currentManager.userId,
+        type: "REMOVED_FROM_STORE",
+        payload: {
+          storeId,
+          storeName: store.name,
+          reason: "店长职位已变更"
+        }
+      }) ?? this.notifications.send(currentManager.userId, "REMOVED_FROM_STORE", {
         storeId,
         storeName: store.name,
         reason: "店长职位已变更"
-      });
+      }));
     }
 
     return { success: true };
+  }
+
+  private writeAudit(event: Parameters<AuditLogService["record"]>[0]) {
+    return this.auditWriter?.write(event) ?? this.auditLog.record(event);
   }
 }

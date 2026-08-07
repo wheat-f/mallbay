@@ -591,15 +591,23 @@ export type OperationalReportFilters = {
 };
 
 export type ReportTargetView = "sales" | "construction" | "finance" | "project" | "afterSalesWorker" | "afterSalesBreakdown";
-export type ReportModuleState = { status: "ready" | "error"; errorCode?: string };
+export type ReportComparisonReason = "NO_PREVIOUS_PERIOD" | "NO_COMPARABLE_DATA" | "INCOMPLETE_METRIC";
+export type ReportModuleState = {
+  status: "ready" | "partial" | "unavailable" | "error";
+  errorCode?: string;
+  rowCount?: number;
+  truncated?: boolean;
+};
 export type MetricComparison = {
   status: "comparable" | "new" | "unchanged" | "unavailable";
   changeBps: number | null;
   currentCents: number;
   previousCents: number | null;
+  reason?: ReportComparisonReason;
 };
 
 export type OperationalReport = {
+  version: 1;
   dateBasis: NonNullable<OperationalReportFilters["dateBasis"]>;
   salesPeople: Array<{
     userId: string;

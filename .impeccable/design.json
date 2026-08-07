@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-05T00:00:00.000Z",
+  "title": "Design System: MallBay",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "门店深蓝", "canonical": "#0f3a5f", "tonalRamp": ["#061522", "#0b2942", "#0f3a5f", "#315a78", "#5e7e96", "#8ea6b8", "#c2d2de", "#e6f0f8"] },
+      "background": { "role": "neutral", "displayName": "工作背景", "canonical": "#f6f8fb", "tonalRamp": ["#20242a", "#3d444d", "#626b75", "#89939d", "#aeb8c1", "#cbd3da", "#e1e6ea", "#f6f8fb"] },
+      "surface": { "role": "neutral", "displayName": "表面白", "canonical": "#ffffff", "tonalRamp": ["#1b1d1f", "#373b3e", "#5d6265", "#858a8d", "#aaafb2", "#c8cccf", "#e3e5e6", "#ffffff"] },
+      "success": { "role": "tertiary", "displayName": "成功绿", "canonical": "#16a34a", "tonalRamp": ["#04200e", "#064b20", "#087a32", "#16a34a", "#45bb6d", "#7bd398", "#b3e8c2", "#dcfce7"] },
+      "warning": { "role": "tertiary", "displayName": "提醒橙", "canonical": "#f59e0b", "tonalRamp": ["#321d02", "#754404", "#b66d07", "#f59e0b", "#f8b941", "#fbd27a", "#fde7b1", "#fef3c7"] },
+      "danger": { "role": "tertiary", "displayName": "风险红", "canonical": "#dc2626", "tonalRamp": ["#300505", "#6f0c0c", "#a71919", "#dc2626", "#e65b5b", "#ee9090", "#f7c1c1", "#fee2e2"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "认证和高影响力介绍内容。" },
+      "headline": { "displayName": "Headline", "purpose": "管理页面标题和主要工作区标题。" },
+      "body": { "displayName": "Body", "purpose": "业务正文、说明和表单辅助文本。" }
+    },
+    "shadows": [
+      { "name": "ambient-low", "value": "0 1px 2px rgb(15 23 42 / 0.05), 0 8px 22px rgb(15 23 42 / 0.04)", "purpose": "默认 KPI、筛选和工作表面。" },
+      { "name": "ambient-medium", "value": "0 10px 30px rgb(15 23 42 / 0.08)", "purpose": "浮层和较大型临时面板。" },
+      { "name": "brand-action", "value": "0 10px 22px rgb(15 58 95 / 0.16)", "purpose": "角色切换等高信心主操作。" }
+    ],
+    "motion": [
+      { "name": "state-standard", "value": "150ms ease", "purpose": "导航、按钮和输入状态的快速反馈。" },
+      { "name": "focus-visible", "value": "keyboard-visible primary ring", "purpose": "键盘操作时保持明确的焦点位置。" }
+    ],
+    "breakpoints": [
+      { "name": "management-mobile", "value": "900px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "门店工作流中的决定性操作。",
+      "html": "<button class=\"ds-btn-primary\">保存</button>",
+      "css": ".ds-btn-primary { background: #0f3a5f; color: #fff; height: 40px; padding: 0 16px; border: 0; border-radius: 10px; font: 700 14px/20px 'Noto Sans SC', Inter, system-ui, sans-serif; cursor: pointer; transition: background 150ms ease, box-shadow 150ms ease, transform 150ms ease; } .ds-btn-primary:hover { background: #0b2942; box-shadow: 0 10px 22px rgb(15 58 95 / 0.16); transform: translateY(-1px); } .ds-btn-primary:focus-visible { outline: 3px solid #a5c9f6; outline-offset: 2px; }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "用于搜索、筛选和录入业务信息。",
+      "html": "<input class=\"ds-input\" placeholder=\"搜索订单\" />",
+      "css": ".ds-input { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #d9e2ec; border-radius: 10px; background: #f3f4f6; color: #111827; font: 400 14px/22px 'Noto Sans SC', Inter, system-ui, sans-serif; transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease; } .ds-input::placeholder { color: #6b7280; } .ds-input:hover { background: #fff; } .ds-input:focus { border-color: #0f3a5f; background: #fff; box-shadow: 0 0 0 3px #d1e4ff; outline: 0; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "承载 KPI、筛选器和工作内容的结构化表面。",
+      "html": "<section class=\"ds-card\"><strong>今日待办</strong><span>12</span></section>",
+      "css": ".ds-card { display: grid; gap: 10px; padding: 16px; border: 1px solid #d9e2ec; border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgb(15 23 42 / 0.05), 0 8px 22px rgb(15 23 42 / 0.04); color: #111827; } .ds-card strong { color: #6b7280; font: 700 13px/18px 'Noto Sans SC', Inter, system-ui, sans-serif; } .ds-card span { color: #0f3a5f; font: 850 26px/29px 'Noto Sans SC', Inter, system-ui, sans-serif; }"
+    },
+    {
+      "name": "Active Navigation",
+      "kind": "nav",
+      "refersTo": "nav-active",
+      "description": "表达当前工作区和导航上下文。",
+      "html": "<button class=\"ds-nav-active\"><span aria-hidden=\"true\">▦</span><span>工作台</span></button>",
+      "css": ".ds-nav-active { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: #e6f0f8; box-shadow: inset 4px 0 0 #d1e4ff; color: #0f3a5f; font: 800 14px/20px 'Noto Sans SC', Inter, system-ui, sans-serif; text-align: left; }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "用语义色表达订单、施工和财务状态。",
+      "html": "<span class=\"ds-chip\">处理中</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 999px; background: #dbeafe; color: #2563eb; font: 700 12px/16px 'Noto Sans SC', Inter, system-ui, sans-serif; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "清晰可靠的门店工作台",
+    "overview": "MallBay 的界面应像门店每天依赖的运营工作台：可靠、清楚、能快速告诉使用者当前发生了什么，以及下一步该做什么。深蓝是稳定的品牌锚点，浅灰背景和白色表面构成安静的工作底板，业务状态通过有限且有语义的颜色表达。视觉方向采用结构化卡片与轻量阴影。卡片不是装饰，而是用于把 KPI、筛选、列表、待办和流程阶段分组；边界保持克制，阴影只提供轻微层次，避免让后台变成堆叠的浮层。",
+    "keyCharacteristics": ["深蓝品牌锚点", "结构化信息分组", "克制圆角与轻量阴影", "明确的操作反馈", "桌面与移动工作流连续"],
+    "rules": [
+      { "name": "The Deep-Blue Anchor Rule", "body": "Deep blue establishes navigation, primary action, and operational authority; semantic colors should not compete with it.", "section": "colors" },
+      { "name": "The Status-Has-Meaning Rule", "body": "Green, amber, red, and blue are reserved for recognizable business states, not decoration.", "section": "colors" },
+      { "name": "The Scan-First Type Rule", "body": "Make the page title, next action, current status, and key value easy to locate before asking the user to read supporting copy.", "section": "typography" },
+      { "name": "The Workbench Frame Rule", "body": "Every management page should make its page title, primary action, current state, and main work area legible inside the shared shell.", "section": "layout" },
+      { "name": "The One Canvas Rule", "body": "Use surface changes and spacing to group work before adding another bordered card.", "section": "layout" },
+      { "name": "The Quiet-Elevation Rule", "body": "Shadows should explain hierarchy, not advertise decoration; if a border and tonal shift are enough, do not add a stronger shadow.", "section": "elevation" }
+    ],
+    "dos": ["Do use the deep-blue family to establish navigation, primary action, and store context.", "Do group related business content into structured surfaces with 16px internal rhythm.", "Do make the next operational action and current status obvious through hierarchy and semantic feedback.", "Do use subtle borders and tonal surfaces before stronger shadows."],
+    "donts": ["Don't turn every row, filter, or small control into a separate floating card.", "Don't use tertiary red or other semantic colors as decorative accents.", "Don't use heavy shadows, glassmorphism, gradients, or ornamental visual effects that reduce operational clarity."]
+  }
+}

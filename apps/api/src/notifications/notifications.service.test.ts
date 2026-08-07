@@ -40,3 +40,15 @@ test("NotificationsService receives PrismaService through Nest injection", async
 
   assert.deepEqual(result, { count: 3 });
 });
+
+test("NotificationsService reuses an existing notification for a duplicate dedupe key", async () => {
+  const existing = { id: "notification-1", todoKey: "store:1" };
+  const prisma = {
+    notification: {
+      findUnique: async () => existing,
+      create: async () => { throw new Error("should not create"); }
+    }
+  };
+  const service = new NotificationsService(prisma as never);
+  assert.deepEqual(await service.send("user-1", "STORE_FROZEN", { storeId: "store-1" }, "store:1"), existing);
+});

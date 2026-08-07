@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException,
 import { ConstructionCostAdjustmentStatus, ConstructionCostSettlementStatus, InventoryMovementType, Prisma } from "@prisma/client";
 import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
 import { AuditLogService, type AuditEvent } from "../observability/audit-log.service";
+import { AuditEventWriter } from "../observability/audit-event-writer";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 import { PrismaService } from "../prisma/prisma.service";
 import { multiplyMoneyCents } from "../pricing/domain/money";
@@ -19,7 +20,11 @@ const settlementInclude = Prisma.validator<Prisma.ConstructionCostSettlementIncl
 
 @Injectable()
 export class ConstructionCostSettlementService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly audit?: AuditLogService,
+    @Optional() private readonly auditWriter?: AuditEventWriter
+  ) {}
 
   async initializeForCompletedRecord(recordId: string, actorId?: string) {
     const existing = await this.prisma.constructionCostSettlement.findFirst({ where: { constructionRecordId: recordId } });
@@ -465,6 +470,7 @@ export class ConstructionCostSettlementService {
   }
 
   private async recordAudit(event: AuditEvent) {
+    if (this.auditWriter) return this.auditWriter.writeTransactional(this.prisma, event);
     this.audit?.record(event);
     await persistAuditEvent(this.prisma, event);
   }

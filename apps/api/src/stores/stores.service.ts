@@ -25,6 +25,7 @@ import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
 import { DictionariesService } from "../settings/dictionaries.service";
 import { PermissionsService } from "../permissions/permissions.service";
+import { AccessContext } from "../permissions/domain/access-context";
 
 @Injectable()
 export class StoresService {
@@ -35,7 +36,8 @@ export class StoresService {
     @Inject(ChangeStoreManagerUseCase) private readonly changeStoreManager: ChangeStoreManagerUseCase,
     @Inject(SetStoreFrozenUseCase) private readonly setStoreFrozen: SetStoreFrozenUseCase,
     @Inject(DictionariesService) private readonly dictionaries: DictionariesService,
-    @Optional() @Inject(PermissionsService) private readonly permissions?: PermissionsService
+    @Optional() @Inject(PermissionsService) private readonly permissions?: PermissionsService,
+    @Optional() @Inject(AccessContext) private readonly accessContext?: AccessContext
   ) {}
 
   // ─── 管理员：创建门店并指派店长 ────────────────────────────────────────────
@@ -110,8 +112,10 @@ export class StoresService {
   }
 
   private async assertPermission(actorId: string, permission: string, action: string, storeId?: string) {
-    if (this.permissions) {
-      const allowed = await this.permissions.authorize(actorId, permission, action, storeId ? { storeId } : {});
+    if (this.accessContext || this.permissions) {
+      const allowed = this.accessContext
+        ? await this.accessContext.can(actorId, permission, action, storeId ? { storeId } : {})
+        : await this.permissions!.authorize(actorId, permission, action, storeId ? { storeId } : {});
       if (!allowed) throw new ForbiddenException("无权限");
       return;
     }

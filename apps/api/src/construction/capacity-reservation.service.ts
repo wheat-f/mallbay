@@ -3,11 +3,16 @@ import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionL
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../observability/audit-log.service";
 import type { AuditEvent } from "../observability/audit-log.service";
+import { AuditEventWriter } from "../observability/audit-event-writer";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 
 @Injectable()
 export class CapacityReservationService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly audit?: AuditLogService,
+    @Optional() private readonly auditWriter?: AuditEventWriter
+  ) {}
 
   async holdQuote(input: {
     storeId: string;
@@ -130,6 +135,7 @@ export class CapacityReservationService {
   }
 
   private async recordAudit(event: AuditEvent) {
+    if (this.auditWriter) return this.auditWriter.writeTransactional(this.prisma, event);
     this.audit?.record(event);
     await persistAuditEvent(this.prisma, event);
   }

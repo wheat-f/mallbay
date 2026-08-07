@@ -6,6 +6,7 @@ export type AuditEvent = {
   actorId?: string;
   targetType: string;
   targetId?: string;
+  idempotencyKey?: string;
   metadata?: Record<string, unknown>;
 };
 

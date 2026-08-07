@@ -416,6 +416,11 @@ export class CreatePurchaseOrderFromRequirementDto {
 }
 
 export class ReceivePurchaseItemDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  idempotencyKey?: string;
+
   @Type(() => Number)
   @IsNumber()
   @Min(0.001)
@@ -499,6 +504,11 @@ export class SplitBatchDto {
 }
 
 export class CreateStockOperationDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  idempotencyKey?: string;
+
   @IsString()
   batchId!: string;
 

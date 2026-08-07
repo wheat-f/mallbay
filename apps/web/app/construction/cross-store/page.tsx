@@ -163,13 +163,13 @@ export default function CrossStoreConstructionPage() {
 
   return <div className="management-page">
     <div className="page-header"><div><Typography.Title level={2}>跨门店施工协作</Typography.Title><Typography.Paragraph type="secondary">来源门店负责销售订单，执行门店负责施工、材料和现场记录；A/B/C 属于同一财务主体时可跨店协作。</Typography.Paragraph></div></div>
-    <Alert type="info" showIcon message="协作规则" description="执行门店默认提供施工材料；当前阶段不收取门店间协作费用。订单金额、收款和成本仍归属来源订单，执行门店只维护施工过程与材料领用记录。" />
+    <Alert type="info" showIcon title="协作规则" description="执行门店默认提供施工材料；当前阶段不收取门店间协作费用。订单金额、收款和成本仍归属来源订单，执行门店只维护施工过程与材料领用记录。" />
     <Tabs activeKey={scope} onChange={(key) => setScope(key as CrossStoreTaskScope)} items={[{ key: "EXECUTION", label: "执行门店任务" }, { key: "SOURCE", label: "来源门店跟进" }]} />
     <Card title="任务列表" extra={<Select allowClear placeholder="按状态筛选" style={{ width: 190 }} options={statusOptions} value={status} onChange={setStatus} />}>
       <Table rowKey="id" loading={tasksQuery.isLoading} dataSource={tasks} columns={columns} scroll={{ x: 1200 }} locale={{ emptyText: "暂无跨店施工任务" }} />
     </Card>
     {canConfigureMappings && <Card title="产品映射（来源门店 → 执行门店）" style={{ marginTop: 16 }} extra={<Select placeholder="选择执行门店" style={{ width: 240 }} value={mappingStoreId} onChange={(value) => { setMappingStoreId(value); mappingForm.resetFields(); }} options={mappingStores.map((store) => ({ value: store.id, label: store.name }))} />}>
-      {!mappingStoreId ? <Alert type="warning" showIcon message="请先选择执行门店" description="只有同一财务主体且已启用跨店协作的门店会出现在这里。" /> : <>
+      {!mappingStoreId ? <Alert type="warning" showIcon title="请先选择执行门店" description="只有同一财务主体且已启用跨店协作的门店会出现在这里。" /> : <>
         <Form form={mappingForm} layout="vertical" onFinish={(values) => mappingMutation.mutate(values)} initialValues={{ factor: 1 }}>
           <Space align="start" wrap>
             <Form.Item name="sourceProductId" label="来源产品" rules={[{ required: true, message: "请选择来源产品" }]}><Select showSearch optionFilterProp="label" style={{ width: 290 }} options={sourceProducts.map((product) => ({ value: product.id, label: productLabel(product) }))} onChange={(value) => { const product = sourceProducts.find((item) => item.id === value); mappingForm.setFieldsValue({ sourceSalesUnit: product?.salesUnit || product?.unit || "" }); }} /></Form.Item>

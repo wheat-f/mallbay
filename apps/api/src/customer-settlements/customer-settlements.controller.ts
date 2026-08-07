@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Optional, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import {
@@ -16,13 +16,17 @@ import {
   CustomerSettlementsService,
   type AuthenticatedSettlementUser
 } from "./customer-settlements.service";
+import { SettlementView } from "./domain/settlement-view";
 
 type AuthRequest = Request & { user: AuthenticatedSettlementUser };
 
 @UseGuards(JwtAuthGuard)
 @Controller("customer-statements")
 export class CustomerStatementsController {
-  constructor(private readonly settlements: CustomerSettlementsService) {}
+  constructor(
+    private readonly settlements: CustomerSettlementsService,
+    @Optional() private readonly settlementView?: SettlementView
+  ) {}
 
   @Get("candidate-orders")
   listCandidateOrders(
@@ -34,7 +38,8 @@ export class CustomerStatementsController {
 
   @Get()
   list(@Req() req: AuthRequest, @Query() query: ListCustomerStatementsDto) {
-    return this.settlements.listStatements(req.user, query);
+    return this.settlementView?.getSettlementView(req.user, query)
+      ?? this.settlements.listStatements(req.user, query);
   }
 
   @Get(":id")

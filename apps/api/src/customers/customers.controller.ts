@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Post,
+  Optional,
   Query,
   Req,
   UploadedFile,
@@ -21,6 +22,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import type { MulterFile } from "../users/multer-file.type";
 import { OssService } from "../users/oss.service";
 import { CustomersService, type AuthenticatedCustomerUser } from "./customers.service";
+import { CustomerAccount } from "./domain/customer-account";
 import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
 import { CreateCustomerTagDto } from "./dto/create-customer-tag.dto";
 import { CreateCustomerUserForCustomerDto } from "./dto/create-customer-user.dto";
@@ -44,6 +46,7 @@ type AuthRequest = Request & {
 export class CustomersController {
   constructor(
     @Inject(CustomersService) private readonly customers: CustomersService,
+    @Optional() @Inject(CustomerAccount) private readonly customerAccount: CustomerAccount | undefined,
     @Inject(OssService) private readonly ossService: OssService
   ) {}
 
@@ -64,7 +67,7 @@ export class CustomersController {
 
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.customers.detail(req.user, id);
+    return this.customerAccount?.getCustomerSummary(req.user, id) ?? this.customers.detail(req.user, id);
   }
 
   @Get(":id/order-context")
@@ -92,7 +95,8 @@ export class CustomersController {
     @Param("id") id: string,
     @Query() query: ListCustomerVehiclesDto
   ) {
-    return this.customers.listVehicles(req.user, id, query);
+    return this.customerAccount?.getVehicleSummary(req.user, id, query)
+      ?? this.customers.listVehicles(req.user, id, query);
   }
 
   @Post("vehicles/photos/upload")
@@ -152,11 +156,13 @@ export class CustomersController {
 
   @Post("tags")
   createTag(@Req() req: AuthRequest, @Body() dto: CreateCustomerTagDto) {
-    return this.customers.createTag(req.user, dto);
+    return this.customerAccount?.maintainManualTags(req.user, { operation: "create", dto })
+      ?? this.customers.createTag(req.user, dto);
   }
 
   @Delete("tags/:id")
   deleteTag(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.customers.deleteTag(req.user, id);
+    return this.customerAccount?.maintainManualTags(req.user, { operation: "delete", id })
+      ?? this.customers.deleteTag(req.user, id);
   }
 }

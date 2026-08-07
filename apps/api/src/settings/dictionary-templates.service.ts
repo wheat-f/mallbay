@@ -1,7 +1,8 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { DictionaryStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { PermissionsService } from "../permissions/permissions.service";
+import { AccessContext } from "../permissions/domain/access-context";
 import type { AuthenticatedSettingsUser } from "./dictionaries.service";
 import { CreateDictionaryTemplateDto, CreateDictionaryTemplateItemDto, SetDictionaryTemplateItemStatusDto, UpdateDictionaryTemplateDto, UpdateDictionaryTemplateItemDto } from "./dto/dictionary-template.dto";
 import { DictionaryCatalogQueryDto, DictionaryItemsQueryDto } from "./dto/dictionary.dto";
@@ -9,11 +10,21 @@ import { normalizePagination } from "../common/pagination";
 
 @Injectable()
 export class DictionaryTemplatesService {
-  constructor(private readonly prisma: PrismaService, private readonly permissions: PermissionsService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsService,
+    @Optional() private readonly accessContext?: AccessContext
+  ) {}
+
+  private authorize(userId: string, capability: string, action: string, context: { storeId?: string } = {}) {
+    return this.accessContext
+      ? this.accessContext.can(userId, capability, action, context)
+      : this.permissions.authorize(userId, capability, action, context);
+  }
 
   private async assertHq(user: AuthenticatedSettingsUser) {
     if (this.permissions) {
-      if (!(await this.permissions.authorize(user.id, "settings", "write"))) throw new ForbiddenException("仅总部管理员可维护总部字典模板");
+      if (!(await this.authorize(user.id, "settings", "write"))) throw new ForbiddenException("仅总部管理员可维护总部字典模板");
     } else if (!user.isAuditor) {
       throw new ForbiddenException("仅总部管理员可维护总部字典模板");
     }
@@ -21,7 +32,7 @@ export class DictionaryTemplatesService {
   }
 
   private async assertReader(user: AuthenticatedSettingsUser) {
-    if (this.permissions && await this.permissions.authorize(user.id, "settings", "read", { storeId: user.storeMember?.storeId })) return;
+    if (await this.authorize(user.id, "settings", "read", { storeId: user.storeMember?.storeId })) return;
     if (!this.permissions && (user.isAuditor || user.storeMember)) return;
     const member = await this.prisma.storeMember.findUnique({
       where: { userId: user.id },

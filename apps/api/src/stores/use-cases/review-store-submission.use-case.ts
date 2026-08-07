@@ -2,11 +2,14 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
-  NotFoundException
+  NotFoundException,
+  Optional
 } from "@nestjs/common";
 import { SubmissionStatus } from "@prisma/client";
 import { NotificationsService } from "../../notifications/notifications.service";
+import { NotificationDispatcher } from "../../notifications/notification-dispatcher";
 import { AuditLogService } from "../../observability/audit-log.service";
+import { AuditEventWriter } from "../../observability/audit-event-writer";
 import { ReviewAction, ReviewStoreDto } from "../dto/review-store.dto";
 import { StorePolicy } from "../domain/store-policy";
 import { StoreRepository } from "../repositories/store.repository";
@@ -16,7 +19,9 @@ export class ReviewStoreSubmissionUseCase {
   constructor(
     private readonly stores: StoreRepository,
     private readonly notifications: NotificationsService,
-    private readonly auditLog: AuditLogService
+    private readonly auditLog: AuditLogService,
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcher,
+    @Optional() private readonly auditWriter?: AuditEventWriter
   ) {}
 
   async execute(auditorId: string, isAuditor: boolean, submissionId: string, dto: ReviewStoreDto) {
@@ -52,7 +57,7 @@ export class ReviewStoreSubmissionUseCase {
     }
   ) {
     await this.stores.approveSubmission(auditorId, submissionId, submission);
-    this.auditLog.record({
+    this.writeAudit({
       action: "STORE_REVIEW_APPROVED",
       actorId: auditorId,
       targetType: "storeSubmission",
@@ -62,7 +67,7 @@ export class ReviewStoreSubmissionUseCase {
 
     const manager = await this.stores.findStoreManager(submission.storeId);
     if (manager) {
-      await this.notifications.send(manager.userId, "AUDIT_APPROVED", {
+      await this.dispatchNotification(manager.userId, "AUDIT_APPROVED", {
         storeId: submission.storeId,
         storeName: submission.name
       });
@@ -76,7 +81,7 @@ export class ReviewStoreSubmissionUseCase {
     submission: { storeId: string; store: { name: string } }
   ) {
     await this.stores.rejectSubmission(auditorId, submissionId, reviewNote);
-    this.auditLog.record({
+    this.writeAudit({
       action: "STORE_REVIEW_REJECTED",
       actorId: auditorId,
       targetType: "storeSubmission",
@@ -91,11 +96,20 @@ export class ReviewStoreSubmissionUseCase {
 
     const manager = await this.stores.findStoreManager(submission.storeId);
     if (manager) {
-      await this.notifications.send(manager.userId, "AUDIT_REJECTED", {
+      await this.dispatchNotification(manager.userId, "AUDIT_REJECTED", {
         storeId: submission.storeId,
         storeName: submission.store.name,
         reviewNote
       });
     }
+  }
+
+  private dispatchNotification(userId: string, type: "AUDIT_APPROVED" | "AUDIT_REJECTED", payload: object) {
+    return this.notificationDispatcher?.dispatch({ userId, type, payload })
+      ?? this.notifications.send(userId, type, payload);
+  }
+
+  private writeAudit(event: Parameters<AuditLogService["record"]>[0]) {
+    return this.auditWriter?.write(event) ?? this.auditLog.record(event);
   }
 }

@@ -10,6 +10,7 @@ import type { PricingAuthenticatedUser } from "../pricing/pricing.service";
 import { CreateSalesQuoteDto, ExportSalesQuoteDetailsDto, ListSalesQuotesDto, RecalculateSalesQuoteDto, ReviewSalesQuoteDto, SubmitSalesQuoteDto, WithdrawSalesQuoteDto } from "./dto/sales-quote.dto";
 import { CreateOrderUseCase } from "../orders/use-cases/create-order.use-case";
 import { AuditLogService } from "../observability/audit-log.service";
+import { AuditEventWriter } from "../observability/audit-event-writer";
 import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 
@@ -19,7 +20,8 @@ export class SalesQuotesService {
     private readonly prisma: PrismaService,
     private readonly capacityReservations: CapacityReservationService,
     private readonly createOrderUseCase: CreateOrderUseCase,
-    @Optional() private readonly audit?: AuditLogService
+    @Optional() private readonly audit?: AuditLogService,
+    @Optional() private readonly auditWriter?: AuditEventWriter
   ) {}
 
   async create(user: PricingAuthenticatedUser, dto: CreateSalesQuoteDto) {
@@ -558,6 +560,7 @@ export class SalesQuotesService {
   }
 
   private async recordAudit(event: AuditEvent) {
+    if (this.auditWriter) return this.auditWriter.writeTransactional(this.prisma, event);
     this.audit?.record(event);
     await persistAuditEvent(this.prisma, event);
   }

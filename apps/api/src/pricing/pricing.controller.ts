@@ -23,6 +23,7 @@ import { PricingTemplateService } from "./pricing-template.service";
 import { PricingRolloutService } from "./pricing-rollout.service";
 import { SetPricingRolloutDto } from "./dto/pricing-rollout.dto";
 import { ConstructionCostConfigService } from "./construction-cost-config.service";
+import { PricingDecision } from "./domain/pricing-decision";
 import { CreateConstructionServiceItemDto, CreatePositionCostRateVersionDto, StoreScopedDto, UpdateConstructionServiceItemDto, UpdatePositionCostRateVersionDto } from "./dto/construction-cost-config.dto";
 
 type AuthRequest = Request & { user: PricingAuthenticatedUser };
@@ -32,6 +33,7 @@ type AuthRequest = Request & { user: PricingAuthenticatedUser };
 export class PricingController {
   constructor(
     private readonly pricing: PricingService,
+    private readonly pricingDecision: PricingDecision,
     private readonly vehiclePricing: VehiclePricingService,
     private readonly pricingRules: PricingRulesService,
     private readonly costs: CostEstimatorService,
@@ -42,7 +44,7 @@ export class PricingController {
 
   @Post("calculate")
   calculate(@Req() req: AuthRequest, @Body() dto: CalculatePricingDto) {
-    return this.pricing.calculate(req.user, dto);
+    return this.pricingDecision.decide(req.user, dto);
   }
 
   @Post("estimate-cost")
@@ -177,7 +179,7 @@ export class PricingController {
 
   @Post("rule-sets/:id/simulate")
   simulateRuleSet(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: CalculatePricingDto) {
-    return this.pricing.calculate(req.user, { ...dto, ruleSetId: id });
+    return this.pricingDecision.decide(req.user, { ...dto, ruleSetId: id });
   }
 
   @Get("vehicle-classes")

@@ -49,7 +49,7 @@ test("getPrismaCliDatabaseUrl falls back to a build-time placeholder when DATABA
   try {
     assert.equal(
       getPrismaCliDatabaseUrl([]),
-      "postgresql://mallbay:mallbay@localhost:5432/mallbay?schema=public"
+      "postgresql://mallbay:mallbay@localhost:55432/mallbay?schema=public"
     );
   } finally {
     if (previous === undefined) {

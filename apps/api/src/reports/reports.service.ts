@@ -20,6 +20,8 @@ import { OperationalReportQueryDto, ReportQueryDto } from "./dto/reports.dto";
 
 export type AuthenticatedReportUser = UserWithStoreMember & { username?: string };
 
+const OPERATIONAL_DETAIL_ROW_LIMIT = 2000;
+
 @Injectable()
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -256,6 +258,14 @@ export class ReportsService {
     const filteredOrderIds = new Set(filteredOrders.map((order) => order.id));
     const filteredPayments = payments.filter((payment) => filteredOrderIds.has(payment.order.id));
     const report = buildOperationalReport({ orders: filteredOrders, payments: filteredPayments, afterSales, dateBasis: query.dateBasis ?? "DEFAULT", dateFrom: query.dateFrom, dateTo: query.dateTo });
+    const detailRowCount = report.financeOrders.length;
+    report.financeOrders = report.financeOrders.slice(0, OPERATIONAL_DETAIL_ROW_LIMIT);
+    report.modules.details = {
+      status: detailRowCount > OPERATIONAL_DETAIL_ROW_LIMIT ? "partial" : "ready",
+      rowCount: detailRowCount,
+      truncated: detailRowCount > OPERATIONAL_DETAIL_ROW_LIMIT,
+      ...(detailRowCount > OPERATIONAL_DETAIL_ROW_LIMIT ? { errorCode: "DETAILS_TRUNCATED" } : {})
+    };
     report.comparison = await this.operationalComparison(storeId, query, salesPersonId, report.summary);
     report.generatedAt = new Date().toISOString();
     return report;
@@ -269,10 +279,10 @@ export class ReportsService {
   ): Promise<ReturnType<typeof buildOperationalReport>["comparison"]> {
     const previous = previousPeriod(query.dateFrom, query.dateTo);
     const unavailable: ReturnType<typeof buildOperationalReport>["comparison"] = {
-      amount: unavailableComparison(current.amountCents),
-      received: unavailableComparison(current.receivedCents),
-      outstanding: unavailableComparison(current.outstandingCents),
-      grossProfit: unavailableComparison(current.grossProfitCents)
+      amount: unavailableComparison(current.amountCents, "NO_PREVIOUS_PERIOD"),
+      received: unavailableComparison(current.receivedCents, "NO_PREVIOUS_PERIOD"),
+      outstanding: unavailableComparison(current.outstandingCents, "NO_PREVIOUS_PERIOD"),
+      grossProfit: unavailableComparison(current.grossProfitCents, "NO_PREVIOUS_PERIOD")
     };
     if (!previous) return unavailable;
     const previousQuery = { ...query, dateFrom: previous.dateFrom, dateTo: previous.dateTo };
@@ -300,7 +310,7 @@ export class ReportsService {
       amount: compareMetric(current.amountCents, previousAmount),
       received: compareMetric(current.receivedCents, previousReceived),
       outstanding: compareMetric(current.outstandingCents, previousOutstanding),
-      grossProfit: current.grossProfitCents == null || previousGross == null ? unavailableComparison(current.grossProfitCents) : compareMetric(current.grossProfitCents, previousGross)
+      grossProfit: current.grossProfitCents == null || previousGross == null ? unavailableComparison(current.grossProfitCents, "INCOMPLETE_METRIC") : compareMetric(current.grossProfitCents, previousGross)
     };
   }
   /** Returns only real active store members and values found in store data. */
@@ -715,6 +725,7 @@ type OperationalReportOrder = {
   constructionType: string;
   status: string;
   createdAt: Date;
+  appointmentDate: Date | null;
   salesPerson: { id: string; nickname: string | null; username: string };
   amount: {
     totalAmountCents: number;
@@ -737,6 +748,7 @@ type OperationalReportOrder = {
     actualConstructionCostCents: number;
     actualTotalCostCents: number;
     actualGrossProfitCents: number | null;
+    settledAt: Date | null;
     workerLines: Array<{ workerUserId: string; confirmedMinutes: number; manualConstructionChargeCents: number | null }>;
   } | null;
   workerCommissions: Array<{ workerUserId: string; amountCents: number; finalAmountCents: number }>;
@@ -744,7 +756,7 @@ type OperationalReportOrder = {
 };
 
 type OperationalPayment = { amountCents: number; paidAt: Date; order: { id: string; salesPersonId: string } };
-type ReportMetricComparison = { status: "comparable" | "new" | "unchanged" | "unavailable"; changeBps: number | null; currentCents: number; previousCents: number | null };
+type ReportMetricComparison = { status: "comparable" | "new" | "unchanged" | "unavailable"; changeBps: number | null; currentCents: number; previousCents: number | null; reason?: "NO_PREVIOUS_PERIOD" | "NO_COMPARABLE_DATA" | "INCOMPLETE_METRIC" };
 type OperationalAfterSale = {
   id: string;
   createdAt: Date;
@@ -830,12 +842,21 @@ function reportDateRange(dateFrom?: string, dateTo?: string): Prisma.DateTimeFil
 }
 
 function assertOperationalDateRange(dateFrom?: string, dateTo?: string) {
+  if ((dateFrom && !isValidReportDate(dateFrom)) || (dateTo && !isValidReportDate(dateTo))) {
+    throw new BadRequestException("REPORT_DATE_RANGE_INVALID");
+  }
   if (!dateFrom || !dateTo) return;
   const start = new Date(dateFrom + "T00:00:00.000+08:00").getTime();
   const end = new Date(dateTo + "T00:00:00.000+08:00").getTime();
-  if (end < start || (end - start) / 86400000 + 1 > 366) {
-    throw new BadRequestException("REPORT_DATE_RANGE_TOO_LARGE");
-  }
+  if (end < start) throw new BadRequestException("REPORT_DATE_RANGE_INVALID");
+  if ((end - start) / 86400000 + 1 > 366) throw new BadRequestException("REPORT_DATE_RANGE_TOO_LARGE");
+}
+
+function isValidReportDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 function matchesOperationalOrderFilters(order: OperationalReportOrder, query: OperationalReportQueryDto) {
   if (query.costSource && summarizeReportOrderCost(order).costSource !== query.costSource) return false;
@@ -1028,8 +1049,9 @@ function buildOperationalReport(input: {
   for (const row of afterSaleBreakdown.values()) {
     row.proportionBps = input.afterSales.length > 0 ? Math.round((row.afterSales * 10000) / input.afterSales.length) : 0;
   }
-  const analytics = buildOperationalAnalytics(input.orders, input.payments, input.afterSales, input.dateFrom, input.dateTo, sales, financeOrders, afterSaleWorkers);
+  const analytics = buildOperationalAnalytics(input.orders, input.payments, input.afterSales, input.dateBasis, input.dateFrom, input.dateTo, sales, financeOrders, afterSaleWorkers);
   return {
+    version: 1 as const,
     dateBasis: input.dateBasis,
     salesPeople: [...sales.values()].sort((a, b) => b.amountCents - a.amountCents),
     constructionWorkers: [...workers.values()].sort((a, b) => b.allocatedConstructionChargeCents - a.allocatedConstructionChargeCents),
@@ -1041,10 +1063,18 @@ function buildOperationalReport(input: {
   };
 }
 
+function operationalOrderDate(order: OperationalReportOrder, dateBasis: NonNullable<OperationalReportQueryDto["dateBasis"]>) {
+  if (dateBasis === "APPOINTMENT") return order.appointmentDate;
+  if (dateBasis === "CONSTRUCTION_COMPLETED") return order.constructionRecord?.completedAt ?? null;
+  if (dateBasis === "SETTLEMENT") return order.costSettlement?.settledAt ?? null;
+  return order.createdAt;
+}
+
 function buildOperationalAnalytics(
   orders: OperationalReportOrder[],
   payments: OperationalPayment[],
   afterSales: OperationalAfterSale[],
+  dateBasis: NonNullable<OperationalReportQueryDto["dateBasis"]>,
   dateFrom: string | undefined,
   dateTo: string | undefined,
   sales: Map<string, { userId: string; name: string; orders: number; amountCents: number; receivedCents: number; costCents: number; grossProfitCents: number | null }>,
@@ -1057,6 +1087,7 @@ function buildOperationalAnalytics(
   const amountCents = orders.reduce((sum, order) => sum + (order.amount?.totalAmountCents ?? 0), 0);
   const receivedCents = payments.reduce((sum, payment) => sum + payment.amountCents, 0);
   const outstandingCents = orders.reduce((sum, order) => sum + Math.max(0, (order.amount?.totalAmountCents ?? 0) - (order.amount?.paidAmountCents ?? 0)), 0);
+  const completedOrderCount = orders.filter((order) => order.constructionRecord?.completedAt !== null && order.constructionRecord?.completedAt !== undefined).length;
   const knownCostGrossProfitCents = costRows.reduce((sum, row) => sum + (row.grossProfitCents ?? 0), 0);
   const grossProfitCents = pendingCostOrderCount > 0 ? null : knownCostGrossProfitCents;
   const afterSalesExpenseCents = afterSales.reduce(
@@ -1070,15 +1101,15 @@ function buildOperationalAnalytics(
     outstandingCents,
     afterSalesCount: afterSales.length,
     afterSalesExpenseCents,
-    constructionOrderCount: orders.length,
+    constructionOrderCount: completedOrderCount,
     grossProfitCents,
     costCompletenessBps: costRows.length === 0 ? 10000 : Math.round((knownCostOrderCount * 10000) / costRows.length),
     metricCompleteness: pendingCostOrderCount > 0 ? "incomplete" as const : "complete" as const,
     knownCostOrderCount,
     pendingCostOrderCount,
-    knownCostGrossProfitCents: pendingCostOrderCount > 0 ? knownCostGrossProfitCents : null,
+    knownCostGrossProfitCents,
     coverage: {
-      ordersWithMissingBusinessDate: orders.filter((order) => !order.createdAt).length,
+      ordersWithMissingBusinessDate: orders.filter((order) => !operationalOrderDate(order, dateBasis)).length,
       paymentsWithMissingEntryDate: payments.filter((payment) => !payment.paidAt).length,
       costsWithMissingConfirmationDate: afterSales.reduce((count, afterSale) => count + afterSale.costEntries.filter((entry) => !entry.confirmedAt).length, 0),
       afterSalesWithMissingConfirmationDate: afterSales.filter((afterSale) => afterSale.costEntries.some((entry) => !entry.confirmedAt)).length
@@ -1094,8 +1125,10 @@ function buildOperationalAnalytics(
   };
   for (let index = 0; index < orders.length; index += 1) {
     const order = orders[index];
-    const row = getTrend(order.createdAt);
     const cost = costRows[index];
+    const orderDate = operationalOrderDate(order, dateBasis);
+    if (!orderDate) continue;
+    const row = getTrend(orderDate);
     row.orders += 1;
     row.amountCents += order.amount?.totalAmountCents ?? 0;
     row.outstandingCents += Math.max(0, (order.amount?.totalAmountCents ?? 0) - (order.amount?.paidAmountCents ?? 0));
@@ -1113,11 +1146,17 @@ function buildOperationalAnalytics(
     row.afterSalesExpenseCents += afterSale.costEntries.reduce((sum, entry) => isDateWithinQueryRange(entry.confirmedAt, dateFrom, dateTo) ? sum + (entry.direction === "RECOVERY" ? -entry.amountCents : entry.amountCents) : sum, 0);
   }
   for (const row of trendMap.values()) {
-    const knownOrders = orders.filter((order) => reportPeriodKey(order.createdAt, trendGranularity) === row.period && summarizeReportOrderCost(order).costSource !== "待补齐").length;
+    const knownOrders = orders.filter((order) => {
+      const orderDate = operationalOrderDate(order, dateBasis);
+      return orderDate !== null && reportPeriodKey(orderDate, trendGranularity) === row.period && summarizeReportOrderCost(order).costSource !== "待补齐";
+    }).length;
     row.knownCostOrderCount = knownOrders;
     row.pendingCostOrderCount = row.orders - knownOrders;
     row.knownCostGrossProfitCents = row.metricCompleteness === "complete" ? row.grossProfitCents : null;
-    row.constructionOrderCount = row.orders;
+    row.constructionOrderCount = orders.filter((order) => {
+      const orderDate = operationalOrderDate(order, dateBasis);
+      return order.constructionRecord?.completedAt !== null && order.constructionRecord?.completedAt !== undefined && orderDate !== null && reportPeriodKey(orderDate, trendGranularity) === row.period;
+    }).length;
     row.costCompletenessBps = row.orders === 0 ? 10000 : Math.round((knownOrders * 10000) / row.orders);
   }
   const insights: Array<{ severity: "WARNING"; title: string; evidence: string; action: string; targetView?: string; filters?: Record<string, string | undefined> }> = [];
@@ -1131,13 +1170,24 @@ function buildOperationalAnalytics(
   if (topSales && amountCents > 0 && topSales.amountCents * 10000 >= amountCents * 5000 && topSales.orders >= 3) {
     insights.push({ severity: "WARNING", title: "人员贡献集中", evidence: topSales.name + "贡献 " + Math.round((topSales.amountCents * 10000) / amountCents) + " bps，" + topSales.orders + " 单", action: "查看销售分析", targetView: "sales", filters: { dateFrom, dateTo, salesPersonId: topSales.userId } });
   }
-  if (orders.length >= 10 && afterSales.length * 10000 >= orders.length * 1000) {
-    insights.push({ severity: "WARNING", title: "售后比例偏高", evidence: "售后 " + afterSales.length + " 单，施工订单 " + orders.length + " 单，售后率 " + Math.round((afterSales.length * 10000) / orders.length) + " bps", action: "查看售后人员分析", targetView: "afterSalesWorker", filters: { dateFrom, dateTo } });
+  if (completedOrderCount >= 10 && afterSales.length * 10000 >= completedOrderCount * 1000) {
+    insights.push({ severity: "WARNING", title: "售后比例偏高", evidence: "售后 " + afterSales.length + " 单，施工订单 " + completedOrderCount + " 单，售后率 " + Math.round((afterSales.length * 10000) / completedOrderCount) + " bps", action: "查看售后人员分析", targetView: "afterSalesWorker", filters: { dateFrom, dateTo } });
   }
   return {
     summary,
     generatedAt: new Date().toISOString(),
-    modules: { summary: { status: "ready" }, trend: { status: "ready" }, insights: { status: "ready" }, details: { status: "ready" } },
+    modules: {
+      summary: {
+        status: summary.metricCompleteness === "complete" ? "ready" as const : "partial" as const,
+        ...(summary.metricCompleteness === "complete" ? {} : { errorCode: "COST_INCOMPLETE" })
+      },
+      trend: {
+        status: summary.metricCompleteness === "complete" ? "ready" as const : "partial" as const,
+        ...(summary.metricCompleteness === "complete" ? {} : { errorCode: "COST_INCOMPLETE" })
+      },
+      insights: { status: "ready" as const },
+      details: { status: "ready" as "ready" | "partial" | "unavailable" | "error", rowCount: financeOrders.length, truncated: false }
+    },
     comparison: {
       amount: unavailableComparison(amountCents),
       received: unavailableComparison(receivedCents),
@@ -1150,8 +1200,8 @@ function buildOperationalAnalytics(
   };
 }
 
-function unavailableComparison(currentCents: number | null): ReportMetricComparison {
-  return { status: "unavailable" as const, changeBps: null, currentCents: currentCents ?? 0, previousCents: null };
+function unavailableComparison(currentCents: number | null, reason: "NO_PREVIOUS_PERIOD" | "NO_COMPARABLE_DATA" | "INCOMPLETE_METRIC" = "NO_COMPARABLE_DATA"): ReportMetricComparison {
+  return { status: "unavailable" as const, changeBps: null, currentCents: currentCents ?? 0, previousCents: null, reason };
 }
 
 function isDateWithinQueryRange(value: Date | null | undefined, dateFrom?: string, dateTo?: string) {

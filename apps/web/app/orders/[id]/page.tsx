@@ -427,7 +427,7 @@ export default function OrderDetailPage() {
                   </p>
                 </div>
               </div>
-              {order?.historicalWarning ? <Alert type="warning" showIcon message={order.historicalWarning} description="系统不会自动补造质检记录；请由店长或管理员进入历史核验列表处理。" className="mb-4" /> : null}
+              {order?.historicalWarning ? <Alert type="warning" showIcon title={order.historicalWarning} description="系统不会自动补造质检记录；请由店长或管理员进入历史核验列表处理。" className="mb-4" /> : null}
               <div className="order-detail-actions">
                 {canCopyOrder ? (
                   <Button icon={<CopyOutlined />} onClick={() => {
@@ -542,7 +542,7 @@ export default function OrderDetailPage() {
                       </div>
                     </div>
                   ) : null}
-                  {hasPendingAmendment ? <Alert type="warning" showIcon message="已提交本月结算改单申请，等待财务审批" /> : null}
+                  {hasPendingAmendment ? <Alert type="warning" showIcon title="已提交本月结算改单申请，等待财务审批" /> : null}
                 </Card>
               </div>
 
@@ -729,7 +729,7 @@ export default function OrderDetailPage() {
             />
           </Form.Item>
           {(order?.customer?.vehicles?.length ?? 0) === 0 ? (
-            <Alert type="warning" showIcon message="该客户没有启用车辆，请先在客户管理中维护车辆" className="mb-4" />
+            <Alert type="warning" showIcon title="该客户没有启用车辆，请先在客户管理中维护车辆" className="mb-4" />
           ) : null}
           <Form.Item label="新预约日期" name="appointmentDate">
             <DatePicker className="w-full" disabledDate={(date) => date.isBefore(dayjs().startOf("day"))} />

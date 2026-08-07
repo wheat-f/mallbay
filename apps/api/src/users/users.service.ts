@@ -18,6 +18,7 @@ import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { AuthService } from "../auth/auth.service";
 import { PermissionsService } from "../permissions/permissions.service";
+import { AccessContext } from "../permissions/domain/access-context";
 
 // 管理员重置密码后的初始密码
 const RESET_PASSWORD_DEFAULT = "Test1234!";
@@ -27,7 +28,8 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
-    @Optional() private readonly permissions?: PermissionsService
+    @Optional() private readonly permissions?: PermissionsService,
+    @Optional() private readonly accessContext?: AccessContext
   ) {}
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -137,8 +139,11 @@ export class UsersService {
 
   // 管理员搜索用户（按用户名模糊匹配）
   async searchUsers(currentUserId: string, isAuditor: boolean, keyword: string) {
-    if (this.permissions) {
-      if (!(await this.permissions.authorize(currentUserId, "users", "read"))) throw new ForbiddenException("无权限");
+    if (this.accessContext || this.permissions) {
+      const allowed = this.accessContext
+        ? await this.accessContext.can(currentUserId, "users", "read")
+        : await this.permissions!.authorize(currentUserId, "users", "read");
+      if (!allowed) throw new ForbiddenException("无权限");
     } else if (!isAuditor) {
       throw new ForbiddenException("无权限");
     }
@@ -159,8 +164,11 @@ export class UsersService {
   }
 
   async resetPasswordForUser(actorId: string, dto: ResetPasswordDto) {
-    if (this.permissions) {
-      if (!(await this.permissions.authorize(actorId, "users", "write"))) throw new ForbiddenException("无权限");
+    if (this.accessContext || this.permissions) {
+      const allowed = this.accessContext
+        ? await this.accessContext.can(actorId, "users", "write")
+        : await this.permissions!.authorize(actorId, "users", "write");
+      if (!allowed) throw new ForbiddenException("无权限");
     }
     return this.resetPassword(true, dto);
   }

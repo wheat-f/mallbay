@@ -3,6 +3,8 @@ import { test } from "node:test";
 import {
   AfterSaleResponsibility,
   AfterSaleStatus,
+  CostCompleteness,
+  ConstructionCostSettlementStatus,
   ConstructionTaskStatus,
   InvoiceStatus,
   InventoryMovementType,
@@ -528,6 +530,122 @@ test("ReportsService rejects reversed operational date ranges", async () => {
       { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
       { storeId: "store-1", dateFrom: "2026-08-31", dateTo: "2026-08-01" }
     ),
-    (error: unknown) => error instanceof Error && error.message === "REPORT_DATE_RANGE_TOO_LARGE"
+    (error: unknown) => error instanceof Error && error.message === "REPORT_DATE_RANGE_INVALID"
+  );
+});
+
+test("ReportsService rejects malformed operational dates before querying data", async () => {
+  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never);
+  await assert.rejects(
+    service.operational(
+      { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
+      { storeId: "store-1", dateFrom: "2026-02-30", dateTo: "2026-03-01" }
+    ),
+    (error: unknown) => error instanceof Error && error.message === "REPORT_DATE_RANGE_INVALID"
+  );
+});
+
+test("ReportsService operational contract preserves in-transit money and incomplete cost semantics", async () => {
+  const calls: Array<{ model: string; args: unknown }> = [];
+  const inTransitOrder = {
+    id: "order-in-transit",
+    orderNo: "ORD-202607-001",
+    salesPersonId: "sales-1",
+    constructionType: "基础施工",
+    status: "IN_PROGRESS",
+    createdAt: new Date("2026-07-10T10:00:00.000Z"),
+    salesPerson: { id: "sales-1", nickname: "小王", username: "sales" },
+    amount: {
+      totalAmountCents: 380000,
+      paidAmountCents: 100000,
+      constructionChargeCents: 80000,
+      laborCostCents: 80000,
+      estimatedTotalCostCents: null,
+      estimatedMaterialCostCents: null,
+      estimatedConstructionCostCents: null,
+      costCompleteness: null
+    },
+    items: [{ product: { category: "车膜" } }],
+    constructionRecord: { completedAt: null, assignments: [] },
+    costSettlement: null,
+    workerCommissions: [],
+    salesCommissionLog: null
+  };
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    order: {
+      findMany: async (args: unknown) => {
+        calls.push({ model: "order.findMany", args });
+        return calls.filter((call) => call.model === "order.findMany").length === 1 ? [inTransitOrder] : [];
+      }
+    },
+    orderPayment: {
+      findMany: async (args: unknown) => {
+        calls.push({ model: "orderPayment.findMany", args });
+        return calls.filter((call) => call.model === "orderPayment.findMany").length === 1
+          ? [{ amountCents: 100000, paidAt: new Date("2026-07-20T10:00:00.000Z"), order: { id: inTransitOrder.id, salesPersonId: "sales-1" } }]
+          : [];
+      }
+    },
+    afterSale: { findMany: async () => [] }
+  };
+  const service = new ReportsService(prisma as never);
+
+  const result = await service.operational(
+    { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
+    { storeId: "store-1", dateFrom: "2026-07-01", dateTo: "2026-07-31", dateBasis: "ORDER" }
+  );
+
+  assert.equal(result.version, 1);
+  assert.deepEqual(result.summary, {
+    orders: 1,
+    amountCents: 380000,
+    receivedCents: 100000,
+    outstandingCents: 280000,
+    afterSalesCount: 0,
+    afterSalesExpenseCents: 0,
+    constructionOrderCount: 0,
+    grossProfitCents: null,
+    costCompletenessBps: 0,
+    metricCompleteness: "incomplete",
+    knownCostOrderCount: 0,
+    pendingCostOrderCount: 1,
+    knownCostGrossProfitCents: 0,
+    coverage: {
+      ordersWithMissingBusinessDate: 0,
+      paymentsWithMissingEntryDate: 0,
+      costsWithMissingConfirmationDate: 0,
+      afterSalesWithMissingConfirmationDate: 0
+    }
+  });
+  assert.equal(result.financeOrders[0]?.grossProfitCents, null);
+  assert.equal(result.financeOrders[0]?.costSource, "待补齐");
+  assert.deepEqual(result.modules.summary, { status: "partial", errorCode: "COST_INCOMPLETE" });
+  assert.deepEqual(result.modules.trend, { status: "partial", errorCode: "COST_INCOMPLETE" });
+  assert.deepEqual(result.modules.details, { status: "ready", rowCount: 1, truncated: false });
+  const orderTrend = result.trend.find((item) => item.period === "2026-07-06");
+  const paymentTrend = result.trend.find((item) => item.period === "2026-07-20");
+  assert.equal(orderTrend?.amountCents, 380000);
+  assert.equal(orderTrend?.receivedCents, 0);
+  assert.equal(orderTrend?.grossProfitCents, null);
+  assert.equal(paymentTrend?.amountCents, 0);
+  assert.equal(paymentTrend?.receivedCents, 100000);
+  assert.deepEqual(result.insights.map((item) => item.title), ["收款落后于订单金额", "成本数据待补齐"]);
+  assert.equal(result.insights[0]?.targetView, "finance");
+  assert.equal(result.comparison.amount.status, "new");
+  assert.equal(result.comparison.grossProfit.reason, "INCOMPLETE_METRIC");
+  assert.match(result.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual((calls[0]?.args as { where: Record<string, unknown> }).where, {
+    storeId: "store-1",
+    createdAt: { gte: new Date("2026-07-01T00:00:00.000+08:00"), lt: new Date("2026-08-01T00:00:00.000+08:00") }
+  });
+});
+
+test("ReportsService operational interface rejects an actor without report scope", async () => {
+  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never);
+
+  await assert.rejects(
+    service.operational({ id: "user-1", isAuditor: false, storeMember: null }, {}),
+    (error: unknown) => error instanceof Error && error.message === "无权限"
   );
 });

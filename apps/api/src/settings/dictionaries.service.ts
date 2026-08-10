@@ -153,6 +153,7 @@ export class DictionariesService {
     const targetStoreId = storeId ?? actor.storeMember?.storeId;
     if (!targetStoreId) throw new ForbiddenException("未绑定门店");
     await this.assertStoreReader(actor, targetStoreId);
+    await this.ensureFixedDefaultsIfMissing(targetStoreId, actor.id);
     const cacheKey = `${actor.id}:${targetStoreId}`;
     const cached = this.listCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.value;
@@ -202,7 +203,10 @@ export class DictionariesService {
     const actor = await this.actor(user);
     const targetStoreId = storeId ?? actor.storeMember?.storeId;
     if (!targetStoreId && !(await this.authorize(actor.id, "settings", "read"))) throw new ForbiddenException("未绑定门店");
-    if (targetStoreId) await this.assertStoreReader(actor, targetStoreId);
+    if (targetStoreId) {
+      await this.assertStoreReader(actor, targetStoreId);
+      await this.ensureFixedDefaultsIfMissing(targetStoreId, actor.id);
+    }
     const { page, pageSize, skip } = normalizePagination(query.page, query.pageSize);
     const keyword = query.keyword?.trim();
     const where = {
@@ -377,6 +381,40 @@ export class DictionariesService {
       return { created, updated, version: updatedDictionary.version };
     });
     this.listCache.clear();
+    return result;
+  }
+
+  private async ensureFixedDefaultsIfMissing(storeId: string, actorId: string) {
+    const fixedDefinitions = DEFAULT_DICTIONARIES.filter((item) => FIXED_DICTIONARY_CODES.has(item.code));
+    const dictionaries = await this.prisma.dictionary.findMany({
+      where: { storeId, code: { in: fixedDefinitions.map((item) => item.code) } },
+      select: { code: true, dictionaryItems: { select: { code: true, name: true } } }
+    });
+    const dictionaryByCode = new Map(dictionaries.map((dictionary) => [dictionary.code, dictionary]));
+    const missing = fixedDefinitions.filter((definition) => {
+      const dictionary = dictionaryByCode.get(definition.code);
+      if (!dictionary) return true;
+      const actual = new Set(dictionary.dictionaryItems.map((item) => `${item.code}:${item.name}`));
+      return definition.items.some((name, index) => !actual.has(`${definition.itemCodes?.[index] ?? `ITEM_${String(index + 1).padStart(3, "0")}`}:${name}`));
+    });
+    if (missing.length === 0) return;
+
+    const result = await this.ensureDefaults(storeId);
+    this.listCache.clear();
+    try {
+      await this.prisma.auditEvent.create({
+        data: {
+          action: "settings.dictionary.defaults.auto_backfilled",
+          actorId,
+          storeId,
+          targetType: "Store",
+          targetId: storeId,
+          metadata: { codes: missing.map((item) => item.code), created: result.created, skipped: result.skipped, failed: result.failed } as Prisma.InputJsonValue
+        }
+      });
+    } catch {
+      // Dictionary repair must not make an otherwise valid read fail if audit persistence is unavailable.
+    }
     return result;
   }
   async importItems(user: AuthenticatedSettingsUser, dictionaryId: string, items: Array<{ code: string; name: string; sortOrder?: number }>) {

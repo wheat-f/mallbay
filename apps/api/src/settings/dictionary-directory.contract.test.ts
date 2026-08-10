@@ -22,10 +22,11 @@ test("dictionary directory and paginated detail contracts are exposed", () => {
   assert.match(templateService, /async listItems\(user: AuthenticatedSettingsUser/);
 });
 
-test("normal dictionary reads do not initialize defaults", () => {
+test("store-scoped dictionary reads repair missing fixed defaults", () => {
   const service = readFileSync("src/settings/dictionaries.service.ts", "utf8");
   const listStart = service.indexOf("  async list(user:");
   const listEnd = service.indexOf("  async initializeDefaultsForStore", listStart);
   assert.ok(listStart >= 0 && listEnd > listStart);
-  assert.doesNotMatch(service.slice(listStart, listEnd), /ensureDefaults\(/);
+  assert.match(service.slice(listStart, listEnd), /ensureFixedDefaultsIfMissing\(targetStoreId, actor\.id\)/);
+  assert.match(service, /settings\.dictionary\.defaults\.auto_backfilled/);
 });

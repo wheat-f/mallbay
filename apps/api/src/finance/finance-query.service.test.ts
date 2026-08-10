@@ -20,6 +20,16 @@ function membership(position: StorePosition, storeId = "store-1") {
   };
 }
 
+function accessContextFor(...allowedIds: string[]) {
+  return {
+    can: async (actor: string, _capability: string, action: string, context: { storeId?: string; ownerId?: string }) => {
+      if (context.storeId !== "store-1") return false;
+      if (action === "write") return allowedIds.some((id) => id === actor && (id.startsWith("manager") || id.startsWith("finance")));
+      return Boolean(context.ownerId === actor || allowedIds.includes(actor));
+    }
+  };
+}
+
 test("FinanceQueryService scopes mine to the authenticated applicant", async () => {
   let capturedWhere: unknown;
   const prisma = {
@@ -32,7 +42,7 @@ test("FinanceQueryService scopes mine to the authenticated applicant", async () 
       count: async () => 0
     }
   };
-  const service = new FinanceQueryService(prisma as never);
+  const service = new FinanceQueryService(prisma as never, accessContextFor("purchasing-1"));
 
   await service.listExpenses(purchasing, {
     storeId: "store-1",
@@ -49,7 +59,7 @@ test("FinanceQueryService rejects all-scope queries for applicants", async () =>
     storeMember: membership(StorePosition.PURCHASING),
     expenseApplication: { findMany: async () => [], count: async () => 0 }
   };
-  const service = new FinanceQueryService(prisma as never);
+  const service = new FinanceQueryService(prisma as never, accessContextFor());
 
   await assert.rejects(
     () => service.listExpenses(purchasing, { storeId: "store-1", scope: "all", page: 1, pageSize: 20 }),
@@ -69,7 +79,7 @@ test("FinanceQueryService allows managers to query all applications", async () =
       count: async () => 0
     }
   };
-  const service = new FinanceQueryService(prisma as never);
+  const service = new FinanceQueryService(prisma as never, accessContextFor("manager-1"));
 
   await service.listExpenses(manager, { storeId: "store-1", scope: "all", page: 1, pageSize: 20 });
   assert.deepEqual(capturedWhere, { storeId: "store-1" });
@@ -88,7 +98,7 @@ for (const position of [StorePosition.MANAGER, StorePosition.FINANCE]) {
         count: async () => 0
       }
     };
-    const service = new FinanceQueryService(prisma as never);
+    const service = new FinanceQueryService(prisma as never, accessContextFor(`${position.toLowerCase()}-1`));
 
     await service.listPaymentRecords(
       { id: `${position.toLowerCase()}-1`, isAuditor: false },
@@ -104,7 +114,7 @@ test("FinanceQueryService ignores stale embedded membership when checking ledger
     storeMember: membership(StorePosition.FINANCE),
     paymentRecord: { findMany: async () => [], count: async () => 0 }
   };
-  const service = new FinanceQueryService(prisma as never);
+  const service = new FinanceQueryService(prisma as never, accessContextFor("finance-1"));
 
   await service.listPaymentRecords(
     {
@@ -121,7 +131,7 @@ test("FinanceQueryService still rejects ledger access outside the actor's curren
     storeMember: membership(StorePosition.FINANCE, "store-2"),
     paymentRecord: { findMany: async () => [], count: async () => 0 }
   };
-  const service = new FinanceQueryService(prisma as never);
+  const service = new FinanceQueryService(prisma as never, { can: async () => false });
 
   await assert.rejects(
     () => service.listPaymentRecords(

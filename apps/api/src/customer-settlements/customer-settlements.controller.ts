@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { Body, Controller, Get, Optional, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import {
@@ -13,10 +13,10 @@ import {
   StatementActionDto
 } from "./dto/customer-settlement.dto";
 import {
-  CustomerSettlementsService,
   type AuthenticatedSettlementUser
 } from "./customer-settlements.service";
 import { SettlementView } from "./domain/settlement-view";
+import { SettlementWorkflow } from "./domain/settlement-workflow";
 
 type AuthRequest = Request & { user: AuthenticatedSettlementUser };
 
@@ -24,8 +24,8 @@ type AuthRequest = Request & { user: AuthenticatedSettlementUser };
 @Controller("customer-statements")
 export class CustomerStatementsController {
   constructor(
-    private readonly settlements: CustomerSettlementsService,
-    @Optional() private readonly settlementView?: SettlementView
+    private readonly settlementView: SettlementView,
+    private readonly workflow: SettlementWorkflow
   ) {}
 
   @Get("candidate-orders")
@@ -33,28 +33,27 @@ export class CustomerStatementsController {
     @Req() req: AuthRequest,
     @Query() query: ListStatementCandidatesDto
   ) {
-    return this.settlements.listStatementCandidates(req.user, query);
+    return this.settlementView.listCandidateOrders(req.user, query);
   }
 
   @Get()
   list(@Req() req: AuthRequest, @Query() query: ListCustomerStatementsDto) {
-    return this.settlementView?.getSettlementView(req.user, query)
-      ?? this.settlements.listStatements(req.user, query);
+    return this.settlementView.getSettlementView(req.user, query);
   }
 
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.settlements.getStatement(req.user, id);
+    return this.settlementView.getStatement(req.user, id);
   }
 
   @Post()
   create(@Req() req: AuthRequest, @Body() dto: CreateCustomerStatementDto) {
-    return this.settlements.createStatement(req.user, dto);
+    return this.workflow.createStatement(req.user, dto);
   }
 
   @Post(":id/confirm")
   confirm(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.settlements.confirmStatement(req.user, id);
+    return this.workflow.confirmStatement(req.user, id);
   }
 
   @Post(":id/void")
@@ -63,36 +62,39 @@ export class CustomerStatementsController {
     @Param("id") id: string,
     @Body() dto: StatementActionDto
   ) {
-    return this.settlements.voidStatement(req.user, id, dto);
+    return this.workflow.voidStatement(req.user, id, dto);
   }
 }
 
 @UseGuards(JwtAuthGuard)
 @Controller("customer-receipts")
 export class CustomerReceiptsController {
-  constructor(private readonly settlements: CustomerSettlementsService) {}
+  constructor(
+    private readonly settlementView: SettlementView,
+    private readonly workflow: SettlementWorkflow
+  ) {}
 
   @Post("preview-allocation")
   preview(
     @Req() req: AuthRequest,
     @Body() dto: PreviewCustomerReceiptDto
   ) {
-    return this.settlements.previewReceiptAllocation(req.user, dto);
+    return this.workflow.previewReceipt(req.user, dto);
   }
 
   @Get()
   list(@Req() req: AuthRequest, @Query() query: ListCustomerReceiptsDto) {
-    return this.settlements.listReceipts(req.user, query);
+    return this.settlementView.listReceipts(req.user, query);
   }
 
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.settlements.getReceipt(req.user, id);
+    return this.settlementView.getReceipt(req.user, id);
   }
 
   @Post()
   create(@Req() req: AuthRequest, @Body() dto: CreateCustomerReceiptDto) {
-    return this.settlements.createReceipt(req.user, dto);
+    return this.workflow.createReceipt(req.user, dto);
   }
 
   @Post(":id/reverse")
@@ -101,6 +103,6 @@ export class CustomerReceiptsController {
     @Param("id") id: string,
     @Body() dto: ReverseCustomerReceiptDto
   ) {
-    return this.settlements.reverseReceipt(req.user, id, dto);
+    return this.workflow.reverseReceipt(req.user, id, dto);
   }
 }

@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { constructionApi } from "../../../../src/lib/api";
+import type { ConstructionFulfillmentView } from "../../../../src/features/construction/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 import {
   getConstructionPhotoStageLabel,
@@ -23,7 +24,7 @@ type ConstructionRecord = {
   qualityResult?: string | null;
   qualityNote?: string | null;
   actualMinutes?: number | null;
-  overtimeMinutes?: number;
+  overtimeMinutes?: number | null;
   order?: {
     orderNo?: string | null;
     appointmentDate?: string | null;
@@ -68,9 +69,9 @@ export default function ConstructionOrderDetailPage() {
   const [qualityForm] = Form.useForm<{ result: "PASS" | "REWORK_REQUIRED"; note?: string }>();
   const [previewPhoto, setPreviewPhoto] = useState<ConstructionPhoto | null>(null);
 
-  const recordsQuery = useQuery({
+  const fulfillmentQuery = useQuery({
     queryKey: ["construction-order", storeId, params.id],
-    queryFn: () => constructionApi.assignments({ storeId: storeId! }),
+    queryFn: () => constructionApi.fulfillment(params.id),
     enabled: Boolean(storeId)
   });
   const workersQuery = useQuery({
@@ -78,7 +79,14 @@ export default function ConstructionOrderDetailPage() {
     queryFn: () => constructionApi.workers(storeId!),
     enabled: Boolean(storeId)
   });
-  const record = ((recordsQuery.data ?? []) as ConstructionRecord[]).find((item) => item.orderId === params.id);
+  const fulfillment = fulfillmentQuery.data as ConstructionFulfillmentView | undefined;
+  const record: ConstructionRecord | undefined = fulfillment?.construction
+    ? {
+      ...fulfillment.construction,
+      orderId: fulfillment.order.id,
+      order: fulfillment.order
+    }
+    : undefined;
   const workerMap = new Map(((workersQuery.data ?? []) as WorkerRow[]).map((worker) => [worker.userId, worker]));
   const assignedWorkers = record?.assignments ?? [];
   const photos = record?.photos ?? [];
@@ -193,7 +201,7 @@ export default function ConstructionOrderDetailPage() {
                   }
                   await constructionApi.uploadPhoto(record.id, { stage, file });
                   message.success(`${getConstructionPhotoStageLabel(stage)}已上传`);
-                  await queryClient.invalidateQueries({ queryKey: ["construction-order", storeId, params.id] });
+      await queryClient.invalidateQueries({ queryKey: ["construction-order", storeId, params.id] });
                 }}
               />
             ) : (

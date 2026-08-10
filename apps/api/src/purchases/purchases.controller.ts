@@ -17,7 +17,9 @@ import {
   UpdatePurchaseReceiptCostDto,
   UpdateSupplierDto
 } from "../inventory/dto/inventory.dto";
-import { InventoryService, type AuthenticatedInventoryUser } from "../inventory/inventory.service";
+import type { AuthenticatedInventoryUser } from "../inventory/inventory.service";
+import { ProcurementFlow } from "../inventory/procurement-flow";
+import { InventoryCatalog } from "../inventory/inventory-catalog";
 
 type AuthRequest = Request & {
   user: AuthenticatedInventoryUser;
@@ -26,21 +28,24 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("purchases")
 export class PurchasesController {
-  constructor(private readonly inventory: InventoryService) {}
+  constructor(
+    private readonly procurement: ProcurementFlow,
+    private readonly catalog: InventoryCatalog
+  ) {}
 
   @Get("overview")
   overview(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.inventory.getPurchaseOverview(req.user, storeId);
+    return this.procurement.getOverview(req.user, storeId);
   }
 
   @Get("requirements")
   listRequirements(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.inventory.listPurchaseRequirements(req.user, storeId);
+    return this.procurement.listRequirements(req.user, storeId);
   }
 
   @Post("requirements")
   createRequirement(@Req() req: AuthRequest, @Body() dto: CreatePurchaseRequirementDto) {
-    return this.inventory.createPurchaseRequirement(req.user, dto);
+    return this.procurement.createRequirement(req.user, dto);
   }
 
   @Post("requirements/:id/orders")
@@ -49,42 +54,42 @@ export class PurchasesController {
     @Param("id") id: string,
     @Body() dto: CreatePurchaseOrderFromRequirementDto
   ) {
-    return this.inventory.createPurchaseOrderFromRequirement(req.user, id, dto);
+    return this.procurement.createOrderFromRequirement(req.user, id, dto);
   }
 
   @Get("orders")
   listOrders(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.inventory.listPurchaseOrders(req.user, storeId);
+    return this.procurement.listOrders(req.user, storeId);
   }
 
   @Get("orders/export-details")
   exportOrderDetails(@Req() req: AuthRequest, @Query() query: ListPurchaseOrderExportDetailsDto) {
-    return this.inventory.exportPurchaseOrderDetails(req.user, query);
+    return this.procurement.exportOrderDetails(req.user, query);
   }
 
   @Post("orders")
   createOrder(@Req() req: AuthRequest, @Body() dto: CreatePurchaseOrderDto) {
-    return this.inventory.createPurchaseOrder(req.user, dto);
+    return this.procurement.createOrder(req.user, dto);
   }
 
   @Get("orders/:id")
   getOrder(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.inventory.getPurchaseOrder(req.user, id);
+    return this.procurement.getOrder(req.user, id);
   }
 
   @Post("orders/:id/approve")
   approveOrder(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.inventory.approvePurchaseOrder(req.user, id);
+    return this.procurement.approveOrder(req.user, id);
   }
 
   @Post("orders/:id/cancel")
   cancelOrder(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: CancelPurchaseOrderDto) {
-    return this.inventory.cancelPurchaseOrder(req.user, id, dto);
+    return this.procurement.cancelOrder(req.user, id, dto);
   }
 
   @Post("orders/items/:id/receive")
   receiveOrderItem(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ReceivePurchaseItemDto) {
-    return this.inventory.receivePurchaseItem(req.user, id, dto);
+    return this.procurement.receive(req.user, id, dto);
   }
 
   @Post("orders/items/:id/receive-batches")
@@ -93,37 +98,37 @@ export class PurchasesController {
     @Param("id") id: string,
     @Body() dto: ReceivePurchaseItemBatchesDto
   ) {
-    return this.inventory.receivePurchaseItemBatches(req.user, id, dto);
+    return this.procurement.receiveBatches(req.user, id, dto);
   }
 
   @Patch("receipt-costs/:id")
   updateReceiptCost(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdatePurchaseReceiptCostDto) {
-    return this.inventory.updatePurchaseReceiptCost(req.user, id, dto);
+    return this.procurement.updateReceiptCost(req.user, id, dto);
   }
 
   @Get("warehouses")
   listWarehouses(@Req() req: AuthRequest, @Query() query: ListWarehousesDto) {
-    return this.inventory.listWarehouses(req.user, query.storeId);
+    return this.catalog.listWarehouses(req.user, query.storeId);
   }
 
   @Get("suppliers")
   listSuppliers(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.inventory.listSuppliers(req.user, storeId);
+    return this.catalog.listSuppliers(req.user, storeId);
   }
 
   @Post("suppliers")
   createSupplier(@Req() req: AuthRequest, @Body() dto: CreateSupplierDto) {
-    return this.inventory.createSupplier(req.user, dto);
+    return this.catalog.createSupplier(req.user, dto);
   }
 
   @Patch("suppliers/:id")
   updateSupplier(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateSupplierDto) {
-    return this.inventory.updateSupplier(req.user, id, dto);
+    return this.catalog.updateSupplier(req.user, id, dto);
   }
 
   @Post("suppliers/:id/contacts")
   createSupplierContact(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: CreateSupplierContactDto) {
-    return this.inventory.createSupplierContact(req.user, id, dto);
+    return this.catalog.createSupplierContact(req.user, id, dto);
   }
 
   @Post("suppliers/:id/rating-history")
@@ -132,6 +137,6 @@ export class PurchasesController {
     @Param("id") id: string,
     @Body() dto: CreateSupplierRatingHistoryDto
   ) {
-    return this.inventory.createSupplierRatingHistory(req.user, id, dto);
+    return this.catalog.createSupplierRatingHistory(req.user, id, dto);
   }
 }

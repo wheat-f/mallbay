@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma, PricingRuleSetStatus } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CreatePricingRuleSetDto,
@@ -29,11 +30,11 @@ const ruleSetInclude = Prisma.validator<Prisma.PricingRuleSetInclude>()({
 
 @Injectable()
 export class PricingRulesService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter, private readonly accessContext?: AccessContext) {}
 
   async list(user: PricingAuthenticatedUser, dto: ListPricingRuleSetsDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanView(actor, dto.storeId);
+    await this.assertCanView(actor, dto.storeId);
     return this.prisma.pricingRuleSet.findMany({
       where: { storeId: dto.storeId },
       orderBy: { version: "desc" },
@@ -43,7 +44,7 @@ export class PricingRulesService {
 
   async get(user: PricingAuthenticatedUser, storeId: string, id: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanView(actor, storeId);
+    await this.assertCanView(actor, storeId);
     const ruleSet = await this.prisma.pricingRuleSet.findFirst({
       where: { id, storeId },
       include: ruleSetInclude
@@ -54,7 +55,7 @@ export class PricingRulesService {
 
   async updateDraft(user: PricingAuthenticatedUser, id: string, dto: UpdatePricingRuleSetDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, dto.storeId);
+    await this.assertCanManage(actor, dto.storeId);
     validateProtectionPolicy(dto.protectionPolicy);
     validateRuleDefinitions(dto.rules);
     validateRuleConflicts(dto.rules);
@@ -128,7 +129,7 @@ export class PricingRulesService {
 
   async createDraft(user: PricingAuthenticatedUser, dto: CreatePricingRuleSetDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, dto.storeId);
+    await this.assertCanManage(actor, dto.storeId);
     validateProtectionPolicy(dto.protectionPolicy);
     validateRuleDefinitions(dto.rules);
     validateRuleConflicts(dto.rules);
@@ -182,7 +183,7 @@ export class PricingRulesService {
 
   async createDefaultDraft(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, storeId);
+    await this.assertCanManage(actor, storeId);
     const existing = await this.prisma.pricingRuleSet.findFirst({
       where: { storeId },
       orderBy: { version: "desc" },
@@ -218,7 +219,7 @@ export class PricingRulesService {
 
   async publish(user: PricingAuthenticatedUser, storeId: string, id: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, storeId);
+    await this.assertCanManage(actor, storeId);
     const ruleSet = await this.prisma.pricingRuleSet.findFirst({
       where: { id, storeId },
       include: ruleSetInclude
@@ -255,7 +256,7 @@ export class PricingRulesService {
 
   async validate(user: PricingAuthenticatedUser, storeId: string, id: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanView(actor, storeId);
+    await this.assertCanView(actor, storeId);
     const ruleSet = await this.prisma.pricingRuleSet.findFirst({ where: { id, storeId }, include: ruleSetInclude });
     if (!ruleSet) throw new NotFoundException("价格规则版本不存在");
     const errors: string[] = [];
@@ -272,7 +273,7 @@ export class PricingRulesService {
 
   async retire(user: PricingAuthenticatedUser, storeId: string, id: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, storeId);
+    await this.assertCanManage(actor, storeId);
     const result = await this.prisma.pricingRuleSet.updateMany({ where: { id, storeId, status: PricingRuleSetStatus.PUBLISHED }, data: { status: PricingRuleSetStatus.RETIRED } });
     if (result.count !== 1) throw new BadRequestException("只有已发布规则版本可以停用");
     const retired = await this.prisma.pricingRuleSet.findUnique({ where: { id }, include: ruleSetInclude });
@@ -282,7 +283,7 @@ export class PricingRulesService {
 
   async copy(user: PricingAuthenticatedUser, storeId: string, id: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, storeId);
+    await this.assertCanManage(actor, storeId);
     const source = await this.prisma.pricingRuleSet.findFirst({ where: { id, storeId }, include: ruleSetInclude });
     if (!source || !source.protectionPolicy) throw new NotFoundException("可复制的规则版本不存在");
     const version = await this.nextVersion(storeId);
@@ -371,12 +372,12 @@ export class PricingRulesService {
     return (latest?.version ?? 0) + 1;
   }
 
-  private assertCanView(user: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.canViewStoreData(user, storeId)) throw new ForbiddenException("无权限");
+  private async assertCanView(user: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can(user.id, "products", "read", { storeId })) throw new ForbiddenException("无权限");
   }
 
-  private assertCanManage(user: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.canManageProduct(user, storeId)) throw new ForbiddenException("无权限");
+  private async assertCanManage(user: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can(user.id, "products", "write", { storeId })) throw new ForbiddenException("无权限");
   }
 
   private async withStoreMember(user: PricingAuthenticatedUser): Promise<UserWithStoreMember> {

@@ -1,13 +1,28 @@
 import { Injectable } from "@nestjs/common";
-import { InventoryService } from "../inventory.service";
+import { InventoryService, type AuthenticatedInventoryUser } from "../inventory.service";
+import type {
+  ConvertBatchUnitDto,
+  CreateInventoryBatchDto,
+  CreateOrderInventoryAllocationsDto,
+  CreateStockOperationDto,
+  ListInventoryDto,
+  OutboundOrderInventoryDto,
+  ReceivePurchaseItemBatchesDto,
+  ReceivePurchaseItemDto,
+  SplitBatchDto
+} from "../dto/inventory.dto";
 
-type InventoryUser = Parameters<InventoryService["createOrderInventoryAllocations"]>[0];
-type ReserveInput = Parameters<InventoryService["createOrderInventoryAllocations"]>[2];
-type ReceiveInput = Parameters<InventoryService["receivePurchaseItem"]>[2];
-type ReceiveBatchesInput = Parameters<InventoryService["receivePurchaseItemBatches"]>[2];
-type OutboundInput = Parameters<InventoryService["outboundOrderInventory"]>[2];
-type AdjustInput = Parameters<InventoryService["createStockOperation"]>[1];
-type TraceInput = Parameters<InventoryService["listMovements"]>[1];
+type InventoryUser = AuthenticatedInventoryUser;
+type ReserveInput = CreateOrderInventoryAllocationsDto;
+type ReceiveInput = ReceivePurchaseItemDto;
+type ReceiveBatchesInput = ReceivePurchaseItemBatchesDto;
+type OutboundInput = OutboundOrderInventoryDto;
+type AdjustInput = CreateStockOperationDto;
+type TraceInput = ListInventoryDto;
+type BatchListInput = ListInventoryDto;
+type CreateBatchInput = CreateInventoryBatchDto;
+type ConvertBatchInput = ConvertBatchUnitDto;
+type SplitBatchInput = SplitBatchDto;
 
 /**
  * InventoryLedger is the single command/query seam for stock facts.
@@ -43,5 +58,29 @@ export class InventoryLedger {
 
   trace(user: InventoryUser, query: TraceInput) {
     return this.implementation.listMovements(user, query);
+  }
+
+  listBatches(user: InventoryUser, query: BatchListInput) {
+    return this.implementation.listBatches(user, query);
+  }
+
+  receiveBatch(user: InventoryUser, input: CreateBatchInput) {
+    return this.implementation.createBatch(user, input);
+  }
+
+  convertBatch(user: InventoryUser, batchId: string, input: ConvertBatchInput) {
+    return this.implementation.convertBatchUnit(user, batchId, input);
+  }
+
+  splitBatch(user: InventoryUser, batchId: string, input: SplitBatchInput) {
+    return this.implementation.splitBatch(user, batchId, input);
+  }
+
+  pendingMatches(user: InventoryUser, storeId: string) {
+    return this.implementation.listPendingMatchOrders(user, storeId);
+  }
+
+  orderMatch(user: InventoryUser, orderId: string) {
+    return this.implementation.getOrderInventoryMatch(user, orderId);
   }
 }

@@ -3,6 +3,15 @@ import { test } from "node:test";
 import { SalesQuotesService } from "./sales-quotes.service";
 import { calculatePricing } from "../pricing/domain/pricing-engine";
 
+const salesAccess = {
+  can: async (actor: string, capability: string) => {
+    if (capability === "finance") return actor.includes("finance") || actor.includes("manager");
+    if (capability === "store") return actor.includes("manager") || actor.includes("admin");
+    return true;
+  },
+  resolve: async () => ({ roles: [{ roleCode: "MANAGER" }] })
+};
+
 test("报价过期任务只把仍待审批的报价标记为过期并释放对应占位", async () => {
   const released: string[] = [];
   const statuses: string[] = [];
@@ -16,7 +25,7 @@ test("报价过期任务只把仍待审批的报价标记为过期并释放对�
     }
   };
   const capacity = { releaseQuote: async (id: string) => { released.push(id); return undefined; } };
-  const service = new SalesQuotesService(prisma as never, capacity as never, {} as never);
+  const service = new SalesQuotesService(prisma as never, capacity as never, {} as never, undefined, undefined, salesAccess as never);
   const result = await service.expirePending(new Date("2026-07-16T00:00:00.000Z"));
   assert.equal(result, 2);
   assert.deepEqual(statuses, ["quote-1", "quote-2"]);
@@ -42,7 +51,10 @@ test("报价重复转单返回既有订单而不是再次创建", async () => {
   const service = new SalesQuotesService(
     prisma as never,
     {} as never,
-    { execute: async () => { created = true; return { id: "order-2" }; } } as never
+    { execute: async () => { created = true; return { id: "order-2" }; } } as never,
+    undefined,
+    undefined,
+    salesAccess as never
   );
   const result = await service.convertToOrder({
     id: "user-1",
@@ -63,7 +75,7 @@ test("报价详情按销售归属返回关联快照", async () => {
       }
     }
   };
-  const service = new SalesQuotesService(prisma as never, {} as never, {} as never);
+  const service = new SalesQuotesService(prisma as never, {} as never, {} as never, undefined, undefined, salesAccess as never);
   const detail = await service.get({ id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: "SALES" } } as never, "quote-1", "store-1");
   assert.equal(detail.id, "quote-1");
   assert.deepEqual((detailQuery as { include: { customer: { select: Record<string, boolean> } } }).include.customer.select, { id: true, name: true });
@@ -90,7 +102,7 @@ test("销售读取本人报价时服务端不返回内部成本与毛利字段",
       })
     }
   };
-  const service = new SalesQuotesService(prisma as never, {} as never, {} as never);
+  const service = new SalesQuotesService(prisma as never, {} as never, {} as never, undefined, undefined, salesAccess as never);
   const detail = await service.get(
     { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: "SALES" } } as never,
     "quote-private",
@@ -116,7 +128,7 @@ test("报价产品明细由服务端全量导出，销售只能导出本人且�
     items: [{ productId: "product-1", productSnapshot: { brand: "品牌", name: "产品", model: "型号", specification: "规格" }, quantity: 1, salesUnit: "ROLL", suggestedUnitPriceCents: 10000, finalUnitPriceCents: 10000, finalAmountCents: 10000 }]
   };
   const prisma = { salesQuote: { findMany: async (query: Record<string, unknown>) => { exportQuery = query; return [quote]; } } };
-  const service = new SalesQuotesService(prisma as never, {} as never, {} as never);
+  const service = new SalesQuotesService(prisma as never, {} as never, {} as never, undefined, undefined, salesAccess as never);
   const salesRows = await service.exportDetails({ id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: "SALES" } } as never, { storeId: "store-1", exportDimension: "product" });
   assert.equal((exportQuery as { where: { salesPersonId?: string } }).where.salesPersonId, "sales-1");
   assert.equal(salesRows.length, 1);
@@ -166,7 +178,7 @@ test("草稿报价提交后创建审批并占用容量", async () => {
     holdQuote: async () => { held = true; },
     releaseQuote: async () => undefined
   };
-  const service = new SalesQuotesService(prisma as never, capacity as never, {} as never);
+  const service = new SalesQuotesService(prisma as never, capacity as never, {} as never, undefined, undefined, salesAccess as never);
   const submitted = await service.submit({ id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: "SALES" } } as never, "quote-1", { storeId: "store-1" });
   assert.equal((submitted as { status: string }).status, "PENDING_APPROVAL");
   assert.equal(held, true);
@@ -207,7 +219,7 @@ test("临时成本报价即使价格正常也必须按毛利审批提交", async
       pricingApproval: { create: async ({ data }: { data: { approvalType: string } }) => { approvalType = data.approvalType; return { id: "approval-temp" }; } }
     })
   };
-  const service = new SalesQuotesService(prisma as never, { holdQuote: async () => undefined, releaseQuote: async () => undefined } as never, {} as never);
+  const service = new SalesQuotesService(prisma as never, { holdQuote: async () => undefined, releaseQuote: async () => undefined } as never, {} as never, undefined, undefined, salesAccess as never);
   await service.submit({ id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: "MANAGER" } } as never, "quote-temp", { storeId: "store-1" });
   assert.equal(approvalType, "MARGIN");
 });

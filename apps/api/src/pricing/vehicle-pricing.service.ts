@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { DictionaryStatus } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CreateVehicleModelMappingDto,
@@ -14,11 +15,11 @@ import type { PricingAuthenticatedUser } from "./pricing.service";
 
 @Injectable()
 export class VehiclePricingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly accessContext?: AccessContext) {}
 
   async listClasses(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanView(actor, storeId);
+    await this.assertCanView(actor, storeId);
     return this.prisma.vehiclePriceClass.findMany({
       where: { storeId },
       orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }, { code: "asc" }]
@@ -27,7 +28,7 @@ export class VehiclePricingService {
 
   async createClass(user: PricingAuthenticatedUser, dto: CreateVehiclePriceClassDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, dto.storeId);
+    await this.assertCanManage(actor, dto.storeId);
     const code = dto.code.trim().toUpperCase();
     const name = dto.name.trim();
     if (!code || !name) throw new BadRequestException("车辆价格级别编码和名称不能为空");
@@ -53,7 +54,7 @@ export class VehiclePricingService {
 
   async updateClass(user: PricingAuthenticatedUser, id: string, dto: UpdateVehiclePriceClassDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, dto.storeId);
+    await this.assertCanManage(actor, dto.storeId);
     const existing = await this.prisma.vehiclePriceClass.findFirst({ where: { id, storeId: dto.storeId } });
     if (!existing) throw new NotFoundException("车辆价格级别不存在");
     const code = (dto.code ?? existing.code).trim().toUpperCase();
@@ -81,7 +82,7 @@ export class VehiclePricingService {
 
   async createMapping(user: PricingAuthenticatedUser, dto: CreateVehicleModelMappingDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, dto.storeId);
+    await this.assertCanManage(actor, dto.storeId);
     const priceClass = await this.prisma.vehiclePriceClass.findFirst({
       where: { id: dto.vehiclePriceClassId, storeId: dto.storeId, status: DictionaryStatus.ACTIVE }
     });
@@ -111,7 +112,7 @@ export class VehiclePricingService {
 
   async updateMapping(user: PricingAuthenticatedUser, id: string, dto: UpdateVehicleModelMappingDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, dto.storeId);
+    await this.assertCanManage(actor, dto.storeId);
     const existing = await this.prisma.vehicleModelMapping.findFirst({ where: { id, storeId: dto.storeId } });
     if (!existing) throw new NotFoundException("车型映射不存在");
     const candidate = normalizeMapping({
@@ -155,7 +156,7 @@ export class VehiclePricingService {
 
   async listMappings(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanView(actor, storeId);
+    await this.assertCanView(actor, storeId);
     return this.prisma.vehicleModelMapping.findMany({
       where: { storeId },
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
@@ -165,7 +166,7 @@ export class VehiclePricingService {
 
   async importMappings(user: PricingAuthenticatedUser, dto: ImportVehicleModelMappingsDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManage(actor, dto.storeId);
+    await this.assertCanManage(actor, dto.storeId);
     if (!dto.rows.length) throw new BadRequestException("导入内容不能为空");
     const normalized = dto.rows.map((row) => {
       const item = normalizeMapping({ ...row, storeId: dto.storeId });
@@ -206,7 +207,7 @@ export class VehiclePricingService {
 
   async listUnmatchedVehicles(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanView(actor, storeId);
+    await this.assertCanView(actor, storeId);
     const [vehicles, mappings] = await Promise.all([
       this.prisma.customerVehicle.findMany({
         where: { vehiclePriceClassId: null, customer: { storeId } },
@@ -239,7 +240,7 @@ export class VehiclePricingService {
 
   async resolve(user: PricingAuthenticatedUser, dto: ResolveVehiclePriceClassDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanView(actor, dto.storeId);
+    await this.assertCanView(actor, dto.storeId);
     if (dto.manualVehiclePriceClassId) {
       const manual = await this.prisma.vehiclePriceClass.findFirst({
         where: { id: dto.manualVehiclePriceClassId, storeId: dto.storeId, status: DictionaryStatus.ACTIVE }
@@ -277,12 +278,12 @@ export class VehiclePricingService {
     return { source: fallback ? "AUTO_DEFAULT" as const : "UNMATCHED" as const, vehiclePriceClass: fallback, matchedMappingId: null };
   }
 
-  private assertCanView(user: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.canViewStoreData(user, storeId)) throw new ForbiddenException("无权限");
+  private async assertCanView(user: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can(user.id, "products", "read", { storeId })) throw new ForbiddenException("无权限");
   }
 
-  private assertCanManage(user: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.canManageProduct(user, storeId)) throw new ForbiddenException("无权限");
+  private async assertCanManage(user: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can(user.id, "products", "write", { storeId })) throw new ForbiddenException("无权限");
   }
 
   private async withStoreMember(user: PricingAuthenticatedUser): Promise<UserWithStoreMember> {

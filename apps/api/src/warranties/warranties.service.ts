@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, QualityCheckResult, StorePosition, WarrantyStatus } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import { type UserWithStoreMember } from "../permissions/domain/access-types";
 import { PrismaService } from "../prisma/prisma.service";
+import { AccessContext } from "../permissions/domain/access-context";
 import type { CreateWarrantyDto, ListWarrantiesDto } from "./dto/warranty.dto";
 
 export type AuthenticatedWarrantyUser = UserWithStoreMember & {
@@ -11,7 +12,10 @@ export type AuthenticatedWarrantyUser = UserWithStoreMember & {
 
 @Injectable()
 export class WarrantiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessContext: AccessContext
+  ) {}
 
   async createFromOrder(user: AuthenticatedWarrantyUser, dto: CreateWarrantyDto) {
     const actor = await this.withStoreMember(user);
@@ -24,7 +28,7 @@ export class WarrantiesService {
         }
       });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canCreateWarranty(actor, order.storeId)) {
+      if (!await this.accessContext.can(actor.id, "warranties", "write", { storeId: order.storeId })) {
         throw new ForbiddenException("无权限");
       }
       if (order.constructionRecord?.qualityResult !== QualityCheckResult.PASS) {
@@ -70,10 +74,10 @@ export class WarrantiesService {
 
   async list(user: AuthenticatedWarrantyUser, query: ListWarrantiesDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewWarranty(actor, query.storeId)) {
+    if (!await this.accessContext.can(actor.id, "warranties", "read", { storeId: query.storeId })) {
       throw new ForbiddenException("无权限");
     }
-    const where = buildWarrantyListScope(actor, query.storeId);
+    const where = buildWarrantyListScope(actor, query.storeId, await this.isSalesActor(actor, query.storeId));
     return this.prisma.warranty.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -92,7 +96,10 @@ export class WarrantiesService {
       }
     });
     if (!warranty) throw new NotFoundException("质保记录不存在");
-    if (!canViewWarrantyRecord(actor, warranty.storeId, warranty.order.salesPersonId)) {
+    if (!await this.accessContext.can(actor.id, "warranties", "read", { storeId: warranty.storeId })) {
+      throw new ForbiddenException("无权限");
+    }
+    if (await this.isSalesActor(actor, warranty.storeId) && warranty.order.salesPersonId !== actor.id) {
       throw new ForbiddenException("无权限");
     }
     const afterSaleIds = (warranty.afterSales ?? []).map((afterSale) => afterSale.id);
@@ -128,23 +135,20 @@ export class WarrantiesService {
     });
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
   }
+
+  private async isSalesActor(actor: UserWithStoreMember, storeId: string) {
+    const resolution = await this.accessContext.resolve(actor.id, { storeId });
+    return resolution.roles.some((role) => role.roleCode === "SALES" &&
+      (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
+  }
 }
 
-function buildWarrantyListScope(actor: UserWithStoreMember, storeId: string) {
+function buildWarrantyListScope(actor: UserWithStoreMember, storeId: string, isSales: boolean) {
   const where: { storeId: string; order?: { salesPersonId: string } } = { storeId };
-  if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) {
-    if (PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) where.order = { salesPersonId: actor.id };
-  } else if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
+  if (isSales || (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES)) {
     where.order = { salesPersonId: actor.id };
   }
   return where;
-}
-
-function canViewWarrantyRecord(actor: UserWithStoreMember, storeId: string, salesPersonId: string) {
-  if (!PermissionPolicy.canViewWarranty(actor, storeId)) return false;
-  if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) return PermissionPolicy.canRuntime(actor, "warranties", "read", storeId, salesPersonId);
-  if (actor.isAuditor || actor.storeMember?.position !== StorePosition.SALES) return true;
-  return actor.id === salesPersonId;
 }
 
 function normalizeDate(value: string) {

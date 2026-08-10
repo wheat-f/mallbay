@@ -4,6 +4,11 @@ import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { ConstructionCostSettlementService, assertConfirmLines, assertManualConstructionChargeAllocation, assertVarianceReasons, buildCostException, isAbnormal, isMaterialReceiptCostAdjustment, summarizeActualMaterialCost } from "./construction-cost-settlement.service";
 import { InventoryMovementType } from "@prisma/client";
 
+const costAccess = {
+  can: async (actor: string, capability: string) => capability === "finance" ? actor.includes("finance") || actor.includes("admin") : true,
+  resolve: async (actor: string) => ({ roles: [{ roleCode: actor.includes("finance") || actor.includes("admin") ? "FINANCE" : "MANAGER" }] })
+};
+
 test("成本异常由申报偏差或预计材料成本缺失触发，不能进入批量确认", () => {
   assert.equal(isAbnormal({ estimatedMaterialCostCents: 100, workerLines: [{ standardMinutes: 120, declaredMinutes: 120 }] }), false);
   assert.equal(isAbnormal({ estimatedMaterialCostCents: 100, workerLines: [{ standardMinutes: 120, declaredMinutes: 130 }] }), true);
@@ -71,7 +76,7 @@ test("成本调整审批仅财务或系统审核员可执行，店长不能代�
     auditEvent: { create: async ({ data }: { data: unknown }) => { auditEvents.push(data); return {}; } },
     $transaction: async <T>(work: (tx: typeof prisma) => Promise<T>) => work(prisma)
   };
-  const service = new ConstructionCostSettlementService(prisma as never);
+  const service = new ConstructionCostSettlementService(prisma as never, undefined, undefined, costAccess as never);
   const manager = { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: "MANAGER" } };
   const finance = { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: "FINANCE" } };
 
@@ -93,7 +98,7 @@ test("财务可发起确认后成本调整，同一幂等键重试时复用原�
       findFirst: async () => existing,
       create: async () => { createCalls += 1; return { id: "unexpected" }; }
     }
-  } as never);
+  } as never, undefined, undefined, costAccess as never);
   const finance = { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: "FINANCE" } };
 
   const result = await service.createAdjustment(finance, "settlement-1", {
@@ -107,17 +112,17 @@ test("财务可发起确认后成本调整，同一幂等键重试时复用原�
   assert.equal(createCalls, 0);
 });
 
-test("店长确认成本时不返回个人岗位成本、提成和补贴，财务仍能看到明细", () => {
-  const service = new ConstructionCostSettlementService({} as never);
+test("店长确认成本时不返回个人岗位成本、提成和补贴，财务仍能看到明细", async () => {
+  const service = new ConstructionCostSettlementService({} as never, undefined, undefined, costAccess as never);
   const settlement = {
     storeId: "store-1",
     workerLines: [{ workerUserId: "worker-1", standardMinutes: 60, confirmedMinutes: 60, hourlyCostCentsSnapshot: 10000, baseCostCents: 10000, commissionCents: 1200, allowanceCents: 500 }]
   };
   const manager = { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: "MANAGER" } };
   const finance = { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: "FINANCE" } };
-  const present = service as never as { presentSettlement: (user: unknown, record: typeof settlement) => { workerLines: Array<Record<string, unknown>> } };
-  const managerView = present.presentSettlement(manager, settlement);
-  const financeView = present.presentSettlement(finance, settlement);
+  const present = service as never as { presentSettlement: (user: unknown, record: typeof settlement) => Promise<{ workerLines: Array<Record<string, unknown>> }> };
+  const managerView = await present.presentSettlement(manager, settlement);
+  const financeView = await present.presentSettlement(finance, settlement);
   assert.equal("hourlyCostCentsSnapshot" in managerView.workerLines[0], false);
   assert.equal("commissionCents" in managerView.workerLines[0], false);
   assert.equal(financeView.workerLines[0].hourlyCostCentsSnapshot, 10000);

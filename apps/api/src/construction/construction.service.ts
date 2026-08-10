@@ -12,7 +12,8 @@ import {
   QualityCheckResult,
   StorePosition
 } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import type { MulterFile } from "../users/multer-file.type";
 import { OssService } from "../users/oss.service";
@@ -56,7 +57,8 @@ export class ConstructionService {
     @Optional() private readonly costSettlements?: ConstructionCostSettlementService,
     @Optional() private readonly notifications?: NotificationsService,
     @Optional() private readonly orderLifecycle?: OrderLifecycle,
-    @Optional() private readonly notificationDispatcher?: NotificationDispatcher
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcher,
+    @Optional() private readonly accessContext?: AccessContext
   ) {
     this.orderLifecycle?.registerConstructionHandler(async (actor, orderId, command) => {
       if (command.type === "DISPATCH") return this.assignOrderInternal(actor, orderId, command.input as AssignOrderDto);
@@ -67,9 +69,14 @@ export class ConstructionService {
     });
   }
 
+  private canAccess(actor: AuthenticatedConstructionUser | UserWithStoreMember, capability: string, action: string, storeId: string, ownerId?: string) {
+    if (!this.accessContext) throw new Error("ConstructionService access context is not configured");
+    return this.accessContext.can(actor.id, capability, action, { storeId, ownerId });
+  }
+
   async listCapacities(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, query.storeId)) {
+    if (!await this.canAccess(actor, "construction", "read", query.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.dailyCapacity.findMany({
@@ -84,7 +91,7 @@ export class ConstructionService {
 
   async upsertCapacity(user: AuthenticatedConstructionUser, dto: UpsertDailyCapacityDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canDispatchConstruction(actor, dto.storeId)) {
+    if (!await this.canAccess(actor, "construction", "write", dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const date = normalizeDate(dto.date);
@@ -113,7 +120,7 @@ export class ConstructionService {
     if (!capacity) {
       throw new NotFoundException("施工容量不存在");
     }
-    if (!PermissionPolicy.canDispatchConstruction(actor, capacity.storeId)) {
+    if (!await this.canAccess(actor, "construction", "write", capacity.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.dailyCapacity.update({ where: { id }, data: dto });
@@ -121,17 +128,13 @@ export class ConstructionService {
 
   async listAssignments(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, query.storeId)) {
+    if (!await this.canAccess(actor, "construction", "read", query.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const where: Prisma.ConstructionRecordWhereInput = { storeId: query.storeId };
-    if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) {
-      if (PermissionPolicy.hasRuntimeRole(actor, ["SALES"], query.storeId)) where.order = { salesPersonId: actor.id };
-      if (PermissionPolicy.hasRuntimeRole(actor, ["CONSTRUCTION", "APPRENTICE"], query.storeId)) where.assignments = { some: { workerUserId: actor.id } };
-    } else {
-      if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) where.order = { salesPersonId: actor.id };
-      if (!actor.isAuditor && (actor.storeMember?.position === StorePosition.CONSTRUCTION || actor.storeMember?.position === StorePosition.APPRENTICE)) where.assignments = { some: { workerUserId: actor.id } };
-    }
+    const roles = await this.rolesFor(actor, query.storeId);
+    if (roles.has("SALES")) where.order = { salesPersonId: actor.id };
+    if (roles.has("CONSTRUCTION") || roles.has("APPRENTICE")) where.assignments = { some: { workerUserId: actor.id } };
     return this.prisma.constructionRecord.findMany({
       where,
       orderBy: { dispatchedAt: "desc" },
@@ -159,7 +162,7 @@ export class ConstructionService {
         throw new NotFoundException("订单不存在");
       }
       const executionStoreId = order.executionStoreId ?? order.storeId;
-      if (!PermissionPolicy.canDispatchConstruction(actor, executionStoreId)) {
+      if (!await this.canAccess(actor, "construction", "write", executionStoreId)) {
         throw new ForbiddenException("无权限");
       }
       if (order.status !== OrderStatus.PENDING_DISPATCH) {
@@ -251,7 +254,7 @@ export class ConstructionService {
 
   private async startOrderInternal(actor: UserWithStoreMember, orderId: string, dto: StartConstructionDto = {}) {
     const record = await this.findRecordForOrder(orderId);
-    this.assertAssignedWorker(actor, record);
+    await this.assertAssignedWorker(actor, record);
     if (record.order.status !== OrderStatus.DISPATCHED) {
       throw new BadRequestException("只有已派单订单可以开工");
     }
@@ -284,7 +287,8 @@ export class ConstructionService {
     const assignedWorkerId = this.getAssignedWorkerId(actor.id, record);
     if (
       assignedWorkerId !== actor.id &&
-      !PermissionPolicy.canUploadConstructionPhoto(actor, record.storeId, assignedWorkerId)
+      !(await this.canAccess(actor, "construction", "write", record.storeId)) &&
+      !(await this.canAccess(actor, "construction", "write", record.storeId, assignedWorkerId))
     ) {
       throw new ForbiddenException("无权限");
     }
@@ -330,7 +334,7 @@ export class ConstructionService {
     record: ConstructionRecordWithRelations,
     dto: CompleteConstructionDto
   ) {
-    this.assertAssignedWorker(actor, record);
+    await this.assertAssignedWorker(actor, record);
     if (record.order.status !== OrderStatus.IN_CONSTRUCTION) {
       throw new BadRequestException("只有施工中订单可以完工");
     }
@@ -410,7 +414,7 @@ export class ConstructionService {
 
   private async qualityCheckInternal(actor: UserWithStoreMember, recordId: string, dto: QualityCheckDto) {
     const record = await this.findRecord(recordId);
-    if (!PermissionPolicy.canQualityCheckConstruction(actor, record.storeId)) {
+    if (!await this.canAccess(actor, "construction", "write", record.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const checkedAt = new Date();
@@ -447,6 +451,20 @@ export class ConstructionService {
         await tx.order.update({ where: { id: record.orderId }, data: { status: OrderStatus.IN_CONSTRUCTION } });
       }
       const next = await tx.constructionRecord.update({ where: { id: recordId }, data: update });
+      if (typeof tx.constructionQualityHistory?.create === "function") {
+        await tx.constructionQualityHistory.create({
+          data: {
+            storeId: record.storeId,
+            recordId: record.id,
+            orderId: record.orderId,
+            result: dto.result,
+            note: dto.note?.trim() || null,
+            responsibilityType: dto.responsibilityType?.trim() || null,
+            checkedById: actor.id,
+            checkedAt: checkedAt
+          }
+        });
+      }
       if (dto.result === QualityCheckResult.PASS && typeof tx.orderAmount?.findUnique === "function") {
         const amount = await tx.orderAmount.findUnique({
           where: { orderId: record.orderId },
@@ -485,10 +503,37 @@ export class ConstructionService {
     });
     return updated;
   }
+
+  async listQualityHistory(user: AuthenticatedConstructionUser, recordId: string) {
+    const actor = await this.withStoreMember(user);
+    const record = await this.findRecord(recordId);
+    const assignedWorkerId = this.getAssignedWorkerId(actor.id, record);
+    if (
+      !await this.canAccess(actor, "construction", "write", record.storeId) &&
+      assignedWorkerId !== actor.id &&
+      !await this.canAccess(actor, "construction", "write", record.storeId, assignedWorkerId)
+    ) {
+      throw new ForbiddenException("无权限");
+    }
+    const history = await this.prisma.constructionQualityHistory?.findMany({
+      where: { recordId },
+      orderBy: [{ checkedAt: "asc" }, { createdAt: "asc" }]
+    });
+    return {
+      recordId,
+      current: {
+        result: record.qualityResult,
+        note: record.qualityNote,
+        checkedAt: record.qualityCheckedAt
+      },
+      history: history ?? [],
+      historyAvailable: history !== undefined
+    };
+  }
   async getOrderMaterials(user: AuthenticatedConstructionUser, orderId: string) {
     const actor = await this.withStoreMember(user);
     const record = await this.findRecordForOrder(orderId);
-    this.assertCanAccessOrderMaterials(actor, record);
+    await this.assertCanAccessOrderMaterials(actor, record);
 
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -577,7 +622,7 @@ export class ConstructionService {
   async verifyMaterialBatch(user: AuthenticatedConstructionUser, orderId: string, dto: VerifyMaterialBatchDto) {
     const actor = await this.withStoreMember(user);
     const record = await this.findRecordForOrder(orderId);
-    this.assertCanAccessOrderMaterials(actor, record);
+    await this.assertCanAccessOrderMaterials(actor, record);
     const allocation = await this.prisma.orderInventoryAllocation.findFirst({
       where: { orderId, batchId: dto.batchId },
       include: { batch: true }
@@ -606,7 +651,7 @@ export class ConstructionService {
   async pickupMaterials(user: AuthenticatedConstructionUser, orderId: string, dto: PickupConstructionMaterialDto) {
     const actor = await this.withStoreMember(user);
     const record = await this.findRecordForOrder(orderId);
-    this.assertCanAccessOrderMaterials(actor, record);
+    await this.assertCanAccessOrderMaterials(actor, record);
     const allocationIds = [...new Set(dto.allocationIds)];
     const allocations = await this.prisma.orderInventoryAllocation.findMany({
       where: { orderId, id: { in: allocationIds } },
@@ -648,7 +693,7 @@ export class ConstructionService {
   async recordMaterialLoss(user: AuthenticatedConstructionUser, orderId: string, dto: RecordMaterialLossDto) {
     const actor = await this.withStoreMember(user);
     const record = await this.findRecordForOrder(orderId);
-    this.assertCanAccessOrderMaterials(actor, record);
+    await this.assertCanAccessOrderMaterials(actor, record);
     await this.prisma.$transaction(async (tx) => {
       const batch = await tx.inventoryBatch.findFirst({
         where: { id: dto.batchId, allocations: { some: { orderId } } }
@@ -687,7 +732,7 @@ export class ConstructionService {
 
   async upsertWorker(user: AuthenticatedConstructionUser, dto: UpsertWorkerProfileDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canDispatchConstruction(actor, dto.storeId)) {
+    if (!await this.canAccess(actor, "construction", "write", dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.constructionWorkerProfile.upsert({
@@ -709,7 +754,7 @@ export class ConstructionService {
 
   async listWorkers(user: AuthenticatedConstructionUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, storeId)) {
+    if (!await this.canAccess(actor, "construction", "read", storeId)) {
       throw new ForbiddenException("无权限");
     }
     const profiles = await this.prisma.constructionWorkerProfile.findMany({
@@ -800,12 +845,10 @@ export class ConstructionService {
 
   async listLeaves(user: AuthenticatedConstructionUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, storeId)) {
+    if (!await this.canAccess(actor, "construction", "read", storeId)) {
       throw new ForbiddenException("无权限");
     }
-    const canReviewLeaves = PermissionPolicy.hasRuntimeSnapshot(actor.id)
-      ? PermissionPolicy.canRuntime(actor, "construction", "write", storeId)
-      : actor.isAuditor || actor.storeMember?.position === StorePosition.MANAGER || actor.storeMember?.position === StorePosition.SCHEDULER;
+    const canReviewLeaves = await this.canAccess(actor, "construction", "write", storeId);
     return this.prisma.leaveRequest.findMany({
       where: { storeId, ...(canReviewLeaves ? {} : { workerId: actor.id }) },
       orderBy: { createdAt: "desc" },
@@ -830,11 +873,9 @@ export class ConstructionService {
     }
     const applicantMember = await this.prisma.storeMember.findFirst({ where: { storeId: leave.storeId, userId: leave.workerId }, select: { position: true } });
     const isApplicantSupervisor = applicantMember?.position === StorePosition.SCHEDULER;
-    const canReview = PermissionPolicy.hasRuntimeSnapshot(actor.id)
-      ? PermissionPolicy.canRuntime(actor, "construction", "write", leave.storeId)
-      : isApplicantSupervisor
-        ? PermissionPolicy.isStoreManager(actor, leave.storeId)
-        : actor.isAuditor || (actor.storeMember?.storeId === leave.storeId && actor.storeMember?.position === StorePosition.SCHEDULER);
+    const canReview = isApplicantSupervisor
+      ? await this.canAccess(actor, "store", "write", leave.storeId)
+      : await this.canAccess(actor, "construction", "write", leave.storeId);
     if (!canReview || actor.id === leave.workerId) {
       throw new ForbiddenException("无权限");
     }
@@ -862,15 +903,9 @@ export class ConstructionService {
 
   async upsertSchedule(user: AuthenticatedConstructionUser, dto: UpsertScheduleDto) {
     const actor = await this.withStoreMember(user);
-    const position = actor.storeMember?.position;
-    const canUpdateOwnSchedule = PermissionPolicy.hasRuntimeSnapshot(actor.id)
-      ? Boolean(PermissionPolicy.hasRuntimeRole(actor, ["CONSTRUCTION", "APPRENTICE"], dto.storeId) && actor.id === dto.workerId)
-      : (
-        actor.storeMember?.storeId === dto.storeId &&
-        (position === StorePosition.CONSTRUCTION || position === StorePosition.APPRENTICE) &&
-        actor.id === dto.workerId
-      );
-    if (!PermissionPolicy.canDispatchConstruction(actor, dto.storeId) && !canUpdateOwnSchedule) {
+    const roles = await this.rolesFor(actor, dto.storeId);
+    const canUpdateOwnSchedule = Boolean((roles.has("CONSTRUCTION") || roles.has("APPRENTICE")) && actor.id === dto.workerId);
+    if (!await this.canAccess(actor, "construction", "write", dto.storeId) && !canUpdateOwnSchedule) {
       throw new ForbiddenException("无权限");
     }
     const date = normalizeDate(dto.date);
@@ -883,15 +918,13 @@ export class ConstructionService {
 
   async listSchedules(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, query.storeId)) {
+    if (!await this.canAccess(actor, "construction", "read", query.storeId)) {
       throw new ForbiddenException("无权限");
     }
 
-    const position = actor.storeMember?.position;
-    const isWorker = PermissionPolicy.hasRuntimeSnapshot(actor.id)
-      ? Boolean(PermissionPolicy.hasRuntimeRole(actor, ["CONSTRUCTION", "APPRENTICE"], query.storeId))
-      : position === StorePosition.CONSTRUCTION || position === StorePosition.APPRENTICE;
-    if (!isWorker && !PermissionPolicy.canDispatchConstruction(actor, query.storeId)) {
+    const roles = await this.rolesFor(actor, query.storeId);
+    const isWorker = roles.has("CONSTRUCTION") || roles.has("APPRENTICE");
+    if (!isWorker && !await this.canAccess(actor, "construction", "write", query.storeId)) {
       throw new ForbiddenException("无权限");
     }
 
@@ -899,7 +932,7 @@ export class ConstructionService {
       where: {
         storeId: query.storeId,
         date: buildDateRange(query.from, query.to),
-        workerId: isWorker && !PermissionPolicy.isAdmin(actor) ? actor.id : undefined
+        workerId: isWorker && !this.isAdministrator(roles) ? actor.id : undefined
       },
       orderBy: { date: "asc" },
       include: { worker: { select: { username: true, nickname: true } } }
@@ -983,22 +1016,22 @@ export class ConstructionService {
     return assignment?.workerUserId ?? "";
   }
 
-  private assertAssignedWorker(user: UserWithStoreMember, record: ConstructionRecordWithRelations) {
+  private async assertAssignedWorker(user: UserWithStoreMember, record: ConstructionRecordWithRelations) {
     const assignedWorkerId = this.getAssignedWorkerId(user.id, record);
     if (
       assignedWorkerId !== user.id &&
-      !PermissionPolicy.canWorkOnConstructionTask(user, record.storeId, assignedWorkerId)
+      !await this.canAccess(user, "construction", "write", record.storeId, assignedWorkerId)
     ) {
       throw new ForbiddenException("无权限");
     }
   }
 
-  private assertCanAccessOrderMaterials(user: UserWithStoreMember, record: ConstructionRecordWithRelations) {
+  private async assertCanAccessOrderMaterials(user: UserWithStoreMember, record: ConstructionRecordWithRelations) {
     const assignedWorkerId = this.getAssignedWorkerId(user.id, record);
     if (
-      !PermissionPolicy.canDispatchConstruction(user, record.storeId) &&
+      !await this.canAccess(user, "construction", "write", record.storeId) &&
       assignedWorkerId !== user.id &&
-      !PermissionPolicy.canWorkOnConstructionTask(user, record.storeId, assignedWorkerId)
+      !await this.canAccess(user, "construction", "write", record.storeId, assignedWorkerId)
     ) {
       throw new ForbiddenException("无权限");
     }
@@ -1046,6 +1079,16 @@ export class ConstructionService {
       isAuditor: user.isAuditor,
       storeMember: member
     };
+  }
+
+  private async rolesFor(actor: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext) throw new Error("ConstructionService access context is not configured");
+    const resolution = await this.accessContext.resolve(actor.id, { storeId });
+    return new Set(resolution.roles.map((role) => role.roleCode));
+  }
+
+  private isAdministrator(roles: Set<string>) {
+    return roles.has("HQ_ADMIN") || roles.has("PLATFORM_ADMIN") || roles.has("AUDITOR");
   }
 
   private dispatchNotification(userId: string, type: keyof typeof NotificationType, payload: object) {

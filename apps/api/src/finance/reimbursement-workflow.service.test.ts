@@ -14,6 +14,13 @@ const manager = {
   storeMember: { storeId: "store-1", position: StorePosition.MANAGER },
 };
 
+const accessContext = {
+  can: async (actorId: string, capability: string, action: string) =>
+    capability === "finance.reimbursement" && (action === "review" || action === "pay")
+      ? actorId === finance.id
+      : true,
+};
+
 test("ReimbursementWorkflowService separates finance approval from payment", async () => {
   const writes: unknown[] = [];
   const tx = {
@@ -42,7 +49,7 @@ test("ReimbursementWorkflowService separates finance approval from payment", asy
     $transaction: async (callback: (value: typeof tx) => unknown) =>
       callback(tx),
   };
-  const service = new ReimbursementWorkflowService(prisma as never);
+  const service = new ReimbursementWorkflowService(prisma as never, accessContext as never);
   const result = await service.review(finance, "r-1", {
     decision: "APPROVE",
     note: "已核验",
@@ -57,15 +64,13 @@ test("ReimbursementWorkflowService separates finance approval from payment", asy
 
 test("ReimbursementWorkflowService creates one payment and returns it on repeated pay", async () => {
   let creates = 0;
+  const writerInputs: unknown[] = [];
   const payment = { id: "payment-1" };
   const tx = {
     paymentRecord: {
       findFirst: async () => (creates ? payment : null),
       findUnique: async () => payment,
-      create: async () => {
-        creates += 1;
-        return payment;
-      },
+      create: async () => { throw new Error("workflow must not write PaymentRecord directly"); },
     },
     reimbursementApplication: { update: async (args: unknown) => args },
     financeApprovalRecord: { create: async (args: unknown) => args },
@@ -91,7 +96,14 @@ test("ReimbursementWorkflowService creates one payment and returns it on repeate
     $transaction: async (callback: (value: typeof tx) => unknown) =>
       callback(tx),
   };
-  const service = new ReimbursementWorkflowService(prisma as never);
+  const financeWriter = {
+    recordReimbursementPayout: async (_tx: unknown, input: unknown) => {
+      creates += 1;
+      writerInputs.push(input);
+      return payment;
+    },
+  };
+  const service = new ReimbursementWorkflowService(prisma as never, accessContext as never, financeWriter as never);
   const first = await service.pay(finance, "r-1", {
     paymentAccountId: "account-1",
     paidAt: "2026-07-13T10:00:00.000Z",
@@ -104,6 +116,16 @@ test("ReimbursementWorkflowService creates one payment and returns it on repeate
   assert.equal(second.paymentRecord.id, "payment-1");
   assert.equal(second.alreadyPaid, true);
   assert.equal(creates, 1);
+  assert.deepEqual(writerInputs, [{
+    storeId: "store-1",
+    accountId: "account-1",
+    amountCents: 1000,
+    sourceId: "r-1",
+    note: "报销打款",
+    createdById: "finance-1",
+    occurredAt: new Date("2026-07-13T10:00:00.000Z"),
+    idempotencyKey: "reimbursement:r-1:paid",
+  }]);
 });
 
 test("ReimbursementWorkflowService supports applicant withdraw and resubmit", async () => {
@@ -134,7 +156,7 @@ test("ReimbursementWorkflowService supports applicant withdraw and resubmit", as
     $transaction: async (callback: (value: typeof tx) => unknown) =>
       callback(tx),
   };
-  const service = new ReimbursementWorkflowService(prisma as never);
+  const service = new ReimbursementWorkflowService(prisma as never, accessContext as never);
   await service.withdraw(manager, "r-2", "改正后重新提交");
   assert.equal(JSON.stringify(writes).includes("WITHDRAWN"), true);
 
@@ -152,6 +174,7 @@ test("ReimbursementWorkflowService supports applicant withdraw and resubmit", as
   };
   const rejectedService = new ReimbursementWorkflowService(
     rejectedPrisma as never,
+    accessContext as never,
   );
   await rejectedService.resubmit(manager, "r-3", {
     title: "补充费用",
@@ -176,7 +199,7 @@ test('ReimbursementWorkflowService rejects amounts above linked expense remainin
     },
     $transaction: async (callback: (value: typeof tx) => unknown) => callback(tx),
   };
-  const service = new ReimbursementWorkflowService(prisma as never);
+  const service = new ReimbursementWorkflowService(prisma as never, accessContext as never);
   await assert.rejects(
     () => service.create(manager, {
       storeId: 'store-1',

@@ -3,6 +3,18 @@ import { test } from "node:test";
 import { OrderStatus, RebateStatus, StorePosition } from "@prisma/client";
 import { RebatesService } from "./rebates.service";
 
+const rebateAccess = {
+  can: async () => true,
+  resolve: async (actorId: string) => ({
+    roles: [{
+      roleCode: actorId.startsWith("sales") ? "SALES" : actorId.startsWith("finance") ? "FINANCE" : actorId.startsWith("cs") ? "CUSTOMER_SERVICE" : "MANAGER",
+      roleName: "测试角色",
+      scopeType: "STORE",
+      scopeIds: ["store-1"]
+    }]
+  })
+};
+
 test("RebatesService applies approves and pays rebate for paid completed order", async () => {
   const writes: unknown[] = [];
   const reviewedStatus = "REVIEWED" as RebateStatus;
@@ -36,9 +48,19 @@ test("RebatesService applies approves and pays rebate for paid completed order",
       }
     },
     rebateLog: { create: async (args: unknown) => writes.push(args) },
-    paymentRecord: { create: async (args: unknown) => writes.push(args) }
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      customerRebate: { update: async (args: { data: { status: RebateStatus } }) => {
+        writes.push(args);
+        currentStatus = args.data.status;
+        return { id: "rebate-1", status: currentStatus };
+      } },
+      rebateLog: { create: async (args: unknown) => writes.push(args) }
+    })
   };
-  const service = new RebatesService(prisma as never);
+  const finance = {
+    recordRebatePayout: async (_tx: unknown, input: unknown) => writes.push({ type: "REBATE", input })
+  };
+  const service = new RebatesService(prisma as never, rebateAccess as never, finance as never);
 
   await service.apply(
     { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
@@ -64,6 +86,45 @@ test("RebatesService applies approves and pays rebate for paid completed order",
   assert.equal(JSON.stringify(writes).includes("REBATE"), true);
 });
 
+test("RebatesService delegates payout cash-fact writing to Finance inside the transaction", async () => {
+  const calls: unknown[] = [];
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    customerRebate: {
+      findUnique: async () => ({ id: "rebate-1", storeId: "store-1", amountCents: 2000, status: RebateStatus.APPROVED })
+    },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      customerRebate: { update: async () => ({ id: "rebate-1", status: RebateStatus.PAID }) },
+      rebateLog: { create: async (args: unknown) => calls.push({ kind: "log", args }) }
+    })
+  };
+  const finance = {
+    recordRebatePayout: async (_tx: unknown, input: unknown) => calls.push({ kind: "finance", input })
+  };
+  const service = new RebatesService(prisma as never, rebateAccess as never, finance as never);
+
+  await service.pay(
+    { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
+    "rebate-1",
+    { note: "paid" }
+  );
+
+  assert.deepEqual(calls, [
+    { kind: "log", args: { data: { rebateId: "rebate-1", status: RebateStatus.PAID, note: "paid", createdById: "finance-1" } } },
+    {
+      kind: "finance",
+      input: {
+        storeId: "store-1",
+        amountCents: 2000,
+        sourceId: "rebate-1",
+        note: "paid",
+        createdById: "finance-1",
+        idempotencyKey: "rebate:rebate-1:paid"
+      }
+    }
+  ]);
+});
+
 test("RebatesService requires business review before finance approval", async () => {
   const writes: unknown[] = [];
   const reviewedStatus = "REVIEWED" as RebateStatus;
@@ -85,7 +146,7 @@ test("RebatesService requires business review before finance approval", async ()
     },
     rebateLog: { create: async (args: unknown) => writes.push(args) }
   };
-  const service = new RebatesService(prisma as never);
+  const service = new RebatesService(prisma as never, rebateAccess as never);
 
   const reviewed = await service.approve(
     { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
@@ -120,7 +181,7 @@ test("RebatesService rejects finance approval before business review", async () 
     },
     rebateLog: { create: async () => undefined }
   };
-  const service = new RebatesService(prisma as never);
+  const service = new RebatesService(prisma as never, rebateAccess as never);
 
   await assert.rejects(
     () =>
@@ -149,7 +210,7 @@ test("RebatesService rejects manager direct finance approval", async () => {
     },
     rebateLog: { create: async () => undefined }
   };
-  const service = new RebatesService(prisma as never);
+  const service = new RebatesService(prisma as never, rebateAccess as never);
 
   await assert.rejects(
     () =>
@@ -181,7 +242,7 @@ test("RebatesService rejects paying rebate before approval", async () => {
     rebateLog: { create: async (args: unknown) => writes.push(args) },
     paymentRecord: { create: async (args: unknown) => writes.push(args) }
   };
-  const service = new RebatesService(prisma as never);
+  const service = new RebatesService(prisma as never, rebateAccess as never);
 
   await assert.rejects(
     () =>
@@ -216,7 +277,7 @@ test("RebatesService lets customer service apply rebate for same-store paid comp
       }
     }
   };
-  const service = new RebatesService(prisma as never);
+  const service = new RebatesService(prisma as never, rebateAccess as never);
 
   const rebate = await service.apply(
     {
@@ -242,7 +303,7 @@ test("RebatesService lists rebates with order customer and vehicle summary", asy
       }
     }
   };
-  const service = new RebatesService(prisma as never);
+  const service = new RebatesService(prisma as never, rebateAccess as never);
 
   await service.list(
     { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
@@ -274,7 +335,7 @@ test("RebatesService rejects sales applying rebate for another sales person's or
       }
     }
   };
-  const service = new RebatesService(prisma as never);
+  const service = new RebatesService(prisma as never, rebateAccess as never);
 
   await assert.rejects(
     () =>
@@ -297,7 +358,7 @@ test("RebatesService limits sales rebate list to their own orders", async () => 
       }
     }
   };
-  const service = new RebatesService(prisma as never);
+  const service = new RebatesService(prisma as never, rebateAccess as never);
 
   await service.list(
     { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },

@@ -16,12 +16,13 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { PermissionPolicy } from "../common/policies/permission.policy";
+import { AccessContext } from "../permissions/domain/access-context";
 import type { MulterFile } from "../users/multer-file.type";
 import { ConstructionService, type AuthenticatedConstructionUser } from "./construction.service";
 import { CapacityReservationService } from "./capacity-reservation.service";
 import { ConstructionCostSettlementService } from "./construction-cost-settlement.service";
 import { CrossStoreConstructionService } from "./cross-store-construction.service";
+import { ConstructionFulfillment } from "./construction-fulfillment";
 import {
   CancelCrossStoreTaskDto,
   CompleteCrossStoreAcceptanceDto,
@@ -65,12 +66,14 @@ export class ConstructionController {
     private readonly construction: ConstructionService,
     private readonly capacities: CapacityReservationService,
     private readonly costSettlements: ConstructionCostSettlementService,
-    private readonly crossStore: CrossStoreConstructionService
+    private readonly crossStore: CrossStoreConstructionService,
+    private readonly fulfillment: ConstructionFulfillment,
+    private readonly accessContext: AccessContext
   ) {}
 
   @Get("cross-store/tasks")
   listCrossStoreTasks(@Req() req: AuthRequest, @Query() query: ListCrossStoreTasksDto) {
-    return this.crossStore.list(req.user, query);
+    return this.fulfillment.listCrossStoreTasks(req.user, query);
   }
 
   @Get("cross-store/tasks/:id")
@@ -80,7 +83,7 @@ export class ConstructionController {
 
   @Post("cross-store/tasks/:id/accept")
   acceptCrossStoreTask(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.crossStore.accept(req.user, id);
+    return this.fulfillment.acceptCrossStoreTask(req.user, id);
   }
 
   @Post("cross-store/tasks/:id/reject")
@@ -89,7 +92,7 @@ export class ConstructionController {
     @Param("id") id: string,
     @Body() dto: RejectCrossStoreTaskDto
   ) {
-    return this.crossStore.reject(req.user, id, dto);
+    return this.fulfillment.rejectCrossStoreTask(req.user, id, dto);
   }
 
   @Post("cross-store/tasks/:id/cancel")
@@ -98,7 +101,7 @@ export class ConstructionController {
     @Param("id") id: string,
     @Body() dto: CancelCrossStoreTaskDto
   ) {
-    return this.crossStore.cancel(req.user, id, dto);
+    return this.fulfillment.cancelCrossStoreTask(req.user, id, dto);
   }
 
   @Post("cross-store/tasks/:id/submit-acceptance")
@@ -107,12 +110,12 @@ export class ConstructionController {
     @Param("id") id: string,
     @Body() dto: CompleteCrossStoreAcceptanceDto
   ) {
-    return this.crossStore.submitForSourceAcceptance(req.user, id, dto);
+    return this.fulfillment.submitCrossStoreAcceptance(req.user, id, dto);
   }
 
   @Post("cross-store/tasks/:id/source-accept")
   acceptCrossStoreTaskBySource(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.crossStore.completeSourceAcceptance(req.user, id);
+    return this.fulfillment.acceptCrossStoreBySource(req.user, id);
   }
 
   @Get("cross-store/product-mappings")
@@ -198,8 +201,13 @@ export class ConstructionController {
 
   @Get("capacities/reconciliation")
   reconcileCapacities(@Req() req: AuthRequest, @Query() query: ListConstructionDto) {
-    const member = req.user.storeMember;
-    if (!PermissionPolicy.isStoreManager(req.user, query.storeId)) throw new ForbiddenException("只有店长可以执行容量对账");
+    return this.reconcileCapacitiesForActor(req.user, query);
+  }
+
+  private async reconcileCapacitiesForActor(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
+    if (!await this.accessContext.can(user.id, "store", "write", { storeId: query.storeId })) {
+      throw new ForbiddenException("只有店长可以执行容量对账");
+    }
     return this.capacities.reconcile(query.storeId, query.from ?? new Date().toISOString(), false);
   }
 
@@ -210,17 +218,27 @@ export class ConstructionController {
 
   @Get("assignments")
   listAssignments(@Req() req: AuthRequest, @Query() query: ListConstructionDto) {
-    return this.construction.listAssignments(req.user, query);
+    return this.fulfillment.listAssignments(req.user, query);
+  }
+
+  @Get("fulfillments")
+  listFulfillments(@Req() req: AuthRequest, @Query() query: ListConstructionDto) {
+    return this.fulfillment.listFulfillments(req.user, query);
   }
 
   @Post("orders/:orderId/assign")
   assignOrder(@Req() req: AuthRequest, @Param("orderId") orderId: string, @Body() dto: AssignOrderDto) {
-    return this.construction.assignOrder(req.user, orderId, dto);
+    return this.fulfillment.assign(req.user, orderId, dto);
+  }
+
+  @Get("orders/:orderId/fulfillment")
+  getFulfillmentView(@Req() req: AuthRequest, @Param("orderId") orderId: string) {
+    return this.fulfillment.getFulfillmentView(req.user, orderId);
   }
 
   @Post("orders/:orderId/start")
   startOrder(@Req() req: AuthRequest, @Param("orderId") orderId: string, @Body() dto: StartConstructionDto) {
-    return this.construction.startOrder(req.user, orderId, dto);
+    return this.fulfillment.start(req.user, orderId, dto);
   }
 
   @Post("orders/:orderId/complete")
@@ -229,7 +247,7 @@ export class ConstructionController {
     @Param("orderId") orderId: string,
     @Body() dto: CompleteConstructionDto
   ) {
-    return this.construction.completeOrderForOrder(req.user, orderId, dto);
+    return this.fulfillment.complete(req.user, orderId, dto);
   }
 
   @Post("records/:recordId/photos")
@@ -240,17 +258,22 @@ export class ConstructionController {
     @Body() dto: UploadConstructionPhotoDto,
     @UploadedFile() file?: MulterFile
   ) {
-    return this.construction.uploadPhoto(req.user, recordId, dto, file);
+    return this.fulfillment.recordEvidence(req.user, recordId, dto, file);
   }
 
   @Post("records/:recordId/quality-check")
   qualityCheck(@Req() req: AuthRequest, @Param("recordId") recordId: string, @Body() dto: QualityCheckDto) {
-    return this.construction.qualityCheck(req.user, recordId, dto);
+    return this.fulfillment.qualityCheck(req.user, recordId, dto);
+  }
+
+  @Get("records/:recordId/quality-history")
+  qualityHistory(@Req() req: AuthRequest, @Param("recordId") recordId: string) {
+    return this.fulfillment.qualityHistory(req.user, recordId);
   }
 
   @Get("orders/:orderId/materials")
   getOrderMaterials(@Req() req: AuthRequest, @Param("orderId") orderId: string) {
-    return this.construction.getOrderMaterials(req.user, orderId);
+    return this.fulfillment.getMaterials(req.user, orderId);
   }
 
   @Post("orders/:orderId/materials/verify-batch")
@@ -259,7 +282,7 @@ export class ConstructionController {
     @Param("orderId") orderId: string,
     @Body() dto: VerifyMaterialBatchDto
   ) {
-    return this.construction.verifyMaterialBatch(req.user, orderId, dto);
+    return this.fulfillment.verifyMaterialBatch(req.user, orderId, dto);
   }
 
   @Post("orders/:orderId/materials/pickup")
@@ -268,7 +291,7 @@ export class ConstructionController {
     @Param("orderId") orderId: string,
     @Body() dto: PickupConstructionMaterialDto
   ) {
-    return this.construction.pickupMaterials(req.user, orderId, dto);
+    return this.fulfillment.pickupMaterials(req.user, orderId, dto);
   }
 
   @Post("orders/:orderId/materials/losses")
@@ -277,7 +300,7 @@ export class ConstructionController {
     @Param("orderId") orderId: string,
     @Body() dto: RecordMaterialLossDto
   ) {
-    return this.construction.recordMaterialLoss(req.user, orderId, dto);
+    return this.fulfillment.recordMaterialLoss(req.user, orderId, dto);
   }
 
   @Get("workers")
@@ -322,6 +345,6 @@ export class ConstructionController {
 
   @Post("offline-sync")
   syncOfflineOperations(@Req() req: AuthRequest, @Body() dto: OfflineSyncDto) {
-    return this.construction.syncOfflineOperations(req.user, dto);
+    return this.fulfillment.syncOffline(req.user, dto);
   }
 }

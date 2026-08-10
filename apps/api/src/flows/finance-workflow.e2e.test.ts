@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { FinanceApprovalStatus, StorePosition } from "@prisma/client";
 import { ExpenseWorkflowService } from "../finance/expense-workflow.service";
+import { FinanceService } from "../finance/finance.service";
 import { FinanceQueryService } from "../finance/finance-query.service";
 import { ReimbursementWorkflowService } from "../finance/reimbursement-workflow.service";
 
@@ -115,9 +116,11 @@ function createFinanceMemory() {
 
 test("finance workflow closes from expense submission to one payment ledger record", async () => {
   const memory = createFinanceMemory();
-  const expenseWorkflow = new ExpenseWorkflowService(memory.prisma);
-  const reimbursementWorkflow = new ReimbursementWorkflowService(memory.prisma);
-  const query = new FinanceQueryService(memory.prisma);
+  const accessContext = { can: async () => true };
+  const expenseWorkflow = new ExpenseWorkflowService(memory.prisma, accessContext as never);
+  const financeWriter = new FinanceService(memory.prisma);
+  const reimbursementWorkflow = new ReimbursementWorkflowService(memory.prisma, accessContext as never, financeWriter);
+  const query = new FinanceQueryService(memory.prisma, { can: async () => true } as never);
 
   const expense = await expenseWorkflow.create(applicant, {
     storeId: "store-1",

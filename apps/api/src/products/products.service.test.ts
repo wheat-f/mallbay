@@ -3,6 +3,22 @@ import { test } from "node:test";
 import { ProductCategory, ProductStatus, ProductUnit, StorePosition } from "@prisma/client";
 import { ProductsService } from "./products.service";
 
+const productAccess = {
+  can: async (actorId: string, capability: string, action: string) => {
+    if (capability === "products") return action === "read" || actorId.startsWith("manager") || actorId.startsWith("purchasing");
+    if (capability === "finance") return actorId.startsWith("manager") || actorId.startsWith("finance");
+    return true;
+  },
+  resolve: async (actorId: string) => ({
+    roles: [{
+      roleCode: actorId.startsWith("manager") ? "MANAGER" : actorId.startsWith("purchasing") ? "PURCHASING" : actorId.startsWith("finance") ? "FINANCE" : actorId.startsWith("sales") ? "SALES" : "CUSTOMER_SERVICE",
+      roleName: "测试角色",
+      scopeType: "STORE",
+      scopeIds: ["store-1"]
+    }]
+  })
+};
+
 test("ProductsService creates active products for store managers", async () => {
   const prisma = {
     product: {
@@ -25,7 +41,7 @@ test("ProductsService creates active products for store managers", async () => {
       }
     }
   };
-  const service = new ProductsService(prisma as never);
+  const service = new ProductsService(prisma as never, productAccess as never);
 
   const result = await service.create(
     {
@@ -59,7 +75,7 @@ test("ProductsService persists structured inventory conversion fields", async ()
       }
     }
   };
-  const service = new ProductsService(prisma as never);
+  const service = new ProductsService(prisma as never, productAccess as never);
 
   await service.create(
     {
@@ -115,7 +131,7 @@ test("ProductsService prevents purchasing from creating a product with a suggest
         return { id: "product-1" };
       }
     }
-  } as never);
+  } as never, productAccess as never);
 
   await assert.rejects(
     () => service.create(
@@ -144,7 +160,7 @@ test("ProductsService rejects product updates from sales", async () => {
     product: {
       findUnique: async () => ({ id: "product-1", storeId: "store-1" })
     }
-  } as never);
+  } as never, productAccess as never);
 
   await assert.rejects(
     () =>
@@ -172,7 +188,7 @@ test("ProductsService rejects customer service product mutations", async () => {
         throw new Error("customer service should not update products");
       }
     }
-  } as never);
+  } as never, productAccess as never);
   const user = {
     id: "customer-service-1",
     isAuditor: false,

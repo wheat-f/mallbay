@@ -3,6 +3,15 @@ import assert from "node:assert/strict";
 import { calculatePricing } from "./domain/pricing-engine";
 import { PricingService } from "./pricing.service";
 
+const pricingAccess = {
+  can: async (actor: string, capability: string, action: string) => {
+    if (capability === "finance") return actor.includes("finance") || actor.includes("admin");
+    if (capability === "store") return actor.includes("manager") || actor.includes("admin");
+    return action === "read" || actor.includes("manager") || actor.includes("admin");
+  },
+  resolve: async (actor: string) => ({ roles: [{ roleCode: actor.includes("admin") ? "HQ_ADMIN" : actor.includes("finance") ? "FINANCE" : "MANAGER" }] })
+};
+
 const user = {
   id: "user-1",
   isAuditor: false,
@@ -48,7 +57,7 @@ function createService() {
       })
     }
   };
-  return new PricingService(prisma as never, {} as never);
+  return new PricingService(prisma as never, {} as never, undefined, pricingAccess as never);
 }
 
 test("正式订单只能复用与试算快照一致的产品行", async () => {
@@ -164,7 +173,7 @@ test("未指定规则集时自动使用当前生效版本并返回实际规则�
       };
     }
   };
-  const service = new PricingService(prisma as never, pricingRules as never);
+  const service = new PricingService(prisma as never, pricingRules as never, undefined, pricingAccess as never);
 
   const result = await service.calculate(user, {
     storeId: "store-1",
@@ -206,7 +215,7 @@ test("缺少门店运行模式时按 LEGACY 处理，不能意外启用新价格
         salesUnit: "METER", basePriceCents: 100000, quantityPrecision: 3
       }]
     }
-  } as never, { getForCalculation: async () => null } as never);
+  } as never, { getForCalculation: async () => null } as never, undefined, pricingAccess as never);
 
   const result = await service.calculate(user, {
     storeId: "store-1",

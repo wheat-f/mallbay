@@ -3,6 +3,27 @@ import { test } from "node:test";
 import { ConstructionTaskStatus, CustomerType, InvoiceStatus, OrderStatus, StorePosition } from "@prisma/client";
 import { InvoicesService } from "./invoices.service";
 
+const invoiceAccess = {
+  can: async (actorId: string, capability: string, action: string, context: { ownerId?: string }) => {
+    const managerOrFinance = actorId.includes("manager") || actorId.includes("finance") || actorId.includes("admin");
+    if (capability === "finance" && action === "write") {
+      return context.ownerId ? managerOrFinance || context.ownerId === actorId : managerOrFinance;
+    }
+    if (capability === "finance.document" && action === "read") {
+      return managerOrFinance || context.ownerId === actorId;
+    }
+    return true;
+  },
+  resolve: async (actorId: string) => ({
+    roles: [{
+      roleCode: actorId.startsWith("sales") ? "SALES" : "MANAGER",
+      roleName: "测试角色",
+      scopeType: "STORE",
+      scopeIds: ["store-1"]
+    }]
+  })
+};
+
 test("InvoicesService applies and issues invoice for paid completed order", async () => {
   const writes: unknown[] = [];
   const prisma = {
@@ -34,7 +55,7 @@ test("InvoicesService applies and issues invoice for paid completed order", asyn
     },
     invoiceLog: { create: async (args: unknown) => writes.push(args) }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
 
   await service.apply(
     { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
@@ -74,7 +95,7 @@ test("InvoicesService accepts a paid order whose construction record is complete
       }
     }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
 
   await service.apply(
     { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
@@ -107,7 +128,7 @@ test("InvoicesService rejects sales applying invoice for another sales person's 
       }
     }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
 
   await assert.rejects(
     () => service.apply(
@@ -139,7 +160,7 @@ test("InvoicesService auto generates a local PDF URL when issuing without fileUr
     },
     invoiceLog: { create: async (args: unknown) => writes.push(args) }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
 
   await service.issue(
     { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
@@ -171,7 +192,7 @@ test("InvoicesService records sending issued invoice without changing invoice st
       }
     }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
 
   const result = await service.send(
     { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
@@ -196,7 +217,7 @@ test("InvoicesService list includes order status and amount summary for invoice 
       }
     }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
 
   await service.list(
     { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
@@ -219,7 +240,7 @@ test("InvoicesService lists invoices with order customer and vehicle summary", a
       }
     }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
 
   await service.list(
     { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
@@ -244,7 +265,7 @@ test("InvoicesService limits sales invoice list to their own orders", async () =
       }
     }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
 
   await service.list(
     { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
@@ -275,7 +296,7 @@ test("InvoicesService creates a company multi-order invoice with explicit alloca
       create: async (args: unknown) => { createArgs = args; return { id: "company-invoice-1", status: InvoiceStatus.APPLIED, allocations: [] }; }
     }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
   await service.apply(
     { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
     {
@@ -305,7 +326,7 @@ test("InvoicesService rejects multi-order invoice for a personal customer", asyn
     ] },
     invoice: { findMany: async () => [], create: async () => { throw new Error("should not create"); } }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
   await assert.rejects(
     () => service.apply(
       { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
@@ -326,7 +347,7 @@ test("InvoicesService ignores voided invoices when calculating remaining amount"
       create: async (args: unknown) => { createArgs = args; return { id: "invoice-after-void", status: InvoiceStatus.APPLIED, allocations: [] }; }
     }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
   await service.apply(
     { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
     { orderId: "voided-order", title: "作废后重新申请", amountCents: 10000 }
@@ -342,7 +363,7 @@ test("InvoicesService refuses to reissue an invoice that is not voided", async (
   const prisma = {
     invoice: { findUnique: async () => ({ id: "issued-invoice", status: InvoiceStatus.ISSUED }) }
   };
-  const service = new InvoicesService(prisma as never);
+  const service = new InvoicesService(prisma as never, invoiceAccess as never);
   await assert.rejects(
     () => service.reissue(
       { id: "finance-1", isAuditor: true, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },

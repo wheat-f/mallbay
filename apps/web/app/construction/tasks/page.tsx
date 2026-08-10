@@ -21,6 +21,7 @@ type TaskRow = {
   status: string;
   startedAt?: string | null;
   completedAt?: string | null;
+  photoCount?: number;
   order?: {
     orderNo?: string | null;
     appointmentDate?: string | null;
@@ -41,7 +42,7 @@ export default function ConstructionTasksPage() {
 
   const tasksQuery = useQuery({
     queryKey: ["construction-tasks", storeId],
-    queryFn: () => constructionApi.assignments({ storeId: storeId! }),
+    queryFn: () => constructionApi.fulfillments({ storeId: storeId! }),
     enabled: Boolean(storeId)
   });
 
@@ -63,7 +64,22 @@ export default function ConstructionTasksPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
-  const rows = useMemo(() => (tasksQuery.data ?? []) as TaskRow[], [tasksQuery.data]);
+  const rows = useMemo(
+    () => (tasksQuery.data?.items ?? []).map((item) => ({
+      id: item.id,
+      orderId: item.orderId,
+      status: item.constructionStatus,
+      photoCount: item.photoCount,
+      order: {
+        orderNo: item.orderNo,
+        appointmentDate: item.appointmentDate,
+        appointmentTimeSlot: item.appointmentTimeSlot,
+        constructionLocation: item.constructionLocation,
+        outsideAddress: null
+      }
+    } satisfies TaskRow)),
+    [tasksQuery.data?.items]
+  );
   const todayKey = new Date().toISOString().slice(0, 10);
   const workerRows = useMemo(
     () => rows.map((row) => ({
@@ -291,6 +307,6 @@ function formatLocation(row: TaskRow) {
 }
 
 function formatPhotoProgress(row: TaskRow) {
-  const count = new Set((row.photos ?? []).map((photo) => photo.stage).filter(Boolean)).size;
+  const count = row.photoCount ?? new Set((row.photos ?? []).map((photo) => photo.stage).filter(Boolean)).size;
   return `照片 ${count}/3`;
 }

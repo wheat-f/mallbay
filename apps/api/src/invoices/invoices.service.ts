@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConstructionTaskStatus, CustomerType, InvoiceStatus, OrderStatus, Prisma, StorePosition } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { ApplyInvoiceDto, InvoiceActionDto, IssueInvoiceDto, ListInvoicesDto, SendInvoiceDto } from "./dto/invoice.dto";
 import { InvoicePdfService } from "./invoice-pdf.service";
@@ -12,6 +13,7 @@ export type AuthenticatedInvoiceUser = UserWithStoreMember & { username?: string
 export class InvoicesService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly accessContext: AccessContext,
     private readonly invoicePdf: InvoicePdfService = new InvoicePdfService()
   ) {}
 
@@ -46,7 +48,7 @@ export class InvoicesService {
 
     const invoiceableStatuses: OrderStatus[] = [OrderStatus.COMPLETED, OrderStatus.WARRANTIED];
     for (const order of orders) {
-      if (!PermissionPolicy.canApplyInvoiceForOrder(actor, order.storeId, order.salesPersonId)) {
+      if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: order.storeId, ownerId: order.salesPersonId })) {
         throw new ForbiddenException("无权限");
       }
       const constructionCompleted = order.constructionRecord?.status === ConstructionTaskStatus.COMPLETED;
@@ -147,7 +149,7 @@ export class InvoicesService {
       include: { order: { select: { orderNo: true } } }
     });
     if (!invoice) throw new NotFoundException("发票不存在");
-    if (!PermissionPolicy.canManageInvoice(actor, invoice.storeId)) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: invoice.storeId })) throw new ForbiddenException("无权限");
     const fileUrl = dto.fileUrl ?? (await this.invoicePdf.generate(invoice, dto.invoiceNo));
     const updated = await this.prisma.invoice.update({
       where: { id },
@@ -180,7 +182,7 @@ export class InvoicesService {
     const actor = await this.withStoreMember(user);
     const invoice = await this.prisma.invoice.findUnique({ where: { id } });
     if (!invoice) throw new NotFoundException("发票不存在");
-    if (!PermissionPolicy.canManageInvoice(actor, invoice.storeId)) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: invoice.storeId })) throw new ForbiddenException("无权限");
     if (invoice.status !== InvoiceStatus.ISSUED && invoice.status !== InvoiceStatus.REISSUED) {
       throw new BadRequestException("已开具或已重开发票才能发送");
     }
@@ -200,8 +202,8 @@ export class InvoicesService {
 
   async list(user: AuthenticatedInvoiceUser, query: ListInvoicesDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, query.storeId)) throw new ForbiddenException("无权限");
-    const where = buildInvoiceListScope(actor, query.storeId);
+    if (!await this.accessContext.can(actor.id, "finance.document", "read", { storeId: query.storeId, ownerId: actor.id })) throw new ForbiddenException("无权限");
+    const where = buildInvoiceListScope(query.storeId, await this.isSalesActor(actor, query.storeId) ? actor.id : undefined);
     return this.prisma.invoice.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -238,7 +240,7 @@ export class InvoicesService {
     const actor = await this.withStoreMember(user);
     const invoice = await this.prisma.invoice.findUnique({ where: { id } });
     if (!invoice) throw new NotFoundException("发票不存在");
-    if (!PermissionPolicy.canManageInvoice(actor, invoice.storeId)) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: invoice.storeId })) throw new ForbiddenException("无权限");
     const updated = await this.prisma.invoice.update({ where: { id }, data: { status } });
     await this.prisma.invoiceLog.create({ data: { invoiceId: id, status, note, createdById: actor.id } });
     return updated;
@@ -252,20 +254,20 @@ export class InvoicesService {
     });
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
   }
+
+  private async isSalesActor(actor: UserWithStoreMember, storeId: string) {
+    if (actor.isAuditor) return false;
+    const access = await this.accessContext.resolve(actor.id, { storeId });
+    return access.roles.some((role) => role.roleCode === StorePosition.SALES && (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
+  }
 }
 
-function buildInvoiceListScope(actor: UserWithStoreMember, storeId: string): Prisma.InvoiceWhereInput {
+export function buildInvoiceListScope(storeId: string, salesPersonId?: string): Prisma.InvoiceWhereInput {
   const where: Prisma.InvoiceWhereInput = { storeId };
-  if (PermissionPolicy.hasRuntimeSnapshot(actor.id)) {
-    if (!PermissionPolicy.canRuntime(actor, "finance", "read", storeId)) return { storeId: "__no_store__" };
-    if (PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) where.OR = [
-      { order: { salesPersonId: actor.id } },
-      { allocations: { some: { order: { salesPersonId: actor.id } } } }
-    ];
-  } else if (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES) {
+  if (salesPersonId) {
     where.OR = [
-      { order: { salesPersonId: actor.id } },
-      { allocations: { some: { order: { salesPersonId: actor.id } } } }
+      { order: { salesPersonId } },
+      { allocations: { some: { order: { salesPersonId } } } }
     ];
   }
   return where;

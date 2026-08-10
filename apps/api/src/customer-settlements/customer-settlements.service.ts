@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -11,16 +12,16 @@ import {
   CustomerStatementStatus,
   CustomerType,
   OrderStatus,
-  PaymentDirection,
-  PaymentRecordType,
   PaymentType,
   StorePosition
 } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { AuditEventWriter } from "../observability/audit-event-writer";
 import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 import { PrismaService } from "../prisma/prisma.service";
+import { FinanceService } from "../finance/finance.service";
 import {
   CreateCustomerReceiptDto,
   CreateCustomerStatementDto,
@@ -47,8 +48,14 @@ const SETTLED_ORDER_STATUSES = [OrderStatus.COMPLETED, OrderStatus.WARRANTIED];
 export class CustomerSettlementsService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly auditWriter?: AuditEventWriter
+    private readonly accessContext: AccessContext,
+    @Optional() private readonly auditWriter?: AuditEventWriter,
+    @Optional() private readonly finance?: FinanceService
   ) {}
+
+  private canAccess(actor: UserWithStoreMember, capability: string, action: string, storeId: string, ownerId?: string) {
+    return this.accessContext.can(actor.id, capability, action, { storeId, ownerId });
+  }
 
   async listStatementCandidates(
     user: AuthenticatedSettlementUser,
@@ -69,7 +76,7 @@ export class CustomerSettlementsService {
     query: ListCustomerStatementsDto
   ) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageFinance(actor, query.storeId)) {
+    if (!await this.canAccess(actor, "finance", "write", query.storeId)) {
       if (!query.customerId) throw new ForbiddenException("请选择有权限查看的客户");
       await this.assertCanViewCustomer(actor, query.storeId, query.customerId);
     }
@@ -214,7 +221,7 @@ export class CustomerSettlementsService {
     const actor = await this.withStoreMember(user);
     const statement = await this.prisma.customerStatement.findUnique({ where: { id } });
     if (!statement) throw new NotFoundException("对账单不存在");
-    if (!PermissionPolicy.canManageFinance(actor, statement.storeId)) {
+    if (!await this.canAccess(actor, "finance", "write", statement.storeId)) {
       throw new ForbiddenException("仅店长或财务可以作废对账单");
     }
     const reason = dto.reason?.trim();
@@ -245,7 +252,7 @@ export class CustomerSettlementsService {
     dto: PreviewCustomerReceiptDto
   ) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManageReceipts(actor, dto.storeId);
+    await this.assertCanManageReceipts(actor, dto.storeId);
     const customer = await this.requireCustomer(dto.storeId, dto.customerId);
     this.assertCompanyCustomer(customer.customerType);
 
@@ -267,7 +274,7 @@ export class CustomerSettlementsService {
     query: ListCustomerReceiptsDto
   ) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManageReceipts(actor, query.storeId);
+    await this.assertCanManageReceipts(actor, query.storeId);
     const receipts = await this.prisma.customerReceipt.findMany({
       where: {
         storeId: query.storeId,
@@ -287,7 +294,7 @@ export class CustomerSettlementsService {
       include: receiptInclude
     });
     if (!receipt) throw new NotFoundException("企业收款不存在");
-    this.assertCanManageReceipts(actor, receipt.storeId);
+    await this.assertCanManageReceipts(actor, receipt.storeId);
     return withReversedAmount(receipt);
   }
 
@@ -296,7 +303,7 @@ export class CustomerSettlementsService {
     dto: CreateCustomerReceiptDto
   ) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManageReceipts(actor, dto.storeId);
+    await this.assertCanManageReceipts(actor, dto.storeId);
     const customer = await this.requireCustomer(dto.storeId, dto.customerId);
     this.assertCompanyCustomer(customer.customerType);
 
@@ -317,6 +324,16 @@ export class CustomerSettlementsService {
     const candidateById = new Map(candidates.map((candidate) => [candidate.orderId, candidate]));
 
     return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.customerReceipt.findFirst({
+        where: { storeId: dto.storeId, idempotencyKey: dto.idempotencyKey.trim() },
+        include: receiptInclude
+      });
+      if (existing) {
+        if (existing.customerId !== dto.customerId || existing.amountCents !== dto.amountCents || existing.accountId !== dto.accountId) {
+          throw new ConflictException("收款幂等键已用于其他收款操作");
+        }
+        return withReversedAmount(existing);
+      }
       const receipt = await tx.customerReceipt.create({
         data: {
           storeId: dto.storeId,
@@ -329,6 +346,7 @@ export class CustomerSettlementsService {
           bankSerialNo: dto.bankSerialNo?.trim() || undefined,
           note: dto.note?.trim() || undefined,
           status: CustomerReceiptStatus.POSTED,
+          idempotencyKey: dto.idempotencyKey.trim(),
           createdById: actor.id,
           postedById: actor.id,
           postedAt: new Date()
@@ -360,19 +378,20 @@ export class CustomerSettlementsService {
         });
       }
 
-      await tx.paymentRecord.create({
-        data: {
+      if (this.finance) {
+        await this.finance.recordCustomerReceipt(tx, {
           storeId: dto.storeId,
           accountId: dto.accountId,
-          type: PaymentRecordType.CUSTOMER_RECEIPT,
-          direction: PaymentDirection.INCOME,
           amountCents: dto.amountCents,
           sourceId: receipt.id,
           note: dto.note?.trim() || `企业统一收款 ${receipt.receiptNo}`,
           createdById: actor.id,
-          occurredAt: new Date(dto.receivedAt)
-        }
-      });
+          occurredAt: new Date(dto.receivedAt),
+          idempotencyKey: dto.idempotencyKey.trim()
+        });
+      } else {
+        throw new BadRequestException("财务现金事实模块未配置");
+      }
       await this.recordAudit(tx, {
         action: "CUSTOMER_RECEIPT_POSTED",
         actorId: actor.id,
@@ -403,7 +422,7 @@ export class CustomerSettlementsService {
       include: receiptInclude
     });
     if (!receipt) throw new NotFoundException("企业收款不存在");
-    this.assertCanReverseReceipt(actor, receipt.storeId);
+    await this.assertCanReverseReceipt(actor, receipt.storeId);
     if (receipt.status === CustomerReceiptStatus.DRAFT) {
       throw new BadRequestException("草稿收款尚未入账，不能红冲");
     }
@@ -434,12 +453,23 @@ export class CustomerSettlementsService {
 
     const fullyReversed = priorReversedCents + dto.amountCents === receipt.amountCents;
     return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.customerReceiptReversal.findFirst({
+        where: { receiptId: receipt.id, idempotencyKey: dto.idempotencyKey.trim() }
+      });
+      if (existing) {
+        const current = await tx.customerReceipt.findUniqueOrThrow({
+          where: { id: receipt.id },
+          include: receiptInclude
+        });
+        return withReversedAmount(current);
+      }
       const reversal = await tx.customerReceiptReversal.create({
         data: {
           receiptId: receipt.id,
           amountCents: dto.amountCents,
           reason,
           createdById: actor.id,
+          idempotencyKey: dto.idempotencyKey.trim(),
           allocations: {
             create: allocations.map((allocation) => ({
               orderPaymentId: allocation.orderPaymentId,
@@ -460,18 +490,19 @@ export class CustomerSettlementsService {
         });
       }
 
-      await tx.paymentRecord.create({
-        data: {
+      if (this.finance) {
+        await this.finance.recordCustomerReceiptReversal(tx, {
           storeId: receipt.storeId,
           accountId: receipt.accountId,
-          type: PaymentRecordType.CUSTOMER_RECEIPT_REVERSAL,
-          direction: PaymentDirection.EXPENSE,
           amountCents: dto.amountCents,
           sourceId: reversal.id,
           note: `企业收款红冲：${reason}`,
-          createdById: actor.id
-        }
-      });
+          createdById: actor.id,
+          idempotencyKey: dto.idempotencyKey.trim()
+        });
+      } else {
+        throw new BadRequestException("财务现金事实模块未配置");
+      }
 
       if (fullyReversed) {
         await tx.customerReceipt.update({
@@ -647,7 +678,7 @@ export class CustomerSettlementsService {
     customerId: string
   ) {
     const customer = await this.requireCustomer(storeId, customerId);
-    if (!PermissionPolicy.canViewCustomer(actor, storeId, customer.ownerUserId)) {
+    if (!await this.canAccess(actor, "customers", "read", storeId, customer.ownerUserId)) {
       throw new ForbiddenException("无权限");
     }
     return customer;
@@ -668,14 +699,14 @@ export class CustomerSettlementsService {
     }
   }
 
-  private assertCanManageReceipts(actor: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.canManageFinance(actor, storeId)) {
+  private async assertCanManageReceipts(actor: UserWithStoreMember, storeId: string) {
+    if (!await this.canAccess(actor, "finance", "write", storeId)) {
       throw new ForbiddenException("仅店长或财务可以管理企业统一收款");
     }
   }
 
-  private assertCanReverseReceipt(actor: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.canManageFinance(actor, storeId)) {
+  private async assertCanReverseReceipt(actor: UserWithStoreMember, storeId: string) {
+    if (!await this.canAccess(actor, "finance", "write", storeId)) {
       throw new ForbiddenException("仅财务可以执行收款红冲");
     }
   }

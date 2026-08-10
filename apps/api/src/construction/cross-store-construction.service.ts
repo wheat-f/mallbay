@@ -17,7 +17,7 @@ import {
   StorePosition
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { PermissionPolicy } from "../common/policies/permission.policy";
+import { AccessContext } from "../permissions/domain/access-context";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationDispatcher } from "../notifications/notification-dispatcher";
 import type { AuthenticatedConstructionUser } from "./construction.service";
@@ -35,11 +35,12 @@ export class CrossStoreConstructionService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional() private readonly notifications?: NotificationsService,
-    @Optional() private readonly notificationDispatcher?: NotificationDispatcher
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcher,
+    @Optional() private readonly accessContext?: AccessContext
   ) {}
 
   async list(user: AuthenticatedConstructionUser, query: ListCrossStoreTasksDto) {
-    this.assertStoreViewer(user, query.storeId);
+    await this.assertStoreViewer(user, query.storeId);
     return this.prisma.crossStoreConstructionTask.findMany({
       where: {
         ...(query.scope === CrossStoreTaskScope.SOURCE
@@ -64,13 +65,13 @@ export class CrossStoreConstructionService {
 
   async get(user: AuthenticatedConstructionUser, id: string) {
     const task = await this.loadTask(id);
-    this.assertTaskViewer(user, task.sourceStoreId, task.executionStoreId);
+    await this.assertTaskViewer(user, task.sourceStoreId, task.executionStoreId);
     return task;
   }
 
   async accept(user: AuthenticatedConstructionUser, id: string) {
     const task = await this.loadTask(id);
-    this.assertExecutionOperator(user, task.executionStoreId);
+    await this.assertExecutionOperator(user, task.executionStoreId);
     if (task.status !== CrossStoreTaskStatus.PENDING_ACCEPTANCE) {
       throw new BadRequestException("仅待接单的跨门店任务可以接受");
     }
@@ -94,7 +95,7 @@ export class CrossStoreConstructionService {
 
   async reject(user: AuthenticatedConstructionUser, id: string, dto: RejectCrossStoreTaskDto) {
     const task = await this.loadTask(id);
-    this.assertExecutionOperator(user, task.executionStoreId);
+    await this.assertExecutionOperator(user, task.executionStoreId);
     if (task.status !== CrossStoreTaskStatus.PENDING_ACCEPTANCE) {
       throw new BadRequestException("仅待接单的跨门店任务可以拒绝");
     }
@@ -117,7 +118,7 @@ export class CrossStoreConstructionService {
 
   async cancel(user: AuthenticatedConstructionUser, id: string, dto: CancelCrossStoreTaskDto) {
     const task = await this.loadTask(id);
-    this.assertSourceManager(user, task.sourceStoreId);
+    await this.assertSourceManager(user, task.sourceStoreId);
     if (
       task.status === CrossStoreTaskStatus.IN_CONSTRUCTION ||
       task.status === CrossStoreTaskStatus.PENDING_SOURCE_ACCEPTANCE ||
@@ -151,7 +152,7 @@ export class CrossStoreConstructionService {
     dto: CompleteCrossStoreAcceptanceDto
   ) {
     const task = await this.loadTask(id);
-    this.assertExecutionOperator(user, task.executionStoreId);
+    await this.assertExecutionOperator(user, task.executionStoreId);
     if (
       task.status !== CrossStoreTaskStatus.DISPATCHED &&
       task.status !== CrossStoreTaskStatus.IN_CONSTRUCTION
@@ -177,7 +178,7 @@ export class CrossStoreConstructionService {
 
   async completeSourceAcceptance(user: AuthenticatedConstructionUser, id: string) {
     const task = await this.loadTask(id);
-    this.assertSourceManager(user, task.sourceStoreId);
+    await this.assertSourceManager(user, task.sourceStoreId);
     if (task.status !== CrossStoreTaskStatus.PENDING_SOURCE_ACCEPTANCE) {
       throw new BadRequestException("仅待来源门店验收的任务可以完成");
     }
@@ -207,7 +208,7 @@ export class CrossStoreConstructionService {
     sourceStoreId: string,
     executionStoreId: string
   ) {
-    this.assertEitherStoreManager(user, sourceStoreId, executionStoreId);
+    await this.assertEitherStoreManager(user, sourceStoreId, executionStoreId);
     return this.prisma.crossStoreProductMapping.findMany({
       where: {
         sourceProduct: { storeId: sourceStoreId },
@@ -243,7 +244,7 @@ export class CrossStoreConstructionService {
     if (!sourceProduct || !executionProduct || !executionStore) {
       throw new NotFoundException("来源产品、执行产品或执行门店不存在");
     }
-    this.assertEitherStoreManager(user, sourceProduct.storeId, executionStore.id);
+    await this.assertEitherStoreManager(user, sourceProduct.storeId, executionStore.id);
     if (
       sourceProduct.store.financialEntityId !== executionStore.financialEntityId ||
       executionProduct.storeId !== executionStore.id ||
@@ -334,47 +335,33 @@ export class CrossStoreConstructionService {
     return task;
   }
 
-  private assertStoreViewer(user: AuthenticatedConstructionUser, storeId: string) {
-    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
-      if (!PermissionPolicy.canRuntime(user as never, "construction", "read", storeId)) throw new ForbiddenException("无权限");
-      return;
-    }
-    if (!user.isAuditor && user.storeMember?.storeId !== storeId) throw new ForbiddenException("无权限");
+  private async assertStoreViewer(user: AuthenticatedConstructionUser, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can(user.id, "construction", "read", { storeId })) throw new ForbiddenException("无权限");
   }
 
-  private assertTaskViewer(user: AuthenticatedConstructionUser, sourceStoreId: string, executionStoreId: string) {
-    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
-      if (!PermissionPolicy.canRuntime(user as never, "construction", "read", sourceStoreId) && !PermissionPolicy.canRuntime(user as never, "construction", "read", executionStoreId)) throw new ForbiddenException("无权限");
-      return;
-    }
-    if (!user.isAuditor && user.storeMember?.storeId !== sourceStoreId && user.storeMember?.storeId !== executionStoreId) throw new ForbiddenException("无权限");
+  private async assertTaskViewer(user: AuthenticatedConstructionUser, sourceStoreId: string, executionStoreId: string) {
+    const canSource = await this.can(user, "construction", "read", sourceStoreId);
+    const canExecution = await this.can(user, "construction", "read", executionStoreId);
+    if (!canSource && !canExecution) throw new ForbiddenException("无权限");
   }
 
-  private assertExecutionOperator(user: AuthenticatedConstructionUser, storeId: string) {
-    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
-      if (!PermissionPolicy.canRuntime(user as never, "construction", "write", storeId)) throw new ForbiddenException("仅执行门店店长或施工主管可操作");
-      return;
-    }
-    if (user.isAuditor) return;
-    if (user.storeMember?.storeId !== storeId || (user.storeMember.position !== StorePosition.MANAGER && user.storeMember.position !== StorePosition.SCHEDULER)) throw new ForbiddenException("仅执行门店店长或施工主管可操作");
+  private async assertExecutionOperator(user: AuthenticatedConstructionUser, storeId: string) {
+    if (!await this.can(user, "construction", "write", storeId)) throw new ForbiddenException("仅执行门店店长或施工主管可操作");
   }
 
-  private assertSourceManager(user: AuthenticatedConstructionUser, storeId: string) {
-    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
-      if (!PermissionPolicy.canRuntime(user as never, "construction", "write", storeId)) throw new ForbiddenException("仅来源门店店长可操作");
-      return;
-    }
-    if (user.isAuditor) return;
-    if (user.storeMember?.storeId !== storeId || user.storeMember.position !== StorePosition.MANAGER) throw new ForbiddenException("仅来源门店店长可操作");
+  private async assertSourceManager(user: AuthenticatedConstructionUser, storeId: string) {
+    if (!await this.can(user, "construction", "write", storeId)) throw new ForbiddenException("仅来源门店店长可操作");
   }
 
-  private assertEitherStoreManager(user: AuthenticatedConstructionUser, sourceStoreId: string, executionStoreId: string) {
-    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
-      if (!PermissionPolicy.canRuntime(user as never, "construction", "write", sourceStoreId) && !PermissionPolicy.canRuntime(user as never, "construction", "write", executionStoreId)) throw new ForbiddenException("仅协作双方门店店长可维护产品映射");
-      return;
-    }
-    if (user.isAuditor) return;
-    if (user.storeMember?.position !== StorePosition.MANAGER || (user.storeMember.storeId !== sourceStoreId && user.storeMember.storeId !== executionStoreId)) throw new ForbiddenException("仅协作双方门店店长可维护产品映射");
+  private async assertEitherStoreManager(user: AuthenticatedConstructionUser, sourceStoreId: string, executionStoreId: string) {
+    const canSource = await this.can(user, "construction", "write", sourceStoreId);
+    const canExecution = await this.can(user, "construction", "write", executionStoreId);
+    if (!canSource && !canExecution) throw new ForbiddenException("仅协作双方门店店长可维护产品映射");
+  }
+
+  private can(user: AuthenticatedConstructionUser, capability: string, action: string, storeId: string) {
+    if (!this.accessContext) throw new Error("CrossStoreConstructionService access context is not configured");
+    return this.accessContext.can(user.id, capability, action, { storeId });
   }
   private async notifyStore(storeId: string, type: NotificationType, payload: object) {
     const recipients = await this.prisma.storeMember.findMany({

@@ -2,22 +2,23 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   FinanceApprovalAction,
   FinanceApprovalNode,
   FinanceApprovalStatus,
   FinanceApplicationType,
-  PaymentDirection,
   PaymentRecordType,
 } from "@prisma/client";
-import {
-  PermissionPolicy,
-  type UserWithStoreMember,
-} from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
+import { FinanceService } from "./finance.service";
 import {
   CreateReimbursementDto,
   PayReimbursementDto,
@@ -25,16 +26,21 @@ import {
   ResubmitReimbursementDto,
 } from "./dto/finance.dto";
 import { buildFinanceApplicationNo } from "./expense-workflow.service";
+import { FINANCE_CAPABILITIES } from "./domain/finance-capabilities";
 
 type FinanceActor = UserWithStoreMember & { username?: string };
 
 @Injectable()
 export class ReimbursementWorkflowService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessContext: AccessContext,
+    @Optional() @Inject(forwardRef(() => FinanceService)) private readonly finance?: FinanceService,
+  ) {}
 
   async create(actor: FinanceActor, dto: CreateReimbursementDto) {
     actor = await this.withStoreMember(actor);
-    if (!PermissionPolicy.canSubmitFinanceApplication(actor, dto.storeId))
+    if (!await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.application.capability, FINANCE_CAPABILITIES.application.submit, { storeId: dto.storeId, ownerId: actor.id }))
       throw new ForbiddenException("无权限");
     if (!dto.expenseId && !dto.exceptionReason?.trim())
       throw new BadRequestException(
@@ -99,7 +105,7 @@ export class ReimbursementWorkflowService {
       { where: { id } },
     );
     if (!reimbursement) throw new NotFoundException("报销申请不存在");
-    if (!PermissionPolicy.canReviewReimbursement(actor, reimbursement.storeId))
+    if (!await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.reimbursement.capability, FINANCE_CAPABILITIES.reimbursement.review, { storeId: reimbursement.storeId }))
       throw new ForbiddenException("无权限审批报销申请");
     if (reimbursement.status !== FinanceApprovalStatus.PENDING)
       throw new ConflictException("只有待审批报销可以处理");
@@ -141,11 +147,7 @@ export class ReimbursementWorkflowService {
     );
     if (!reimbursement) throw new NotFoundException("报销申请不存在");
     if (
-      !PermissionPolicy.canViewOwnFinanceApplication(
-        actor,
-        reimbursement.storeId,
-        reimbursement.applicantId,
-      )
+      !await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, { storeId: reimbursement.storeId, ownerId: reimbursement.applicantId })
     )
       throw new ForbiddenException("无权限");
     if (reimbursement.status !== FinanceApprovalStatus.PENDING)
@@ -185,11 +187,7 @@ export class ReimbursementWorkflowService {
     );
     if (!reimbursement) throw new NotFoundException("报销申请不存在");
     if (
-      !PermissionPolicy.canViewOwnFinanceApplication(
-        actor,
-        reimbursement.storeId,
-        reimbursement.applicantId,
-      )
+      !await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, { storeId: reimbursement.storeId, ownerId: reimbursement.applicantId })
     )
       throw new ForbiddenException("无权限");
     if (reimbursement.status !== FinanceApprovalStatus.REJECTED)
@@ -232,7 +230,7 @@ export class ReimbursementWorkflowService {
       { where: { id } },
     );
     if (!reimbursement) throw new NotFoundException("报销申请不存在");
-    if (!PermissionPolicy.canPayReimbursement(actor, reimbursement.storeId))
+    if (!await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.reimbursement.capability, FINANCE_CAPABILITIES.reimbursement.pay, { storeId: reimbursement.storeId }))
       throw new ForbiddenException("无权限支付报销申请");
 
     const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
@@ -285,18 +283,18 @@ export class ReimbursementWorkflowService {
           alreadyPaid: true,
         };
       }
-      const payment = await tx.paymentRecord.create({
-        data: {
-          storeId: reimbursement.storeId,
-          accountId: dto.paymentAccountId,
-          type: PaymentRecordType.REIMBURSEMENT,
-          direction: PaymentDirection.EXPENSE,
-          amountCents: reimbursement.amountCents,
-          sourceId: id,
-          note: dto.note ?? "报销打款",
-          createdById: actor.id,
-          occurredAt: paidAt,
-        },
+      if (!this.finance) {
+        throw new Error("ReimbursementWorkflowService finance writer is not configured");
+      }
+      const payment = await this.finance.recordReimbursementPayout(tx, {
+        storeId: reimbursement.storeId,
+        accountId: dto.paymentAccountId,
+        amountCents: reimbursement.amountCents,
+        sourceId: id,
+        note: dto.note ?? "报销打款",
+        createdById: actor.id,
+        occurredAt: paidAt,
+        idempotencyKey: `reimbursement:${id}:paid`
       });
       const updated = await tx.reimbursementApplication.update({
         where: { id },

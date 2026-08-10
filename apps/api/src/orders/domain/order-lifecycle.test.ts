@@ -4,6 +4,8 @@ import { OrderStatus } from "@prisma/client";
 import { OrderLifecycle } from "./order-lifecycle";
 import { finalizeOrderDelivery } from "./order-delivery";
 
+const lifecycleAccess = { can: async () => true };
+
 test("OrderLifecycle exposes the single workflow derivation seam", () => {
   const result = new OrderLifecycle().derive({
     status: OrderStatus.PENDING_DISPATCH,
@@ -53,7 +55,7 @@ test("OrderLifecycle transition owns cancellation transaction and audit", async 
     notification: { updateMany: async () => ({ count: 1 }) },
     auditEvent: { create: async ({ data }: { data: unknown }) => { events.push(data); } }
   };
-  const lifecycle = new OrderLifecycle(undefined, { $transaction: async (run: (tx: unknown) => unknown) => run(tx) } as never);
+  const lifecycle = new OrderLifecycle(undefined, { $transaction: async (run: (tx: unknown) => unknown) => run(tx) } as never, undefined, lifecycleAccess as never);
   const result = await lifecycle.transition({ id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: "MANAGER" as never } }, "order-1", { type: "CANCEL", reason: "客户取消" });
   assert.deepEqual(result, { id: "order-1", status: OrderStatus.CANCELLED });
   assert.equal(updates.length, 1);
@@ -69,7 +71,7 @@ test("OrderLifecycle transition owns return-to-dispatch transaction and audit", 
     },
     auditEvent: { create: async ({ data }: { data: unknown }) => { events.push(data); } }
   };
-  const lifecycle = new OrderLifecycle(undefined, { $transaction: async (run: (tx: unknown) => unknown) => run(tx) } as never);
+  const lifecycle = new OrderLifecycle(undefined, { $transaction: async (run: (tx: unknown) => unknown) => run(tx) } as never, undefined, lifecycleAccess as never);
   const result = await lifecycle.transition({ id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: "SALES" as never } }, "order-1", { type: "RETURN_TO_PENDING_DISPATCH", reason: "补充订单信息" });
   assert.deepEqual(result, { id: "order-1", status: OrderStatus.PENDING_DISPATCH });
   assert.equal(events.length, 1);
@@ -97,7 +99,7 @@ test("OrderLifecycle transition owns final delivery and produces one warranty/au
     auditEvent: { create: async ({ data }: { data: unknown }) => { events.push(data); } },
     notification: { updateMany: async (args: unknown) => { notifications.push(args); } }
   };
-  const lifecycle = new OrderLifecycle(undefined, { $transaction: async (run: (tx: unknown) => unknown) => run(tx) } as never);
+  const lifecycle = new OrderLifecycle(undefined, { $transaction: async (run: (tx: unknown) => unknown) => run(tx) } as never, undefined, lifecycleAccess as never);
   const result = await lifecycle.transition({ id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: "MANAGER" as never } }, "order-1", { type: "FINAL_DELIVERY" });
   assert.deepEqual(result, { orderId: "order-1", warrantyId: "warranty-1", status: "COMPLETED" });
   assert.equal(events.length, 1);

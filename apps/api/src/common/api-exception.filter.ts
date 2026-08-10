@@ -16,6 +16,8 @@ type ErrorBody = {
   requestId?: string;
 };
 
+type ErrorResponse = { code?: string; message?: string | string[]; details?: unknown };
+
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
@@ -45,7 +47,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
       const message = this.extractMessage(response, exception.message);
 
       return {
-        code: apiErrorCodeForStatus(status),
+        code: this.extractCode(response) ?? apiErrorCodeForStatus(status),
         message,
         details: this.extractDetails(response),
         requestId
@@ -76,6 +78,12 @@ export class ApiExceptionFilter implements ExceptionFilter {
       return { validation: response.message };
     }
     return undefined;
+  }
+
+  private extractCode(response: string | object) {
+    if (typeof response === "string") return undefined;
+    const code = (response as ErrorResponse).code;
+    return typeof code === "string" ? code : undefined;
   }
 
 }

@@ -1,25 +1,28 @@
 import { Injectable } from "@nestjs/common";
-import { CustomersService } from "../customers.service";
+import { CustomersService, type AuthenticatedCustomerUser } from "../customers.service";
+import type { CreateCustomerTagDto } from "../dto/create-customer-tag.dto";
+import type { ListCustomerVehiclesDto } from "../dto/vehicle-lifecycle.dto";
 
-type CustomerUser = Parameters<CustomersService["detail"]>[0];
+export type CustomerAccountInput =
+  | { operation: "create"; dto: CreateCustomerTagDto }
+  | { operation: "delete"; id: string };
 
 /** Customer/vehicle/tag read and maintenance seam. */
 @Injectable()
 export class CustomerAccount {
   constructor(private readonly implementation: CustomersService) {}
 
-  getCustomerSummary(user: CustomerUser, customerId: string) {
+  getCustomerSummary(user: AuthenticatedCustomerUser, customerId: string) {
     return this.implementation.detail(user, customerId);
   }
 
-  getVehicleSummary(user: CustomerUser, customerId: string, query: Parameters<CustomersService["listVehicles"]>[2]) {
+  getVehicleSummary(user: AuthenticatedCustomerUser, customerId: string, query: ListCustomerVehiclesDto) {
     return this.implementation.listVehicles(user, customerId, query);
   }
 
   maintainManualTags(
-    user: CustomerUser,
-    input: { operation: "create"; dto: Parameters<CustomersService["createTag"]>[1] } |
-      { operation: "delete"; id: string }
+    user: AuthenticatedCustomerUser,
+    input: CustomerAccountInput
   ) {
     return input.operation === "create"
       ? this.implementation.createTag(user, input.dto)

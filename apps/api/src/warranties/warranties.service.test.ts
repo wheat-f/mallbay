@@ -3,6 +3,18 @@ import { test } from "node:test";
 import { OrderStatus, StorePosition, WarrantyStatus } from "@prisma/client";
 import { WarrantiesService } from "./warranties.service";
 
+const warrantyAccess = {
+  can: async () => true,
+  resolve: async (actorId: string, context: { storeId?: string }) => ({
+    userId: actorId,
+    policyVersion: 1,
+    bindingVersion: 1,
+    roles: [{ roleCode: actorId.startsWith("sales") ? "SALES" : "MANAGER", roleName: "test", scopeType: "STORE", scopeIds: context.storeId ? [context.storeId] : [] }],
+    permissions: [],
+    generatedAt: new Date().toISOString()
+  })
+};
+
 test("WarrantiesService creates warranty from completed order with construction photos", async () => {
   const writes: unknown[] = [];
   const prisma = {
@@ -37,7 +49,7 @@ test("WarrantiesService creates warranty from completed order with construction 
       }
     }
   };
-  const service = new WarrantiesService(prisma as never);
+  const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
   const result = await service.createFromOrder(
     {
@@ -67,7 +79,7 @@ test("WarrantiesService looks up active warranty by warranty number for customer
       })
     }
   };
-  const service = new WarrantiesService(prisma as never);
+  const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
   const result = await service.lookup("WAR202606010001");
 
@@ -105,7 +117,7 @@ test("WarrantiesService returns the existing warranty for an idempotent retry", 
       }
     })
   };
-  const service = new WarrantiesService(prisma as never);
+  const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
   const result = await service.createFromOrder(
     {
@@ -130,7 +142,7 @@ test("WarrantiesService lists warranties with order customer and vehicle summary
       }
     }
   };
-  const service = new WarrantiesService(prisma as never);
+  const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
   await service.list(
     {
@@ -159,7 +171,7 @@ test("WarrantiesService limits sales warranty list to their own orders", async (
       }
     }
   };
-  const service = new WarrantiesService(prisma as never);
+  const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
   await service.list(
     {
@@ -187,7 +199,7 @@ test("WarrantiesService rejects sales viewing another sales person's warranty de
       })
     }
   };
-  const service = new WarrantiesService(prisma as never);
+  const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
   await assert.rejects(
     () =>
@@ -231,7 +243,7 @@ test("WarrantiesService returns persisted warranty audit events in detail", asyn
       }
     }
   };
-  const service = new WarrantiesService(prisma as never);
+  const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
   const result = await service.detail(
     {

@@ -14,7 +14,8 @@ import {
   StorePosition,
   ConstructionCostSettlementStatus
 } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { OperationalReportQueryDto, ReportQueryDto } from "./dto/reports.dto";
 
@@ -24,18 +25,22 @@ const OPERATIONAL_DETAIL_ROW_LIMIT = 2000;
 
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
+
+  private canAccess(actor: AuthenticatedReportUser | UserWithStoreMember, storeId?: string) {
+    return this.accessContext.can(actor.id, "reports", "read", storeId ? { storeId } : {});
+  }
 
   async summary(user: AuthenticatedReportUser, query: ReportQueryDto) {
     const actor = await this.withStoreMember(user);
     const storeId = query.storeId ?? actor.storeMember?.storeId;
-    if (!storeId && !PermissionPolicy.isAdmin(actor)) {
+    if (!storeId && !await this.canAccess(actor)) {
       throw new ForbiddenException("无权限");
     }
-    if (storeId && !PermissionPolicy.canViewReports(actor, storeId)) {
+    if (storeId && !await this.canAccess(actor, storeId)) {
       throw new ForbiddenException("无权限");
     }
-    const scope = buildReportQueryScope(actor, storeId);
+    const scope = buildReportQueryScope(actor, storeId, await this.isSalesActor(actor, storeId));
     const [
       orders,
       amount,
@@ -205,11 +210,11 @@ export class ReportsService {
   async operational(user: AuthenticatedReportUser, query: OperationalReportQueryDto) {
     const actor = await this.withStoreMember(user);
     const storeId = query.storeId ?? actor.storeMember?.storeId;
-    this.assertCanViewOperationalReports(actor, storeId);
+    await this.assertCanViewOperationalReports(actor, storeId);
 
     const dateRange = reportDateRange(query.dateFrom, query.dateTo);
     assertOperationalDateRange(query.dateFrom, query.dateTo);
-    const isSales = PermissionPolicy.hasRuntimeSnapshot(actor.id) ? Boolean(PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) : !actor.isAuditor && actor.storeMember?.position === StorePosition.SALES;
+    const isSales = await this.isSalesActor(actor, storeId);
     const salesPersonId = isSales ? actor.id : query.salesPersonId;
     const orderWhere = buildOperationalOrderWhere(storeId, query, dateRange, salesPersonId);
     const orders = await this.prisma.order.findMany({
@@ -317,11 +322,11 @@ export class ReportsService {
   async filterOptions(user: AuthenticatedReportUser, query: ReportQueryDto) {
     const actor = await this.withStoreMember(user);
     const storeId = query.storeId ?? actor.storeMember?.storeId;
-    this.assertCanViewOperationalReports(actor, storeId);
+    await this.assertCanViewOperationalReports(actor, storeId);
     if (!storeId) {
       return { salesPeople: [], constructionPeople: [], constructionTypes: [], productCategories: [], orderStatuses: [], afterSaleStatuses: [], afterSaleResponsibilities: [] };
     }
-    const isSales = PermissionPolicy.hasRuntimeSnapshot(actor.id) ? Boolean(PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) : !actor.isAuditor && actor.storeMember?.position === StorePosition.SALES;
+    const isSales = await this.isSalesActor(actor, storeId);
     const [members, constructionTypes, productCategories, orderStatuses, afterSaleStatuses, afterSaleResponsibilities] = await Promise.all([
       this.prisma.storeMember.findMany({
         where: {
@@ -359,15 +364,22 @@ export class ReportsService {
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
   }
 
-  private assertCanViewOperationalReports(actor: UserWithStoreMember, storeId: string | undefined) {
-    if (!storeId && !PermissionPolicy.isAdmin(actor)) throw new ForbiddenException("无权限");
-    if (storeId && !PermissionPolicy.canViewReports(actor, storeId)) throw new ForbiddenException("无权限");
+  private async assertCanViewOperationalReports(actor: UserWithStoreMember, storeId: string | undefined) {
+    if (!await this.canAccess(actor, storeId)) throw new ForbiddenException("无权限");
+  }
+
+  private async isSalesActor(actor: UserWithStoreMember, storeId: string | undefined) {
+    if (actor.isAuditor) return false;
+    const access = await this.accessContext.resolve(actor.id, storeId ? { storeId } : {});
+    return access.roles.some((role) =>
+      role.roleCode === StorePosition.SALES &&
+      (role.scopeType === "HQ" || !storeId || role.scopeIds.includes(storeId))
+    );
   }
 }
 
-function buildReportQueryScope(actor: UserWithStoreMember, storeId: string | undefined) {
+function buildReportQueryScope(actor: UserWithStoreMember, storeId: string | undefined, isSales: boolean) {
   const storeWhere = storeId ? { storeId } : {};
-  const isSales = PermissionPolicy.hasRuntimeSnapshot(actor.id) ? Boolean(PermissionPolicy.hasRuntimeRole(actor, ["SALES"], storeId)) : !actor.isAuditor && actor.storeMember?.position === StorePosition.SALES;
   if (!isSales) {
     return {
       orderWhere: storeWhere,

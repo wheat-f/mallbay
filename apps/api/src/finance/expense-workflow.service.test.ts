@@ -19,6 +19,13 @@ const finance = {
   storeMember: { storeId: "store-1", position: StorePosition.FINANCE }
 };
 
+const accessContext = {
+  can: async (actorId: string, capability: string, action: string) =>
+    capability === "finance.expense" && action === "review"
+      ? actorId === manager.id
+      : true,
+};
+
 function createPrisma(expense: Record<string, unknown>) {
   const writes: unknown[] = [];
   const tx = {
@@ -41,7 +48,7 @@ function createPrisma(expense: Record<string, unknown>) {
 
 test("ExpenseWorkflowService creates and records a pending expense", async () => {
   const { prisma, writes } = createPrisma({ id: "expense-1", storeId: "store-1", applicantId: applicant.id, status: FinanceApprovalStatus.PENDING });
-  const service = new ExpenseWorkflowService(prisma as never);
+  const service = new ExpenseWorkflowService(prisma as never, accessContext as never);
   await service.create(applicant, { storeId: "store-1", title: "耗材", amountCents: 1000, reason: "施工" });
   assert.equal(writes.length, 2);
   assert.match(JSON.stringify(writes), /MANAGER_REVIEW/);
@@ -49,7 +56,7 @@ test("ExpenseWorkflowService creates and records a pending expense", async () =>
 
 test("ExpenseWorkflowService resolves the current user's store membership before creating", async () => {
   const { prisma, writes } = createPrisma({ id: "expense-1", storeId: "store-1", applicantId: "manager-1", status: FinanceApprovalStatus.PENDING });
-  const service = new ExpenseWorkflowService(prisma as never);
+  const service = new ExpenseWorkflowService(prisma as never, accessContext as never);
 
   await service.create(
     { id: "manager-1", isAuditor: false },
@@ -61,7 +68,7 @@ test("ExpenseWorkflowService resolves the current user's store membership before
 
 test("ExpenseWorkflowService only lets manager approve and never accepts PAID", async () => {
   const { prisma } = createPrisma({ id: "expense-1", storeId: "store-1", applicantId: applicant.id, status: FinanceApprovalStatus.PENDING });
-  const service = new ExpenseWorkflowService(prisma as never);
+  const service = new ExpenseWorkflowService(prisma as never, accessContext as never);
   await assert.rejects(() => service.review(finance, "expense-1", { decision: "APPROVE" }), /无权限/);
   await service.review(manager, "expense-1", { decision: "APPROVE" });
   await assert.rejects(() => service.review(manager, "expense-1", { decision: "PAID" as never }), /只支持通过或驳回/);
@@ -69,13 +76,13 @@ test("ExpenseWorkflowService only lets manager approve and never accepts PAID", 
 
 test("ExpenseWorkflowService allows applicant withdrawal only while pending", async () => {
   const { prisma } = createPrisma({ id: "expense-1", storeId: "store-1", applicantId: applicant.id, status: FinanceApprovalStatus.APPROVED });
-  const service = new ExpenseWorkflowService(prisma as never);
+  const service = new ExpenseWorkflowService(prisma as never, accessContext as never);
   await assert.rejects(() => service.withdraw(applicant, "expense-1", "不再发生"), /只有待审批费用可以撤回/);
 });
 
 test("ExpenseWorkflowService resubmits rejected applications", async () => {
   const { prisma, writes } = createPrisma({ id: "expense-1", storeId: "store-1", applicantId: applicant.id, status: FinanceApprovalStatus.REJECTED });
-  const service = new ExpenseWorkflowService(prisma as never);
+  const service = new ExpenseWorkflowService(prisma as never, accessContext as never);
   await service.resubmit(applicant, "expense-1", { title: "重新申请", amountCents: 1200, reason: "补充说明" });
   assert.match(JSON.stringify(writes), /RESUBMITTED/);
 });

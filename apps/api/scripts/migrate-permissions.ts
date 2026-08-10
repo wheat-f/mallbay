@@ -11,26 +11,29 @@ const roleDefinitions: Record<string, { name: string; grants: Array<[string, str
     grants: [
       ["customers", "read", "GLOBAL"], ["customers", "write", "GLOBAL"],
       ["orders", "read", "GLOBAL"], ["orders", "write", "GLOBAL"],
+      ["warranties", "read", "GLOBAL"], ["warranties", "write", "GLOBAL"],
       ["construction", "read", "GLOBAL"], ["construction", "write", "GLOBAL"],
+      ["products", "read", "GLOBAL"], ["products", "write", "GLOBAL"],
       ["inventory", "read", "GLOBAL"], ["inventory", "write", "GLOBAL"],
       ["purchase", "read", "GLOBAL"], ["purchase", "write", "GLOBAL"],
-      ["finance", "read", "GLOBAL"], ["finance", "write", "GLOBAL"],
+      ["finance", "read", "GLOBAL"], ["finance", "write", "GLOBAL"], ["finance.application", "submit", "GLOBAL"], ["finance.document", "read", "GLOBAL"], ["finance.document", "attach", "GLOBAL"], ["finance.expense", "review", "GLOBAL"], ["finance.reimbursement", "review", "GLOBAL"], ["finance.reimbursement", "pay", "GLOBAL"],
       ["after-sales", "read", "GLOBAL"], ["after-sales", "write", "GLOBAL"],
       ["reports", "read", "GLOBAL"], ["settings", "read", "GLOBAL"], ["settings", "write", "GLOBAL"]
     ]
   },
   MANAGER: { name: "店长", grants: [
-    ["customers", "read", "STORE"], ["customers", "write", "STORE"], ["orders", "read", "STORE"], ["orders", "write", "STORE"],
-    ["construction", "read", "STORE"], ["construction", "write", "STORE"], ["inventory", "read", "STORE"], ["inventory", "write", "STORE"],
+    ["customers", "read", "STORE"], ["customers", "write", "STORE"], ["orders", "read", "STORE"], ["orders", "write", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"],
+    ["construction", "read", "STORE"], ["construction", "write", "STORE"], ["products", "read", "STORE"], ["products", "write", "STORE"], ["inventory", "read", "STORE"], ["inventory", "write", "STORE"],
+    ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"], ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.expense", "review", "STORE"],
     ["purchase", "read", "STORE"], ["purchase", "write", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["reports", "read", "STORE"], ["settings", "read", "STORE"], ["settings", "write", "STORE"]
   ]},
-  SALES: { name: "销售", grants: [["customers", "read", "OWN"], ["customers", "write", "OWN"], ["orders", "read", "OWN"], ["orders", "write", "OWN"]] },
-  CUSTOMER_SERVICE: { name: "客服", grants: [["customers", "read", "STORE"], ["customers", "write", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"]] },
-  PURCHASING: { name: "采购", grants: [["inventory", "read", "STORE"], ["inventory", "write", "STORE"], ["purchase", "read", "STORE"], ["purchase", "write", "STORE"]] },
-  FINANCE: { name: "财务", grants: [["finance", "read", "STORE"], ["finance", "write", "STORE"], ["reports", "read", "STORE"]] },
-  SCHEDULER: { name: "排班员", grants: [["construction", "read", "STORE"], ["construction", "write", "STORE"]] },
-  CONSTRUCTION: { name: "施工员", grants: [["construction", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"]] },
-  APPRENTICE: { name: "学徒", grants: [["construction", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"]] }
+  SALES: { name: "销售", grants: [["customers", "read", "OWN"], ["customers", "write", "OWN"], ["orders", "read", "OWN"], ["orders", "write", "OWN"], ["warranties", "read", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]] },
+  CUSTOMER_SERVICE: { name: "客服", grants: [["customers", "read", "STORE"], ["customers", "write", "STORE"], ["orders", "read", "STORE"], ["orders", "write", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]] },
+  PURCHASING: { name: "采购", grants: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["inventory", "read", "STORE"], ["inventory", "write", "STORE"], ["products", "read", "STORE"], ["products", "write", "STORE"], ["purchase", "read", "STORE"], ["purchase", "write", "STORE"], ["after-sales", "read", "STORE"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]] },
+  FINANCE: { name: "财务", grants: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["finance", "read", "STORE"], ["finance", "write", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"], ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.reimbursement", "review", "STORE"], ["finance.reimbursement", "pay", "STORE"]] },
+  SCHEDULER: { name: "排班员", grants: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"], ["construction", "read", "STORE"], ["construction", "write", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]] },
+  CONSTRUCTION: { name: "施工员", grants: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["construction", "read", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]] },
+  APPRENTICE: { name: "学徒", grants: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["construction", "read", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]] }
 };
 
 for (const [code, definition] of Object.entries(roleDefinitions)) {
@@ -48,7 +51,13 @@ async function main() {
     await prisma.permissionDefinition.upsert({
       where: { code: resource },
       update: { status: "ACTIVE" },
-      create: { code: resource, name: resource, resource, actions: ["read", "write"], supportedScopes: ["OWN", "STORE", "GLOBAL"] }
+      create: {
+        code: resource,
+        name: resource,
+        resource,
+        actions: resource === "finance.application" ? ["submit"] : resource === "finance.document" ? ["read", "attach"] : resource === "finance.expense" ? ["review"] : resource === "finance.reimbursement" ? ["review", "pay"] : ["read", "write"],
+        supportedScopes: ["OWN", "STORE", "GLOBAL"]
+      }
     });
   }
 

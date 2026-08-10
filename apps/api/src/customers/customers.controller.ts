@@ -9,9 +9,9 @@ import {
   Param,
   Patch,
   Post,
-  Optional,
   Query,
   Req,
+  Optional,
   UploadedFile,
   UseInterceptors,
   UseGuards
@@ -46,8 +46,8 @@ type AuthRequest = Request & {
 export class CustomersController {
   constructor(
     @Inject(CustomersService) private readonly customers: CustomersService,
-    @Optional() @Inject(CustomerAccount) private readonly customerAccount: CustomerAccount | undefined,
-    @Inject(OssService) private readonly ossService: OssService
+    @Inject(OssService) private readonly ossService: OssService,
+    @Optional() @Inject(CustomerAccount) private readonly customerAccount?: CustomerAccount
   ) {}
 
   @Post()
@@ -67,7 +67,7 @@ export class CustomersController {
 
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.customerAccount?.getCustomerSummary(req.user, id) ?? this.customers.detail(req.user, id);
+    return this.customerAccount!.getCustomerSummary(req.user, id);
   }
 
   @Get(":id/order-context")
@@ -95,8 +95,7 @@ export class CustomersController {
     @Param("id") id: string,
     @Query() query: ListCustomerVehiclesDto
   ) {
-    return this.customerAccount?.getVehicleSummary(req.user, id, query)
-      ?? this.customers.listVehicles(req.user, id, query);
+    return this.customerAccount!.getVehicleSummary(req.user, id, query);
   }
 
   @Post("vehicles/photos/upload")
@@ -156,13 +155,11 @@ export class CustomersController {
 
   @Post("tags")
   createTag(@Req() req: AuthRequest, @Body() dto: CreateCustomerTagDto) {
-    return this.customerAccount?.maintainManualTags(req.user, { operation: "create", dto })
-      ?? this.customers.createTag(req.user, dto);
+    return this.customerAccount!.maintainManualTags(req.user, { operation: "create", dto });
   }
 
   @Delete("tags/:id")
   deleteTag(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.customerAccount?.maintainManualTags(req.user, { operation: "delete", id })
-      ?? this.customers.deleteTag(req.user, id);
+    return this.customerAccount!.maintainManualTags(req.user, { operation: "delete", id });
   }
 }

@@ -1,8 +1,10 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { FinanceApprovalStatus, Prisma } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { ListFinanceApplicationsDto } from "./dto/finance.dto";
+import { FINANCE_CAPABILITIES } from "./domain/finance-capabilities";
 
 type FinanceActor = UserWithStoreMember & { username?: string };
 type FinanceAllowedAction =
@@ -16,7 +18,11 @@ type FinanceAllowedAction =
 
 @Injectable()
 export class FinanceQueryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
+
+  private canAccess(actor: FinanceActor, capability: string, action: string, storeId: string, ownerId?: string) {
+    return this.accessContext.can(actor.id, capability, action, { storeId, ownerId });
+  }
 
   async listExpenses(actor: FinanceActor, query: ListFinanceApplicationsDto) {
     actor = await this.withStoreMember(actor);
@@ -24,11 +30,11 @@ export class FinanceQueryService {
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
     const where: Prisma.ExpenseApplicationWhereInput = { storeId: query.storeId };
     if (query.scope === "mine") {
-      if (!PermissionPolicy.canViewOwnFinanceApplication(actor, query.storeId, actor.id)) {
+      if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, query.storeId, actor.id)) {
         throw new ForbiddenException("无权限");
       }
       where.applicantId = actor.id;
-    } else if (!PermissionPolicy.canViewAllFinanceApplications(actor, query.storeId)) {
+    } else if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, query.storeId)) {
       throw new ForbiddenException("无权限");
     }
     if (query.status) where.status = query.status;
@@ -49,7 +55,7 @@ export class FinanceQueryService {
       }),
       this.prisma.expenseApplication.count({ where })
     ]);
-    return { items: items.map((item) => ({ ...item, allowedActions: this.expenseActions(actor, item) })), page, pageSize, total };
+    return { items: await Promise.all(items.map(async (item) => ({ ...item, allowedActions: await this.expenseActions(actor, item) }))), page, pageSize, total };
   }
 
   async listReimbursements(actor: FinanceActor, query: ListFinanceApplicationsDto) {
@@ -58,11 +64,11 @@ export class FinanceQueryService {
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
     const where: Prisma.ReimbursementApplicationWhereInput = { storeId: query.storeId };
     if (query.scope === "mine") {
-      if (!PermissionPolicy.canViewOwnFinanceApplication(actor, query.storeId, actor.id)) {
+      if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, query.storeId, actor.id)) {
         throw new ForbiddenException("无权限");
       }
       where.applicantId = actor.id;
-    } else if (!PermissionPolicy.canViewAllFinanceApplications(actor, query.storeId)) {
+    } else if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, query.storeId)) {
       throw new ForbiddenException("无权限");
     }
     if (query.status) where.status = query.status;
@@ -83,7 +89,7 @@ export class FinanceQueryService {
       }),
       this.prisma.reimbursementApplication.count({ where })
     ]);
-    return { items: items.map((item) => ({ ...item, allowedActions: this.reimbursementActions(actor, item) })), page, pageSize, total };
+    return { items: await Promise.all(items.map(async (item) => ({ ...item, allowedActions: await this.reimbursementActions(actor, item) }))), page, pageSize, total };
   }
 
   async getExpenseDetail(actor: FinanceActor, id: string) {
@@ -93,15 +99,15 @@ export class FinanceQueryService {
       include: { applicant: true, reimbursements: true }
     });
     if (!item) throw new NotFoundException("费用申请不存在");
-    if (!PermissionPolicy.canViewOwnFinanceApplication(actor, item.storeId, item.applicantId) &&
-      !PermissionPolicy.canViewAllFinanceApplications(actor, item.storeId)) {
+    if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, item.storeId, item.applicantId) &&
+      !await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, item.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const [approvalRecords, attachments] = await Promise.all([
       this.prisma.financeApprovalRecord.findMany({ where: { applicationType: "EXPENSE", applicationId: id }, orderBy: { createdAt: "asc" }, include: { operator: true } }),
       this.prisma.financeAttachment.findMany({ where: { applicationType: "EXPENSE", applicationId: id }, orderBy: { createdAt: "asc" }, include: { uploadedBy: true } })
     ]);
-    return { ...item, allowedActions: this.expenseActions(actor, item), approvalRecords, attachments };
+    return { ...item, allowedActions: await this.expenseActions(actor, item), approvalRecords, attachments };
   }
 
   async getReimbursementDetail(actor: FinanceActor, id: string) {
@@ -111,20 +117,20 @@ export class FinanceQueryService {
       include: { applicant: true, expense: true, paymentAccount: true, paymentRecord: true }
     });
     if (!item) throw new NotFoundException("报销申请不存在");
-    if (!PermissionPolicy.canViewOwnFinanceApplication(actor, item.storeId, item.applicantId) &&
-      !PermissionPolicy.canViewAllFinanceApplications(actor, item.storeId)) {
+    if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, item.storeId, item.applicantId) &&
+      !await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, item.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const [approvalRecords, attachments] = await Promise.all([
       this.prisma.financeApprovalRecord.findMany({ where: { applicationType: "REIMBURSEMENT", applicationId: id }, orderBy: { createdAt: "asc" }, include: { operator: true } }),
       this.prisma.financeAttachment.findMany({ where: { applicationType: "REIMBURSEMENT", applicationId: id }, orderBy: { createdAt: "asc" }, include: { uploadedBy: true } })
     ]);
-    return { ...item, allowedActions: this.reimbursementActions(actor, item), approvalRecords, attachments };
+    return { ...item, allowedActions: await this.reimbursementActions(actor, item), approvalRecords, attachments };
   }
 
   async getOverview(actor: FinanceActor, storeId: string) {
     actor = await this.withStoreMember(actor);
-    if (!PermissionPolicy.canViewAllFinanceApplications(actor, storeId)) throw new ForbiddenException("无权限");
+    if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, storeId)) throw new ForbiddenException("无权限");
     const [expenseCount, reimbursementCount, pendingExpenseCount, pendingReimbursementCount, paymentCount] = await Promise.all([
       this.prisma.expenseApplication.count({ where: { storeId } }),
       this.prisma.reimbursementApplication.count({ where: { storeId } }),
@@ -137,7 +143,7 @@ export class FinanceQueryService {
 
   async listPaymentRecords(actor: FinanceActor, query: ListFinanceApplicationsDto) {
     actor = await this.withStoreMember(actor);
-    if (!PermissionPolicy.canViewAllFinanceApplications(actor, query.storeId)) throw new ForbiddenException("无权限");
+    if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, query.storeId)) throw new ForbiddenException("无权限");
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
     const where: Prisma.PaymentRecordWhereInput = { storeId: query.storeId };
@@ -157,11 +163,11 @@ export class FinanceQueryService {
     return { items, page, pageSize, total };
   }
 
-  private expenseActions(actor: FinanceActor, item: { storeId: string; applicantId: string; status: FinanceApprovalStatus }): FinanceAllowedAction[] {
+  private async expenseActions(actor: FinanceActor, item: { storeId: string; applicantId: string; status: FinanceApprovalStatus }): Promise<FinanceAllowedAction[]> {
     const actions: FinanceAllowedAction[] = [];
-    const own = PermissionPolicy.canViewOwnFinanceApplication(actor, item.storeId, item.applicantId);
-    const all = PermissionPolicy.canViewAllFinanceApplications(actor, item.storeId);
-    if (item.status === FinanceApprovalStatus.PENDING && PermissionPolicy.canReviewExpense(actor, item.storeId)) actions.push("REVIEW_EXPENSE");
+    const own = await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, item.storeId, item.applicantId);
+    const all = await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, item.storeId);
+    if (item.status === FinanceApprovalStatus.PENDING && await this.canAccess(actor, FINANCE_CAPABILITIES.expense.capability, FINANCE_CAPABILITIES.expense.review, item.storeId)) actions.push("REVIEW_EXPENSE");
     if (item.status === FinanceApprovalStatus.PENDING && own) actions.push("WITHDRAW");
     if (item.status === FinanceApprovalStatus.REJECTED && own) actions.push("RESUBMIT");
     if (item.status === FinanceApprovalStatus.APPROVED && (own || all)) actions.push("CREATE_REIMBURSEMENT");
@@ -169,12 +175,12 @@ export class FinanceQueryService {
     return actions;
   }
 
-  private reimbursementActions(actor: FinanceActor, item: { storeId: string; applicantId: string; status: FinanceApprovalStatus }): FinanceAllowedAction[] {
+  private async reimbursementActions(actor: FinanceActor, item: { storeId: string; applicantId: string; status: FinanceApprovalStatus }): Promise<FinanceAllowedAction[]> {
     const actions: FinanceAllowedAction[] = [];
-    const own = PermissionPolicy.canViewOwnFinanceApplication(actor, item.storeId, item.applicantId);
-    const all = PermissionPolicy.canViewAllFinanceApplications(actor, item.storeId);
-    if (item.status === FinanceApprovalStatus.PENDING && PermissionPolicy.canReviewReimbursement(actor, item.storeId)) actions.push("REVIEW_REIMBURSEMENT");
-    if (item.status === FinanceApprovalStatus.APPROVED && PermissionPolicy.canPayReimbursement(actor, item.storeId)) actions.push("PAY");
+    const own = await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, item.storeId, item.applicantId);
+    const all = await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, item.storeId);
+    if (item.status === FinanceApprovalStatus.PENDING && await this.canAccess(actor, FINANCE_CAPABILITIES.reimbursement.capability, FINANCE_CAPABILITIES.reimbursement.review, item.storeId)) actions.push("REVIEW_REIMBURSEMENT");
+    if (item.status === FinanceApprovalStatus.APPROVED && await this.canAccess(actor, FINANCE_CAPABILITIES.reimbursement.capability, FINANCE_CAPABILITIES.reimbursement.pay, item.storeId)) actions.push("PAY");
     if (item.status === FinanceApprovalStatus.PENDING && own) actions.push("WITHDRAW");
     if (item.status === FinanceApprovalStatus.REJECTED && own) actions.push("RESUBMIT");
     if (own || all) actions.push("UPLOAD_ATTACHMENT");

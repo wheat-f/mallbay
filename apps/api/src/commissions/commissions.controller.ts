@@ -4,6 +4,7 @@ import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CommissionsService, type AuthenticatedCommissionUser } from "./commissions.service";
 import { CreateSalesCommissionRuleDto, GenerateWorkerCommissionsDto, ListCommissionRulesDto } from "./dto/commissions.dto";
+import { FinancialDocumentQuery } from "../finance/domain/financial-document-query";
 
 type AuthRequest = Request & {
   user: AuthenticatedCommissionUser;
@@ -12,11 +13,11 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("commissions")
 export class CommissionsController {
-  constructor(private readonly commissions: CommissionsService) {}
+  constructor(private readonly commissions: CommissionsService, private readonly documents: FinancialDocumentQuery) {}
 
   @Get("sales-rules")
   listRules(@Req() req: AuthRequest, @Query() query: ListCommissionRulesDto) {
-    return this.commissions.listSalesRules(req.user, query);
+    return this.documents.listCommissionRules(req.user, query);
   }
 
   @Post("sales-rules")

@@ -138,3 +138,40 @@ trace(input) -> InventoryTrace
 - `ADR-0003`：库存流水与预留事实的所有权。
 - `ADR-0004`：定价决策与订单价格/成本快照。
 - 后续各 module 的 `CONTEXT.md` 术语会先合并到根上下文，只有形成独立 bounded context 时再拆分 context。
+
+## 2026-08-09 五个候选的深化确认
+
+本轮决定：先完整设计五个候选，再按以下顺序实施：
+
+1. `ProcurementFlow + InventoryLedger`
+2. `Construction Fulfillment`
+3. `CustomerAccount + SettlementView`
+4. `FinancialDocumentQuery`
+5. `AccessContext`
+
+### Public interface 约束
+
+- `InventoryLedger` 使用显式的 `reserve`、`release`、`receive`、`outbound`、`adjust`、`trace` 操作，不使用无约束的通用 `transition`。
+- `ProcurementFlow.receive` 是采购场景的收货入口，并与库存收货事实在同一事务中提交；页面不得直接调用库存事实 implementation。
+- `Construction Fulfillment` 使用受限的 `executeStep(command)`，施工状态写入继续经过 `OrderLifecycle`。
+- `CustomerAccount` 和 `SettlementView` 的金额结果必须携带主日期口径、查询范围、纳入订单类型、金额分类和生成时间。
+- `FinancialDocumentQuery` 保持一个查询 seam，但返回带 `documentType` 的强类型结果，不把各类财务单据压扁为弱类型对象。
+- `AccessContext` 接收抽象 actor 和业务访问上下文，不依赖 HTTP Request。
+- 领域结果类型留在各自 module；只有跨端传输契约进入 `packages/shared`，不得从 Prisma 类型直接推导 public interface。
+
+### 迁移和行为约束
+
+- 旧入口可以暂时保留，但必须适配到新 interface。
+- 迁移期间不允许新旧 implementation 双写核心事实。
+- contract tests 通过 public interface 验证行为，旧的浅层 implementation tests 在替代后删除。
+- 采购、施工、客户、结算和财务查询结果必须显式返回事实日期和金额口径。
+- 新 module 必须通过删除测试证明：删除后复杂度会重新散落到至少两个真实调用者。
+
+### 最终实施前检查
+
+- 每个 deep module 至少服务两个真实调用者后，才接受其 external seam。
+- 跨 module transaction 只能由拥有业务事实的 module 编排；Controller 和页面不得自行组合事实。
+- module interface 使用稳定的业务错误类型，HTTP 状态码和页面文案由外层适配。
+- 第一阶段继续采用实时查询、明确分页/规模限制、`generatedAt` 和口径元数据；不提前引入异步读模型。
+- public interface 不得泄露 Prisma 类型；Prisma 只属于 implementation。
+- 五个候选先完成设计、ADR、术语和 contract tests 规划，再开始第一个候选的代码实施。

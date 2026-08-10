@@ -3,6 +3,39 @@ import { test } from "node:test";
 import { AfterSaleCostCategory, AfterSaleCostDirection, AfterSaleCostStatus, AfterSaleResponsibility, AfterSaleStatus, StorePosition } from "@prisma/client";
 import { AfterSalesService } from "./after-sales.service";
 
+const afterSalesAccess = {
+  can: async (actorId: string, capability: string, action: string, context: { ownerId?: string } = {}) => {
+    const role = actorId.startsWith("sales") ? "SALES"
+      : actorId.startsWith("construction") ? "CONSTRUCTION"
+        : actorId.startsWith("apprentice") ? "APPRENTICE"
+          : actorId.startsWith("worker") ? "CONSTRUCTION"
+          : actorId.startsWith("finance") ? "FINANCE"
+            : actorId.startsWith("scheduler") ? "SCHEDULER"
+              : actorId.startsWith("cs") ? "CUSTOMER_SERVICE" : "MANAGER";
+    if (capability === "after-sales" && action === "read") return true;
+    if (capability === "after-sales" && action === "write") {
+      if (["MANAGER", "SCHEDULER", "CUSTOMER_SERVICE"].includes(role)) return true;
+      return ["CONSTRUCTION", "APPRENTICE"].includes(role) && context.ownerId === actorId;
+    }
+    if (capability === "finance" && action === "write") return role === "FINANCE" || role === "MANAGER";
+    if (capability === "store" && action === "write") return role === "MANAGER";
+    return false;
+  },
+  resolve: async (actorId: string, context: { storeId?: string }) => ({
+    userId: actorId,
+    policyVersion: 1,
+    bindingVersion: 1,
+    roles: [{
+      roleCode: actorId.startsWith("sales") ? "SALES" : actorId.startsWith("construction") ? "CONSTRUCTION" : actorId.startsWith("apprentice") || actorId.startsWith("worker") ? "APPRENTICE" : actorId.startsWith("finance") ? "FINANCE" : "MANAGER",
+      roleName: "test",
+      scopeType: "STORE",
+      scopeIds: context.storeId ? [context.storeId] : []
+    }],
+    permissions: [],
+    generatedAt: new Date().toISOString()
+  })
+};
+
 test("AfterSalesService creates after-sale linked to order warranty customer and issue photo evidence", async () => {
   const writes: unknown[] = [];
   const prisma = {
@@ -24,7 +57,7 @@ test("AfterSalesService creates after-sale linked to order warranty customer and
       createMany: async (args: unknown) => writes.push(args)
     }
   };
-  const service = new AfterSalesService(prisma as never);
+  const service = new AfterSalesService(prisma as never, afterSalesAccess as never);
 
   const result = await service.create(
     {
@@ -73,7 +106,7 @@ test("AfterSalesService assigns workers and records responsibility category phot
       createMany: async (args: unknown) => writes.push(args)
     }
   };
-  const service = new AfterSalesService(prisma as never);
+  const service = new AfterSalesService(prisma as never, afterSalesAccess as never);
 
   await service.assign(
     {
@@ -132,7 +165,7 @@ test("AfterSalesService lets assigned workers submit after-sale evidence only", 
       createMany: async (args: unknown) => writes.push(args)
     }
   };
-  const service = new AfterSalesService(prisma as never);
+  const service = new AfterSalesService(prisma as never, afterSalesAccess as never);
 
   await service.submitEvidence(
     {
@@ -180,7 +213,7 @@ test("AfterSalesService lists after-sales with order customer vehicle warranty a
       }
     }
   };
-  const service = new AfterSalesService(prisma as never);
+  const service = new AfterSalesService(prisma as never, afterSalesAccess as never);
 
   await service.list(
     {
@@ -215,7 +248,7 @@ test("AfterSalesService returns after-sale detail with assigned workers and pena
       }
     }
   };
-  const service = new AfterSalesService(prisma as never);
+  const service = new AfterSalesService(prisma as never, afterSalesAccess as never);
 
   await service.detail(
     {
@@ -255,7 +288,7 @@ test("AfterSalesService closes a resolved after-sale", async () => {
       }
     }
   };
-  const service = new AfterSalesService(prisma as never);
+  const service = new AfterSalesService(prisma as never, afterSalesAccess as never);
 
   const result = await service.close(
     {
@@ -283,7 +316,7 @@ test("AfterSalesService limits construction workers to assigned after-sales", as
       }
     }
   };
-  const service = new AfterSalesService(prisma as never);
+  const service = new AfterSalesService(prisma as never, afterSalesAccess as never);
 
   await service.list(
     {
@@ -311,7 +344,7 @@ test("AfterSalesService limits sales after-sales list to their own orders", asyn
       }
     }
   };
-  const service = new AfterSalesService(prisma as never);
+  const service = new AfterSalesService(prisma as never, afterSalesAccess as never);
 
   await service.list(
     {
@@ -353,7 +386,7 @@ test("AfterSalesService uploads after-sale evidence through object storage and p
       return "https://cdn.example/after.jpg";
     }
   };
-  const service = new AfterSalesService(prisma as never, oss as never);
+  const service = new AfterSalesService(prisma as never, afterSalesAccess as never, oss as never);
 
   const result = await service.uploadPhoto(
     {
@@ -401,7 +434,7 @@ test("售后费用按角色录入，确认后只能以红冲方式更正", async
     }),
     auditEvent: { create: async (args: unknown) => writes.push(args) }
   };
-  const service = new AfterSalesService(prisma as never);
+  const service = new AfterSalesService(prisma as never, afterSalesAccess as never);
   const manager = { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } };
   const finance = { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } };
 

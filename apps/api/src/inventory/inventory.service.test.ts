@@ -3,6 +3,47 @@ import { test } from "node:test";
 import { InventoryMovementType, ProductUnit, StorePosition } from "@prisma/client";
 import { InventoryService } from "./inventory.service";
 
+const inventoryAccess = {
+  can: async (actorId: string, capability: string, action: string) => {
+    const position = actorId.includes("manager") ? StorePosition.MANAGER
+      : actorId.includes("purchasing") ? StorePosition.PURCHASING
+        : actorId.includes("finance") ? StorePosition.FINANCE
+              : actorId.includes("customer-service") || actorId.startsWith("cs-") ? StorePosition.CUSTOMER_SERVICE
+            : actorId.includes("construction") ? StorePosition.CONSTRUCTION
+              : actorId.includes("apprentice") ? StorePosition.APPRENTICE
+                : StorePosition.SALES;
+    if (capability === "inventory" && action === "read") return [StorePosition.MANAGER, StorePosition.PURCHASING, StorePosition.CUSTOMER_SERVICE].includes(position);
+    if (capability === "inventory" && action === "write") return [StorePosition.MANAGER, StorePosition.PURCHASING].includes(position);
+    if (capability === "purchase" && action === "read") return [StorePosition.MANAGER, StorePosition.PURCHASING, StorePosition.FINANCE, StorePosition.CUSTOMER_SERVICE].includes(position);
+    if (capability === "purchase" && action === "write") return [StorePosition.MANAGER, StorePosition.PURCHASING].includes(position);
+    if (capability === "store" && action === "write") return position === StorePosition.MANAGER;
+    return false;
+  }
+};
+
+test("InventoryService authorizes inventory facts through AccessContext when available", async () => {
+  const decisions: unknown[] = [];
+  const service = new InventoryService(
+    {
+      storeMember: { findUnique: async () => ({ storeId: "store-1", position: StorePosition.PURCHASING }) },
+      inventoryBatch: { findMany: async () => [] }
+    } as never,
+    {
+      can: async (...args: unknown[]) => {
+        decisions.push(args);
+        return true;
+      }
+    } as never
+  );
+
+  await service.listBatches(
+    { id: "purchasing-1", isAuditor: false } as never,
+    { storeId: "store-1" } as never
+  );
+
+  assert.deepEqual(decisions, [["purchasing-1", "inventory", "read", { storeId: "store-1" }]]);
+});
+
 test("InventoryService creates a batch and purchase-in movement", async () => {
   const writes: unknown[] = [];
   const prisma = {
@@ -20,7 +61,7 @@ test("InventoryService creates a batch and purchase-in movement", async () => {
       }
     }
   };
-  const service = new InventoryService(prisma as never);
+  const service = new InventoryService(prisma as never, inventoryAccess as never);
 
   const result = await service.createBatch(
     {
@@ -60,7 +101,7 @@ test("InventoryService receives one roll as base meter stock with package snapsh
       }
     }
   };
-  const service = new InventoryService(prisma as never);
+  const service = new InventoryService(prisma as never, inventoryAccess as never);
 
   await service.createBatch(
     {
@@ -108,7 +149,7 @@ test("InventoryService manages store warehouses as inventory master data", async
       }
     }
   };
-  const service = new InventoryService(prisma as never);
+  const service = new InventoryService(prisma as never, inventoryAccess as never);
   const user = {
     id: "purchasing-1",
     isAuditor: false,
@@ -136,7 +177,7 @@ test("InventoryService filters inventory movements by product batch order type a
         return [];
       }
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   await service.listMovements(
     {
@@ -210,7 +251,7 @@ test("InventoryService excludes fully outbound orders from pending inventory mat
         }
       ]
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.listPendingMatchOrders(
     {
@@ -256,7 +297,7 @@ test("InventoryService locks stock through allocations and creates purchase requ
       }
     }
   };
-  const service = new InventoryService(prisma as never);
+  const service = new InventoryService(prisma as never, inventoryAccess as never);
 
   const result = await service.lockOrderInventory(
     {
@@ -328,7 +369,7 @@ test("InventoryService auto locks using order item required base quantity", asyn
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.lockOrderInventory(
     {
@@ -402,7 +443,7 @@ test("InventoryService reuses released allocation when locking the same order ba
       }
     }
   };
-  const service = new InventoryService(prisma as never);
+  const service = new InventoryService(prisma as never, inventoryAccess as never);
 
   const result = await service.lockOrderInventory(
     {
@@ -474,7 +515,7 @@ test("InventoryService locks selected batch by base unit quantity", async () => 
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   await service.createOrderInventoryAllocations(
     {
@@ -528,7 +569,7 @@ test("InventoryService rejects a fractional lock that exceeds the remaining orde
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   await assert.rejects(
     () => service.createOrderInventoryAllocations(
@@ -569,7 +610,7 @@ test("InventoryService creates purchase order from purchase requirement items", 
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.createPurchaseOrderFromRequirement(
     {
@@ -611,7 +652,7 @@ test("InventoryService assigns the purchase order purchaser from the request or 
   const service = new InventoryService({
     storeMember: { findUnique: async () => ({ position: StorePosition.PURCHASING }) },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   await service.createPurchaseOrderFromRequirement(
     { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
@@ -637,7 +678,7 @@ test("InventoryService returns related purchase orders with purchase requirement
         ];
       }
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.listPurchaseRequirements(
     {
@@ -686,7 +727,7 @@ test("InventoryService creates purchase orders only for un-ordered requirement q
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   await service.createPurchaseOrderFromRequirement(
     {
@@ -734,7 +775,7 @@ test("InventoryService splits a purchase requirement across multiple suppliers",
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.createPurchaseOrderFromRequirement(
     {
@@ -788,7 +829,7 @@ test("InventoryService rejects supplier allocations above remaining requirement 
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   await assert.rejects(
     () =>
@@ -818,7 +859,7 @@ test("InventoryService rejects sales viewing purchase orders", async () => {
         throw new Error("sales should not read purchase orders");
       }
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   await assert.rejects(
     () =>
@@ -842,7 +883,7 @@ test("InventoryService rejects sales viewing purchase requirements", async () =>
         throw new Error("sales should not read purchase requirements");
       }
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   await assert.rejects(
     () =>
@@ -876,7 +917,7 @@ test("InventoryService rejects sales viewing supplier backoffice list", async ()
         throw new Error("sales should not read batch supplier snapshots");
       }
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   await assert.rejects(
     () =>
@@ -904,7 +945,7 @@ test("InventoryService allows customer service to view purchase orders and suppl
     inventoryBatch: {
       findMany: async () => []
     }
-  } as never);
+  } as never, inventoryAccess as never);
   const user = {
     id: "customer-service-1",
     isAuditor: false,
@@ -924,7 +965,7 @@ test("InventoryService rejects customer service purchase and supplier mutations"
     purchaseOrder: {
       findUnique: async () => ({ id: "po-1", storeId: "store-1", status: "DRAFT", orderNo: "PO1" })
     }
-  } as never);
+  } as never, inventoryAccess as never);
   const user = {
     id: "customer-service-1",
     isAuditor: false,
@@ -960,7 +1001,7 @@ test("InventoryService approves draft purchase orders before inbound", async () 
         return { id: "po-1", status: "ORDERED" };
       }
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.approvePurchaseOrder(
     {
@@ -991,7 +1032,7 @@ test("InventoryService rejects receiving draft purchase orders", async () => {
           })
         }
       })
-  } as never);
+  } as never, inventoryAccess as never);
 
   await assert.rejects(
     () =>
@@ -1022,7 +1063,7 @@ test("InventoryService cancels purchase orders with audit reason", async () => {
     auditEvent: {
       create: async (args: unknown) => writes.push({ audit: args })
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.cancelPurchaseOrder(
     {
@@ -1044,7 +1085,7 @@ test("InventoryService cancels purchase orders with audit reason", async () => {
 test("InventoryService requires a reason when cancelling purchase orders", async () => {
   const service = new InventoryService({
     storeMember: { findUnique: async () => null }
-  } as never);
+  } as never, inventoryAccess as never);
 
   await assert.rejects(
     () =>
@@ -1077,7 +1118,7 @@ test("InventoryService rejects receiving cancelled purchase orders", async () =>
           })
         }
       })
-  } as never);
+  } as never, inventoryAccess as never);
 
   await assert.rejects(
     () =>
@@ -1133,7 +1174,7 @@ test("InventoryService list purchase orders includes product details and receive
         ];
       }
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.listPurchaseOrders(
     {
@@ -1200,7 +1241,7 @@ test("InventoryService lists supplier master data merged with purchase and batch
     inventoryBatch: {
       findMany: async () => [{ supplierName: "3M", updatedAt: new Date("2026-06-07T00:00:00.000Z") }]
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.listSuppliers(
     {
@@ -1238,7 +1279,7 @@ test("InventoryService creates and updates supplier master data within the same 
         return { id: "supplier-1", name: "3M", contactName: "王采购" };
       }
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   await service.createSupplier(
     {
@@ -1321,7 +1362,7 @@ test("InventoryService exports every purchase product row without pagination", a
         ];
       }
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.exportPurchaseOrderDetails(
     {
@@ -1364,7 +1405,7 @@ test("InventoryService creates supplier contacts and rating history", async () =
         return { id: "rating-1", rating: 5 };
       }
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   await service.createSupplierContact(
     {
@@ -1425,7 +1466,7 @@ test("InventoryService order match includes locked allocations and batch trace",
     inventoryBatch: {
       findMany: async () => []
     }
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.getOrderInventoryMatch(
     {
@@ -1503,7 +1544,7 @@ test("InventoryService receive purchase item updates purchase requirement fulfil
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   await service.receivePurchaseItem(
     {
@@ -1566,7 +1607,7 @@ test("InventoryService receives purchase item package quantity as base stock", a
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   await service.receivePurchaseItem(
     {
@@ -1618,7 +1659,7 @@ test("InventoryService receives purchase item batches with per-line failures", a
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.receivePurchaseItemBatches(
     {
@@ -1684,7 +1725,7 @@ test("InventoryService stores receiving warehouse on purchase-in batch and movem
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   await service.receivePurchaseItem(
     {
@@ -1716,7 +1757,7 @@ test("InventoryService records roll to meter conversion as inventory movement me
       }
     }
   };
-  const service = new InventoryService(prisma as never);
+  const service = new InventoryService(prisma as never, inventoryAccess as never);
 
   await service.convertBatchUnit(
     {
@@ -1761,7 +1802,7 @@ test("InventoryService splits roll batch into traceable meter child batch", asyn
       create: async (args: unknown) => writes.push(args)
     }
   };
-  const service = new InventoryService(prisma as never);
+  const service = new InventoryService(prisma as never, inventoryAccess as never);
 
   const result = await service.splitBatch(
     {
@@ -1804,7 +1845,7 @@ test("InventoryService applies manual stock operations with explicit movement ty
       }
     }
   };
-  const service = new InventoryService(prisma as never);
+  const service = new InventoryService(prisma as never, inventoryAccess as never);
 
   await service.createStockOperation(
     {
@@ -1844,7 +1885,7 @@ test("InventoryService returns the original movement for a repeated stock operat
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (client: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   const result = await service.createStockOperation(
     {
@@ -1904,7 +1945,7 @@ test("InventoryService partially outbounds locked inventory by selected unit", a
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn(tx)
-  } as never);
+  } as never, inventoryAccess as never);
 
   await service.outboundOrderInventory(
     {

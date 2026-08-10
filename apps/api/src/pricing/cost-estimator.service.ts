@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { estimateCosts } from "./domain/cost-estimator";
 import { EstimateCostDto } from "./dto/estimate-cost.dto";
@@ -9,11 +10,11 @@ import { loadPublishedFinanceSettlementPolicy } from "../settings/finance-settle
 
 @Injectable()
 export class CostEstimatorService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
 
   async estimate(user: PricingAuthenticatedUser, dto: EstimateCostDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can(actor.id, "products", "read", { storeId: dto.storeId })) throw new ForbiddenException("无权限");
     const productIds = [...new Set(dto.lines.map((line) => line.productId))];
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, storeId: dto.storeId },
@@ -76,13 +77,8 @@ export class CostEstimatorService {
    * Pricing calculations need the same authoritative material-cost source as
    * the standalone preview endpoint, but have already authenticated the user.
    */
-  async estimateForStore(storeId: string, lines: EstimateCostDto["lines"]) {
-    const serviceUser: PricingAuthenticatedUser = {
-      id: "cost-estimator-service",
-      isAuditor: true,
-      storeMember: { storeId, position: "MANAGER" as never }
-    };
-    return this.estimate(serviceUser, { storeId, lines });
+  async estimateForStore(user: PricingAuthenticatedUser, storeId: string, lines: EstimateCostDto["lines"]) {
+    return this.estimate(user, { storeId, lines });
   }
 
   private async withStoreMember(user: PricingAuthenticatedUser): Promise<UserWithStoreMember> {

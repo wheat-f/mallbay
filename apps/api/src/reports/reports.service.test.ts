@@ -15,6 +15,20 @@ import {
 } from "@prisma/client";
 import { ReportsService } from "./reports.service";
 
+const reportAccess = {
+  can: async () => true,
+  resolve: async (actor: string) => ({
+    roles: [{
+      roleCode: actor.startsWith("sales") ? "SALES" : "MANAGER",
+      roleName: "测试角色",
+      scopeType: "STORE",
+      scopeIds: ["store-1"]
+    }]
+  })
+};
+
+const deniedReportAccess = { can: async () => false, resolve: reportAccess.resolve };
+
 test("ReportsService returns operating metrics for managers and admins", async () => {
   const prisma = {
     storeMember: { findUnique: async () => null },
@@ -169,7 +183,7 @@ test("ReportsService returns operating metrics for managers and admins", async (
       ]
     }
   };
-  const service = new ReportsService(prisma as never);
+  const service = new ReportsService(prisma as never, reportAccess as never);
 
   const result = await service.summary(
     { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
@@ -364,7 +378,7 @@ test("ReportsService lets administrators summarize all stores without a storeId"
     reimbursementApplication: { aggregate: async () => ({ _sum: { amountCents: null } }) },
     paymentRecord: { aggregate: async () => ({ _sum: { amountCents: null } }), findMany: async () => [] }
   };
-  const service = new ReportsService(prisma as never);
+  const service = new ReportsService(prisma as never, reportAccess as never);
 
   const result = await service.summary(
     { id: "admin-1", isAuditor: true, storeMember: null },
@@ -406,7 +420,7 @@ test("ReportsService lets finance summarize their own store without passing stor
     reimbursementApplication: { aggregate: async () => ({ _sum: { amountCents: null } }) },
     paymentRecord: { aggregate: async () => ({ _sum: { amountCents: null } }), findMany: async () => [] }
   };
-  const service = new ReportsService(prisma as never);
+  const service = new ReportsService(prisma as never, reportAccess as never);
 
   await service.summary(
     { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
@@ -484,7 +498,7 @@ test("ReportsService lets sales summarize only their own sales performance", asy
     reimbursementApplication: { aggregate: async () => ({ _sum: { amountCents: null } }) },
     paymentRecord: { aggregate: async () => ({ _sum: { amountCents: null } }), findMany: async () => [] }
   };
-  const service = new ReportsService(prisma as never);
+  const service = new ReportsService(prisma as never, reportAccess as never);
 
   await service.summary(
     { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },
@@ -513,7 +527,7 @@ test("ReportsService lets sales summarize only their own sales performance", asy
 });
 
 test("ReportsService rejects an operational date range longer than 366 days before querying data", async () => {
-  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never);
+  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never, reportAccess as never);
   await assert.rejects(
     service.operational(
       { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
@@ -524,7 +538,7 @@ test("ReportsService rejects an operational date range longer than 366 days befo
 });
 
 test("ReportsService rejects reversed operational date ranges", async () => {
-  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never);
+  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never, reportAccess as never);
   await assert.rejects(
     service.operational(
       { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
@@ -535,7 +549,7 @@ test("ReportsService rejects reversed operational date ranges", async () => {
 });
 
 test("ReportsService rejects malformed operational dates before querying data", async () => {
-  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never);
+  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never, reportAccess as never);
   await assert.rejects(
     service.operational(
       { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
@@ -589,7 +603,7 @@ test("ReportsService operational contract preserves in-transit money and incompl
     },
     afterSale: { findMany: async () => [] }
   };
-  const service = new ReportsService(prisma as never);
+  const service = new ReportsService(prisma as never, reportAccess as never);
 
   const result = await service.operational(
     { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
@@ -642,7 +656,7 @@ test("ReportsService operational contract preserves in-transit money and incompl
 });
 
 test("ReportsService operational interface rejects an actor without report scope", async () => {
-  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never);
+  const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never, deniedReportAccess as never);
 
   await assert.rejects(
     service.operational({ id: "user-1", isAuditor: false, storeMember: null }, {}),

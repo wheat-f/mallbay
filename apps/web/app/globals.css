@@ -16142,6 +16142,10 @@ body {
   min-width: 560px;
 }
 
+.reports-data-desktop-table {
+  overflow-x: auto;
+}
+
 .reports-data-mobile-card {
   display: grid;
   gap: 12px;

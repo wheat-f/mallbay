@@ -9,9 +9,10 @@ import { PricingRolloutService } from "./pricing-rollout.service";
 import { ConstructionCostConfigService } from "./construction-cost-config.service";
 import { ObservabilityModule } from "../observability/observability.module";
 import { PricingDecision } from "./domain/pricing-decision";
+import { PermissionsModule } from "../permissions/permissions.module";
 
 @Module({
-  imports: [ObservabilityModule],
+  imports: [ObservabilityModule, PermissionsModule],
   controllers: [PricingController],
   providers: [PricingService, PricingDecision, VehiclePricingService, PricingRulesService, CostEstimatorService, PricingTemplateService, PricingRolloutService, ConstructionCostConfigService],
   exports: [PricingService, PricingDecision, VehiclePricingService, PricingRulesService, CostEstimatorService, PricingTemplateService, PricingRolloutService, ConstructionCostConfigService]

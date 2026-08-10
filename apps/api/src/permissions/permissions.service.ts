@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PermissionBindingStatus, PermissionPolicyVersionStatus, PermissionRoleStatus, Prisma, PermissionScopeType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { PermissionPolicy } from "../common/policies/permission.policy";
+import { RuntimeAccessSnapshotStore } from "./domain/runtime-access-snapshot.store";
 
 export type PermissionContext = {
   storeId?: string;
@@ -29,35 +29,40 @@ const legacyRoleNames: Record<string, string> = {
 };
 
 const legacyPermissionMap: Record<string, Array<[string, string, string]>> = {
-  MANAGER: [
+    MANAGER: [
     ["customers", "read", "STORE"], ["customers", "write", "STORE"],
     ["orders", "read", "STORE"], ["orders", "write", "STORE"],
+    ["warranties", "read", "STORE"], ["warranties", "write", "STORE"],
     ["construction", "read", "STORE"], ["construction", "write", "STORE"],
     ["inventory", "read", "STORE"], ["inventory", "write", "STORE"],
+    ["products", "read", "STORE"], ["products", "write", "STORE"],
     ["purchase", "read", "STORE"], ["purchase", "write", "STORE"],
     ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"],
-    ["reports", "read", "STORE"]
+    ["reports", "read", "STORE"],
+    ["finance", "read", "STORE"], ["finance", "write", "STORE"],
+    ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"],
+    ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.expense", "review", "STORE"]
   ],
-  SALES: [["customers", "read", "OWN"], ["customers", "write", "OWN"], ["orders", "read", "OWN"], ["orders", "write", "OWN"]],
-  CUSTOMER_SERVICE: [["customers", "read", "STORE"], ["customers", "write", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"]],
-  PURCHASING: [["inventory", "read", "STORE"], ["inventory", "write", "STORE"], ["purchase", "read", "STORE"], ["purchase", "write", "STORE"]],
-  FINANCE: [["finance", "read", "STORE"], ["finance", "write", "STORE"], ["reports", "read", "STORE"]],
-  SCHEDULER: [["construction", "read", "STORE"], ["construction", "write", "STORE"]],
-  CONSTRUCTION: [["construction", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"]],
-  APPRENTICE: [["construction", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"]]
+  SALES: [["customers", "read", "OWN"], ["customers", "write", "OWN"], ["orders", "read", "OWN"], ["orders", "write", "OWN"], ["warranties", "read", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
+  CUSTOMER_SERVICE: [["customers", "read", "STORE"], ["customers", "write", "STORE"], ["orders", "read", "STORE"], ["orders", "write", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
+  PURCHASING: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["inventory", "read", "STORE"], ["inventory", "write", "STORE"], ["products", "read", "STORE"], ["products", "write", "STORE"], ["purchase", "read", "STORE"], ["purchase", "write", "STORE"], ["after-sales", "read", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
+  FINANCE: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["finance", "read", "STORE"], ["finance", "write", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"], ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.reimbursement", "review", "STORE"], ["finance.reimbursement", "pay", "STORE"]],
+  SCHEDULER: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"], ["construction", "read", "STORE"], ["construction", "write", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
+  CONSTRUCTION: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["construction", "read", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
+  APPRENTICE: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["construction", "read", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]]
 };
 
 @Injectable()
 export class PermissionsService {
   private readonly resultCache = new Map<string, { expiresAt: number; result: PermissionResult }>();
   private readonly cacheTtlMs = 30_000;
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly snapshotStore: RuntimeAccessSnapshotStore) {}
 
   async getForUser(userId: string, context: PermissionContext = {}): Promise<PermissionResult> {
     const cacheKey = userId + ":" + (context.storeId ?? "*");
     const cached = this.resultCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
-      PermissionPolicy.setRuntimeSnapshot(userId, { permissions: cached.result.permissions, roles: cached.result.roles });
+      this.snapshotStore.set(userId, { permissions: cached.result.permissions, roles: cached.result.roles });
       return cached.result;
     }
     const now = new Date();
@@ -182,7 +187,7 @@ export class PermissionsService {
       generatedAt: now.toISOString()
     };
     this.resultCache.set(cacheKey, { expiresAt: Date.now() + this.cacheTtlMs, result });
-    PermissionPolicy.setRuntimeSnapshot(userId, { permissions: computedPermissions, roles });
+    this.snapshotStore.set(userId, { permissions: computedPermissions, roles });
     return result;
   }
 
@@ -511,9 +516,15 @@ export class PermissionsService {
 
   private invalidateUserCache(userId: string) {
     for (const key of this.resultCache.keys()) if (key.startsWith(userId + ":")) this.resultCache.delete(key);
+    this.snapshotStore.clear(userId);
+    this.snapshotStore.clear(userId);
   }
 
-  private invalidateAllCache() { this.resultCache.clear(); }
+  private invalidateAllCache() {
+    this.resultCache.clear();
+    this.snapshotStore.clearAll();
+    this.snapshotStore.clearAll();
+  }
 
   private async bindingVersion(userId: string) {
     const latest = await this.prisma.permissionRoleBinding.findFirst({ where: { userId }, orderBy: { updatedAt: "desc" }, select: { updatedAt: true } });
@@ -527,7 +538,7 @@ export class PermissionsService {
     context: PermissionContext
   ) {
     if (isAuditor) {
-      for (const [resource, action] of [["customers", "read"], ["customers", "write"], ["orders", "read"], ["orders", "write"], ["construction", "read"], ["construction", "write"], ["inventory", "read"], ["inventory", "write"], ["purchase", "read"], ["purchase", "write"], ["finance", "read"], ["finance", "write"], ["after-sales", "read"], ["after-sales", "write"], ["reports", "read"]]) {
+      for (const [resource, action] of [["customers", "read"], ["customers", "write"], ["orders", "read"], ["orders", "write"], ["construction", "read"], ["construction", "write"], ["inventory", "read"], ["inventory", "write"], ["products", "read"], ["products", "write"], ["purchase", "read"], ["purchase", "write"], ["finance", "read"], ["finance", "write"], ["after-sales", "read"], ["after-sales", "write"], ["reports", "read"], ["finance.application", "submit"], ["finance.document", "read"], ["finance.document", "attach"], ["finance.expense", "review"], ["finance.reimbursement", "review"], ["finance.reimbursement", "pay"]]) {
         grants.push({ code: resource, action, scope: "GLOBAL", bindingScope: { scopeType: PermissionScopeType.HQ, scopeIds: [] } });
       }
     }

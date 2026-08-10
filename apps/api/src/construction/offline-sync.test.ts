@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { ConstructionPhotoStage, ConstructionTaskStatus } from "@prisma/client";
 import { ConstructionService, type AuthenticatedConstructionUser } from "./construction.service";
 
+const offlineAccess = { can: async () => true, resolve: async () => ({ roles: [{ roleCode: "CONSTRUCTION" }] }) };
+
 test("ConstructionService syncs offline photo status and leave operations in order", async () => {
-  const service = new ConstructionService({} as never);
+  const service = new ConstructionService({} as never, undefined, undefined, undefined, undefined, undefined, offlineAccess as never);
   const calls: string[] = [];
   const user: AuthenticatedConstructionUser = {
     id: "worker-1",
@@ -83,7 +85,7 @@ test("ConstructionService syncs offline photo status and leave operations in ord
 });
 
 test("ConstructionService marks failed offline operations without stopping later operations", async () => {
-  const service = new ConstructionService({} as never);
+  const service = new ConstructionService({} as never, undefined, undefined, undefined, undefined, undefined, offlineAccess as never);
   const user: AuthenticatedConstructionUser = {
     id: "worker-1",
     isAuditor: false,

@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { CapacityReservationStatus, Prisma, PricingApprovalStatus, PricingApprovalType, SalesQuoteStatus, StoreStatus } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { multiplyMoneyCents } from "../pricing/domain/money";
 import { CapacityReservationService } from "../construction/capacity-reservation.service";
@@ -21,12 +22,13 @@ export class SalesQuotesService {
     private readonly capacityReservations: CapacityReservationService,
     private readonly createOrderUseCase: CreateOrderUseCase,
     @Optional() private readonly audit?: AuditLogService,
-    @Optional() private readonly auditWriter?: AuditEventWriter
+    @Optional() private readonly auditWriter?: AuditEventWriter,
+    @Optional() private readonly accessContext?: AccessContext
   ) {}
 
   async create(user: PricingAuthenticatedUser, dto: CreateSalesQuoteDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canCreateOrder(actor, dto.storeId)) throw new ForbiddenException("无权限");
+    if (!await this.canOrdersWrite(actor, dto.storeId, actor.id)) throw new ForbiddenException("无权限");
     const executionStoreId = dto.executionStoreId?.trim() || dto.storeId;
     if (executionStoreId !== dto.storeId) {
       const [sourceStore, executionStore] = await Promise.all([
@@ -94,7 +96,7 @@ export class SalesQuotesService {
     const finalConstructionChargeCents = resolveFinalConstructionChargeCents(dto);
     const rawCostEstimate = readCostEstimate(output);
     const usesTemporaryCost = rawCostEstimate.costCompleteness !== "COMPLETE" && dto.temporaryCostCents !== undefined;
-    if (usesTemporaryCost && (!PermissionPolicy.isStoreManager(actor, dto.storeId) || !dto.temporaryCostReason?.trim())) {
+    if (usesTemporaryCost && (!await this.canStoreWrite(actor, dto.storeId) || !dto.temporaryCostReason?.trim())) {
       throw new BadRequestException("仅店长可填写本单临时成本，且必须说明成本依据");
     }
     if (rawCostEstimate.costCompleteness !== "COMPLETE" && !usesTemporaryCost) {
@@ -213,23 +215,25 @@ export class SalesQuotesService {
 
   async list(user: PricingAuthenticatedUser, dto: ListSalesQuotesDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) throw new ForbiddenException("无权限");
+    if (!await this.canOrdersRead(actor, dto.storeId)) throw new ForbiddenException("无权限");
+    const isManager = await this.canStoreWrite(actor, dto.storeId);
     const where = {
       storeId: dto.storeId,
-      ...(PermissionPolicy.isStoreManager(actor, dto.storeId) ? {} : { salesPersonId: actor.id })
+      ...(isManager ? {} : { salesPersonId: actor.id })
     };
     const quotes = await this.prisma.salesQuote.findMany({ where, orderBy: { createdAt: "desc" }, include: { approvals: true, items: true } });
-    return PermissionPolicy.canManageFinance(actor, dto.storeId) ? quotes : quotes.map(redactQuoteCost);
+    return await this.canFinanceWrite(actor, dto.storeId) ? quotes : quotes.map(redactQuoteCost);
   }
 
   async exportDetails(user: PricingAuthenticatedUser, dto: ExportSalesQuoteDetailsDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) throw new ForbiddenException("无权限");
-    const canViewCosts = PermissionPolicy.canManageFinance(actor, dto.storeId);
+    if (!await this.canOrdersRead(actor, dto.storeId)) throw new ForbiddenException("无权限");
+    const canViewCosts = await this.canFinanceWrite(actor, dto.storeId);
+    const isManager = await this.canStoreWrite(actor, dto.storeId);
     const quotes = await this.prisma.salesQuote.findMany({
       where: {
         storeId: dto.storeId,
-        ...(PermissionPolicy.isStoreManager(actor, dto.storeId) ? {} : { salesPersonId: actor.id })
+        ...(isManager ? {} : { salesPersonId: actor.id })
       },
       orderBy: { createdAt: "desc" },
       include: {
@@ -285,12 +289,13 @@ export class SalesQuotesService {
 
   async get(user: PricingAuthenticatedUser, id: string, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, storeId)) throw new ForbiddenException("无权限");
+    if (!await this.canOrdersRead(actor, storeId)) throw new ForbiddenException("无权限");
+    const isManager = await this.canStoreWrite(actor, storeId);
     const quote = await this.prisma.salesQuote.findFirst({
       where: {
         id,
         storeId,
-        ...(PermissionPolicy.isStoreManager(actor, storeId) ? {} : { salesPersonId: actor.id })
+        ...(isManager ? {} : { salesPersonId: actor.id })
       },
       include: {
         items: true,
@@ -304,7 +309,7 @@ export class SalesQuotesService {
       }
     });
     if (!quote) throw new NotFoundException("报价单不存在");
-    return PermissionPolicy.canManageFinance(actor, storeId) ? quote : redactQuoteCost(quote);
+    return await this.canFinanceWrite(actor, storeId) ? quote : redactQuoteCost(quote);
   }
 
   async submit(user: PricingAuthenticatedUser, id: string, dto: SubmitSalesQuoteDto) {
@@ -318,7 +323,7 @@ export class SalesQuotesService {
       }
     });
     if (!quote) throw new NotFoundException("报价单不存在");
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId) || (quote.salesPersonId !== actor.id && !PermissionPolicy.isStoreManager(actor, dto.storeId))) {
+    if (!await this.canQuoteActor(actor, dto.storeId, quote.salesPersonId)) {
       throw new ForbiddenException("无权限提交该报价");
     }
     if (quote.status === SalesQuoteStatus.PENDING_APPROVAL) return this.get(user, id, dto.storeId);
@@ -391,7 +396,7 @@ export class SalesQuotesService {
 
   async review(user: PricingAuthenticatedUser, id: string, approve: boolean, dto: ReviewSalesQuoteDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.isStoreManager(actor, dto.storeId)) throw new ForbiddenException("只有店长可以审批报价");
+    if (!await this.canStoreWrite(actor, dto.storeId)) throw new ForbiddenException("只有店长可以审批报价");
     const quote = await this.prisma.salesQuote.findFirst({ where: { id, storeId: dto.storeId }, include: { approvals: { where: { status: PricingApprovalStatus.PENDING }, orderBy: { submittedAt: "desc" }, take: 1 } } });
     if (!quote) throw new NotFoundException("报价单不存在");
     if (quote.status !== SalesQuoteStatus.PENDING_APPROVAL || quote.validUntil <= new Date()) throw new BadRequestException("报价单不在可审批状态");
@@ -426,7 +431,7 @@ export class SalesQuotesService {
     const actor = await this.withStoreMember(user);
     const quote = await this.prisma.salesQuote.findFirst({ where: { id, storeId: dto.storeId }, include: { capacityReservation: true } });
     if (!quote) throw new NotFoundException("报价单不存在");
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId) || (quote.salesPersonId !== actor.id && !PermissionPolicy.isStoreManager(actor, dto.storeId))) {
+    if (!await this.canQuoteActor(actor, dto.storeId, quote.salesPersonId)) {
       throw new ForbiddenException("无权限撤回该报价");
     }
     const withdrawableStatuses: SalesQuoteStatus[] = [SalesQuoteStatus.DRAFT, SalesQuoteStatus.PENDING_APPROVAL];
@@ -447,7 +452,7 @@ export class SalesQuotesService {
     const actor = await this.withStoreMember(user);
     const quote = await this.prisma.salesQuote.findFirst({ where: { id, storeId: dto.storeId }, include: { capacityReservation: true } });
     if (!quote) throw new NotFoundException("报价单不存在");
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId) || (quote.salesPersonId !== actor.id && !PermissionPolicy.isStoreManager(actor, dto.storeId))) {
+    if (!await this.canQuoteActor(actor, dto.storeId, quote.salesPersonId)) {
       throw new ForbiddenException("无权限重算该报价");
     }
     const recalculableStatuses: SalesQuoteStatus[] = [SalesQuoteStatus.PENDING_APPROVAL, SalesQuoteStatus.REJECTED, SalesQuoteStatus.EXPIRED, SalesQuoteStatus.WITHDRAWN];
@@ -493,8 +498,7 @@ export class SalesQuotesService {
       include: { items: true, capacityReservation: true }
     });
     if (!quote) throw new NotFoundException("报价单不存在");
-    if (!PermissionPolicy.canViewStoreData(actor, quote.storeId)) throw new ForbiddenException("无权限");
-    if (quote.salesPersonId !== actor.id && !PermissionPolicy.isStoreManager(actor, quote.storeId)) {
+    if (!await this.canQuoteActor(actor, quote.storeId, quote.salesPersonId)) {
       throw new ForbiddenException("只有报价销售或店长可以转订单");
     }
     if (quote.convertedOrderId) return { orderId: quote.convertedOrderId, quoteId: quote.id };
@@ -557,6 +561,31 @@ export class SalesQuotesService {
     if (user.storeMember !== undefined) return user;
     const member = await this.prisma.storeMember.findUnique({ where: { userId: user.id }, select: { storeId: true, position: true } });
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
+  }
+
+  private async canOrdersRead(actor: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext) throw new Error("SalesQuotesService access context is not configured");
+    return this.accessContext.can(actor.id, "orders", "read", { storeId });
+  }
+
+  private async canOrdersWrite(actor: UserWithStoreMember, storeId: string, ownerId?: string) {
+    if (!this.accessContext) throw new Error("SalesQuotesService access context is not configured");
+    return this.accessContext.can(actor.id, "orders", "write", { storeId, ownerId });
+  }
+
+  private async canStoreWrite(actor: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext) throw new Error("SalesQuotesService access context is not configured");
+    return this.accessContext.can(actor.id, "store", "write", { storeId });
+  }
+
+  private async canFinanceWrite(actor: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext) throw new Error("SalesQuotesService access context is not configured");
+    return this.accessContext.can(actor.id, "finance", "write", { storeId });
+  }
+
+  private async canQuoteActor(actor: UserWithStoreMember, storeId: string, salesPersonId: string) {
+    if (!await this.canOrdersRead(actor, storeId)) return false;
+    return actor.id === salesPersonId || await this.canStoreWrite(actor, storeId);
   }
 
   private async recordAudit(event: AuditEvent) {

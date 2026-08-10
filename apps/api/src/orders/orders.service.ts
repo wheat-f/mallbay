@@ -14,19 +14,15 @@ import {
   QualityCheckResult,
   Prisma,
   ProductStatus,
-  ProductUnit,
-  StorePosition
+  ProductUnit
 } from "@prisma/client";
 import { normalizePagination } from "../common/pagination";
-import {
-  PermissionPolicy,
-  type UserWithStoreMember
-} from "../common/policies/permission.policy";
+import { type UserWithStoreMember } from "../permissions/domain/access-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { multiplyMoneyCents } from "../pricing/domain/money";
 import { AuditLogService, type AuditEvent } from "../observability/audit-log.service";
 import { AuditEventWriter } from "../observability/audit-event-writer";
-import { OrderPolicy } from "./domain/order-policy";
+import { AccessContext } from "../permissions/domain/access-context";
 import { deriveOrderWorkflow } from "./domain/order-workflow";
 import { ensureBalanceTodos, finalizeOrderDelivery } from "./domain/order-delivery";
 import { OrderLifecycle } from "./domain/order-lifecycle";
@@ -40,8 +36,6 @@ import { CreateOrderAmendmentRequestDto, ReviewOrderAmendmentRequestDto } from "
 import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
 import { CreateOrderUseCase } from "./use-cases/create-order.use-case";
-
-const CUSTOMER_SERVICE = "CUSTOMER_SERVICE" as StorePosition;
 
 const INTERNAL_ORDER_AMOUNT_FIELDS = [
   "salesCommissionCents",
@@ -73,8 +67,9 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly createOrderUseCase: CreateOrderUseCase,
     private readonly auditLog: AuditLogService,
-    @Optional() private readonly orderLifecycle?: OrderLifecycle,
-    @Optional() private readonly auditWriter?: AuditEventWriter
+    @Optional() private readonly orderLifecycle: OrderLifecycle | undefined,
+    @Optional() private readonly auditWriter: AuditEventWriter | undefined,
+    private readonly accessContext: AccessContext
   ) {}
 
   async create(user: AuthenticatedOrderUser, dto: CreateOrderDto) {
@@ -85,13 +80,13 @@ export class OrdersService {
 
   async list(user: AuthenticatedOrderUser, dto: ListOrdersDto) {
     const actor = await this.withStoreMember(user);
-    if (!OrderPolicy.canViewStoreOrders(actor, dto.storeId)) {
+    if (!await this.accessContext.can(actor.id, "store", "read", { storeId: dto.storeId })) {
       throw new ForbiddenException("无权限");
     }
 
     const { page, pageSize, skip } = normalizePagination(dto.page, dto.pageSize);
-    const where = this.buildOrderWhere(actor, dto);
-    const canViewCosts = PermissionPolicy.canManageFinance(actor, dto.storeId);
+    const where = await this.buildOrderWhere(actor, dto);
+    const canViewCosts = await this.accessContext.can(actor.id, "finance", "write", { storeId: dto.storeId });
     const [total, items] = await Promise.all([
       this.prisma.order.count({ where }),
       this.prisma.order.findMany({
@@ -126,13 +121,13 @@ export class OrdersService {
 
   async exportDetails(user: AuthenticatedOrderUser, dto: ExportOrderDetailsDto) {
     const actor = await this.withStoreMember(user);
-    if (!OrderPolicy.canViewStoreOrders(actor, dto.storeId)) {
+    if (!await this.accessContext.can(actor.id, "store", "read", { storeId: dto.storeId })) {
       throw new ForbiddenException("无权限");
     }
-    const canViewCosts = PermissionPolicy.canManageFinance(actor, dto.storeId);
+    const canViewCosts = await this.accessContext.can(actor.id, "finance", "write", { storeId: dto.storeId });
 
     const orders = await this.prisma.order.findMany({
-      where: this.buildOrderWhere(actor, dto),
+      where: await this.buildOrderWhere(actor, dto),
       orderBy: { createdAt: "desc" },
       include: {
         customer: { select: { name: true, companyName: true, contactPerson: true } },
@@ -227,8 +222,8 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException("订单不存在");
     }
-    this.assertCanViewOrder(actor, order.storeId, order.salesPersonId);
-    const canViewCosts = PermissionPolicy.canManageFinance(actor, order.storeId);
+    await this.assertCanViewOrder(actor, order.storeId, order.salesPersonId);
+    const canViewCosts = await this.accessContext.can(actor.id, "finance", "write", { storeId: order.storeId });
     return {
       ...order,
       items: order.items.map((item) => ({ ...item, quantity: toNullableNumber(item.quantity) })),
@@ -259,8 +254,8 @@ export class OrdersService {
       }
     });
     if (!source?.amount) throw new NotFoundException("订单不存在");
-    this.assertCanViewOrder(actor, source.storeId, source.salesPersonId);
-    if (!OrderPolicy.canCreate(actor, source.storeId)) {
+    await this.assertCanViewOrder(actor, source.storeId, source.salesPersonId);
+    if (!await this.accessContext.can(actor.id, "orders", "write", { storeId: source.storeId, ownerId: actor.id })) {
       throw new ForbiddenException("无权限复制订单");
     }
 
@@ -367,7 +362,7 @@ export class OrdersService {
       if (!order?.amount) {
         throw new NotFoundException("订单不存在");
       }
-      if (!OrderPolicy.canManagePayment(actor, order.storeId)) {
+      if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: order.storeId })) {
         throw new ForbiddenException("无权限");
       }
       if (!Number.isInteger(dto.amountCents) || dto.amountCents <= 0) {
@@ -451,7 +446,7 @@ export class OrdersService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId }, select: { storeId: true } });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!OrderPolicy.canFinalizeDelivery(actor, order.storeId)) {
+      if (!await this.accessContext.can(actor.id, "store", "write", { storeId: order.storeId })) {
         throw new ForbiddenException("仅归属门店店长或管理员可以最终交付");
       }
       return this.orderLifecycle
@@ -494,7 +489,7 @@ export class OrdersService {
       if (order.amount.pricingCalculationId && !hasApprovedAmendment) {
         throw new BadRequestException("正式订单价格快照已冻结，不能修改产品清单或成交价");
       }
-      if (!canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
+      if (!await this.canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
         throw new ForbiddenException("无权限");
       }
       if (!isOrderCommercialsEditableStatus(order.status)) {
@@ -616,7 +611,7 @@ export class OrdersService {
       include: { amount: true, payments: { orderBy: { paidAt: "desc" }, take: 1 } }
     });
     if (!order?.amount) throw new NotFoundException("订单不存在");
-    if (!canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
+    if (!await this.canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
       throw new ForbiddenException("仅订单店长、客服或负责销售员可重新提交改单申请");
     }
     if (order.amount.outstandingCents > 0) throw new BadRequestException("订单尚未结清，无需申请结算后金额修改");
@@ -659,10 +654,8 @@ export class OrdersService {
       where: { id: requestId, orderId }, include: { order: { include: { amount: true, payments: { orderBy: { paidAt: "desc" }, take: 1 } } } }
     });
     if (!request?.order.amount) throw new NotFoundException("改单申请不存在");
-    const canApproveAmendment = PermissionPolicy.hasRuntimeSnapshot(actor.id)
-      ? PermissionPolicy.canRuntime(actor, "finance", "write", request.storeId)
-      : Boolean(actor.isAuditor || actor.storeMember?.position === StorePosition.FINANCE);
-    if (!PermissionPolicy.canViewStoreData(actor, request.storeId) || !canApproveAmendment) {
+    const canApproveAmendment = await this.isFinanceActor(actor, request.storeId);
+    if (!await this.accessContext.can(actor.id, "store", "read", { storeId: request.storeId }) || !canApproveAmendment) {
       throw new ForbiddenException("仅财务可审批改单申请");
     }
     if (request.requestedById === actor.id) throw new ForbiddenException("申请人不能审批自己的改单申请");
@@ -700,7 +693,7 @@ export class OrdersService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, storeId: true, salesPersonId: true, status: true } });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.isAdmin(actor) && !PermissionPolicy.isStoreManager(actor, order.storeId)) throw new ForbiddenException("无权限");
+      if (!await this.accessContext.can(actor.id, "store", "write", { storeId: order.storeId })) throw new ForbiddenException("无权限");
       if (order.status === OrderStatus.CANCELLED) return { id: order.id, status: order.status };
       if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.WARRANTIED) throw new BadRequestException("当前订单阶段不允许取消");
       const updated = await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.CANCELLED }, select: { id: true, status: true } });
@@ -733,7 +726,7 @@ export class OrdersService {
       if (!order) {
         throw new NotFoundException("订单不存在");
       }
-      if (!canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
+      if (!await this.canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
         throw new ForbiddenException("无权限");
       }
       if (order.status === OrderStatus.CANCELLED) {
@@ -767,7 +760,7 @@ export class OrdersService {
 
   async listHistoricalVerification(user: AuthenticatedOrderUser, storeId: string, q?: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.isAdmin(actor) && !PermissionPolicy.isStoreManager(actor, storeId)) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can(actor.id, "store", "write", { storeId })) throw new ForbiddenException("无权限");
     const keyword = q?.trim();
     const orders = await this.prisma.order.findMany({
       where: {
@@ -807,7 +800,7 @@ export class OrdersService {
     const actor = await this.withStoreMember(user);
     const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { constructionRecord: { select: { qualityResult: true } } } });
     if (!order) throw new NotFoundException("订单不存在");
-    if (!PermissionPolicy.isAdmin(actor) && !PermissionPolicy.isStoreManager(actor, order.storeId)) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can(actor.id, "store", "write", { storeId: order.storeId })) throw new ForbiddenException("无权限");
     if (order.status !== OrderStatus.COMPLETED && order.status !== OrderStatus.WARRANTIED) throw new BadRequestException("仅历史完成订单可核验");
     if (order.constructionRecord?.qualityResult != null) throw new BadRequestException("该订单已有质检结果，无需历史核验");
     const existing = await this.prisma.auditEvent.findFirst({ where: { action: "HISTORICAL_ORDER_VERIFIED", targetType: "order", targetId: order.id }, orderBy: { createdAt: "desc" } });
@@ -833,7 +826,7 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException("订单不存在");
     }
-    this.assertCanViewOrder(actor, order.storeId, order.salesPersonId);
+    await this.assertCanViewOrder(actor, order.storeId, order.salesPersonId);
 
     const events = await this.prisma.auditEvent.findMany({
       where: { targetType: "order", targetId: orderId },
@@ -845,7 +838,8 @@ export class OrdersService {
 
   async createPaymentAccount(user: AuthenticatedOrderUser, dto: CreatePaymentAccountDto) {
     const actor = await this.withStoreMember(user);
-    if (!OrderPolicy.canCreatePaymentAccount(actor, dto.storeId)) {
+    if (!await this.accessContext.can(actor.id, "orders", "write", { storeId: dto.storeId, ownerId: actor.id }) &&
+      !await this.accessContext.can(actor.id, "finance", "write", { storeId: dto.storeId })) {
       throw new ForbiddenException("无权限");
     }
 
@@ -864,7 +858,7 @@ export class OrdersService {
 
   async listPaymentAccounts(user: AuthenticatedOrderUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!OrderPolicy.canViewStoreOrders(actor, storeId)) {
+    if (!await this.accessContext.can(actor.id, "store", "read", { storeId })) {
       throw new ForbiddenException("无权限");
     }
 
@@ -883,7 +877,7 @@ export class OrdersService {
     if (!account) {
       throw new NotFoundException("收款账户不存在");
     }
-    if (!OrderPolicy.canManagePayment(actor, account.storeId)) {
+    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: account.storeId })) {
       throw new ForbiddenException("无权限");
     }
 
@@ -905,7 +899,7 @@ export class OrdersService {
     if (!account) {
       throw new NotFoundException("收款账户不存在");
     }
-    if (!OrderPolicy.canManagePayment(actor, account.storeId)) {
+    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: account.storeId })) {
       throw new ForbiddenException("无权限");
     }
 
@@ -945,7 +939,7 @@ export class OrdersService {
     return this.updatePaymentAccount(user, id, { isActive: false, changeReason: "停用收款账户" });
   }
 
-  private buildOrderWhere(user: UserWithStoreMember, dto: ListOrdersDto): Prisma.OrderWhereInput {
+  private async buildOrderWhere(user: UserWithStoreMember, dto: ListOrdersDto): Promise<Prisma.OrderWhereInput> {
     const where: Prisma.OrderWhereInput = {
       storeId: dto.storeId,
       status: dto.status,
@@ -959,10 +953,10 @@ export class OrdersService {
     if (paymentFilter) {
       where.amount = { is: paymentFilter };
     }
-    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
-      if (!PermissionPolicy.canRuntime(user, "orders", "read", dto.storeId)) throw new ForbiddenException("无权限");
-      if (PermissionPolicy.hasRuntimeRole(user, ["SALES"], dto.storeId)) where.salesPersonId = user.id;
-    } else if (!user.isAuditor && user.storeMember?.position === "SALES") {
+    if (!await this.accessContext.can(user.id, "orders", "read", { storeId: dto.storeId, ownerId: user.id })) {
+      throw new ForbiddenException("无权限");
+    }
+    if (await this.isSalesActor(user, dto.storeId)) {
       where.salesPersonId = user.id;
     }
     const invoiceableFilter: Prisma.OrderWhereInput | undefined = dto.invoiceable ? {
@@ -1027,15 +1021,30 @@ export class OrdersService {
     return { outstandingCents: 0 };
   }
 
-  private assertCanViewOrder(user: UserWithStoreMember, storeId: string, salesPersonId: string) {
-    if (!PermissionPolicy.canViewStoreData(user, storeId)) {
+  private async assertCanViewOrder(user: UserWithStoreMember, storeId: string, salesPersonId: string) {
+    if (!await this.accessContext.can(user.id, "orders", "read", { storeId, ownerId: salesPersonId })) {
       throw new ForbiddenException("无权限");
     }
-    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
-      if (!PermissionPolicy.canRuntime(user, "orders", "read", storeId, salesPersonId)) throw new ForbiddenException("无权限");
-    } else if (!user.isAuditor && user.storeMember?.position === "SALES" && user.id !== salesPersonId) {
+    if (await this.isSalesActor(user, storeId) && user.id !== salesPersonId) {
       throw new ForbiddenException("无权限");
     }
+  }
+
+  private async canManageOrderCommercials(user: UserWithStoreMember, storeId: string, salesPersonId: string) {
+    return this.accessContext.can(user.id, "orders", "write", { storeId, ownerId: salesPersonId });
+  }
+
+  private async isSalesActor(user: UserWithStoreMember, storeId: string) {
+    const resolution = await this.accessContext.resolve(user.id, { storeId });
+    return resolution.roles.some((role) => role.roleCode === "SALES" &&
+      (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
+  }
+
+  private async isFinanceActor(user: UserWithStoreMember, storeId: string) {
+    if (!await this.accessContext.can(user.id, "finance", "write", { storeId })) return false;
+    const resolution = await this.accessContext.resolve(user.id, { storeId });
+    return resolution.roles.some((role) => ["HQ_ADMIN", "FINANCE"].includes(role.roleCode) &&
+      (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
   }
 
   private async withStoreMember(user: AuthenticatedOrderUser): Promise<UserWithStoreMember> {
@@ -1097,15 +1106,6 @@ function maskAccountNo(value: unknown) {
   if (typeof value !== "string") return value;
   if (value.length <= 4) return "****";
   return `****${value.slice(-4)}`;
-}
-
-function canManageOrderCommercials(user: UserWithStoreMember, storeId: string, salesPersonId: string) {
-  if (PermissionPolicy.hasRuntimeSnapshot(user.id)) return PermissionPolicy.canRuntime(user, "orders", "write", storeId, salesPersonId);
-  if (PermissionPolicy.isAdmin(user) || PermissionPolicy.isStoreManager(user, storeId)) return true;
-  if (PermissionPolicy.isStoreMember(user, storeId) && user.storeMember?.position === CUSTOMER_SERVICE) return true;
-  return PermissionPolicy.isStoreMember(user, storeId) &&
-    user.storeMember?.position === StorePosition.SALES &&
-    user.id === salesPersonId;
 }
 
 function compareSalesExportRows(

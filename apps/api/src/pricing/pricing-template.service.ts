@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma, PricingTemplateStatus } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import type { PricingAuthenticatedUser } from "./pricing.service";
 import { PricingRulesService } from "./pricing-rules.service";
@@ -12,17 +13,17 @@ import { persistAuditEvent } from "../observability/persist-audit-event";
 
 @Injectable()
 export class PricingTemplateService {
-  constructor(private readonly prisma: PrismaService, private readonly pricingRules: PricingRulesService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter) {}
+  constructor(private readonly prisma: PrismaService, private readonly pricingRules: PricingRulesService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter, private readonly accessContext?: AccessContext) {}
 
   async list(user: PricingAuthenticatedUser) {
     const actor = await this.withStoreMember(user);
-    this.assertAdmin(actor);
+    await this.assertAdmin(actor);
     return this.prisma.pricingRuleTemplate.findMany({ orderBy: { updatedAt: "desc" }, include: { versions: { orderBy: { version: "desc" } } } });
   }
 
   async create(user: PricingAuthenticatedUser, dto: CreatePricingTemplateDto) {
     const actor = await this.withStoreMember(user);
-    this.assertAdmin(actor);
+    await this.assertAdmin(actor);
     const code = dto.code.trim().toUpperCase();
     if (!code || !dto.name.trim()) throw new BadRequestException("模板编码和名称不能为空");
     const template = await this.prisma.pricingRuleTemplate.create({ data: { code, name: dto.name.trim(), description: dto.description?.trim(), createdById: actor.id } });
@@ -32,7 +33,7 @@ export class PricingTemplateService {
 
   async createVersion(user: PricingAuthenticatedUser, templateId: string, dto: CreatePricingTemplateVersionDto) {
     const actor = await this.withStoreMember(user);
-    this.assertAdmin(actor);
+    await this.assertAdmin(actor);
     const template = await this.prisma.pricingRuleTemplate.findUnique({ where: { id: templateId } });
     if (!template) throw new NotFoundException("模板不存在");
     const latest = await this.prisma.pricingRuleTemplateVersion.findFirst({ where: { templateId }, orderBy: { version: "desc" }, select: { version: true } });
@@ -62,7 +63,7 @@ export class PricingTemplateService {
 
   async copyToStore(user: PricingAuthenticatedUser, templateId: string, versionId: string, dto: CopyPricingTemplateDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageProduct(actor, dto.storeId)) throw new ForbiddenException("无权限复制总部模板");
+    if (!this.accessContext || !await this.accessContext.can(actor.id, "products", "write", { storeId: dto.storeId })) throw new ForbiddenException("无权限复制总部模板");
     const version = await this.prisma.pricingRuleTemplateVersion.findFirst({ where: { id: versionId, templateId, publishedAt: { not: null } }, include: { template: true } });
     if (!version) throw new NotFoundException("模板发布版本不存在");
     const copied = await this.pricingRules.createDraft(user, {
@@ -76,8 +77,10 @@ export class PricingTemplateService {
     return copied;
   }
 
-  private assertAdmin(user: UserWithStoreMember) {
-    if (!PermissionPolicy.isAdmin(user)) throw new ForbiddenException("只有平台管理员可以维护总部模板");
+  private async assertAdmin(user: UserWithStoreMember) {
+    if (!this.accessContext) throw new Error("PricingTemplateService access context is not configured");
+    const resolution = await this.accessContext.resolve(user.id);
+    if (!resolution.roles.some((role) => ["HQ_ADMIN", "PLATFORM_ADMIN", "AUDITOR"].includes(role.roleCode))) throw new ForbiddenException("只有平台管理员可以维护总部模板");
   }
 
   private async recordAudit(event: AuditEvent) {

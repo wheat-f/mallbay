@@ -11,6 +11,14 @@ import {
 } from "@prisma/client";
 import { CreateOrderUseCase } from "./create-order.use-case";
 
+const orderAccess = {
+  can: async (actorId: string, capability: string, action: string, context: { ownerId?: string } = {}) => {
+    if (capability === "orders" && action === "write") return true;
+    if (capability === "customers" && action === "read") return context.ownerId === actorId;
+    return capability === "store" && action === "write";
+  }
+};
+
 const actor = {
   id: "sales-1",
   isAuditor: false,
@@ -92,6 +100,7 @@ function createHarness(options: {
   };
   const useCase = new CreateOrderUseCase(
     { $transaction: async (callback: (transaction: typeof tx) => unknown) => callback(tx) } as never,
+    orderAccess as never,
     { next: () => "ORD-1" }
   );
   return { useCase, captured };

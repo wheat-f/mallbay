@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { PositionCostRateVersionStatus, PricingRolloutMode, PricingRuleSetStatus } from "@prisma/client";
 import type { PricingAuthenticatedUser } from "./pricing.service";
@@ -11,11 +12,11 @@ import { persistAuditEvent } from "../observability/persist-audit-event";
 
 @Injectable()
 export class PricingRolloutService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter, private readonly accessContext?: AccessContext) {}
 
   async get(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, storeId)) throw new ForbiddenException("无权限");
+    if (!await this.canRead(actor, storeId)) throw new ForbiddenException("无权限");
     const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { id: true, name: true, pricingRolloutMode: true } });
     if (!store) throw new NotFoundException("门店不存在");
     return store;
@@ -23,7 +24,7 @@ export class PricingRolloutService {
 
   async set(user: PricingAuthenticatedUser, dto: SetPricingRolloutDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.isStoreManager(actor, dto.storeId)) throw new ForbiddenException("只有店长可以切换价格运行模式");
+    if (!await this.canStoreWrite(actor, dto.storeId)) throw new ForbiddenException("只有店长可以切换价格运行模式");
     if (dto.mode === PricingRolloutMode.ACTIVE) {
       const readiness = await this.inspectReadiness(dto.storeId);
       if (!readiness.ready) throw new BadRequestException(`当前门店尚不能启用 ACTIVE：${readiness.errors.join("；")}`);
@@ -35,13 +36,13 @@ export class PricingRolloutService {
 
   async precheck(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, storeId)) throw new ForbiddenException("无权限");
+    if (!await this.canRead(actor, storeId)) throw new ForbiddenException("无权限");
     return this.inspectReadiness(storeId);
   }
 
   async migrationPrecheck(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageFinance(actor, storeId)) throw new ForbiddenException("无权限查看成本迁移预检");
+    if (!await this.canFinanceWrite(actor, storeId)) throw new ForbiddenException("无权限查看成本迁移预检");
     const [totalOrders, legacyOrders, activeOrders, incompleteCostOrders, temporaryCostOrders] = await Promise.all([
       this.prisma.order.count({ where: { storeId } }),
       this.prisma.order.count({ where: { storeId, amount: { is: { pricingCalculationId: null } } } }),
@@ -93,6 +94,21 @@ export class PricingRolloutService {
     if (user.storeMember !== undefined) return user;
     const member = await this.prisma.storeMember.findUnique({ where: { userId: user.id }, select: { storeId: true, position: true } });
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
+  }
+
+  private async canRead(actor: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext) throw new Error("PricingRolloutService access context is not configured");
+    return this.accessContext.can(actor.id, "products", "read", { storeId });
+  }
+
+  private async canStoreWrite(actor: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext) throw new Error("PricingRolloutService access context is not configured");
+    return this.accessContext.can(actor.id, "store", "write", { storeId });
+  }
+
+  private async canFinanceWrite(actor: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext) throw new Error("PricingRolloutService access context is not configured");
+    return this.accessContext.can(actor.id, "finance", "write", { storeId });
   }
 
   private async recordAudit(event: AuditEvent) {

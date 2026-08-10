@@ -138,6 +138,7 @@ test("phase two schema exposes construction capacity assignment and record model
     "model ConstructionAssignment ",
     "model ConstructionRecord ",
     "model ConstructionPhoto ",
+    "model ConstructionQualityHistory ",
     "model LeaveRequest ",
     "model Schedule ",
     "model WorkerCommissionSnapshot "
@@ -157,6 +158,8 @@ test("phase two schema exposes construction capacity assignment and record model
   assert.ok(schema.includes("@@unique([storeId, date])"), "DailyCapacity must be unique per store date");
   assert.ok(schema.includes("@@unique([orderId, workerUserId])"), "assignment must prevent duplicate workers");
   assert.match(schema, /orderId\s+String\s+@unique/, "ConstructionRecord must be unique per order");
+  assert.ok(schema.includes("isRevoked"), "quality history must preserve revoked evidence state");
+  assert.ok(schema.includes("@@index([recordId, checkedAt])"), "quality history must be chronologically queryable");
 });
 
 test("phase three schema exposes inventory purchase and warranty models", () => {
@@ -284,6 +287,8 @@ test("phase five schema exposes finance invoice rebate and report source models"
   assert.ok(schema.includes("@@index([storeId, status])"), "phase five workflow tables must be scoped by store and status");
   assert.ok(schema.includes("amountCents"), "phase five money fields must use integer cents");
   assert.ok(schema.includes("REVIEWED"), "rebate workflow must separate business review from finance approval");
+  assert.ok(schema.includes("idempotencyKey String?"), "cash and receipt operations must persist idempotency keys");
+  assert.ok(schema.includes("@@unique([storeId, idempotencyKey])"), "cash facts must reject duplicate operation keys per store");
 });
 
 test("schema exposes persistent audit events for business critical changes", () => {

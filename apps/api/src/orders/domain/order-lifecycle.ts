@@ -1,8 +1,9 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { NotificationType, OrderStatus, Prisma, StorePosition } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../../common/policies/permission.policy";
+import { NotificationType, OrderStatus, Prisma } from "@prisma/client";
+import { type UserWithStoreMember } from "../../permissions/domain/access-types";
 import { AuditEventWriter } from "../../observability/audit-event-writer";
 import { PrismaService } from "../../prisma/prisma.service";
+import { AccessContext } from "../../permissions/domain/access-context";
 import { deriveOrderWorkflow, type OrderWorkflow } from "./order-workflow";
 import { ensureBalanceTodos, finalizeOrderDelivery } from "./order-delivery";
 import { CreateOrderUseCase } from "../use-cases/create-order.use-case";
@@ -30,7 +31,8 @@ export class OrderLifecycle {
   constructor(
     @Optional() private readonly createOrderUseCase?: CreateOrderUseCase,
     @Optional() private readonly prisma?: PrismaService,
-    @Optional() private readonly auditWriter?: AuditEventWriter
+    @Optional() private readonly auditWriter?: AuditEventWriter,
+    @Optional() private readonly accessContext?: AccessContext
   ) {}
 
   createOrder(...args: Parameters<CreateOrderUseCase["execute"]>) {
@@ -68,6 +70,8 @@ export class OrderLifecycle {
       return this.constructionHandler(user, orderId, command);
     }
     if (!this.prisma) throw new Error("OrderLifecycle transition implementation is not configured");
+    if (!this.accessContext) throw new Error("OrderLifecycle access context is not configured");
+    const accessContext = this.accessContext;
     const reason = "reason" in command ? command.reason.trim() : "";
     if (command.type !== "FINAL_DELIVERY" && !reason) {
       throw new BadRequestException(command.type === "CANCEL" ? "取消订单必须填写原因" : "反审核退回必须填写原因");
@@ -80,14 +84,14 @@ export class OrderLifecycle {
       if (!order) throw new NotFoundException("订单不存在");
 
       if (command.type === "FINAL_DELIVERY") {
-        if (!PermissionPolicy.isAdmin(user) && !PermissionPolicy.isStoreManager(user, order.storeId)) {
+        if (!await accessContext.can(user.id, "store", "write", { storeId: order.storeId })) {
           throw new ForbiddenException("仅归属门店店长或管理员可以最终交付");
         }
         return finalizeOrderDelivery(tx, orderId, user.id);
       }
 
       if (command.type === "CANCEL") {
-        if (!PermissionPolicy.isAdmin(user) && !PermissionPolicy.isStoreManager(user, order.storeId)) {
+        if (!await accessContext.can(user.id, "store", "write", { storeId: order.storeId })) {
           throw new ForbiddenException("无权限");
         }
         if (order.status === OrderStatus.CANCELLED) return { id: order.id, status: order.status };
@@ -113,10 +117,10 @@ export class OrderLifecycle {
         return updated;
       }
 
-      const canManage = PermissionPolicy.isAdmin(user) ||
-        PermissionPolicy.isStoreManager(user, order.storeId) ||
-        (user.storeMember?.storeId === order.storeId && user.storeMember.position === StorePosition.CUSTOMER_SERVICE) ||
-        (user.storeMember?.storeId === order.storeId && user.storeMember.position === StorePosition.SALES && user.id === order.salesPersonId);
+      const canManage = await accessContext.can(user.id, "orders", "write", {
+        storeId: order.storeId,
+        ownerId: order.salesPersonId
+      });
       if (!canManage) throw new ForbiddenException("无权限");
       if (order.status === OrderStatus.CANCELLED) throw new BadRequestException("已取消订单不能退回修改");
       if (order.status === OrderStatus.PENDING_DISPATCH) return { id: order.id, status: order.status };

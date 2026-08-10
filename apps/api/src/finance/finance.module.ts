@@ -7,12 +7,13 @@ import { FinanceQueryService } from "./finance-query.service";
 import { ReimbursementWorkflowService } from "./reimbursement-workflow.service";
 import { UsersModule } from "../users/users.module";
 import { FinanceAttachmentService } from "./finance-attachment.service";
-import { FinancialDocument } from "./domain/financial-document";
+import { FinancialDocumentQuery } from "./domain/financial-document-query";
+import { PermissionsModule } from "../permissions/permissions.module";
 
 @Module({
-  imports: [PrismaModule, UsersModule],
+  imports: [PrismaModule, UsersModule, PermissionsModule],
   controllers: [FinanceController],
-  providers: [FinanceService, FinancialDocument, ExpenseWorkflowService, FinanceQueryService, ReimbursementWorkflowService, FinanceAttachmentService],
-  exports: [FinanceService, ExpenseWorkflowService, FinanceQueryService, FinancialDocument, ReimbursementWorkflowService, FinanceAttachmentService]
+  providers: [FinanceService, FinancialDocumentQuery, ExpenseWorkflowService, FinanceQueryService, ReimbursementWorkflowService, FinanceAttachmentService],
+  exports: [FinanceService, ExpenseWorkflowService, FinancialDocumentQuery, ReimbursementWorkflowService, FinanceAttachmentService]
 })
 export class FinanceModule {}

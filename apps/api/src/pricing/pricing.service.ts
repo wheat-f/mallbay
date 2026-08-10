@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
 import { Prisma, PricingRolloutMode, ProductUnit } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   calculatePricing,
@@ -42,12 +43,13 @@ export class PricingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricingRules: PricingRulesService,
-    @Optional() private readonly costs?: CostEstimatorService
+    @Optional() private readonly costs?: CostEstimatorService,
+    @Optional() private readonly accessContext?: AccessContext
   ) {}
 
   async calculate(user: PricingAuthenticatedUser, dto: CalculatePricingDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) {
+    if (!await this.canReadPricing(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
 
@@ -121,7 +123,7 @@ export class PricingService {
         rolloutMode === PricingRolloutMode.LEGACY ? [] : rules
       );
       const materialEstimate = this.costs
-        ? await this.costs.estimateForStore(dto.storeId, input.lines.map((line) => ({
+          ? await this.costs.estimateForStore(actor, dto.storeId, input.lines.map((line) => ({
           productId: line.productId,
           quantity: line.quantity,
           salesUnit: line.salesUnit as ProductUnit
@@ -206,6 +208,7 @@ export class PricingService {
       throw new BadRequestException(error instanceof Error ? error.message : "价格试算参数无效");
     }
 
+    const canViewCost = await this.canViewCosts(actor, dto.storeId);
     return {
       mode: "SIMULATION" as const,
       rolloutMode,
@@ -217,7 +220,7 @@ export class PricingService {
       constructionChargeAvailable,
       constructionChargeReason,
       calculation,
-      costEstimate: PermissionPolicy.canManageFinance(actor, dto.storeId)
+      costEstimate: canViewCost
         ? costEstimate
         : { costCompleteness: costEstimate.costCompleteness },
       guard
@@ -328,7 +331,7 @@ export class PricingService {
     } = {}
   ) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) {
+    if (!await this.canReadPricing(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const snapshot = await this.prisma.pricingCalculation.findFirst({
@@ -419,6 +422,16 @@ export class PricingService {
       select: { storeId: true, position: true }
     });
     return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
+  }
+
+  private async canReadPricing(actor: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext) throw new Error("PricingService access context is not configured");
+    return this.accessContext.can(actor.id, "products", "read", { storeId });
+  }
+
+  private async canViewCosts(actor: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext) throw new Error("PricingService access context is not configured");
+    return this.accessContext.can(actor.id, "finance", "write", { storeId });
   }
 }
 

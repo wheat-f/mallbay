@@ -66,6 +66,46 @@ test("constructionApi.assignOrder posts worker ids to /construction/orders/:id/a
   }
 });
 
+test("constructionApi.fulfillment gets the order-scoped fulfillment view", async () => {
+  const calls: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    calls.push({ input, init });
+    return new Response(JSON.stringify({ order: { id: "order-1" }, workflow: { currentStage: "IN_CONSTRUCTION" } }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  try {
+    const result = await constructionApi.fulfillment("order-1");
+    assert.deepEqual(result, { order: { id: "order-1" }, workflow: { currentStage: "IN_CONSTRUCTION" } });
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/construction/orders/order-1/fulfillment");
+    assert.equal((calls[0] as { init?: RequestInit }).init?.method, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("constructionApi.fulfillments gets the stable fulfillment list view", async () => {
+  const calls: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    calls.push({ input, init });
+    return new Response(JSON.stringify({ items: [], generatedAt: "2026-08-10T00:00:00.000Z" }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  try {
+    const result = await constructionApi.fulfillments({ storeId: "store-1" });
+    assert.deepEqual(result, { items: [], generatedAt: "2026-08-10T00:00:00.000Z" });
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/construction/fulfillments?storeId=store-1");
+    assert.equal((calls[0] as { init?: RequestInit }).init?.method, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("constructionApi.schedules queries schedule list by store and date range", async () => {
   const calls: unknown[] = [];
   const originalFetch = globalThis.fetch;

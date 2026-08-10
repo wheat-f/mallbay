@@ -6,11 +6,14 @@ import {
 } from "./customer-settlements.controller";
 import { CustomerSettlementsService } from "./customer-settlements.service";
 import { SettlementView } from "./domain/settlement-view";
+import { FinanceModule } from "../finance/finance.module";
+import { SettlementWorkflow } from "./domain/settlement-workflow";
+import { PermissionsModule } from "../permissions/permissions.module";
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, FinanceModule, PermissionsModule],
   controllers: [CustomerStatementsController, CustomerReceiptsController],
-  providers: [CustomerSettlementsService, SettlementView],
-  exports: [CustomerSettlementsService, SettlementView]
+  providers: [CustomerSettlementsService, SettlementView, SettlementWorkflow],
+  exports: [SettlementView, SettlementWorkflow]
 })
 export class CustomerSettlementsModule {}

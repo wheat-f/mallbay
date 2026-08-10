@@ -3,6 +3,16 @@ import { test } from "node:test";
 import { CustomerNoteType, CustomerType, Gender, StorePosition } from "@prisma/client";
 import { CustomersService } from "./customers.service";
 
+const customerAccess = {
+  can: async (actor: string, capability: string, action: string, context: { ownerId?: string } = {}) => {
+    if (capability === "store" && action === "write") return actor.includes("manager") || actor.includes("admin");
+    if (capability !== "customers") return true;
+    if (action === "read") return true;
+    return context.ownerId === actor || actor.includes("manager") || actor.includes("admin") || actor.includes("service");
+  },
+  resolve: async (actor: string) => ({ roles: [{ roleCode: actor.includes("sales") ? "SALES" : actor.includes("finance") ? "FINANCE" : actor.includes("admin") ? "HQ_ADMIN" : "MANAGER" }] })
+};
+
 test("CustomersService creates a personal customer owned by the current sales user", async () => {
   const calls: string[] = [];
   const prisma = {
@@ -37,7 +47,7 @@ test("CustomersService creates a personal customer owned by the current sales us
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   const result = await service.create(
     {
@@ -79,7 +89,7 @@ test("CustomersService creates company customer contacts with safe role defaults
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   const result = await service.create(
     {
@@ -122,7 +132,7 @@ test("CustomersService rejects duplicate phone in the same store", async () => {
   } as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   await assert.rejects(
     () =>
@@ -157,7 +167,7 @@ test("CustomersService normalizes birthday strings before creating a customer", 
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   await service.create(
     {
@@ -186,7 +196,7 @@ test("CustomersService rejects invalid birthday before persistence", async () =>
   } as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   await assert.rejects(
     () =>
@@ -218,7 +228,7 @@ test("CustomersService rejects invalid customer basic information before persist
   } as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
   const user = {
     id: "sales-1",
     isAuditor: false,
@@ -258,7 +268,7 @@ test("CustomersService search includes car plate and VIN hash conditions", async
   } as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
   const user = {
     id: "sales-1",
     isAuditor: false,
@@ -296,6 +306,7 @@ test("CustomersService search includes car plate and VIN hash conditions", async
 });
 
 test("CustomersService detail returns generated archive summary from orders warranties and after-sales", async () => {
+  const amountAggregateArgs: unknown[] = [];
   const prisma = {
     customer: {
       findUnique: async () => ({
@@ -365,13 +376,16 @@ test("CustomersService detail returns generated archive summary from orders warr
       ]
     },
     orderAmount: {
-      aggregate: async () => ({
-        _sum: {
-          totalAmountCents: 1_200_000,
-          paidAmountCents: 900_000,
-          outstandingCents: 300_000
-        }
-      })
+      aggregate: async (args: unknown) => {
+        amountAggregateArgs.push(args);
+        return {
+          _sum: {
+            totalAmountCents: 1_200_000,
+            paidAmountCents: 900_000,
+            outstandingCents: 300_000
+          }
+        };
+      }
     },
     constructionRecord: {
       findMany: async (args: unknown) => {
@@ -412,7 +426,7 @@ test("CustomersService detail returns generated archive summary from orders warr
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   const result = await service.detail(
     {
@@ -451,6 +465,14 @@ test("CustomersService detail returns generated archive summary from orders warr
       }
     ]
   });
+  assert.ok(amountAggregateArgs.some((args) => JSON.stringify(args) === JSON.stringify({
+    where: { order: { customerId: "customer-1", status: { not: "CANCELLED" } } },
+    _sum: {
+      totalAmountCents: true,
+      paidAmountCents: true,
+      outstandingCents: true
+    }
+  })));
   assert.equal(result.archiveSummary.warranty.activeCount, 1);
   assert.equal(result.archiveSummary.warranty.expiredCount, 1);
   assert.equal(result.archiveSummary.warranty.expiringSoonCount, 1);
@@ -497,7 +519,7 @@ test("CustomersService creates structured customer notes", async () => {
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   const result = await service.createNote(
     {
@@ -536,7 +558,7 @@ test("CustomersService creates custom tags and rejects blank labels", async () =
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
   const user = {
     id: "sales-1",
     isAuditor: false,
@@ -587,7 +609,7 @@ test("CustomersService adds a user under an existing company customer", async ()
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   const result = await service.createCustomerUser(
     {
@@ -634,7 +656,7 @@ test("CustomersService lets finance read a paged vehicle list without edit permi
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   const result = await service.listVehicles(
     {
@@ -677,7 +699,7 @@ test("CustomersService denies sales users from disabling vehicles", async () => 
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   await assert.rejects(
     () => service.changeVehicleStatus(
@@ -722,7 +744,7 @@ test("CustomersService rechecks duplicate identity before a manager enables a ve
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   await assert.rejects(
     () => service.changeVehicleStatus(
@@ -762,7 +784,7 @@ test("CustomersService lets finance read vehicle ownership history", async () =>
   const service = new CustomersService(prisma as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   const history = await service.vehicleHistory(
     {
@@ -784,7 +806,7 @@ test("CustomersService rejects sales editing another sales user's customer", asy
   } as never, {
     encrypt: (value: string) => `enc:${value}`,
     hash: (value: string) => `hash:${value}`
-  });
+  }, customerAccess as never);
 
   await assert.rejects(
     () =>

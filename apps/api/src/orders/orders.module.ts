@@ -6,9 +6,10 @@ import { CreateOrderUseCase } from "./use-cases/create-order.use-case";
 import { OrderLifecycle } from "./domain/order-lifecycle";
 import { ObservabilityModule } from "../observability/observability.module";
 import { PricingModule } from "../pricing/pricing.module";
+import { PermissionsModule } from "../permissions/permissions.module";
 
 @Module({
-  imports: [ObservabilityModule, PricingModule],
+  imports: [ObservabilityModule, PricingModule, PermissionsModule],
   controllers: [OrdersController, PaymentAccountsController],
   providers: [OrdersService, OrderRepository, CreateOrderUseCase, OrderLifecycle],
   exports: [OrdersService, CreateOrderUseCase, OrderLifecycle]

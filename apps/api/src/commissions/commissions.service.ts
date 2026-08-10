@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { CommissionRuleType } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CreateSalesCommissionRuleDto,
@@ -15,11 +16,15 @@ export type AuthenticatedCommissionUser = UserWithStoreMember & {
 
 @Injectable()
 export class CommissionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
+
+  private canAccess(actor: AuthenticatedCommissionUser, storeId: string) {
+    return this.accessContext.can(actor.id, "commissions", "write", { storeId });
+  }
 
   async createSalesRule(user: AuthenticatedCommissionUser, dto: CreateSalesCommissionRuleDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageCommission(actor, dto.storeId)) {
+    if (!await this.canAccess(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.salesCommissionRule.create({
@@ -38,7 +43,7 @@ export class CommissionsService {
 
   async listSalesRules(user: AuthenticatedCommissionUser, query: ListCommissionRulesDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageCommission(actor, query.storeId)) {
+    if (!await this.canAccess(actor, query.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.salesCommissionRule.findMany({
@@ -54,7 +59,7 @@ export class CommissionsService {
       include: { amount: true }
     });
     if (!order) throw new NotFoundException("订单不存在");
-    if (!PermissionPolicy.canManageCommission(actor, order.storeId)) {
+    if (!await this.canAccess(actor, order.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const rule = await this.prisma.salesCommissionRule.findFirst({
@@ -91,7 +96,7 @@ export class CommissionsService {
       include: { assignments: true }
     });
     if (!record) throw new NotFoundException("施工记录不存在");
-    if (!PermissionPolicy.canManageCommission(actor, record.storeId)) {
+    if (!await this.canAccess(actor, record.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const adjustments = new Map((dto.adjustments ?? []).map((item) => [item.workerUserId, item.adjustmentCents]));

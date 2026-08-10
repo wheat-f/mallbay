@@ -68,6 +68,8 @@ model User {
   constructionPhotos             ConstructionPhoto[]          @relation("ConstructionPhotoUploadedBy")
   constructionCostWorkerLines    ConstructionCostWorkerLine[]
   qualityChecks                  ConstructionRecord[]         @relation("ConstructionQualityCheckedBy")
+  constructionQualityHistory    ConstructionQualityHistory[] @relation("ConstructionQualityCheckedByHistory")
+  revokedQualityHistory         ConstructionQualityHistory[] @relation("ConstructionQualityRevokedBy")
   leaveRequests                  LeaveRequest[]               @relation("LeaveRequestWorker")
   reviewedLeaveRequests          LeaveRequest[]               @relation("LeaveRequestReviewedBy")
   schedules                      Schedule[]                   @relation("ScheduleWorker")
@@ -366,6 +368,7 @@ model Store {
   dailyCapacities             DailyCapacity[]
   constructionWorkerProfiles  ConstructionWorkerProfile[]
   constructionRecords         ConstructionRecord[]
+  constructionQualityHistory  ConstructionQualityHistory[]
   leaveRequests               LeaveRequest[]
   schedules                   Schedule[]
   inventoryBatches            InventoryBatch[]
@@ -1631,6 +1634,7 @@ model Order {
   amount                     OrderAmount?
   payments                   OrderPayment[]
   constructionRecord         ConstructionRecord?
+  constructionQualityHistory  ConstructionQualityHistory[]
   inventoryMovements         InventoryMovement[]
   inventoryAllocations       OrderInventoryAllocation[]
   purchaseRequirements       PurchaseRequirement[]
@@ -1871,6 +1875,7 @@ model CustomerReceipt {
   reversedReason String?
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
+  idempotencyKey String?
 
   store       Store                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   customer    Customer                  @relation(fields: [customerId], references: [id])
@@ -1884,6 +1889,7 @@ model CustomerReceipt {
   @@index([storeId, customerId, receivedAt])
   @@index([storeId, status])
   @@index([accountId])
+  @@unique([storeId, idempotencyKey])
 }
 
 model CustomerReceiptReversal {
@@ -1893,6 +1899,7 @@ model CustomerReceiptReversal {
   reason      String
   createdById String
   createdAt   DateTime @default(now())
+  idempotencyKey String?
 
   receipt     CustomerReceipt                     @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   createdBy   User                                @relation("CustomerReceiptReversalCreatedBy", fields: [createdById], references: [id])
@@ -1900,6 +1907,7 @@ model CustomerReceiptReversal {
 
   @@index([receiptId, createdAt])
   @@index([createdById])
+  @@unique([receiptId, idempotencyKey])
 }
 
 model CustomerReceiptReversalAllocation {
@@ -2009,12 +2017,42 @@ model ConstructionRecord {
   qualityCheckedBy    User?                       @relation("ConstructionQualityCheckedBy", fields: [qualityCheckedById], references: [id])
   assignments         ConstructionAssignment[]
   photos              ConstructionPhoto[]
+  qualityHistory      ConstructionQualityHistory[]
   commissionSnapshots WorkerCommissionSnapshot[]
   workerCommissions   WorkerCommission[]
   costSettlement      ConstructionCostSettlement?
 
   @@index([storeId, status])
   @@index([dispatchedById])
+}
+
+/// Append-only quality facts. ConstructionRecord quality fields remain the
+/// legacy/current snapshot used by existing consumers during migration.
+model ConstructionQualityHistory {
+  id                 String             @id @default(cuid())
+  storeId            String
+  recordId           String
+  orderId            String
+  result             QualityCheckResult
+  note               String?
+  responsibilityType String?
+  checkedById        String
+  checkedAt          DateTime           @default(now())
+  isRevoked          Boolean            @default(false)
+  revokedById        String?
+  revokedAt          DateTime?
+  revocationReason   String?
+  createdAt          DateTime           @default(now())
+
+  store      Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  record     ConstructionRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  order      Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  checkedBy  User               @relation("ConstructionQualityCheckedByHistory", fields: [checkedById], references: [id])
+  revokedBy  User?              @relation("ConstructionQualityRevokedBy", fields: [revokedById], references: [id])
+
+  @@index([recordId, checkedAt])
+  @@index([storeId, checkedAt])
+  @@index([orderId, checkedAt])
 }
 
 /// One cost settlement is created for each construction record. It is distinct
@@ -2826,6 +2864,7 @@ model PaymentRecord {
   createdById  String
   occurredAt   DateTime          @default(now())
   createdAt    DateTime          @default(now())
+  idempotencyKey String?
   reversalOfId String?           @unique
   reversedById String?           @unique
 
@@ -2840,6 +2879,7 @@ model PaymentRecord {
   @@index([storeId, type])
   @@index([sourceType, sourceId])
   @@index([createdById])
+  @@unique([storeId, idempotencyKey])
 }
 
 model FinanceApprovalRecord {

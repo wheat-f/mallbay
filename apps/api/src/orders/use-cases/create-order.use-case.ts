@@ -8,8 +8,9 @@ import {
   Optional
 } from "@nestjs/common";
 import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, CrossStoreTaskStatus, CustomerContactRole, CustomerVehicleStatus, DictionaryStatus, NotificationType, OrderStatus, Prisma, ProductStatus, ProductUnit, StorePosition, StoreStatus } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../../common/policies/permission.policy";
+import { type UserWithStoreMember } from "../../permissions/domain/access-types";
 import { PrismaService } from "../../prisma/prisma.service";
+import { AccessContext } from "../../permissions/domain/access-context";
 import { PricingDecision } from "../../pricing/domain/pricing-decision";
 import { multiplyMoneyCents } from "../../pricing/domain/money";
 import { CreateOrderDto } from "../dto/create-order.dto";
@@ -35,6 +36,7 @@ export class CreateOrderUseCase {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    private readonly accessContext: AccessContext,
     @Optional()
     @Inject(ORDER_NUMBER_GENERATOR)
     orderNumber?: OrderNumberGenerator,
@@ -46,10 +48,10 @@ export class CreateOrderUseCase {
   }
 
   async execute(user: UserWithStoreMember, dto: CreateOrderDto, options: CreateOrderOptions = {}) {
-    if (!PermissionPolicy.canCreateOrder(user, dto.storeId)) {
+    if (!await this.accessContext.can(user.id, "orders", "write", { storeId: dto.storeId, ownerId: user.id })) {
       throw new ForbiddenException("无权限");
     }
-    if (dto.salesPersonId && dto.salesPersonId !== user.id && !PermissionPolicy.isStoreManager(user, dto.storeId)) {
+    if (dto.salesPersonId && dto.salesPersonId !== user.id && !await this.accessContext.can(user.id, "store", "write", { storeId: dto.storeId })) {
       throw new ForbiddenException("无权限指定其他销售人员");
     }
     const salesPersonId = dto.salesPersonId ?? user.id;
@@ -140,7 +142,7 @@ export class CreateOrderUseCase {
       if (!customer || customer.storeId !== dto.storeId) {
         throw new NotFoundException("客户不存在");
       }
-      if (!PermissionPolicy.canViewCustomer(user, customer.storeId, customer.ownerUserId)) {
+      if (!await this.accessContext.can(user.id, "customers", "read", { storeId: customer.storeId, ownerId: customer.ownerUserId })) {
         throw new ForbiddenException("无权限");
       }
 

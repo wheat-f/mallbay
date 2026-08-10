@@ -5,7 +5,7 @@ import { DownloadOutlined, FilterOutlined, ReloadOutlined } from "@ant-design/ic
 import { Alert, App, Button, Card, DatePicker, Empty, Select, Space, Statistic, Table, Tabs, Tag, Typography, Skeleton } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import type { OperationalReport, OperationalReportFilters } from "@mallbay/shared";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { reportsApi } from "../../src/lib/api";
 import { yuanCurrency } from "../../src/features/orders/order-display";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -239,36 +239,99 @@ function OperationalReportTable({ view, loading, report }: { view: ReportView; l
     const rowCount = view === "sales" ? report.salesPeople.length : view === "construction" ? report.constructionWorkers.length : view === "finance" ? report.financeOrders.length : view === "project" ? report.projectStats.length : view === "afterSalesWorker" ? report.afterSaleWorkers.length : report.afterSaleBreakdown.length;
     if (rowCount === 0 && !loading) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无符合条件的数据，请调整筛选范围" />;
   }
-  if (view === "sales") return <Table rowKey="userId" loading={loading} pagination={false} dataSource={report?.salesPeople ?? []} columns={[
-    { title: "销售人员", dataIndex: "name" }, { title: "订单数", dataIndex: "orders" },
-    { title: "销售金额", dataIndex: "amountCents", render: yuanCurrency }, { title: "实际收款", dataIndex: "receivedCents", render: yuanCurrency },
-    { title: "成本", dataIndex: "costCents", render: yuanCurrency }, { title: "毛利", dataIndex: "grossProfitCents", render: (value: number | null) => money(value) },
-    { title: "应计/已确认/已结算提成", render: (_, row) => `${yuanCurrency(row.accruedCommissionCents)} / ${yuanCurrency(row.confirmedCommissionCents)} / ${yuanCurrency(row.settledCommissionCents)}` },
-    { title: "成本来源(实际/标准/待补齐)", render: (_, row) => `${row.costSourceActualOrders} / ${row.costSourceStandardOrders} / ${row.costSourceMissingOrders}` }
-  ]} />;
-  if (view === "construction") return <Table rowKey="userId" loading={loading} pagination={false} dataSource={report?.constructionWorkers ?? []} columns={[
-    { title: "施工人员", dataIndex: "name" }, { title: "参与订单", dataIndex: "orders" }, { title: "订单金额", dataIndex: "orderAmountCents", render: yuanCurrency },
-    { title: "施工收费", dataIndex: "constructionChargeCents", render: yuanCurrency }, { title: "分摊施工金额", dataIndex: "allocatedConstructionChargeCents", render: yuanCurrency },
-    { title: "确认工时(分钟)", dataIndex: "confirmedMinutes" }, { title: "提成(应计/确认/结算)", render: (_, row) => `${yuanCurrency(row.accruedCommissionCents)} / ${yuanCurrency(row.confirmedCommissionCents)} / ${yuanCurrency(row.settledCommissionCents)}` },
-    { title: "分摊状态", dataIndex: "allocationStatus", render: (value) => <Tag color={value === "已按确认工时分摊" ? "green" : value === "店长手工分摊" ? "blue" : "orange"}>{value}</Tag> }
-  ]} />;
-  if (view === "finance") return <Table rowKey="orderId" loading={loading} pagination={{ pageSize: 20 }} dataSource={report?.financeOrders ?? []} columns={[
-    { title: "订单号", dataIndex: "orderNo" }, { title: "销售员", dataIndex: "salesPersonName" }, { title: "施工类型", dataIndex: "constructionType" }, { title: "订单状态", dataIndex: "status" },
-    { title: "订单金额", dataIndex: "amountCents", render: yuanCurrency }, { title: "收款", dataIndex: "receivedCents", render: yuanCurrency },
-    { title: "材料成本", dataIndex: "materialCostCents", render: yuanCurrency }, { title: "施工成本", dataIndex: "constructionCostCents", render: yuanCurrency },
-    { title: "总成本", dataIndex: "totalCostCents", render: (value) => value == null ? "待补齐" : yuanCurrency(value) }, { title: "毛利", dataIndex: "grossProfitCents", render: (value) => value == null ? "待补齐" : yuanCurrency(value) },
-    { title: "成本来源", dataIndex: "costSource", render: (value) => <Tag color={value === "实际" ? "green" : value === "标准" ? "blue" : "orange"}>{value}</Tag> }
-  ]} />;
-  if (view === "project") return <Table rowKey={(row) => `${row.dimension}-${row.name}`} loading={loading} pagination={false} dataSource={report?.projectStats ?? []} columns={[
-    { title: "统计维度", dataIndex: "dimension" }, { title: "项目", dataIndex: "name" }, { title: "订单数", dataIndex: "orders" }, { title: "订单金额", dataIndex: "amountCents", render: yuanCurrency }, { title: "施工收费", dataIndex: "constructionChargeCents", render: yuanCurrency }
-  ]} />;
-  if (view === "afterSalesWorker") return <Table rowKey="userId" loading={loading} pagination={false} dataSource={report?.afterSaleWorkers ?? []} columns={[
-    { title: "施工人员", dataIndex: "name" }, { title: "施工订单", dataIndex: "constructionOrders" }, { title: "售后单", dataIndex: "afterSales" }, { title: "售后占比", dataIndex: "afterSaleRateBps", render: bps },
-    { title: "材料", dataIndex: "materialCostCents", render: yuanCurrency }, { title: "施工人工", dataIndex: "laborCostCents", render: yuanCurrency }, { title: "退款/补偿", dataIndex: "refundCompensationCents", render: yuanCurrency }, { title: "外包", dataIndex: "outsourceCostCents", render: yuanCurrency }, { title: "供应商追偿", dataIndex: "supplierRecoveryCents", render: yuanCurrency }
-  ]} />;
-  return <Table rowKey="category" loading={loading} pagination={false} dataSource={report?.afterSaleBreakdown ?? []} columns={[
-    { title: "售后状态 / 责任", dataIndex: "category" }, { title: "售后数量", dataIndex: "afterSales" }, { title: "相对占比", dataIndex: "proportionBps", render: bps }
-  ]} />;
+  if (view === "sales") {
+    const rows = report?.salesPeople ?? [];
+    return <ResponsiveReportData
+      table={<Table rowKey="userId" loading={loading} pagination={false} dataSource={rows} columns={[
+        { title: "销售人员", dataIndex: "name" }, { title: "订单数", dataIndex: "orders" },
+        { title: "销售金额", dataIndex: "amountCents", render: yuanCurrency }, { title: "实际收款", dataIndex: "receivedCents", render: yuanCurrency },
+        { title: "成本", dataIndex: "costCents", render: yuanCurrency }, { title: "毛利", dataIndex: "grossProfitCents", render: (value: number | null) => money(value) },
+        { title: "应计/已确认/已结算提成", render: (_, row) => `${yuanCurrency(row.accruedCommissionCents)} / ${yuanCurrency(row.confirmedCommissionCents)} / ${yuanCurrency(row.settledCommissionCents)}` },
+        { title: "成本来源(实际/标准/待补齐)", render: (_, row) => `${row.costSourceActualOrders} / ${row.costSourceStandardOrders} / ${row.costSourceMissingOrders}` }
+      ]} />}
+      cards={rows.map((row) => <ReportMobileCard key={row.userId} title={row.name} subtitle={`${row.orders} 单`} fields={[
+        ["销售金额", yuanCurrency(row.amountCents)], ["实际收款", yuanCurrency(row.receivedCents)], ["成本", yuanCurrency(row.costCents)], ["毛利", money(row.grossProfitCents)],
+        ["提成", `${yuanCurrency(row.accruedCommissionCents)} / ${yuanCurrency(row.confirmedCommissionCents)} / ${yuanCurrency(row.settledCommissionCents)}`],
+        ["成本来源", `${row.costSourceActualOrders} / ${row.costSourceStandardOrders} / ${row.costSourceMissingOrders}`]
+      ]} />)}
+    />;
+  }
+  if (view === "construction") {
+    const rows = report?.constructionWorkers ?? [];
+    return <ResponsiveReportData
+      table={<Table rowKey="userId" loading={loading} pagination={false} dataSource={rows} columns={[
+        { title: "施工人员", dataIndex: "name" }, { title: "参与订单", dataIndex: "orders" }, { title: "订单金额", dataIndex: "orderAmountCents", render: yuanCurrency },
+        { title: "施工收费", dataIndex: "constructionChargeCents", render: yuanCurrency }, { title: "分摊施工金额", dataIndex: "allocatedConstructionChargeCents", render: yuanCurrency },
+        { title: "确认工时(分钟)", dataIndex: "confirmedMinutes" }, { title: "提成(应计/确认/结算)", render: (_, row) => `${yuanCurrency(row.accruedCommissionCents)} / ${yuanCurrency(row.confirmedCommissionCents)} / ${yuanCurrency(row.settledCommissionCents)}` },
+        { title: "分摊状态", dataIndex: "allocationStatus", render: (value) => <Tag color={value === "已按确认工时分摊" ? "green" : value === "店长手工分摊" ? "blue" : "orange"}>{value}</Tag> }
+      ]} />}
+      cards={rows.map((row) => <ReportMobileCard key={row.userId} title={row.name} subtitle={`${row.orders} 个参与订单`} fields={[
+        ["订单金额", yuanCurrency(row.orderAmountCents)], ["施工收费", yuanCurrency(row.constructionChargeCents)], ["分摊施工金额", yuanCurrency(row.allocatedConstructionChargeCents)],
+        ["确认工时", `${row.confirmedMinutes} 分钟`], ["提成", `${yuanCurrency(row.accruedCommissionCents)} / ${yuanCurrency(row.confirmedCommissionCents)} / ${yuanCurrency(row.settledCommissionCents)}`], ["分摊状态", row.allocationStatus]
+      ]} />)}
+    />;
+  }
+  if (view === "finance") {
+    const rows = report?.financeOrders ?? [];
+    return <ResponsiveReportData
+      table={<Table rowKey="orderId" loading={loading} pagination={{ pageSize: 20 }} dataSource={rows} columns={[
+        { title: "订单号", dataIndex: "orderNo" }, { title: "销售员", dataIndex: "salesPersonName" }, { title: "施工类型", dataIndex: "constructionType" }, { title: "订单状态", dataIndex: "status" },
+        { title: "订单金额", dataIndex: "amountCents", render: yuanCurrency }, { title: "收款", dataIndex: "receivedCents", render: yuanCurrency },
+        { title: "材料成本", dataIndex: "materialCostCents", render: yuanCurrency }, { title: "施工成本", dataIndex: "constructionCostCents", render: yuanCurrency },
+        { title: "总成本", dataIndex: "totalCostCents", render: (value) => value == null ? "待补齐" : yuanCurrency(value) }, { title: "毛利", dataIndex: "grossProfitCents", render: (value) => value == null ? "待补齐" : yuanCurrency(value) },
+        { title: "成本来源", dataIndex: "costSource", render: (value) => <Tag color={value === "实际" ? "green" : value === "标准" ? "blue" : "orange"}>{value}</Tag> }
+      ]} />}
+      cards={rows.map((row) => <ReportMobileCard key={row.orderId} title={row.orderNo} subtitle={`${row.salesPersonName} · ${row.status}`} fields={[
+        ["施工类型", row.constructionType], ["订单金额", yuanCurrency(row.amountCents)], ["收款", yuanCurrency(row.receivedCents)], ["材料成本", yuanCurrency(row.materialCostCents)],
+        ["施工成本", yuanCurrency(row.constructionCostCents)], ["总成本", money(row.totalCostCents)], ["毛利", money(row.grossProfitCents)], ["成本来源", row.costSource]
+      ]} />)}
+    />;
+  }
+  if (view === "project") {
+    const rows = report?.projectStats ?? [];
+    return <ResponsiveReportData
+      table={<Table rowKey={(row) => `${row.dimension}-${row.name}`} loading={loading} pagination={false} dataSource={rows} columns={[
+        { title: "统计维度", dataIndex: "dimension" }, { title: "项目", dataIndex: "name" }, { title: "订单数", dataIndex: "orders" }, { title: "订单金额", dataIndex: "amountCents", render: yuanCurrency }, { title: "施工收费", dataIndex: "constructionChargeCents", render: yuanCurrency }
+      ]} />}
+      cards={rows.map((row) => <ReportMobileCard key={`${row.dimension}-${row.name}`} title={row.name} subtitle={row.dimension} fields={[["订单数", row.orders], ["订单金额", yuanCurrency(row.amountCents)], ["施工收费", yuanCurrency(row.constructionChargeCents)]]} />)}
+    />;
+  }
+  if (view === "afterSalesWorker") {
+    const rows = report?.afterSaleWorkers ?? [];
+    return <ResponsiveReportData
+      table={<Table rowKey="userId" loading={loading} pagination={false} dataSource={rows} columns={[
+        { title: "施工人员", dataIndex: "name" }, { title: "施工订单", dataIndex: "constructionOrders" }, { title: "售后单", dataIndex: "afterSales" }, { title: "售后占比", dataIndex: "afterSaleRateBps", render: bps },
+        { title: "材料", dataIndex: "materialCostCents", render: yuanCurrency }, { title: "施工人工", dataIndex: "laborCostCents", render: yuanCurrency }, { title: "退款/补偿", dataIndex: "refundCompensationCents", render: yuanCurrency }, { title: "外包", dataIndex: "outsourceCostCents", render: yuanCurrency }, { title: "供应商追偿", dataIndex: "supplierRecoveryCents", render: yuanCurrency }
+      ]} />}
+      cards={rows.map((row) => <ReportMobileCard key={row.userId} title={row.name} subtitle={`${row.afterSales} 个售后单`} fields={[
+        ["施工订单", row.constructionOrders], ["售后占比", bps(row.afterSaleRateBps)], ["材料", yuanCurrency(row.materialCostCents)], ["施工人工", yuanCurrency(row.laborCostCents)],
+        ["退款/补偿", yuanCurrency(row.refundCompensationCents)], ["外包", yuanCurrency(row.outsourceCostCents)], ["供应商追偿", yuanCurrency(row.supplierRecoveryCents)]
+      ]} />)}
+    />;
+  }
+  const rows = report?.afterSaleBreakdown ?? [];
+  return <ResponsiveReportData
+    table={<Table rowKey="category" loading={loading} pagination={false} dataSource={rows} columns={[
+      { title: "售后状态 / 责任", dataIndex: "category" }, { title: "售后数量", dataIndex: "afterSales" }, { title: "相对占比", dataIndex: "proportionBps", render: bps }
+    ]} />}
+    cards={rows.map((row) => <ReportMobileCard key={row.category} title={row.category} fields={[["售后数量", row.afterSales], ["相对占比", bps(row.proportionBps)]]} />)}
+  />;
+}
+
+function ResponsiveReportData({ table, cards }: { table: ReactNode; cards: ReactNode }) {
+  return <>
+    <div className="reports-data-desktop-table">{table}</div>
+    <div className="reports-data-mobile-cards">{cards}</div>
+  </>;
+}
+
+function ReportMobileCard({ title, subtitle, fields }: { title: string; subtitle?: string; fields: Array<[string, ReactNode]> }) {
+  return <article className="reports-data-mobile-card">
+    <div className="reports-data-mobile-card-head"><div><strong>{title}</strong>{subtitle && <span>{subtitle}</span>}</div></div>
+    <dl className="reports-data-mobile-fields">
+      {fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+    </dl>
+  </article>;
 }
 
 function buildExportSummaryRows(report: Awaited<ReturnType<typeof reportsApi.operational>>, filterSummary: string) {

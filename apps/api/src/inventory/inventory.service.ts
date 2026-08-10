@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   ConstructionCostSettlementStatus,
   InventoryMovementType,
@@ -8,7 +8,8 @@ import {
   PurchaseOrderStatus,
   StorePosition
 } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import type {
   ConvertBatchUnitDto,
@@ -146,11 +147,18 @@ type WarehouseLookupClient = {
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessContext: AccessContext
+  ) {}
+
+  private canAccess(actor: AuthenticatedInventoryUser, capability: string, action: string, storeId: string) {
+    return this.accessContext.can(actor.id, capability, action, { storeId });
+  }
 
   async listBatches(user: AuthenticatedInventoryUser, query: ListInventoryDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewInventory(actor, query.storeId)) {
+    if (!await this.canAccess(actor, "inventory", "read", query.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.inventoryBatch.findMany({
@@ -162,7 +170,7 @@ export class InventoryService {
 
   async createBatch(user: AuthenticatedInventoryUser, dto: CreateInventoryBatchDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageInventory(actor, dto.storeId)) {
+    if (!await this.canAccess(actor, "inventory", "write", dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const warehouse = await this.resolveReceivingWarehouse(this.prisma, dto.storeId, dto.warehouseId, dto.warehouseName);
@@ -219,7 +227,7 @@ export class InventoryService {
 
   async listWarehouses(user: AuthenticatedInventoryUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewInventory(actor, storeId)) {
+    if (!await this.canAccess(actor, "inventory", "read", storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.warehouse.findMany({
@@ -230,7 +238,7 @@ export class InventoryService {
 
   async createWarehouse(user: AuthenticatedInventoryUser, dto: CreateWarehouseDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManageInventory(actor, dto.storeId)) {
+    if (!await this.canAccess(actor, "inventory", "write", dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.warehouse.create({
@@ -250,7 +258,7 @@ export class InventoryService {
     const actor = await this.withStoreMember(user);
     const warehouse = await this.prisma.warehouse.findUnique({ where: { id: warehouseId } });
     if (!warehouse) throw new NotFoundException("仓库不存在");
-    if (!PermissionPolicy.canManageInventory(actor, warehouse.storeId)) {
+    if (!await this.canAccess(actor, "inventory", "write", warehouse.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.warehouse.update({
@@ -267,7 +275,7 @@ export class InventoryService {
 
   async listMovements(user: AuthenticatedInventoryUser, query: ListInventoryDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewInventory(actor, query.storeId)) {
+    if (!await this.canAccess(actor, "inventory", "read", query.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const movements = await this.prisma.inventoryMovement.findMany({
@@ -330,7 +338,7 @@ export class InventoryService {
 
   async listSuppliers(user: AuthenticatedInventoryUser, storeId: string): Promise<SupplierSummary[]> {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewPurchase(actor, storeId)) {
+    if (!await this.canAccess(actor, "purchase", "read", storeId)) {
       throw new ForbiddenException("无权限");
     }
 
@@ -396,7 +404,7 @@ export class InventoryService {
 
   async createSupplier(user: AuthenticatedInventoryUser, dto: CreateSupplierDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManagePurchase(actor, dto.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.supplier.create({
@@ -420,7 +428,7 @@ export class InventoryService {
       select: { id: true, storeId: true }
     });
     if (!supplier) throw new NotFoundException("供应商不存在");
-    if (!PermissionPolicy.canManagePurchase(actor, supplier.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", supplier.storeId)) {
       throw new ForbiddenException("无权限");
     }
 
@@ -449,7 +457,7 @@ export class InventoryService {
       select: { id: true, storeId: true }
     });
     if (!supplier) throw new NotFoundException("供应商不存在");
-    if (!PermissionPolicy.canManagePurchase(actor, supplier.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", supplier.storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.supplierContact.create({
@@ -475,7 +483,7 @@ export class InventoryService {
       select: { id: true, storeId: true }
     });
     if (!supplier) throw new NotFoundException("供应商不存在");
-    if (!PermissionPolicy.canManagePurchase(actor, supplier.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", supplier.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const rating = await this.prisma.supplierRatingHistory.create({
@@ -495,7 +503,7 @@ export class InventoryService {
 
   async createPurchaseOrder(user: AuthenticatedInventoryUser, dto: CreatePurchaseOrderDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManagePurchase(actor, dto.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const purchaserId = await this.resolvePurchaseOrderPurchaser(actor, dto.storeId, dto.purchaserId);
@@ -526,7 +534,7 @@ export class InventoryService {
     const actor = await this.withStoreMember(user);
     const purchaseOrder = await this.prisma.purchaseOrder.findUnique({ where: { id: purchaseOrderId } });
     if (!purchaseOrder) throw new NotFoundException("采购订单不存在");
-    if (!PermissionPolicy.canManagePurchase(actor, purchaseOrder.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", purchaseOrder.storeId)) {
       throw new ForbiddenException("无权限");
     }
     if (purchaseOrder.status !== PurchaseOrderStatus.DRAFT) {
@@ -546,7 +554,7 @@ export class InventoryService {
     const actor = await this.withStoreMember(user);
     const purchaseOrder = await this.prisma.purchaseOrder.findUnique({ where: { id: purchaseOrderId } });
     if (!purchaseOrder) throw new NotFoundException("采购订单不存在");
-    if (!PermissionPolicy.canManagePurchase(actor, purchaseOrder.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", purchaseOrder.storeId)) {
       throw new ForbiddenException("无权限");
     }
     if (purchaseOrder.status !== PurchaseOrderStatus.DRAFT && purchaseOrder.status !== PurchaseOrderStatus.ORDERED) {
@@ -576,7 +584,7 @@ export class InventoryService {
 
   async listPurchaseOrders(user: AuthenticatedInventoryUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewPurchase(actor, storeId)) {
+    if (!await this.canAccess(actor, "purchase", "read", storeId)) {
       throw new ForbiddenException("无权限");
     }
     const purchaseOrders = await this.prisma.purchaseOrder.findMany({
@@ -634,7 +642,7 @@ export class InventoryService {
     dto: ListPurchaseOrderExportDetailsDto
   ) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewPurchase(actor, dto.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "read", dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
 
@@ -724,7 +732,7 @@ export class InventoryService {
       }
     });
     if (!purchaseOrder) throw new NotFoundException("采购订单不存在");
-    if (!PermissionPolicy.canViewPurchase(actor, purchaseOrder.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "read", purchaseOrder.storeId)) {
       throw new ForbiddenException("无权限");
     }
     const itemIds = purchaseOrder.items.map((item) => item.id);
@@ -767,7 +775,7 @@ export class InventoryService {
 
   async listPurchaseRequirements(user: AuthenticatedInventoryUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewPurchase(actor, storeId)) {
+    if (!await this.canAccess(actor, "purchase", "read", storeId)) {
       throw new ForbiddenException("无权限");
     }
     return this.prisma.purchaseRequirement.findMany({
@@ -809,7 +817,7 @@ export class InventoryService {
 
   async createPurchaseRequirement(user: AuthenticatedInventoryUser, dto: CreatePurchaseRequirementDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canManagePurchase(actor, dto.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
     if (!dto.items?.length) {
@@ -835,7 +843,7 @@ export class InventoryService {
 
   async listPendingMatchOrders(user: AuthenticatedInventoryUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewInventory(actor, storeId)) {
+    if (!await this.canAccess(actor, "inventory", "read", storeId)) {
       throw new ForbiddenException("无权限");
     }
     const orders = await this.prisma.order.findMany({
@@ -863,7 +871,7 @@ export class InventoryService {
       }
     });
     if (!order) throw new NotFoundException("订单不存在");
-    if (!PermissionPolicy.canViewInventory(actor, (order.executionStoreId ?? order.storeId))) {
+    if (!await this.canAccess(actor, "inventory", "read", (order.executionStoreId ?? order.storeId))) {
       throw new ForbiddenException("无权限");
     }
     const items = await Promise.all(order.items.map(async (item) => {
@@ -898,7 +906,7 @@ export class InventoryService {
         }
       });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, (order.executionStoreId ?? order.storeId))) {
+    if (!await this.canAccess(actor, "inventory", "write", (order.executionStoreId ?? order.storeId))) {
         throw new ForbiddenException("无权限");
       }
       const locked: Array<{ batchId: string; orderItemId: string; quantity: number }> = [];
@@ -1046,7 +1054,7 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, (order.executionStoreId ?? order.storeId))) {
+    if (!await this.canAccess(actor, "inventory", "write", (order.executionStoreId ?? order.storeId))) {
         throw new ForbiddenException("无权限");
       }
       const allocations = await tx.orderInventoryAllocation.findMany({ where: { orderId, status: "LOCKED" } });
@@ -1103,7 +1111,7 @@ export class InventoryService {
         }
       });
       if (!requirement) throw new NotFoundException("采购需求不存在");
-      if (!PermissionPolicy.canManagePurchase(actor, requirement.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", requirement.storeId)) {
         throw new ForbiddenException("无权限");
       }
       const purchaserId = await this.resolvePurchaseOrderPurchaser(actor, requirement.storeId, dto.purchaserId);
@@ -1240,7 +1248,7 @@ export class InventoryService {
         include: { purchaseOrder: true, product: true }
       });
       if (!item) throw new NotFoundException("采购明细不存在");
-      if (!PermissionPolicy.canManagePurchase(actor, item.purchaseOrder.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", item.purchaseOrder.storeId)) {
         throw new ForbiddenException("无权限");
       }
       if (dto.idempotencyKey) {
@@ -1460,7 +1468,7 @@ export class InventoryService {
         }
       });
       if (!record) throw new NotFoundException("入库成本记录不存在");
-      if (!PermissionPolicy.canManagePurchase(actor, record.storeId)) {
+    if (!await this.canAccess(actor, "purchase", "write", record.storeId)) {
         throw new ForbiddenException("无权限");
       }
       if (dto.actualUnitCostCents === undefined) {
@@ -1674,7 +1682,7 @@ export class InventoryService {
         }
       });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, (order.executionStoreId ?? order.storeId))) {
+      if (!await this.canAccess(actor, "inventory", "write", (order.executionStoreId ?? order.storeId))) {
         throw new ForbiddenException("无权限");
       }
 
@@ -1793,7 +1801,7 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order) throw new NotFoundException("订单不存在");
-      if (!PermissionPolicy.canManageInventory(actor, (order.executionStoreId ?? order.storeId))) {
+      if (!await this.canAccess(actor, "inventory", "write", (order.executionStoreId ?? order.storeId))) {
         throw new ForbiddenException("无权限");
       }
       const allocations = await tx.orderInventoryAllocation.findMany({
@@ -1876,7 +1884,7 @@ export class InventoryService {
     const actor = await this.withStoreMember(user);
     const batch = await this.prisma.inventoryBatch.findUnique({ where: { id: batchId } });
     if (!batch) throw new NotFoundException("库存批次不存在");
-    if (!PermissionPolicy.canManageInventory(actor, batch.storeId)) {
+    if (!await this.canAccess(actor, "inventory", "write", batch.storeId)) {
       throw new ForbiddenException("无权限");
     }
     if (dto.fromUnit !== ProductUnit.ROLL || dto.toUnit !== ProductUnit.METER) {
@@ -1913,7 +1921,7 @@ export class InventoryService {
         include: { product: true }
       });
       if (!batch) throw new NotFoundException("库存批次不存在");
-      if (!PermissionPolicy.canManageInventory(actor, batch.storeId)) {
+    if (!await this.canAccess(actor, "inventory", "write", batch.storeId)) {
         throw new ForbiddenException("无权限");
       }
       if (batch.unit !== ProductUnit.ROLL) {
@@ -1982,7 +1990,7 @@ export class InventoryService {
     return this.prisma.$transaction(async (tx) => {
       const batch = await tx.inventoryBatch.findUnique({ where: { id: dto.batchId } });
       if (!batch) throw new NotFoundException("库存批次不存在");
-      if (!PermissionPolicy.canManageInventory(actor, batch.storeId)) {
+    if (!await this.canAccess(actor, "inventory", "write", batch.storeId)) {
         throw new ForbiddenException("无权限");
       }
       if (dto.idempotencyKey) {
@@ -2110,7 +2118,7 @@ export class InventoryService {
   ) {
     const purchaserId = requestedPurchaserId ?? actor.id;
     if (purchaserId === actor.id) return purchaserId;
-    if (!PermissionPolicy.isStoreManager(actor, storeId)) {
+    if (!await this.canAccess(actor, "store", "write", storeId)) {
       throw new ForbiddenException("仅店长可指定其他采购员");
     }
     const member = await this.prisma.storeMember.findUnique({

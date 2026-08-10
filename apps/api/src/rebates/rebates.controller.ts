@@ -4,17 +4,18 @@ import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ApplyRebateDto, ListRebatesDto, PayRebateDto, ReviewRebateDto } from "./dto/rebate.dto";
 import { RebatesService, type AuthenticatedRebateUser } from "./rebates.service";
+import { FinancialDocumentQuery } from "../finance/domain/financial-document-query";
 
 type AuthRequest = Request & { user: AuthenticatedRebateUser };
 
 @UseGuards(JwtAuthGuard)
 @Controller("rebates")
 export class RebatesController {
-  constructor(private readonly rebates: RebatesService) {}
+  constructor(private readonly rebates: RebatesService, private readonly documents: FinancialDocumentQuery) {}
 
   @Get()
   list(@Req() req: AuthRequest, @Query() query: ListRebatesDto) {
-    return this.rebates.list(req.user, query);
+    return this.documents.listRebates(req.user, query);
   }
 
   @Post()

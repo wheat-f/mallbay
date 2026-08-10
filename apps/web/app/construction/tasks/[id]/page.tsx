@@ -15,7 +15,7 @@ import {
 import { getWorkerPhotoStageLabel, getWorkerTaskStatusLabel } from "@mallbay/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
-import type { ConstructionMaterialItem, ConstructionOrderMaterials } from "../../../../src/features/construction/api";
+import type { ConstructionMaterialItem, ConstructionOrderMaterials, ConstructionFulfillmentView } from "../../../../src/features/construction/api";
 import { constructionApi } from "../../../../src/lib/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
@@ -65,11 +65,18 @@ export default function ConstructionTaskDetailPage() {
 
   const taskQuery = useQuery({
     queryKey: ["construction-task-detail", storeId, params.id],
-    queryFn: () => constructionApi.assignments({ storeId: storeId! }),
+    queryFn: () => constructionApi.fulfillment(params.id),
     enabled: Boolean(storeId)
   });
 
-  const record = ((taskQuery.data ?? []) as TaskRecord[]).find((item) => item.orderId === params.id);
+  const fulfillment = taskQuery.data as ConstructionFulfillmentView | undefined;
+  const record: TaskRecord | undefined = fulfillment?.construction
+    ? {
+      ...fulfillment.construction,
+      orderId: fulfillment.order.id,
+      order: fulfillment.order
+    }
+    : undefined;
   const photos = record?.photos ?? [];
   const pendingUploads = photoRequirements.filter((item) => item.required && !photos.some((photo) => photo.stage === item.stage)).length;
 
@@ -231,6 +238,7 @@ export default function ConstructionTaskDetailPage() {
                 <Descriptions column={2} bordered size="small">
                   <Descriptions.Item label="订单号">{record.order?.orderNo ?? "订单信息待确认"}</Descriptions.Item>
                   <Descriptions.Item label="任务状态">{getWorkerTaskStatusLabel(record.status)}</Descriptions.Item>
+                  <Descriptions.Item label="履约阶段">{fulfillment?.workflow.currentStage ?? "待计算"}</Descriptions.Item>
                   <Descriptions.Item label="预约时间">{formatSchedule(record)}</Descriptions.Item>
                   <Descriptions.Item label="施工地点">{formatLocation(record)}</Descriptions.Item>
                   <Descriptions.Item label="开工时间">{formatNullableDate(record.startedAt)}</Descriptions.Item>

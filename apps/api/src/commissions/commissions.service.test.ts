@@ -29,7 +29,8 @@ test("CommissionsService creates sales commission rule and generates order snaps
       }
     }
   };
-  const service = new CommissionsService(prisma as never);
+  const accessContext = { can: async () => true };
+  const service = new CommissionsService(prisma as never, accessContext as never);
 
   await service.createSalesRule(
     {
@@ -71,7 +72,8 @@ test("CommissionsService generates worker commission under the ordering store", 
       }
     }
   };
-  const service = new CommissionsService(prisma as never);
+  const accessContext = { can: async () => true };
+  const service = new CommissionsService(prisma as never, accessContext as never);
 
   const result = await service.generateWorkerCommissions(
     {

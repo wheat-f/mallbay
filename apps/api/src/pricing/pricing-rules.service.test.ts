@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PricingRulesService, assertNoConstructionGroupConflict, validateRuleConflicts, validateRuleDefinitions } from "./pricing-rules.service";
 
+const pricingAccess = {
+  can: async (_actor: string, _capability: string, _action: string) => true,
+  resolve: async () => ({ roles: [{ roleCode: "MANAGER" }] })
+};
+
 const manager = {
   id: "manager-1",
   isAuditor: false,
@@ -29,7 +34,7 @@ test("规则详情按门店权限返回完整版本", async () => {
       findFirst: async () => ({ id: "rules-1", storeId: "store-1", rules: [], protectionPolicy: {} })
     }
   };
-  const service = new PricingRulesService(prisma as never);
+  const service = new PricingRulesService(prisma as never, undefined, undefined, pricingAccess as never);
   const result = await service.get(manager, "store-1", "rules-1");
   assert.equal(result.id, "rules-1");
 });
@@ -45,7 +50,7 @@ test("只有草稿规则版本可被完整替换", async () => {
       }
     }
   };
-  const service = new PricingRulesService(prisma as never);
+  const service = new PricingRulesService(prisma as never, undefined, undefined, pricingAccess as never);
   const result = await service.updateDraft(manager, "rules-1", draftPayload);
   assert.equal(result.id, "rules-1");
   assert.deepEqual((updateArgs as { data: { rules: { deleteMany: unknown } } }).data.rules.deleteMany, {});
@@ -57,7 +62,7 @@ test("已发布规则版本拒绝原地修改", async () => {
       findFirst: async () => ({ status: "PUBLISHED", version: 2 })
     }
   };
-  const service = new PricingRulesService(prisma as never);
+  const service = new PricingRulesService(prisma as never, undefined, undefined, pricingAccess as never);
   await assert.rejects(service.updateDraft(manager, "rules-1", draftPayload), /不可修改/);
 });
 

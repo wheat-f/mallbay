@@ -25,5 +25,13 @@ test("platform and access seams delegate through stable contracts", async () => 
     buildScopeFilter: async () => ({})
   } as never);
   assert.deepEqual(await access.resolve("user-1"), { userId: "user-1" });
+  assert.deepEqual(await access.resolve({ userId: "user-1" }), { userId: "user-1" });
   assert.equal(await access.can("user-1", "orders", "read"), true);
+  assert.deepEqual(await access.require("user-1", "orders", "read", { storeId: "store-1" }), {
+    allowed: true,
+    userId: "user-1",
+    capability: "orders",
+    action: "read",
+    context: { storeId: "store-1" }
+  });
 });

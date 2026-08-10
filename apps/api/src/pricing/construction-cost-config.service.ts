@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { DictionaryStatus, PositionCostRateVersionStatus, StorePosition } from "@prisma/client";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService, type AuditEvent } from "../observability/audit-log.service";
 import { AuditEventWriter } from "../observability/audit-event-writer";
@@ -16,17 +17,17 @@ import {
 /** Master data and finance rate cards used by versioned construction standards. */
 @Injectable()
 export class ConstructionCostConfigService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly audit?: AuditLogService, @Optional() private readonly auditWriter?: AuditEventWriter, private readonly accessContext?: AccessContext) {}
 
   async listServiceItems(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanView(actor, storeId);
+    await this.assertCanView(actor, storeId);
     return this.prisma.constructionServiceItem.findMany({ where: { storeId }, orderBy: [{ constructionTypeCode: "asc" }, { serviceGroupCode: "asc" }, { code: "asc" }] });
   }
 
   async createServiceItem(user: PricingAuthenticatedUser, dto: CreateConstructionServiceItemDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManageBusiness(actor, dto.storeId);
+    await this.assertCanManageBusiness(actor, dto.storeId);
     const code = dto.code.trim().toUpperCase();
     if (!code || !dto.name.trim()) throw new BadRequestException("施工服务编码和名称不能为空");
     const item = await this.prisma.constructionServiceItem.create({
@@ -42,7 +43,7 @@ export class ConstructionCostConfigService {
 
   async updateServiceItem(user: PricingAuthenticatedUser, id: string, dto: UpdateConstructionServiceItemDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManageBusiness(actor, dto.storeId);
+    await this.assertCanManageBusiness(actor, dto.storeId);
     const current = await this.prisma.constructionServiceItem.findFirst({ where: { id, storeId: dto.storeId } });
     if (!current) throw new NotFoundException("施工服务项目不存在");
     const item = await this.prisma.constructionServiceItem.update({
@@ -60,7 +61,7 @@ export class ConstructionCostConfigService {
 
   async listRateVersions(user: PricingAuthenticatedUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanViewCost(actor, storeId);
+    await this.assertCanViewCost(actor, storeId);
     const versions = await this.prisma.positionCostRateVersion.findMany({ where: { storeId }, include: { rates: { orderBy: { positionTypeCode: "asc" } } }, orderBy: { version: "desc" } });
     // 店长需要选择已发布版本以编制施工标准，但岗位小时成本金额属于财务成本口径。
     // 非财务仍需知道版本是否已配置，避免空白列表被误判为成本丢失。
@@ -69,13 +70,13 @@ export class ConstructionCostConfigService {
       rates,
       rateCount: rates.length
     }));
-    if (this.canViewRateDetails(actor, storeId)) return versionsWithRateCount;
+    if (await this.canViewRateDetails(actor, storeId)) return versionsWithRateCount;
     return versionsWithRateCount.map(({ rates: _rates, ...version }) => ({ ...version, rates: [] }));
   }
 
   async createRateVersion(user: PricingAuthenticatedUser, dto: CreatePositionCostRateVersionDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManageCost(actor, dto.storeId);
+    await this.assertCanManageCost(actor, dto.storeId);
     validateRates(dto.rates);
     validateDateRange(dto.effectiveFrom, dto.effectiveTo);
     const version = await this.nextRateVersion(dto.storeId);
@@ -93,7 +94,7 @@ export class ConstructionCostConfigService {
 
   async updateRateVersion(user: PricingAuthenticatedUser, id: string, dto: UpdatePositionCostRateVersionDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManageCost(actor, dto.storeId);
+    await this.assertCanManageCost(actor, dto.storeId);
     validateRates(dto.rates);
     validateDateRange(dto.effectiveFrom, dto.effectiveTo);
     const current = await this.prisma.positionCostRateVersion.findFirst({ where: { id, storeId: dto.storeId } });
@@ -111,7 +112,7 @@ export class ConstructionCostConfigService {
 
   async publishRateVersion(user: PricingAuthenticatedUser, storeId: string, id: string) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManageCost(actor, storeId);
+    await this.assertCanManageCost(actor, storeId);
     const version = await this.prisma.positionCostRateVersion.findFirst({ where: { id, storeId }, include: { rates: true } });
     if (!version) throw new NotFoundException("岗位小时成本版本不存在");
     if (version.status !== PositionCostRateVersionStatus.DRAFT) throw new BadRequestException("只有草稿岗位小时成本版本可以发布");
@@ -131,28 +132,26 @@ export class ConstructionCostConfigService {
     return (latest?.version ?? 0) + 1;
   }
 
-  private assertCanView(user: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.canViewStoreData(user, storeId)) throw new ForbiddenException("无权限");
+  private async assertCanView(user: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can(user.id, "products", "read", { storeId })) throw new ForbiddenException("无权限");
   }
 
-  private assertCanManageBusiness(user: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.isStoreManager(user, storeId)) throw new ForbiddenException("只有店长可以维护施工服务项目");
+  private async assertCanManageBusiness(user: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can(user.id, "store", "write", { storeId })) throw new ForbiddenException("只有店长可以维护施工服务项目");
   }
 
-  private assertCanViewCost(user: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.canManageFinance(user, storeId)) throw new ForbiddenException("无权限查看内部成本");
+  private async assertCanViewCost(user: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can(user.id, "finance", "write", { storeId })) throw new ForbiddenException("无权限查看内部成本");
   }
 
-  private assertCanManageCost(user: UserWithStoreMember, storeId: string) {
-    if (!this.canViewRateDetails(user, storeId)) throw new ForbiddenException("只有财务可以维护岗位小时成本");
+  private async assertCanManageCost(user: UserWithStoreMember, storeId: string) {
+    if (!await this.canViewRateDetails(user, storeId)) throw new ForbiddenException("只有财务可以维护岗位小时成本");
   }
 
-  private canViewRateDetails(user: UserWithStoreMember, storeId: string) {
-    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) return PermissionPolicy.canRuntime(user, "finance", "write", storeId);
-    return user.isAuditor || (
-      PermissionPolicy.isStoreMember(user, storeId) &&
-      user.storeMember?.position === StorePosition.FINANCE
-    );
+  private async canViewRateDetails(user: UserWithStoreMember, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can(user.id, "finance", "write", { storeId })) return false;
+    const resolution = await this.accessContext.resolve(user.id, { storeId });
+    return resolution.roles.some((role) => ["FINANCE", "HQ_ADMIN", "AUDITOR"].includes(role.roleCode));
   }
 
   private async withStoreMember(user: PricingAuthenticatedUser): Promise<UserWithStoreMember> {

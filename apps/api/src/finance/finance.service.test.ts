@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { FinanceApprovalStatus, PaymentRecordType, StorePosition } from "@prisma/client";
 import { FinanceService } from "./finance.service";
 
-test("FinanceService creates expense and marks reimbursement paid with payment record", async () => {
+test("FinanceService delegates reimbursement approval instead of writing payment records", async () => {
   const writes: unknown[] = [];
   const prisma = {
     storeMember: { findUnique: async () => null },
@@ -13,13 +13,7 @@ test("FinanceService creates expense and marks reimbursement paid with payment r
         return { id: "expense-1", status: FinanceApprovalStatus.PENDING };
       }
     },
-    reimbursementApplication: {
-      findUnique: async () => ({ id: "reimbursement-1", storeId: "store-1", amountCents: 3000 }),
-      update: async (args: unknown) => {
-        writes.push(args);
-        return { id: "reimbursement-1", status: FinanceApprovalStatus.PAID };
-      }
-    },
+    reimbursementApplication: { update: async (args: unknown) => { writes.push(args); return args; } },
     paymentRecord: {
       create: async (args: unknown) => {
         writes.push(args);
@@ -27,7 +21,10 @@ test("FinanceService creates expense and marks reimbursement paid with payment r
       }
     }
   };
-  const service = new FinanceService(prisma as never);
+  const reimbursementWorkflow = {
+    review: async (_actor: unknown, _id: string, dto: unknown) => { writes.push(dto); return { status: FinanceApprovalStatus.APPROVED }; }
+  };
+  const service = new FinanceService(prisma as never, undefined, reimbursementWorkflow as never, { can: async () => true } as never);
 
   await service.createExpense(
     { id: "purchasing-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.PURCHASING } },
@@ -36,12 +33,13 @@ test("FinanceService creates expense and marks reimbursement paid with payment r
   await service.approveReimbursement(
     { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
     "reimbursement-1",
-    { status: FinanceApprovalStatus.PAID, note: "ok" }
+    { status: FinanceApprovalStatus.APPROVED, note: "ok" }
   );
 
   const serialized = JSON.stringify(writes);
   assert.equal(serialized.includes(FinanceApprovalStatus.PENDING), true);
-  assert.equal(serialized.includes(PaymentRecordType.REIMBURSEMENT), true);
+  assert.equal(serialized.includes("APPROVE"), true);
+  assert.equal(serialized.includes(PaymentRecordType.REIMBURSEMENT), false);
 });
 
 test("FinanceService approves reimbursement without creating payment record", async () => {
@@ -67,7 +65,10 @@ test("FinanceService approves reimbursement without creating payment record", as
       }
     }
   };
-  const service = new FinanceService(prisma as never);
+  const reimbursementWorkflow = {
+    review: async (_actor: unknown, _id: string, dto: unknown) => { writes.push(dto); return { id: "reimbursement-1", status: FinanceApprovalStatus.APPROVED }; }
+  };
+  const service = new FinanceService(prisma as never, undefined, reimbursementWorkflow as never, { can: async () => true } as never);
 
   await service.approveReimbursement(
     { id: "finance-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.FINANCE } },
@@ -89,7 +90,10 @@ test("FinanceService allows sales to submit expense applications", async () => {
       }
     }
   };
-  const service = new FinanceService(prisma as never);
+  const reimbursementWorkflow = {
+    review: async (_actor: unknown, _id: string, dto: unknown) => { writes.push(dto); return { status: FinanceApprovalStatus.APPROVED }; }
+  };
+  const service = new FinanceService(prisma as never, undefined, reimbursementWorkflow as never, { can: async () => true } as never);
 
   await service.createExpense(
     { id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } },

@@ -11,9 +11,9 @@ import {
 import { CustomerNoteType, Gender, OrderStatus, Prisma, SettingsConfigStatus } from "@prisma/client";
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { normalizePagination } from "../common/pagination";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
-import { CustomerPolicy } from "./domain/customer.policy";
 import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
 import { CreateCustomerTagDto } from "./dto/create-customer-tag.dto";
 import { CreateCustomerUserForCustomerDto } from "./dto/create-customer-user.dto";
@@ -47,14 +47,15 @@ export class CustomersService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional()
     @Inject(SENSITIVE_FIELD_CODEC)
-    codec?: SensitiveFieldCodec
+    codec?: SensitiveFieldCodec,
+    @Optional() private readonly accessContext?: AccessContext
   ) {
     this.codec = codec ?? createDefaultSensitiveFieldCodec();
   }
 
   async create(user: AuthenticatedCustomerUser, storeId: string, dto: CreateCustomerDto) {
     const actor = await this.withStoreMember(user);
-    if (!CustomerPolicy.canCreate(actor, storeId)) {
+    if (!await this.canCustomer(actor, "write", storeId, actor.id)) {
       throw new ForbiddenException("无权限");
     }
     this.assertValidCreatePayload(dto);
@@ -95,12 +96,12 @@ export class CustomersService {
 
   async list(user: AuthenticatedCustomerUser, dto: ListCustomersDto) {
     const actor = await this.withStoreMember(user);
-    if (!CustomerPolicy.canCreate(actor, dto.storeId)) {
+    if (!await this.canCustomer(actor, "read", dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
 
     const { page, pageSize, skip } = normalizePagination(dto.page, dto.pageSize);
-    const where = this.buildScopedWhere(actor, dto.storeId);
+    const where = await this.buildScopedWhere(actor, dto.storeId);
     const q = dto.q?.trim();
     if (q) {
       where.OR = this.buildSearchConditions(q);
@@ -140,11 +141,11 @@ export class CustomersService {
 
   async search(user: AuthenticatedCustomerUser, storeId: string, q: string) {
     const actor = await this.withStoreMember(user);
-    if (!CustomerPolicy.canCreate(actor, storeId)) {
+    if (!await this.canCustomer(actor, "read", storeId)) {
       throw new ForbiddenException("无权限");
     }
 
-    const where = this.buildScopedWhere(actor, storeId);
+    const where = await this.buildScopedWhere(actor, storeId);
     const keyword = q?.trim();
     if (keyword) {
       where.OR = this.buildSearchConditions(keyword);
@@ -189,19 +190,22 @@ export class CustomersService {
     if (!customer) {
       throw new NotFoundException("客户不存在");
     }
-    if (!CustomerPolicy.canView(actor, customer.storeId, customer.ownerUserId)) {
+    if (!await this.canCustomer(actor, "read", customer.storeId, customer.ownerUserId)) {
       throw new ForbiddenException("无权限");
     }
 
     const [orderStats, amountStats, constructionTypeStats, consumptionTrendOrders, recentConstructionRecords] = await Promise.all([
       this.prisma.order.aggregate({
-        where: { customerId: id },
+        where: { customerId: id, status: { not: OrderStatus.CANCELLED } },
         _count: { _all: true },
         _min: { createdAt: true },
         _max: { createdAt: true }
       }),
       this.prisma.orderAmount.aggregate({
-        where: { order: { customerId: id } },
+        // Keep the amount projection on the same order fact set as the
+        // count, distribution and trend projections above: in-transit
+        // orders are included, cancelled orders are not.
+        where: { order: { customerId: id, status: { not: OrderStatus.CANCELLED } } },
         _sum: {
           totalAmountCents: true,
           paidAmountCents: true,
@@ -210,11 +214,11 @@ export class CustomersService {
       }),
       this.prisma.order.groupBy({
         by: ["constructionType"],
-        where: { customerId: id },
+        where: { customerId: id, status: { not: OrderStatus.CANCELLED } },
         _count: { _all: true }
       }),
       this.prisma.order.findMany({
-        where: { customerId: id },
+        where: { customerId: id, status: { not: OrderStatus.CANCELLED } },
         orderBy: { createdAt: "asc" },
         select: {
           createdAt: true,
@@ -387,7 +391,7 @@ export class CustomersService {
     if (!customer) {
       throw new NotFoundException("客户不存在");
     }
-    if (!CustomerPolicy.canEdit(actor, customer.storeId, customer.ownerUserId)) {
+    if (!await this.canCustomer(actor, "write", customer.storeId, customer.ownerUserId)) {
       throw new ForbiddenException("无权限");
     }
 
@@ -705,7 +709,7 @@ export class CustomersService {
     if (!tag) {
       throw new NotFoundException("客户标签不存在");
     }
-    if (!CustomerPolicy.canEdit(actor, tag.customer.storeId, tag.customer.ownerUserId)) {
+    if (!await this.canCustomer(actor, "write", tag.customer.storeId, tag.customer.ownerUserId)) {
       throw new ForbiddenException("无权限");
     }
     await this.runTransaction(async (tx: any) => {
@@ -721,7 +725,7 @@ export class CustomersService {
     if (!customer) {
       throw new NotFoundException("客户不存在");
     }
-    if (!CustomerPolicy.canEdit(actor, customer.storeId, customer.ownerUserId)) {
+    if (!await this.canCustomer(actor, "write", customer.storeId, customer.ownerUserId)) {
       throw new ForbiddenException("无权限");
     }
     return customer;
@@ -733,7 +737,7 @@ export class CustomersService {
     if (!customer) {
       throw new NotFoundException("客户不存在");
     }
-    if (!CustomerPolicy.canView(actor, customer.storeId, customer.ownerUserId)) {
+    if (!await this.canCustomer(actor, "read", customer.storeId, customer.ownerUserId)) {
       throw new ForbiddenException("无权限");
     }
     return customer;
@@ -741,27 +745,26 @@ export class CustomersService {
 
   private async assertCanManageVehicleLifecycle(user: AuthenticatedCustomerUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!CustomerPolicy.canManageVehicleLifecycle(actor, storeId)) {
+    if (!this.accessContext || !await this.accessContext.can(actor.id, "store", "write", { storeId })) {
       throw new ForbiddenException("仅店长可以停用、启用或转移车辆");
     }
     return actor;
   }
 
-  private buildScopedWhere(user: UserWithStoreMember, storeId: string): Prisma.CustomerWhereInput {
-    if (PermissionPolicy.hasRuntimeSnapshot(user.id)) {
-      if (!PermissionPolicy.canRuntime(user, "customers", "read", storeId)) throw new ForbiddenException("无权限");
-      return PermissionPolicy.hasRuntimeRole(user, ["SALES"], storeId) ? { storeId, ownerUserId: user.id } : { storeId };
-    }
-    if (user.isAuditor) {
-      return { storeId };
-    }
-    if (user.storeMember?.storeId !== storeId) {
-      throw new ForbiddenException("无权限");
-    }
-    if (user.storeMember.position === "SALES") {
-      return { storeId, ownerUserId: user.id };
-    }
-    return { storeId };
+  private async buildScopedWhere(user: UserWithStoreMember, storeId: string): Promise<Prisma.CustomerWhereInput> {
+    if (!await this.canCustomer(user, "read", storeId)) throw new ForbiddenException("无权限");
+    const resolution = await this.resolveAccess(user.id, storeId);
+    return resolution.roles.some((role) => role.roleCode === "SALES") ? { storeId, ownerUserId: user.id } : { storeId };
+  }
+
+  private async canCustomer(user: UserWithStoreMember, action: "read" | "write", storeId: string, ownerId?: string) {
+    if (!this.accessContext) throw new Error("CustomersService access context is not configured");
+    return this.accessContext.can(user.id, "customers", action, { storeId, ownerId });
+  }
+
+  private async resolveAccess(userId: string, storeId: string) {
+    if (!this.accessContext) throw new Error("CustomersService access context is not configured");
+    return this.accessContext.resolve(userId, { storeId });
   }
 
   private assertValidCreatePayload(dto: CreateCustomerDto) {

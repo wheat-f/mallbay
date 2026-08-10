@@ -4,6 +4,34 @@ import { test } from "node:test";
 import { ConstructionLocation, ConstructionTaskStatus, ConstructionType, CustomerVehicleStatus, OrderStatus, PaymentAccountType, PaymentDirection, PaymentRecordType, PaymentType, ProductStatus, ProductUnit, StorePosition } from "@prisma/client";
 import { OrdersService, redactOrderAmount } from "./orders.service";
 
+const orderServiceAccess = {
+  can: async (actorId: string, capability: string, action: string, context: { storeId?: string; ownerId?: string } = {}) => {
+    const role = actorId.startsWith("admin") || actorId.startsWith("hq") ? "HQ_ADMIN"
+      : actorId.startsWith("sales") ? "SALES"
+        : actorId.startsWith("finance") ? "FINANCE"
+          : actorId.startsWith("customer-service") || actorId.startsWith("cs") ? "CUSTOMER_SERVICE" : "MANAGER";
+    if (capability === "store" && action === "read") return true;
+    if (capability === "store" && action === "write") return ["HQ_ADMIN", "MANAGER"].includes(role);
+    if (capability === "orders" && action === "read") return role !== "SALES" || context.ownerId === actorId;
+    if (capability === "orders" && action === "write") return ["HQ_ADMIN", "MANAGER", "CUSTOMER_SERVICE"].includes(role) || (role === "SALES" && context.ownerId === actorId);
+    if (capability === "finance" && action === "write") return ["HQ_ADMIN", "MANAGER", "FINANCE"].includes(role);
+    return false;
+  },
+  resolve: async (actorId: string, context: { storeId?: string }) => ({
+    userId: actorId,
+    policyVersion: 1,
+    bindingVersion: 1,
+    roles: [{
+      roleCode: actorId.startsWith("admin") || actorId.startsWith("hq") ? "HQ_ADMIN" : actorId.startsWith("sales") ? "SALES" : actorId.startsWith("finance") ? "FINANCE" : "MANAGER",
+      roleName: "test",
+      scopeType: actorId.startsWith("admin") || actorId.startsWith("hq") ? "HQ" : "STORE",
+      scopeIds: context.storeId ? [context.storeId] : []
+    }],
+    permissions: [],
+    generatedAt: new Date().toISOString()
+  })
+};
+
 test("销售订单读取会移除内部成本、毛利、提成和成本快照字段", () => {
   const safe = redactOrderAmount({
     constructionChargeCents: 110000,
@@ -46,7 +74,7 @@ test("OrdersService detail includes item inventory allocations for fulfillment p
         };
       }
     }
-  } as never, {} as never, { record: () => undefined } as never);
+  } as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   const result = await service.detail(
     {
@@ -107,7 +135,7 @@ test("OrdersService copyToDraft copies commercial inputs but forces a valid acti
       })
     }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   const result = await service.copyToDraft(
     {
@@ -158,7 +186,7 @@ test("OrdersService copyToDraft rejects a vehicle outside the original customer"
       })
     }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   await assert.rejects(
     () => service.copyToDraft(
@@ -207,7 +235,7 @@ test("OrdersService recalculates paid and outstanding amount after payment", asy
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   const result = await service.addPayment(
     {
@@ -266,7 +294,7 @@ test("OrdersService list applies construction date and payment filters", async (
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   const result = await service.list(
     {
@@ -333,7 +361,7 @@ test("OrdersService list includes vehicle amount and sales person summaries for 
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   await service.list(
     {
@@ -365,7 +393,7 @@ test("OrdersService invoiceable filter includes completed construction records",
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   await service.list(
     { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
@@ -431,7 +459,7 @@ test("OrdersService exports every matching sales order as product detail rows", 
         ];
       }
     }
-  } as never, {} as never, { record: () => undefined } as never);
+  } as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   const result = await service.exportDetails(
     {
@@ -467,7 +495,7 @@ test("OrdersService list includes VIN hash condition for 17 character vehicle se
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   await service.list(
     {
@@ -515,7 +543,7 @@ test("OrdersService list includes phone hash condition for mobile searches", asy
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   await service.list(
     {
@@ -555,7 +583,7 @@ test("OrdersService requires a reason when updating payment accounts", async () 
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   await assert.rejects(
     () =>
@@ -601,7 +629,10 @@ test("OrdersService records an audit event when updating payment accounts", asyn
   const service = new OrdersService(
     prisma as never,
     {} as never,
-    { record: (event: unknown) => auditEvents.push(event) } as never
+    { record: (event: unknown) => auditEvents.push(event) } as never,
+    undefined,
+    undefined,
+    orderServiceAccess as never
   );
 
   const result = await service.updatePaymentAccount(
@@ -702,7 +733,7 @@ test("OrdersService returns actor summary for order audit events", async () => {
       ]
     }
   };
-  const service = new OrdersService(prisma as never, {} as never, {} as never);
+  const service = new OrdersService(prisma as never, {} as never, {} as never, undefined, undefined, orderServiceAccess as never);
 
   const result = await service.listAuditEvents(
     {
@@ -745,7 +776,7 @@ test("OrdersService returns actor summary for payment account audit events", asy
       ]
     }
   };
-  const service = new OrdersService(prisma as never, {} as never, {} as never);
+  const service = new OrdersService(prisma as never, {} as never, {} as never, undefined, undefined, orderServiceAccess as never);
 
   const result = await service.listPaymentAccountAuditEvents(
     {
@@ -778,7 +809,7 @@ test("OrdersService lets same-store sales create payment accounts from the order
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   const result = await service.createPaymentAccount(
     {
@@ -868,7 +899,10 @@ test("OrdersService updates order commercial fields and records audit trail", as
   const service = new OrdersService(
     prisma as never,
     {} as never,
-    { record: (event: unknown) => auditEvents.push(event) } as never
+    { record: (event: unknown) => auditEvents.push(event) } as never,
+    undefined,
+    undefined,
+    orderServiceAccess as never
   );
 
   const result = await service.updateCommercials(
@@ -1038,7 +1072,10 @@ test("OrdersService returns an active order to pending dispatch before commercia
   const service = new OrdersService(
     prisma as never,
     {} as never,
-    { record: (event: unknown) => auditEvents.push(event) } as never
+    { record: (event: unknown) => auditEvents.push(event) } as never,
+    undefined,
+    undefined,
+    orderServiceAccess as never
   );
 
   const result = await service.returnToPendingDispatch(
@@ -1077,7 +1114,7 @@ test("OrdersService lists order audit events with the same order visibility boun
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   const result = await service.listAuditEvents(
     {
@@ -1112,7 +1149,7 @@ test("OrdersService lists payment account audit events with payment management v
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   const result = await service.listPaymentAccountAuditEvents(
     {
@@ -1189,7 +1226,10 @@ test("OrdersService updates unpaid warrantied order commercials without returnin
   const service = new OrdersService(
     prisma as never,
     {} as never,
-    { record: (event: unknown) => auditEvents.push(event) } as never
+    { record: (event: unknown) => auditEvents.push(event) } as never,
+    undefined,
+    undefined,
+    orderServiceAccess as never
   );
 
   const result = await service.updateCommercials(
@@ -1245,7 +1285,7 @@ test("OrdersService rejects commercial updates after payment is fully settled", 
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
 
   await assert.rejects(
     () =>
@@ -1282,6 +1322,6 @@ test("OrdersService rejects commercial edits when a pricing snapshot is attached
       }
     })
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
   await assert.rejects(() => service.updateCommercials({ id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } }, "order-1", { changeReason: "调整", items: [], laborCostCents: 0 } as never), /价格快照已冻结/);
 });

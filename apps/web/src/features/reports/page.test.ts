@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const source = readFileSync("app/reports/page.tsx", "utf8");
+const globalCss = readFileSync("app/globals.css", "utf8");
 
 test("reports page presents six non-duplicated operational views", () => {
   for (const label of ["销售业绩", "施工绩效", "财务订单利润", "项目经营分析", "售后人员分析", "售后结构分析"]) {
@@ -41,4 +42,12 @@ test("reports explain cost source, commission states and no-invented constructio
   assert.match(source, /应计\/已确认\/已结算提成/);
   assert.match(source, /afterSaleRateBps/);
   assert.match(source, /店长手工分摊/);
+});
+
+test("reports page provides a mobile card fallback for every operational view", () => {
+  assert.match(source, /reports-data-desktop-table/);
+  assert.match(source, /reports-data-mobile-cards/);
+  assert.match(source, /function ReportMobileCard/);
+  assert.match(globalCss, /\.reports-data-mobile-cards/);
+  assert.match(globalCss, /@media \(max-width: 900px\)/);
 });

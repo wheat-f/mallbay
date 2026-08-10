@@ -99,3 +99,12 @@ test("construction order detail loads the active workspace by workflow status", 
   assert.match(pageSource, /if \(record\.status === "COMPLETED"\) return "quality"/);
   assert.doesNotMatch(pageSource, /<aside className="construction-detail-side">[\s\S]*<Form form=\{qualityForm\}/);
 });
+
+test("construction order detail consumes the order-scoped fulfillment view", () => {
+  const pageSource = readFileSync("app/construction/orders/[id]/page.tsx", "utf8");
+
+  assert.match(pageSource, /constructionApi\.fulfillment\(params\.id\)/);
+  assert.match(pageSource, /const fulfillment = fulfillmentQuery\.data/);
+  assert.doesNotMatch(pageSource, /constructionApi\.assignments\(\{ storeId: storeId! \}\)/);
+  assert.doesNotMatch(pageSource, /\.find\(\(item\) => item\.orderId === params\.id\)/);
+});

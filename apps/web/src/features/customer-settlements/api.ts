@@ -49,6 +49,58 @@ export type CustomerStatement = {
     outstandingCents: number;
     order: SettlementOrder;
   }>;
+  settlement: {
+    settlementPeriod: { start: string; end: string };
+    includedOrderIds: string[];
+    receivableCents: number;
+    collectedCents: number;
+    outstandingCents: number;
+    allocationIds: string[];
+  };
+};
+
+export type SettlementViewResult = {
+  items: CustomerStatement[];
+  semantics: {
+    dateBasis: "ORDER_CREATED_AT";
+    includedOrderKinds: ["COMPLETED", "WARRANTIED"];
+    amountTypes: {
+      receivable: "ORDER_TOTAL";
+      collected: "ORDER_PAID";
+      outstanding: "ORDER_OUTSTANDING";
+    };
+    allocationType: "CUSTOMER_STATEMENT_ITEM";
+  };
+  generatedAt: string;
+};
+
+export type SettlementCandidateViewResult = {
+  items: SettlementOrder[];
+  semantics: {
+    dateBasis: "ORDER_CREATED_AT";
+    includedOrderKinds: ["COMPLETED", "WARRANTIED"];
+    amountTypes: {
+      receivable: "ORDER_TOTAL";
+      collected: "ORDER_PAID";
+      outstanding: "ORDER_OUTSTANDING";
+    };
+  };
+  generatedAt: string;
+};
+
+export type SettlementReceiptViewResult = {
+  items: CustomerReceipt[];
+  semantics: {
+    dateBasis: "RECEIVED_AT";
+    includedOrderKinds: ["COMPLETED", "WARRANTIED"];
+    amountTypes: {
+      collected: "RECEIPT_AMOUNT";
+      allocated: "ORDER_PAYMENT";
+      reversed: "REVERSAL_AMOUNT";
+    };
+    allocationType: "ORDER_PAYMENT";
+  };
+  generatedAt: string;
 };
 
 export type ReceiptAllocationPreview = {
@@ -131,7 +183,7 @@ export const customerSettlementApi = {
     periodStart?: string;
     periodEnd?: string;
   }) =>
-    request<SettlementOrder[]>(
+    request<SettlementCandidateViewResult>(
       `/customer-statements/candidate-orders${toQueryString(query)}`
     ),
 
@@ -140,7 +192,7 @@ export const customerSettlementApi = {
     customerId?: string;
     status?: CustomerStatementStatus;
   }) =>
-    request<CustomerStatement[]>(
+    request<SettlementViewResult>(
       `/customer-statements${toQueryString(query)}`
     ),
 
@@ -178,7 +230,7 @@ export const customerSettlementApi = {
     customerId?: string;
     status?: CustomerReceiptStatus;
   }) =>
-    request<CustomerReceipt[]>(
+    request<SettlementReceiptViewResult>(
       `/customer-receipts${toQueryString(query)}`
     ),
 

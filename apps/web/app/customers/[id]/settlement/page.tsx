@@ -150,7 +150,7 @@ export default function CustomerSettlementPage() {
     enabled: Boolean(storeId && receiptOpen)
   });
 
-  const candidates = candidatesQuery.data ?? [];
+  const candidates = candidatesQuery.data?.items ?? [];
   const summary = useMemo(
     () => candidates.reduce(
       (total, order) => ({
@@ -473,10 +473,19 @@ export default function CustomerSettlementPage() {
       </Card>
 
       <Card title="对账单记录" className="customer-settlement-section-card">
+        {statementsQuery.data?.semantics ? (
+          <Alert
+            showIcon
+            type="info"
+            className="mb-4"
+            message="对账口径已明确"
+            description={`按订单创建时间纳入已完成或已质保订单；应收按订单总额，已收按订单已收，待收按订单未收，逐单分摊记录为对账单明细。生成于 ${dayjs(statementsQuery.data.generatedAt).format("YYYY-MM-DD HH:mm")}`}
+          />
+        ) : null}
         <Table<CustomerStatement>
           rowKey="id"
           loading={statementsQuery.isLoading}
-          dataSource={statementsQuery.data ?? []}
+          dataSource={statementsQuery.data?.items ?? []}
           pagination={{ pageSize: 8 }}
           scroll={{ x: 980 }}
           expandable={{
@@ -553,7 +562,7 @@ export default function CustomerSettlementPage() {
           <Table<CustomerReceipt>
             rowKey="id"
             loading={receiptsQuery.isLoading}
-            dataSource={receiptsQuery.data ?? []}
+            dataSource={receiptsQuery.data?.items ?? []}
             pagination={{ pageSize: 8 }}
             scroll={{ x: 980 }}
             expandable={{

@@ -12,6 +12,28 @@ import {
 } from "@prisma/client";
 import { ConstructionService } from "./construction.service";
 
+const constructionAccess = {
+  can: async (actor: string, capability: string, action: string, context: { ownerId?: string } = {}) => {
+    const role = constructionRole(actor);
+    if (capability === "construction" && action === "read") return true;
+    if (capability === "construction" && action === "write") return ["MANAGER", "SCHEDULER", "HQ_ADMIN", "AUDITOR"].includes(role) || context.ownerId === actor;
+    if (capability === "store" && action === "write") return ["MANAGER", "HQ_ADMIN", "AUDITOR"].includes(role);
+    if (capability === "finance" && action === "write") return ["FINANCE", "HQ_ADMIN", "AUDITOR"].includes(role);
+    return false;
+  },
+  resolve: async (actor: string) => ({ roles: [{ roleCode: constructionRole(actor) }] })
+};
+
+function constructionRole(actor: string) {
+  if (actor.includes("sales")) return "SALES";
+  if (actor.includes("apprentice")) return "APPRENTICE";
+  if (actor.includes("worker") || actor.includes("construction")) return "CONSTRUCTION";
+  if (actor.includes("scheduler")) return "SCHEDULER";
+  if (actor.includes("finance")) return "FINANCE";
+  if (actor.includes("admin") || actor.includes("auditor")) return "HQ_ADMIN";
+  return "MANAGER";
+}
+
 test("ConstructionService assigns one to three available workers and dispatches the order", async () => {
   const txCalls: string[] = [];
   const tx = {
@@ -46,7 +68,7 @@ test("ConstructionService assigns one to three available workers and dispatches 
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   const result = await service.assignOrder(
     {
@@ -96,7 +118,7 @@ test("ConstructionService attributes outside construction records to the orderin
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await service.assignOrder(
     {
@@ -128,7 +150,7 @@ test("ConstructionService rejects dispatch when a construction record already ex
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await assert.rejects(
     () => service.assignOrder(
@@ -145,7 +167,7 @@ test("ConstructionService rejects dispatch when a construction record already ex
 });
 
 test("ConstructionService rejects assigning more than three workers", async () => {
-  const service = new ConstructionService({ storeMember: { findUnique: async () => null } } as never, {} as never);
+  const service = new ConstructionService({ storeMember: { findUnique: async () => null } } as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await assert.rejects(
     () => service.assignOrder(
@@ -172,7 +194,7 @@ test("ConstructionService limits sales assignment list to their own orders", asy
       }
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await service.listAssignments(
     {
@@ -200,7 +222,7 @@ test("ConstructionService includes order customer vehicle and items in assignmen
       }
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await service.listAssignments(
     {
@@ -257,7 +279,7 @@ test("ConstructionService lists construction store members even before profiles 
       }
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   const result = await service.listWorkers(
     {
@@ -304,7 +326,7 @@ test("ConstructionService lists store schedules for construction dispatchers", a
       }
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   const result = await service.listSchedules(
     {
@@ -348,7 +370,7 @@ test("ConstructionService allows construction dispatchers to upload photos", asy
       }
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   const result = await service.uploadPhoto(
     {
@@ -376,7 +398,7 @@ test("ConstructionService rejects construction photo uploads from unrelated role
       })
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await assert.rejects(
     () => service.uploadPhoto(
@@ -403,7 +425,7 @@ test("ConstructionService limits worker schedules to their own rows", async () =
       }
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await service.listSchedules(
     {
@@ -432,7 +454,7 @@ test("ConstructionService allows construction workers to update their own schedu
       }
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   const result = await service.upsertSchedule(
     {
@@ -464,7 +486,7 @@ test("ConstructionService rejects construction workers updating another worker s
       }
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await assert.rejects(
     () => service.upsertSchedule(
@@ -541,7 +563,7 @@ test("ConstructionService builds order material checklist for assigned workers",
       })
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   const result = await service.getOrderMaterials(
     {
@@ -619,7 +641,7 @@ test("ConstructionService skips already picked material allocations on repeated 
       })
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await service.pickupMaterials(
     {
@@ -680,7 +702,7 @@ test("ConstructionService records material loss through inventory movement", asy
     },
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await service.recordMaterialLoss(
     {
@@ -719,7 +741,7 @@ test("ConstructionService lists leave requests with worker summaries for manager
       }
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   const result = await service.listLeaves(
     {
@@ -739,7 +761,7 @@ test("ConstructionService lists leave requests with worker summaries for manager
 });
 
 test("ConstructionService rejects schedule lists for unrelated store roles", async () => {
-  const service = new ConstructionService({ storeMember: { findUnique: async () => null } } as never, {} as never);
+  const service = new ConstructionService({ storeMember: { findUnique: async () => null } } as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await assert.rejects(
     () => service.listSchedules(
@@ -786,9 +808,12 @@ test("ConstructionService starts completes and quality checks assigned tasks", a
     workerCommissionSnapshot: {
       findFirst: async () => null,
       createMany: async (args: unknown) => updates.push(args)
+    },
+    constructionQualityHistory: {
+      create: async (args: unknown) => updates.push(args)
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   const result = await service.completeOrder(
     {
@@ -814,6 +839,7 @@ test("ConstructionService starts completes and quality checks assigned tasks", a
     { result: QualityCheckResult.PASS, note: "ok" }
   );
   assert.equal(JSON.stringify(updates).includes("qualityResult"), true);
+  assert.equal(JSON.stringify(updates).includes("checkedById"), true);
 });
 
 test("ConstructionService rejects completing when locked materials have not been picked up", async () => {
@@ -846,7 +872,7 @@ test("ConstructionService rejects completing when locked materials have not been
       createMany: async () => undefined
     }
   };
-  const service = new ConstructionService(prisma as never, {} as never);
+  const service = new ConstructionService(prisma as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
 
   await assert.rejects(
     () => service.completeOrder(
@@ -860,4 +886,35 @@ test("ConstructionService rejects completing when locked materials have not been
     ),
     /请先领取已锁定的施工物料/
   );
+});
+
+test("ConstructionService returns current quality snapshot and append-only history", async () => {
+  const service = new ConstructionService({
+    storeMember: { findUnique: async () => null },
+    constructionRecord: {
+      findUnique: async () => ({
+        id: "record-1",
+        orderId: "order-1",
+        storeId: "store-1",
+        qualityResult: QualityCheckResult.PASS,
+        qualityNote: "通过",
+        qualityCheckedAt: new Date("2026-06-01T10:00:00.000Z"),
+        assignments: [{ workerUserId: "worker-1" }],
+        order: {},
+        photos: []
+      })
+    },
+    constructionQualityHistory: {
+      findMany: async () => [{ id: "quality-1", result: QualityCheckResult.REWORK_REQUIRED, isRevoked: false }]
+    }
+  } as never, {} as never, undefined, undefined, undefined, undefined, constructionAccess as never);
+
+  const result = await service.listQualityHistory(
+    { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
+    "record-1"
+  );
+
+  assert.equal(result.historyAvailable, true);
+  assert.equal(result.history.length, 1);
+  assert.equal(result.current.result, QualityCheckResult.PASS);
 });

@@ -5,9 +5,10 @@ import { SalesQuoteExpiryScheduler } from "./sales-quote-expiry.scheduler";
 import { ConstructionModule } from "../construction/construction.module";
 import { OrdersModule } from "../orders/orders.module";
 import { ObservabilityModule } from "../observability/observability.module";
+import { PermissionsModule } from "../permissions/permissions.module";
 
 @Module({
-  imports: [ConstructionModule, OrdersModule, ObservabilityModule],
+  imports: [ConstructionModule, OrdersModule, ObservabilityModule, PermissionsModule],
   controllers: [SalesQuotesController],
   providers: [SalesQuotesService, SalesQuoteExpiryScheduler],
   exports: [SalesQuotesService]

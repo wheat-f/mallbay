@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PermissionBindingStatus, PermissionPolicyVersionStatus } from "@prisma/client";
 import { PermissionsService } from "./permissions.service";
+import { RuntimeAccessSnapshotStore } from "./domain/runtime-access-snapshot.store";
 
-function buildService(overrides: Record<string, unknown> = {}) {
+function buildPrisma(overrides: Record<string, unknown> = {}) {
   const prisma = {
     user: {
       findUnique: async () => ({ id: "u1", isAuditor: false, storeMembers: [] })
@@ -31,7 +33,11 @@ function buildService(overrides: Record<string, unknown> = {}) {
     },
     ...overrides
   };
-  return new PermissionsService(prisma as never);
+  return prisma;
+}
+
+function buildService(overrides: Record<string, unknown> = {}) {
+  return new PermissionsService(buildPrisma(overrides) as never, new RuntimeAccessSnapshotStore());
 }
 
 test("multi-role permissions are unioned and scoped to the requested store", async () => {
@@ -54,15 +60,166 @@ test("legacy users retain compatibility permissions before migration", async () 
   assert.equal(await service.authorize("u1", "orders.edit", "write", { storeId: "s2" }), false);
 });
 
-test("runtime policy bridge rejects a store outside the binding scope", async () => {
-  const { PermissionPolicy } = await import("../common/policies/permission.policy");
-  PermissionPolicy.setRuntimeSnapshot("u1", {
-    roles: [{ scopeType: "STORE", scopeIds: ["s1"] }],
-    permissions: [{ code: "inventory", actions: ["read"], scopes: ["STORE"] }]
+test("legacy finance capability matrix preserves submit, review, and payment boundaries", async () => {
+  const createLegacyService = (position: string, userId: string) => buildService({
+    user: {
+      findUnique: async () => ({
+        id: userId,
+        isAuditor: false,
+        storeMembers: [{ storeId: "s1", position }]
+      })
+    },
+    permissionRoleBinding: {
+      findMany: async () => [],
+      findFirst: async () => null
+    }
   });
-  const actor = { id: "u1", isAuditor: false, storeMember: { storeId: "s1", position: "MANAGER" as never } };
-  assert.equal(PermissionPolicy.canViewInventory(actor, "s1"), true);
-  assert.equal(PermissionPolicy.canViewInventory(actor, "s2"), false);
+
+  const managerService = createLegacyService("MANAGER", "manager-1");
+  assert.equal(await managerService.authorize("manager-1", "finance.application", "submit", { storeId: "s1", ownerId: "manager-1" }), true);
+  assert.equal(await managerService.authorize("manager-1", "finance.document", "read", { storeId: "s1" }), true);
+  assert.equal(await managerService.authorize("manager-1", "finance.expense", "review", { storeId: "s1" }), true);
+  assert.equal(await managerService.authorize("manager-1", "finance.reimbursement", "review", { storeId: "s1" }), false);
+
+  const financeService = createLegacyService("FINANCE", "finance-1");
+  assert.equal(await financeService.authorize("finance-1", "finance.document", "read", { storeId: "s1" }), true);
+  assert.equal(await financeService.authorize("finance-1", "finance.reimbursement", "review", { storeId: "s1" }), true);
+  assert.equal(await financeService.authorize("finance-1", "finance.reimbursement", "pay", { storeId: "s1" }), true);
+  assert.equal(await financeService.authorize("finance-1", "finance.expense", "review", { storeId: "s1" }), false);
+
+  const salesService = createLegacyService("SALES", "sales-1");
+  assert.equal(await salesService.authorize("sales-1", "finance.application", "submit", { storeId: "s1", ownerId: "sales-1" }), true);
+  assert.equal(await salesService.authorize("sales-1", "finance.document", "read", { storeId: "s1", ownerId: "sales-1" }), true);
+  assert.equal(await salesService.authorize("sales-1", "finance.document", "read", { storeId: "s1" }), false);
+});
+
+test("permissions service populates the internal access snapshot store", async () => {
+  const snapshotStore = new RuntimeAccessSnapshotStore();
+  const service = new PermissionsService(buildPrisma() as never, snapshotStore);
+
+  assert.equal(snapshotStore.has("u1"), false);
+  assert.equal(await service.authorize("u1", "orders.read", "read", { storeId: "s1", ownerId: "u1" }), true);
+  assert.equal(snapshotStore.has("u1"), true);
+});
+
+test("user-level permission mutations clear the internal runtime snapshot", async () => {
+  const snapshotStore = new RuntimeAccessSnapshotStore();
+  const prisma = buildPrisma({
+    permissionRoleBinding: {
+      findMany: async () => [],
+      findFirst: async () => null,
+      findUnique: async () => ({ id: "b1", userId: "u1", roleId: "r1", scopeType: "STORE", storeId: "s1", status: "ACTIVE" }),
+      update: async () => ({ id: "b1", userId: "u1", roleId: "r1", scopeType: "STORE", storeId: "s1", status: "DISABLED" })
+    },
+    permissionRole: {
+      findMany: async () => [],
+      findUnique: async () => ({ code: "SALES" })
+    },
+    auditEvent: { create: async () => ({ id: "audit-1" }) }
+  });
+  const permissionsService = new PermissionsService(prisma as never, snapshotStore);
+  snapshotStore.set("u1", { roles: [{ scopeType: "STORE", scopeIds: ["s1"] }], permissions: [] });
+  assert.equal(snapshotStore.has("u1"), true);
+
+  await permissionsService.disableBinding("b1", "admin-1");
+
+  assert.equal(snapshotStore.has("u1"), false);
+});
+
+test("global permission mutations clear all internal runtime snapshots", async () => {
+  const snapshotStore = new RuntimeAccessSnapshotStore();
+  const prisma = buildPrisma({
+    permissionRole: {
+      findMany: async () => [],
+      findUnique: async () => ({ id: "role-1", code: "CUSTOM", type: "CUSTOM" })
+    },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      permissionRole: { update: async () => ({ id: "role-1", status: "DISABLED" }) },
+      permissionRoleBinding: { updateMany: async () => ({ count: 1 }) },
+      auditEvent: { create: async () => ({ id: "audit-1" }) }
+    }),
+  });
+  const permissionsService = new PermissionsService(prisma as never, snapshotStore);
+  snapshotStore.set("u1", { roles: [], permissions: [] });
+  snapshotStore.set("u2", { roles: [], permissions: [] });
+
+  await permissionsService.disableRole("role-1", "admin-1");
+
+  assert.equal(snapshotStore.has("u1"), false);
+  assert.equal(snapshotStore.has("u2"), false);
+});
+
+test("publishing a validated policy clears all internal runtime snapshots", async () => {
+  const snapshotStore = new RuntimeAccessSnapshotStore();
+  const payload = {
+    grants: [{ roleCode: "HQ_ADMIN", permissionCode: "settings", action: "write", scope: "GLOBAL" }]
+  };
+  const tx = {
+    permissionPolicyVersion: {
+      updateMany: async () => ({ count: 1 }),
+      update: async () => ({ id: "policy-1", version: 2, status: PermissionPolicyVersionStatus.PUBLISHED })
+    },
+    permissionRoleGrant: {
+      deleteMany: async () => ({ count: 1 }),
+      createMany: async () => ({ count: 1 })
+    },
+    permissionRole: { findUnique: async () => ({ id: "role-hq" }) },
+    auditEvent: { create: async () => ({ id: "audit-1" }) }
+  };
+  const service = new PermissionsService({
+    permissionPolicyVersion: {
+      findUnique: async () => ({ id: "policy-1", version: 2, status: PermissionPolicyVersionStatus.VALIDATED, payload })
+    },
+    permissionRole: {
+      findUnique: async () => ({ id: "role-hq" }),
+      findMany: async () => [{ id: "role-hq", code: "HQ_ADMIN" }]
+    },
+    permissionRoleBinding: {
+      count: async () => 1,
+      findMany: async () => [{ roleId: "role-hq" }]
+    },
+    user: { findUnique: async () => ({ isAuditor: false }) },
+    $transaction: async (callback: (transaction: unknown) => Promise<unknown>) => callback(tx)
+  } as never, snapshotStore);
+  snapshotStore.set("u1", { roles: [], permissions: [] });
+  snapshotStore.set("u2", { roles: [], permissions: [] });
+
+  await service.publishPolicy("policy-1", "admin-1", 2);
+
+  assert.equal(snapshotStore.has("u1"), false);
+  assert.equal(snapshotStore.has("u2"), false);
+});
+
+test("rolling back a policy clears all internal runtime snapshots", async () => {
+  const snapshotStore = new RuntimeAccessSnapshotStore();
+  const payload = {
+    grants: [{ roleCode: "HQ_ADMIN", permissionCode: "settings", action: "write", scope: "GLOBAL" }]
+  };
+  const service = new PermissionsService({
+    permissionPolicyVersion: {
+      findUnique: async () => ({ id: "policy-1", version: 1, status: PermissionPolicyVersionStatus.PUBLISHED, payload }),
+      findFirst: async () => ({ version: 3 }),
+    },
+    $transaction: async (callback: (transaction: unknown) => Promise<unknown>) => callback({
+      permissionPolicyVersion: {
+        updateMany: async () => ({ count: 1 }),
+        create: async () => ({ id: "policy-4", version: 4, status: PermissionPolicyVersionStatus.PUBLISHED })
+      },
+      permissionRoleGrant: {
+        deleteMany: async () => ({ count: 1 }),
+        createMany: async () => ({ count: 1 })
+      },
+      permissionRole: { findUnique: async () => ({ id: "role-hq" }) },
+      auditEvent: { create: async () => ({ id: "audit-1" }) }
+    })
+  } as never, snapshotStore);
+  snapshotStore.set("u1", { roles: [], permissions: [] });
+  snapshotStore.set("u2", { roles: [], permissions: [] });
+
+  await service.rollbackPolicy("policy-1", "admin-1");
+
+  assert.equal(snapshotStore.has("u1"), false);
+  assert.equal(snapshotStore.has("u2"), false);
 });
 
 

@@ -9,6 +9,16 @@ import {
 } from "@prisma/client";
 import { CreateOrderUseCase } from "./create-order.use-case";
 
+const orderAccess = {
+  can: async (actorId: string, capability: string, action: string, context: { storeId?: string; ownerId?: string } = {}) => {
+    const role = actorId.startsWith("sales") ? "SALES" : actorId.startsWith("manager") ? "MANAGER" : actorId.startsWith("customer-service") ? "CUSTOMER_SERVICE" : "SALES";
+    if (capability === "orders" && action === "write") return ["SALES", "MANAGER", "CUSTOMER_SERVICE"].includes(role);
+    if (capability === "store" && action === "write") return role === "MANAGER";
+    if (capability === "customers" && action === "read") return role !== "SALES" || context.ownerId === actorId;
+    return false;
+  }
+};
+
 const activeVehicle = () => ({
   id: "vehicle-1",
   storeId: "store-1",
@@ -58,7 +68,7 @@ test("CreateOrderUseCase creates order items amount and deposit payment in one t
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const useCase = new CreateOrderUseCase(prisma as never, {
+  const useCase = new CreateOrderUseCase(prisma as never, orderAccess as never, {
     next: () => "ORD202605310001"
   });
 
@@ -138,7 +148,7 @@ test("CreateOrderUseCase snapshots the selected meter sales unit and its base in
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const useCase = new CreateOrderUseCase(prisma as never, {
+  const useCase = new CreateOrderUseCase(prisma as never, orderAccess as never, {
     next: () => "ORD202606010001"
   });
 
@@ -196,7 +206,7 @@ test("CreateOrderUseCase reserves daily capacity for scheduled in store orders",
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const useCase = new CreateOrderUseCase(prisma as never, {
+  const useCase = new CreateOrderUseCase(prisma as never, orderAccess as never, {
     next: () => "ORD202606010001"
   });
 
@@ -246,7 +256,7 @@ test("CreateOrderUseCase stores suggested labor snapshot and adjustment reason",
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const useCase = new CreateOrderUseCase(prisma as never, {
+  const useCase = new CreateOrderUseCase(prisma as never, orderAccess as never, {
     next: () => "ORD202606010002"
   });
 
@@ -317,7 +327,7 @@ test("CreateOrderUseCase rejects deposit when payment account is unavailable", a
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const useCase = new CreateOrderUseCase(prisma as never, {
+  const useCase = new CreateOrderUseCase(prisma as never, orderAccess as never, {
     next: () => "ORD202606010003"
   });
 
@@ -370,7 +380,7 @@ test("CreateOrderUseCase rejects sales creating orders for another sales person'
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const useCase = new CreateOrderUseCase(prisma as never, {
+  const useCase = new CreateOrderUseCase(prisma as never, orderAccess as never, {
     next: () => "ORD202606010004"
   });
 
@@ -417,7 +427,7 @@ test("CreateOrderUseCase rejects outside construction orders without address", a
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const useCase = new CreateOrderUseCase(prisma as never, {
+  const useCase = new CreateOrderUseCase(prisma as never, orderAccess as never, {
     next: () => "ORD202606010005"
   });
 
@@ -476,7 +486,7 @@ test("CreateOrderUseCase rejects scheduled orders without appointment time slot"
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const useCase = new CreateOrderUseCase(prisma as never, {
+  const useCase = new CreateOrderUseCase(prisma as never, orderAccess as never, {
     next: () => "ORD202606010006"
   });
 
@@ -525,7 +535,7 @@ test("CreateOrderUseCase rejects appointment time slot without appointment date"
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const useCase = new CreateOrderUseCase(prisma as never, {
+  const useCase = new CreateOrderUseCase(prisma as never, orderAccess as never, {
     next: () => "ORD202606010007"
   });
 
@@ -577,7 +587,7 @@ test("CreateOrderUseCase rejects scheduled orders when daily capacity is full", 
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const useCase = new CreateOrderUseCase(prisma as never, {
+  const useCase = new CreateOrderUseCase(prisma as never, orderAccess as never, {
     next: () => "ORD202606010002"
   });
 
@@ -621,7 +631,7 @@ test("CreateOrderUseCase creates an ORDER capacity reservation for direct schedu
     orderAmount: { create: async () => undefined },
     orderPayment: { create: async () => undefined }
   };
-  const useCase = new CreateOrderUseCase({ $transaction: async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx) } as never, { next: () => "ORD-1" });
+  const useCase = new CreateOrderUseCase({ $transaction: async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx) } as never, orderAccess as never, { next: () => "ORD-1" });
   await useCase.execute({ id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } }, { storeId: "store-1", customerId: "customer-1", vehicleId: "vehicle-1", constructionType: ConstructionType.PPF, constructionLocation: ConstructionLocation.IN_STORE, appointmentDate: "2026-06-01", appointmentTimeSlot: "09:00-12:00", items: [{ productId: "product-1", quantity: 1, unitPriceCents: 1000 }], laborCostCents: 100 } as never);
   assert.equal(reservations.length, 1);
   assert.equal((reservations[0] as { data: { sourceType: string; orderId: string; status: string } }).data.sourceType, "ORDER");

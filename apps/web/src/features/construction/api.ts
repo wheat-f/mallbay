@@ -144,6 +144,69 @@ export type ConstructionOrderMaterials = {
   materials: ConstructionMaterialItem[];
 };
 
+export type ConstructionFulfillmentView = {
+  order: {
+    id: string;
+    orderNo: string;
+    storeId: string;
+    executionStoreId: string;
+    status: string;
+    appointmentDate?: string | null;
+    appointmentTimeSlot?: string | null;
+    constructionLocation?: string | null;
+    outsideAddress?: string | null;
+    constructionType?: string;
+    customer?: { name?: string | null; companyName?: string | null; contactPerson?: string | null } | null;
+    vehicle?: { carPlate?: string | null; carModel?: string | null; carColor?: string | null } | null;
+  };
+  construction: {
+    id: string;
+    status: string;
+    startedAt?: string | null;
+    completedAt?: string | null;
+    actualMinutes?: number | null;
+    overtimeMinutes?: number | null;
+    qualityResult?: string | null;
+    qualityNote?: string | null;
+    qualityCheckedAt?: string | null;
+    photos: Array<{ id: string; stage: string; url: string; uploadedById: string }>;
+    assignments: Array<{ workerUserId: string }>;
+  } | null;
+  workflow: {
+    currentStage: string;
+    paymentStatus: string;
+    inventoryStatus: string;
+    qualityStatus: string;
+    warrantyStatus: string;
+    blockingReasons: string[];
+    capabilities: Record<string, boolean>;
+  };
+  generatedAt: string;
+};
+
+export type ConstructionFulfillmentListItem = {
+  id: string;
+  orderId: string;
+  orderNo: string;
+  storeId: string;
+  executionStoreId: string;
+  status: string;
+  constructionStatus: string;
+  appointmentDate: string | null;
+  appointmentTimeSlot: string | null;
+  constructionLocation: string | null;
+  customer: { name: string | null; companyName: string | null } | null;
+  vehicle: { carPlate: string | null; carModel: string | null; carColor: string | null } | null;
+  assignments: Array<{ workerUserId: string }>;
+  photoCount: number;
+  workflow: ConstructionFulfillmentView["workflow"];
+};
+
+export type ConstructionFulfillmentList = {
+  items: ConstructionFulfillmentListItem[];
+  generatedAt: string;
+};
+
 export type ConstructionCostSettlement = {
   id: string;
   storeId: string;
@@ -246,6 +309,12 @@ export const constructionApi = {
 
   assignments: (query: ConstructionListQuery) =>
     request<unknown[]>(`/construction/assignments${toQueryString(query)}`),
+
+  fulfillment: (orderId: string) =>
+    request<ConstructionFulfillmentView>(`/construction/orders/${orderId}/fulfillment`),
+
+  fulfillments: (query: ConstructionListQuery) =>
+    request<ConstructionFulfillmentList>(`/construction/fulfillments${toQueryString(query)}`),
 
   assignOrder: (orderId: string, payload: AssignOrderPayload) =>
     request<unknown>(`/construction/orders/${orderId}/assign`, {

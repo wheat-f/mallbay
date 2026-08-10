@@ -101,6 +101,10 @@ export class PreviewCustomerReceiptDto {
 
 export class CreateCustomerReceiptDto extends PreviewCustomerReceiptDto {
   @IsString()
+  @MaxLength(160)
+  idempotencyKey!: string;
+
+  @IsString()
   accountId!: string;
 
   @IsDateString()
@@ -143,6 +147,10 @@ export class ListCustomerReceiptsDto {
 }
 
 export class ReverseCustomerReceiptDto {
+  @IsString()
+  @MaxLength(160)
+  idempotencyKey!: string;
+
   @Type(() => Number)
   @IsInt()
   @Min(1)

@@ -134,6 +134,14 @@ test("construction task detail page is a desktop execution workspace", () => {
   assert.match(cssSource, /\.worker-task-photo-checklist/);
 });
 
+test("construction tasks page consumes the stable fulfillment list view", () => {
+  const pageSource = readFileSync("app/construction/tasks/page.tsx", "utf8");
+
+  assert.match(pageSource, /constructionApi\.fulfillments\(\{ storeId: storeId! \}\)/);
+  assert.match(pageSource, /tasksQuery\.data\?\.items/);
+  assert.doesNotMatch(pageSource, /constructionApi\.assignments\(\{ storeId: storeId! \}\)/);
+});
+
 test("construction worker pages use web management shell while keeping the mini shell source", () => {
   const tasksPageSource = readFileSync("app/construction/tasks/page.tsx", "utf8");
   const schedulesPageSource = readFileSync("app/construction/schedules/page.tsx", "utf8");

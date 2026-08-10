@@ -2,7 +2,8 @@
 import { ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma, ProductStatus, ProductUnit } from "@prisma/client";
 import { normalizePagination } from "../common/pagination";
-import { PermissionPolicy, type UserWithStoreMember } from "../common/policies/permission.policy";
+import type { UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext } from "../permissions/domain/access-context";
 import { AuditEventWriter } from "../observability/audit-event-writer";
 import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
@@ -19,14 +20,15 @@ export type AuthenticatedProductUser = UserWithStoreMember & {
 export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly accessContext: AccessContext,
     @Optional() private readonly auditWriter?: AuditEventWriter
   ) {}
 
   async create(user: AuthenticatedProductUser, dto: CreateProductDto) {
     const actor = await this.withStoreMember(user);
-    this.assertCanManageProducts(actor, dto.storeId);
-    this.assertCanManageSuggestedPrices(actor, dto.storeId);
-    if (dto.standardCostCents !== undefined && !PermissionPolicy.canManageFinance(actor, dto.storeId)) {
+    await this.assertCanManageProducts(actor, dto.storeId);
+    await this.assertCanManageSuggestedPrices(actor, dto.storeId);
+    if (dto.standardCostCents !== undefined && !await this.accessContext.can(actor.id, "finance", "write", { storeId: dto.storeId })) {
       throw new ForbiddenException("仅财务或店长可维护材料成本");
     }
 
@@ -69,7 +71,7 @@ export class ProductsService {
 
   async list(user: AuthenticatedProductUser, dto: ListProductsDto) {
     const actor = await this.withStoreMember(user);
-    if (!PermissionPolicy.canViewStoreData(actor, dto.storeId)) {
+    if (!await this.accessContext.can(actor.id, "products", "read", { storeId: dto.storeId })) {
       throw new ForbiddenException("无权限");
     }
 
@@ -100,7 +102,7 @@ export class ProductsService {
       })
     ]);
 
-    const canViewInternalCost = PermissionPolicy.canManageFinance(actor, dto.storeId);
+    const canViewInternalCost = await this.accessContext.can(actor.id, "finance", "write", { storeId: dto.storeId });
     return {
       total,
       page,
@@ -120,10 +122,10 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException("产品不存在");
     }
-    if (!PermissionPolicy.canViewStoreData(actor, product.storeId)) {
+    if (!await this.accessContext.can(actor.id, "products", "read", { storeId: product.storeId })) {
       throw new ForbiddenException("无权限");
     }
-    if (!PermissionPolicy.canManageFinance(actor, product.storeId)) {
+    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: product.storeId })) {
       const { standardCostCents: _standardCostCents, ...safeProduct } = product;
       return safeProduct;
     }
@@ -136,15 +138,15 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException("产品不存在");
     }
-    this.assertCanManageProducts(actor, product.storeId);
+    await this.assertCanManageProducts(actor, product.storeId);
     const changesSuggestedPriceBasis = (
       (dto.basePriceCents !== undefined && dto.basePriceCents !== product.basePriceCents) ||
       (dto.salesUnit !== undefined && dto.salesUnit !== product.salesUnit) ||
       (dto.unit !== undefined && dto.unit !== product.unit) ||
       (dto.metersPerRoll !== undefined && Number(dto.metersPerRoll) !== Number(product.metersPerRoll ?? 0))
     );
-    if (changesSuggestedPriceBasis) this.assertCanManageSuggestedPrices(actor, product.storeId);
-    if (dto.standardCostCents !== undefined && !PermissionPolicy.canManageFinance(actor, product.storeId)) {
+    if (changesSuggestedPriceBasis) await this.assertCanManageSuggestedPrices(actor, product.storeId);
+    if (dto.standardCostCents !== undefined && !await this.accessContext.can(actor.id, "finance", "write", { storeId: product.storeId })) {
       throw new ForbiddenException("仅财务或店长可维护材料成本");
     }
 
@@ -194,7 +196,7 @@ export class ProductsService {
       include: { unitSuggestedPrices: { orderBy: { salesUnit: "asc" } } }
     });
     if (!product) throw new NotFoundException("产品不存在");
-    if (!PermissionPolicy.canManageFinance(actor, product.storeId)) {
+    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: product.storeId })) {
       throw new ForbiddenException("仅财务或店长可维护材料成本");
     }
     const updated = await this.prisma.product.update({ where: { id }, data: { standardCostCents } });
@@ -230,7 +232,7 @@ export class ProductsService {
       include: { unitSuggestedPrices: true }
     });
     if (!product) throw new NotFoundException("产品不存在");
-    this.assertCanManageSuggestedPrices(actor, product.storeId);
+    await this.assertCanManageSuggestedPrices(actor, product.storeId);
 
     const supportedUnits = this.supportedSalesUnits(product);
     const seen = new Set<ProductUnit>();
@@ -294,7 +296,7 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException("产品不存在");
     }
-    this.assertCanManageProducts(actor, product.storeId);
+    await this.assertCanManageProducts(actor, product.storeId);
 
     return this.prisma.product.update({
       where: { id },
@@ -302,8 +304,8 @@ export class ProductsService {
     });
   }
 
-  private assertCanManageProducts(user: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.canManageProduct(user, storeId)) {
+  private async assertCanManageProducts(user: UserWithStoreMember, storeId: string) {
+    if (!await this.accessContext.can(user.id, "products", "write", { storeId })) {
       throw new ForbiddenException("无权限");
     }
   }
@@ -313,8 +315,10 @@ export class ProductsService {
     return persistAuditEvent(this.prisma, event);
   }
 
-  private assertCanManageSuggestedPrices(user: UserWithStoreMember, storeId: string) {
-    if (!PermissionPolicy.isStoreManager(user, storeId)) {
+  private async assertCanManageSuggestedPrices(user: UserWithStoreMember, storeId: string) {
+    if (user.isAuditor) return;
+    const access = await this.accessContext.resolve(user.id, { storeId });
+    if (!access.roles.some((role) => role.roleCode === "MANAGER" && (role.scopeType === "HQ" || role.scopeIds.includes(storeId)))) {
       throw new ForbiddenException("仅店长可维护产品建议价");
     }
   }

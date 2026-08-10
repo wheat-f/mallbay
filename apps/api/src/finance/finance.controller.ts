@@ -6,7 +6,6 @@ import {
   Get,
   Param,
   Post,
-  Optional,
   Query,
   Req,
   UploadedFile,
@@ -31,9 +30,8 @@ import {
 } from "./dto/finance.dto";
 import { ExpenseWorkflowService } from "./expense-workflow.service";
 import { ReimbursementWorkflowService } from "./reimbursement-workflow.service";
-import { FinanceQueryService } from "./finance-query.service";
 import { FinanceAttachmentService } from "./finance-attachment.service";
-import { FinancialDocument } from "./domain/financial-document";
+import { FinancialDocumentQuery } from "./domain/financial-document-query";
 import {
   FinanceService,
   type AuthenticatedFinanceUser,
@@ -48,14 +46,13 @@ export class FinanceController {
     private readonly finance: FinanceService,
     private readonly expenseWorkflow: ExpenseWorkflowService,
     private readonly reimbursementWorkflow: ReimbursementWorkflowService,
-    private readonly queryService: FinanceQueryService,
     private readonly attachmentService: FinanceAttachmentService,
-    @Optional() private readonly financialDocument?: FinancialDocument,
+    private readonly financialDocument: FinancialDocumentQuery,
   ) {}
 
   @Get("expenses")
   listExpenses(@Req() req: AuthRequest, @Query() query: ListFinanceDto) {
-    return this.queryService.listExpenses(req.user, query);
+    return this.financialDocument.listExpenses(req.user, query);
   }
 
   @Post("expenses")
@@ -65,13 +62,12 @@ export class FinanceController {
 
   @Get("overview")
   getOverview(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.queryService.getOverview(req.user, storeId);
+    return this.financialDocument.getOverview(req.user, storeId);
   }
 
   @Get("expenses/:id")
   getExpense(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.financialDocument?.getDocumentView(req.user, { kind: "expense", id })
-      ?? this.queryService.getExpenseDetail(req.user, id);
+    return this.financialDocument.getDocumentView(req.user, { kind: "expense", id });
   }
 
   @Post("expenses/:id/review")
@@ -103,7 +99,7 @@ export class FinanceController {
 
   @Get("reimbursements")
   listReimbursements(@Req() req: AuthRequest, @Query() query: ListFinanceDto) {
-    return this.queryService.listReimbursements(req.user, query);
+    return this.financialDocument.listReimbursements(req.user, query);
   }
 
   @Post("reimbursements")
@@ -116,7 +112,7 @@ export class FinanceController {
 
   @Get("reimbursements/:id")
   getReimbursement(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.queryService.getReimbursementDetail(req.user, id);
+    return this.financialDocument.getDocumentView(req.user, { kind: "reimbursement", id });
   }
 
   @Post("reimbursements/:id/review")
@@ -187,7 +183,6 @@ export class FinanceController {
 
   @Get("payment-records")
   listPaymentRecords(@Req() req: AuthRequest, @Query() query: ListFinanceDto) {
-    return this.financialDocument?.listCashFacts(req.user, query)
-      ?? this.queryService.listPaymentRecords(req.user, query);
+    return this.financialDocument.listCashFacts(req.user, query);
   }
 }

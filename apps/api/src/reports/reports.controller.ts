@@ -4,17 +4,24 @@ import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { OperationalReportQueryDto, ReportQueryDto } from "./dto/reports.dto";
 import { ReportsService, type AuthenticatedReportUser } from "./reports.service";
+import { AccessContext } from "../permissions/domain/access-context";
 
 type AuthRequest = Request & { user: AuthenticatedReportUser };
 
 @UseGuards(JwtAuthGuard)
 @Controller("reports")
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(private readonly reports: ReportsService, private readonly access: AccessContext) {}
+
+  private authorize(req: AuthRequest, storeId?: string) {
+    return storeId
+      ? this.access.require(req.user.id, "reports", "read", { storeId })
+      : Promise.resolve();
+  }
 
   @Get("summary")
   summary(@Req() req: AuthRequest, @Query() query: ReportQueryDto) {
-    return this.reports.summary(req.user, query);
+    return this.authorize(req, query.storeId).then(() => this.reports.summary(req.user, query));
   }
 
   /**
@@ -24,11 +31,11 @@ export class ReportsController {
    */
   @Get("operational")
   operational(@Req() req: AuthRequest, @Query() query: OperationalReportQueryDto) {
-    return this.reports.operational(req.user, query);
+    return this.authorize(req, query.storeId).then(() => this.reports.operational(req.user, query));
   }
 
   @Get("filter-options")
   filterOptions(@Req() req: AuthRequest, @Query() query: ReportQueryDto) {
-    return this.reports.filterOptions(req.user, query);
+    return this.authorize(req, query.storeId).then(() => this.reports.filterOptions(req.user, query));
   }
 }

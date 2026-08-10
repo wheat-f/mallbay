@@ -4,17 +4,18 @@ import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ApplyInvoiceDto, InvoiceActionDto, IssueInvoiceDto, ListInvoicesDto, SendInvoiceDto } from "./dto/invoice.dto";
 import { InvoicesService, type AuthenticatedInvoiceUser } from "./invoices.service";
+import { FinancialDocumentQuery } from "../finance/domain/financial-document-query";
 
 type AuthRequest = Request & { user: AuthenticatedInvoiceUser };
 
 @UseGuards(JwtAuthGuard)
 @Controller("invoices")
 export class InvoicesController {
-  constructor(private readonly invoices: InvoicesService) {}
+  constructor(private readonly invoices: InvoicesService, private readonly documents: FinancialDocumentQuery) {}
 
   @Get()
   list(@Req() req: AuthRequest, @Query() query: ListInvoicesDto) {
-    return this.invoices.list(req.user, query);
+    return this.documents.listInvoices(req.user, query);
   }
 
   @Post()

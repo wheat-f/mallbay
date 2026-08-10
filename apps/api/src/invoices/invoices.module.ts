@@ -3,9 +3,11 @@ import { PrismaModule } from "../prisma/prisma.module";
 import { InvoicesController } from "./invoices.controller";
 import { InvoicePdfService } from "./invoice-pdf.service";
 import { InvoicesService } from "./invoices.service";
+import { FinanceModule } from "../finance/finance.module";
+import { PermissionsModule } from "../permissions/permissions.module";
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, FinanceModule, PermissionsModule],
   controllers: [InvoicesController],
   providers: [InvoicePdfService, InvoicesService],
   exports: [InvoicesService]

@@ -39,9 +39,9 @@ export type PermissionBinding = { id: string; userId: string; roleId: string; sc
 export const permissionsApi = {
   me: (storeId?: string) =>
     request<PermissionResult>("/auth/me/permissions" + (storeId ? "?storeId=" + encodeURIComponent(storeId) : "")),
-  catalog: () => request<PermissionDefinition[]>("/permissions/catalog"),
-  roles: () => request<PermissionRole[]>("/permissions/roles"),
-  currentPolicy: () => request<PermissionPolicy | null>("/permissions/policy"),
+  catalog: async () => (await request<PermissionDefinition[] | undefined>("/permissions/catalog")) ?? [],
+  roles: async () => (await request<PermissionRole[] | undefined>("/permissions/roles")) ?? [],
+  currentPolicy: async () => (await request<PermissionPolicy | null | undefined>("/permissions/policy")) ?? null,
   createDraft: (payload: PermissionPolicy["payload"], expectedVersion?: number) =>
     request<PermissionPolicy>("/permissions/policy/drafts", { method: "POST", body: JSON.stringify({ payload, expectedVersion }) }),
   validate: (id: string) => request<PermissionPolicy>("/permissions/policy/" + id + "/validate", { method: "POST" }),

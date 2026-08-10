@@ -54,19 +54,26 @@ async function requestWithAuthRetry<T>(
       if (refreshed) {
         const retry = await fetchWithAuth(path, init, headers, auth, buildAuthHeaders);
         if (retry.ok) {
-          return retry.json() as Promise<T>;
+          return parseJsonResponse<T>(retry);
         }
-        const retryErrorBody = await retry.json().catch(() => ({}));
+        const retryErrorBody = await parseJsonResponse<Record<string, unknown>>(retry).catch(() => ({}));
         throw createApiError(retry.status, retryErrorBody);
       }
       handleSessionExpired();
     }
 
-    const errorBody = await response.json().catch(() => ({}));
+    const errorBody = await parseJsonResponse<Record<string, unknown>>(response).catch(() => ({}));
     throw createApiError(response.status, errorBody);
   }
 
-  return response.json() as Promise<T>;
+  return parseJsonResponse<T>(response);
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  if (typeof response.text !== "function") return response.json() as Promise<T>;
+  const body = await response.text();
+  if (!body.trim()) return undefined as T;
+  return JSON.parse(body) as T;
 }
 
 async function restoreSessionBeforeFirstRequest(path: string, auth: boolean) {
@@ -113,7 +120,8 @@ async function refreshSession() {
     return false;
   }
 
-  const session = (await response.json()) as AuthResponse;
+  const session = await parseJsonResponse<AuthResponse | undefined>(response);
+  if (!session) return false;
   useAuthStore.getState().setSession(session);
   return true;
 }

@@ -72,6 +72,17 @@ test("request sends JSON content type for unauthenticated requests", async () =>
 
 });
 
+test("request tolerates a successful empty response body", async () => {
+  globalThis.fetch = (async () => ({
+    ok: true,
+    text: async () => ""
+  })) as unknown as typeof fetch;
+
+  const result = await request<undefined>("/test");
+
+  assert.equal(result, undefined);
+});
+
 test("request refreshes session and retries once after an authenticated 401 response", async () => {
   useAuthStore.setState({ accessToken: "expired-token" });
   const calls: string[] = [];

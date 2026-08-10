@@ -1,16 +1,15 @@
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
-import { assertBootstrapPreconditions, ensureHeadquartersAdmin, getHeadquartersAdminCandidates } from "./hq-admin-bootstrap";
+import { assertBootstrapPreconditions, ensureHeadquartersAdmin, ensureHeadquartersAdminRole, getHeadquartersAdminCandidates } from "./hq-admin-bootstrap";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@localhost:55432/mallbay?schema=public";
 const prisma = new PrismaService(new ConfigService({ DATABASE_URL: process.env.DATABASE_URL }));
 
 async function main() {
+  const role = await ensureHeadquartersAdminRole(prisma);
   await assertBootstrapPreconditions(prisma);
-  const role = await prisma.permissionRole.findUnique({ where: { code: "HQ_ADMIN" }, select: { id: true, status: true } });
-  if (!role || role.status !== "ACTIVE") throw new Error("HQ_ADMIN 角色不存在或已停用");
   const result = await ensureHeadquartersAdmin(prisma, role.id);
-  console.log(JSON.stringify({ candidates: getHeadquartersAdminCandidates(), ...result }, null, 2));
+  console.log(JSON.stringify({ roleId: role.id, candidates: getHeadquartersAdminCandidates(), ...result }, null, 2));
 }
 
 main()

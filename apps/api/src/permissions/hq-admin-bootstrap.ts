@@ -1,8 +1,27 @@
-import { PermissionScopeType } from "@prisma/client";
+import { PermissionRoleType, PermissionScopeType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 const CONFIGURED_HQ_ADMIN_USERNAME = process.env.HQ_ADMIN_USERNAME?.trim();
 export const FALLBACK_HQ_ADMIN_USERNAMES = ["zhouluoren", "xiaoming"] as const;
+
+export const HEADQUARTERS_ADMIN_GRANTS = [
+  ["customers", "read", "GLOBAL"], ["customers", "write", "GLOBAL"],
+  ["orders", "read", "GLOBAL"], ["orders", "write", "GLOBAL"],
+  ["warranties", "read", "GLOBAL"], ["warranties", "write", "GLOBAL"],
+  ["construction", "read", "GLOBAL"], ["construction", "write", "GLOBAL"],
+  ["products", "read", "GLOBAL"], ["products", "write", "GLOBAL"],
+  ["inventory", "read", "GLOBAL"], ["inventory", "write", "GLOBAL"],
+  ["purchase", "read", "GLOBAL"], ["purchase", "write", "GLOBAL"],
+  ["finance", "read", "GLOBAL"], ["finance", "write", "GLOBAL"],
+  ["finance.application", "submit", "GLOBAL"],
+  ["finance.document", "read", "GLOBAL"], ["finance.document", "attach", "GLOBAL"],
+  ["finance.expense", "review", "GLOBAL"],
+  ["finance.reimbursement", "review", "GLOBAL"], ["finance.reimbursement", "pay", "GLOBAL"],
+  ["after-sales", "read", "GLOBAL"], ["after-sales", "write", "GLOBAL"],
+  ["reports", "read", "GLOBAL"], ["settings", "read", "GLOBAL"], ["settings", "write", "GLOBAL"],
+  ["store", "read", "GLOBAL"], ["store", "write", "GLOBAL"],
+  ["users", "read", "GLOBAL"], ["users", "write", "GLOBAL"]
+] as const;
 
 export function getHeadquartersAdminCandidates() {
   return CONFIGURED_HQ_ADMIN_USERNAME ? [CONFIGURED_HQ_ADMIN_USERNAME] : [...FALLBACK_HQ_ADMIN_USERNAMES];
@@ -11,6 +30,47 @@ export function getHeadquartersAdminCandidates() {
 export function pickHeadquartersAdminTarget<T extends { username: string }>(users: T[]) {
   const candidates = getHeadquartersAdminCandidates();
   return candidates.map((username) => users.find((user) => user.username === username)).find(Boolean) ?? null;
+}
+
+export async function ensureHeadquartersAdminRole(prisma: PrismaService) {
+  return prisma.$transaction(async (tx) => {
+    const role = await tx.permissionRole.upsert({
+      where: { code: "HQ_ADMIN" },
+      update: { name: "总部管理员", type: PermissionRoleType.SYSTEM, status: "ACTIVE" },
+      create: { code: "HQ_ADMIN", name: "总部管理员", type: PermissionRoleType.SYSTEM, status: "ACTIVE" }
+    });
+
+    const definitionActions = new Map<string, Set<string>>();
+    for (const [permissionCode, action] of HEADQUARTERS_ADMIN_GRANTS) {
+      const actions = definitionActions.get(permissionCode) ?? new Set<string>();
+      actions.add(action);
+      definitionActions.set(permissionCode, actions);
+    }
+
+    for (const [permissionCode, actions] of definitionActions) {
+      await tx.permissionDefinition.upsert({
+        where: { code: permissionCode },
+        update: { actions: [...actions], supportedScopes: ["OWN", "STORE", "GLOBAL"], status: "ACTIVE" },
+        create: {
+          code: permissionCode,
+          name: permissionCode,
+          resource: permissionCode,
+          actions: [...actions],
+          supportedScopes: ["OWN", "STORE", "GLOBAL"]
+        }
+      });
+    }
+
+    for (const [permissionCode, action, scope] of HEADQUARTERS_ADMIN_GRANTS) {
+      await tx.permissionRoleGrant.upsert({
+        where: { roleId_permissionCode_action_scope: { roleId: role.id, permissionCode, action, scope } },
+        update: {},
+        create: { roleId: role.id, permissionCode, action, scope }
+      });
+    }
+
+    return role;
+  });
 }
 
 export async function assertBootstrapPreconditions(prisma: PrismaService) {

@@ -241,6 +241,8 @@ jobs:
             docker image prune -af
             docker compose -f docker-compose.prod.yml pull api web
             docker compose -f docker-compose.prod.yml up -d --wait --no-deps --force-recreate api web
+            echo "[deploy] Bootstrapping headquarters administrator..."
+            docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint node api /app/apps/api/dist/permissions/bootstrap-hq-admin.js
             docker image prune -af
 
             echo "✅ Test deployed — ${{ github.sha }}"
@@ -288,6 +290,8 @@ jobs:
             docker image prune -af
             docker compose -f docker-compose.prod.yml pull api web
             docker compose -f docker-compose.prod.yml up -d --wait --no-deps --force-recreate api web
+            echo "[deploy] Bootstrapping headquarters administrator..."
+            docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint node api /app/apps/api/dist/permissions/bootstrap-hq-admin.js
             docker image prune -af
 
             echo "✅ Production deployed — ${{ github.sha }}"

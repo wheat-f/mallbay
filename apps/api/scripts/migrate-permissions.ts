@@ -1,38 +1,41 @@
 import { PermissionRoleType, PermissionScopeType, Prisma } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
-import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../src/prisma/prisma.service";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@localhost:55432/mallbay?schema=public";
 const prisma = new PrismaService(new ConfigService({ DATABASE_URL: process.env.DATABASE_URL }));
 
-const HQ_ADMIN_USERNAME = process.env.HQ_ADMIN_USERNAME?.trim();
-const HQ_ADMIN_PASSWORD = process.env.HQ_ADMIN_PASSWORD;
+const CONFIGURED_HQ_ADMIN_USERNAME = process.env.HQ_ADMIN_USERNAME?.trim();
+const FALLBACK_HQ_ADMIN_USERNAMES = ["zhouluoren", "xiaoming"] as const;
 
-function assertBootstrapConfiguration() {
-  if (!HQ_ADMIN_USERNAME) {
-    throw new Error("HQ_ADMIN_CONFIG_INVALID: HQ_ADMIN_USERNAME 必须由当前环境显式配置");
-  }
+function getHeadquartersAdminCandidates() {
+  return CONFIGURED_HQ_ADMIN_USERNAME ? [CONFIGURED_HQ_ADMIN_USERNAME] : [...FALLBACK_HQ_ADMIN_USERNAMES];
+}
+
+function pickHeadquartersAdminTarget<T extends { username: string }>(users: T[]) {
+  const candidates = getHeadquartersAdminCandidates();
+  return candidates.map((username) => users.find((user) => user.username === username)).find(Boolean) ?? null;
 }
 
 async function assertBootstrapPreconditions() {
-  assertBootstrapConfiguration();
+  const candidates = getHeadquartersAdminCandidates();
   const [role, targetUser] = await Promise.all([
     prisma.permissionRole.findUnique({ where: { code: "HQ_ADMIN" }, select: { id: true } }),
-    prisma.user.findUnique({ where: { username: HQ_ADMIN_USERNAME }, select: { id: true, isActive: true } })
+    prisma.user.findMany({ where: { username: { in: candidates } }, select: { id: true, username: true, isActive: true } })
   ]);
-  if (targetUser?.isActive === false) {
-    throw new Error("HQ_ADMIN_TARGET_INACTIVE: 总部管理员目标账号已停用，请先人工启用");
+  const selectedTarget = pickHeadquartersAdminTarget(targetUser);
+  if (!selectedTarget) {
+    throw new Error(`HQ_ADMIN_TARGET_NOT_FOUND: 总部管理员目标账号不存在，可选账号：${candidates.join("、")}`);
   }
-  if (!targetUser && !HQ_ADMIN_PASSWORD) {
-    throw new Error("HQ_ADMIN_PASSWORD 未配置，无法创建总部管理员目标账号");
+  if (selectedTarget.isActive === false) {
+    throw new Error("HQ_ADMIN_TARGET_INACTIVE: 总部管理员目标账号已停用，请先人工启用");
   }
   if (!role) return;
   const conflicts = await prisma.permissionRoleBinding.findMany({
     where: { roleId: role.id, scopeType: PermissionScopeType.HQ, status: "ACTIVE" },
     select: { userId: true }
   });
-  const conflictUserIds = conflicts.filter((item) => item.userId !== targetUser?.id).map((item) => item.userId);
+  const conflictUserIds = conflicts.filter((item) => item.userId !== selectedTarget.id).map((item) => item.userId);
   const conflictUsers = conflictUserIds.length
     ? await prisma.user.findMany({ where: { id: { in: conflictUserIds } }, select: { username: true } })
     : [];
@@ -85,13 +88,16 @@ const definitions = Object.keys(roleDefinitions).length
 async function ensureHeadquartersAdmin(roleId: string) {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('mallbay:hq-admin-bootstrap', 0))`;
-    const targetUsername = HQ_ADMIN_USERNAME!;
-    const [role, existingTarget] = await Promise.all([
+    const candidates = getHeadquartersAdminCandidates();
+    const [role, targetUsers] = await Promise.all([
       tx.permissionRole.findUnique({ where: { id: roleId }, select: { id: true, code: true, status: true } }),
-      tx.user.findUnique({ where: { username: targetUsername }, select: { id: true, isActive: true } })
+      tx.user.findMany({ where: { username: { in: candidates } }, select: { id: true, username: true, isActive: true } })
     ]);
+    const existingTarget = pickHeadquartersAdminTarget(targetUsers);
+    const targetUsername = existingTarget?.username ?? candidates.join("、");
     if (!role || role.status !== "ACTIVE") throw new Error("HQ_ADMIN 角色不存在或已停用");
-    if (existingTarget?.isActive === false) throw new Error("HQ_ADMIN_TARGET_INACTIVE: 总部管理员目标账号已停用，请先人工启用");
+    if (!existingTarget) throw new Error(`HQ_ADMIN_TARGET_NOT_FOUND: 总部管理员目标账号不存在，可选账号：${targetUsername}`);
+    if (existingTarget.isActive === false) throw new Error("HQ_ADMIN_TARGET_INACTIVE: 总部管理员目标账号已停用，请先人工启用");
 
     const activeBindings = await tx.permissionRoleBinding.findMany({
       where: { roleId: role.id, scopeType: PermissionScopeType.HQ, status: "ACTIVE" },
@@ -103,13 +109,7 @@ async function ensureHeadquartersAdmin(roleId: string) {
       throw new Error(`HQ_ADMIN_BINDING_CONFLICT: 已存在其他有效总部管理员 ${conflictUsers.map((user) => user.username).join(", ")}`);
     }
 
-    let user = existingTarget;
-    let userCreated = false;
-    if (!user) {
-      if (!HQ_ADMIN_PASSWORD) throw new Error("HQ_ADMIN_PASSWORD 未配置，无法创建总部管理员目标账号");
-      user = await tx.user.create({ data: { username: targetUsername, passwordHash: await bcrypt.hash(HQ_ADMIN_PASSWORD, 12), isActive: true }, select: { id: true, isActive: true } });
-      userCreated = true;
-    }
+    const user = existingTarget;
 
     const existingBinding = await tx.permissionRoleBinding.findFirst({
       where: { userId: user.id, roleId: role.id, scopeType: PermissionScopeType.HQ, storeId: null },
@@ -133,10 +133,10 @@ async function ensureHeadquartersAdmin(roleId: string) {
         actorId: null,
         targetType: "User",
         targetId: user.id,
-        metadata: { username: targetUsername, userCreated, bindingCreated, bindingReactivated, bindingId }
+        metadata: { username: targetUsername, userCreated: false, bindingCreated, bindingReactivated, bindingId }
       }
     });
-    return { userCreated, bindingCreated, bindingReactivated, userId: user.id, bindingId };
+    return { userCreated: false, bindingCreated, bindingReactivated, userId: user.id, bindingId };
   });
 }
 

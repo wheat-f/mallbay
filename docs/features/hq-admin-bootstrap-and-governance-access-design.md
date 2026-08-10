@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |---|---|
 | 需求名称 | 总部管理员初始化与总部治理入口补齐 |
-| 状态 | 方案已确认，待实施 |
+| 状态 | 方案已确认，已实施 |
 | 日期 | 2026-08-10 |
 | 本轮范围 | 总部管理员初始化、总部治理菜单、复合角色访问、人员绑定限制 |
 | 不包含 | 总部产品、跨门店客户、跨门店订单、库存采购、总部经营分析 |
@@ -26,10 +26,10 @@
 
 ### 3.1 总部管理员账号
 
-- 本机及其他本地开发环境显式配置目标用户名为 `xiaoming`；测试库和生产环境显式配置为 `zhouluoren`。
-- 初始密码由环境变量 `HQ_ADMIN_PASSWORD` 提供，不写入脚本、源码、迁移文件或提交记录。
-- 目标用户已存在时不覆盖密码、不覆盖昵称、不覆盖头像、不删除既有门店关系。
-- 目标用户不存在时，脚本使用 `HQ_ADMIN_PASSWORD` 创建；密码变量缺失时直接失败，不创建半成品账号。
+- 所有环境优先使用 `HQ_ADMIN_USERNAME`；未配置时按 `zhouluoren` → `xiaoming` 顺序选择第一个已存在账号。
+- 选择目标账号后，脚本不写入、生成或重置密码。
+- 目标账号必须由账号创建/种子流程预先建立；目标用户已存在时不覆盖密码、不覆盖昵称、不覆盖头像、不删除既有门店关系。
+- 配置账号不存在，或两个回退账号均不存在时，脚本返回 `HQ_ADMIN_TARGET_NOT_FOUND`，不创建半成品账号。
 
 ### 3.2 总部绑定
 
@@ -44,7 +44,7 @@ status: ACTIVE
 
 脚本不再扫描 `isAuditor=true` 并为所有用户创建 `HQ_ADMIN/HQ` 绑定。
 
-目标用户原有的门店角色绑定保持不变，因此本机 `xiaoming` 预期可以同时拥有：
+目标用户原有的门店角色绑定保持不变，因此 `zhouluoren` 可以同时拥有：
 
 ```text
 MANAGER / STORE / 当前门店
@@ -96,8 +96,8 @@ AccessContext / 当前用户权限结果
 
 权限迁移脚本继续负责系统角色和权限目录的幂等初始化，并增加唯一总部管理员目标用户处理：
 
-1. 读取并校验 `HQ_ADMIN_USERNAME` 非空并原样使用；部署配置/发布预检负责校验本地、测试和生产的账号映射，脚本不猜测当前环境。
-2. 读取 `HQ_ADMIN_PASSWORD`，仅在目标用户不存在且需要创建时使用。
+1. 优先读取 `HQ_ADMIN_USERNAME`；未配置时按 `zhouluoren` → `xiaoming` 顺序查找第一个已存在账号。
+2. 检查选中的账号处于可登录状态；不存在时在任何写入前失败。
 3. 确保 `HQ_ADMIN` 系统角色存在并处于 `ACTIVE`。
 4. 确保目标用户存在且处于可登录状态。
 5. 确保目标用户存在唯一有效的 `HQ_ADMIN/HQ` 绑定。
@@ -105,19 +105,7 @@ AccessContext / 当前用户权限结果
 7. 记录创建、跳过、补齐、失败和差异结果。
 8. 脚本重复执行时返回幂等结果，不重复创建用户、角色或绑定。
 
-推荐环境变量：
-
-```env
-# 测试库和生产环境
-HQ_ADMIN_USERNAME=zhouluoren
-HQ_ADMIN_PASSWORD=<由部署环境注入>
-
-# 本机及其他本地开发环境
-HQ_ADMIN_USERNAME=xiaoming
-HQ_ADMIN_PASSWORD=<本机开发密码>
-```
-
-如果目标用户已存在，`HQ_ADMIN_PASSWORD` 不用于重置密码；如果目标用户不存在且密码未提供，脚本必须在数据库写入前失败。部署配置/发布预检必须阻止缺失用户名或环境账号映射错误的流程。
+如果选中的目标用户已存在，脚本不修改密码；如果目标用户不存在，脚本必须在数据库写入前失败。账号创建和密码设置由独立的受控账号流程负责。
 
 ### 5.2 权限服务
 
@@ -183,8 +171,7 @@ HQ_ADMIN_PASSWORD=<本机开发密码>
 
 ```ts
 ensureHeadquartersAdmin({
-  username: process.env.HQ_ADMIN_USERNAME,
-  password: process.env.HQ_ADMIN_PASSWORD
+  username: process.env.HQ_ADMIN_USERNAME ?? "zhouluoren"
 })
 ```
 
@@ -199,7 +186,7 @@ ensureHeadquartersAdmin({
   bindingReactivated: boolean;
   existingStoreBindingsPreserved: boolean;
   status: "created" | "reconciled" | "failed";
-  errorCode?: "HQ_ADMIN_BINDING_CONFLICT" | "HQ_ADMIN_TARGET_INACTIVE" | "HQ_ADMIN_CONFIG_INVALID";
+  errorCode?: "HQ_ADMIN_BINDING_CONFLICT" | "HQ_ADMIN_TARGET_INACTIVE" | "HQ_ADMIN_TARGET_NOT_FOUND";
 }
 ```
 
@@ -230,9 +217,9 @@ HQ_MEMBER_BINDING_DISABLED
 
 ### 阶段 1：初始化目标用户
 
-- 发布 `HQ_ADMIN_USERNAME` 和 `HQ_ADMIN_PASSWORD` 环境变量约定；
-- 本机及其他本地环境显式配置 `HQ_ADMIN_USERNAME=xiaoming`，测试库和生产显式配置 `HQ_ADMIN_USERNAME=zhouluoren`；
-- 迁移脚本创建或补齐当前环境总部管理员；
+- 迁移脚本优先读取 `HQ_ADMIN_USERNAME`；未配置时按 `zhouluoren` → `xiaoming` 顺序选择首个已存在账号；
+- 目标账号由独立账号/种子流程预先创建，迁移脚本不创建用户或设置密码；
+- 迁移脚本补齐选中账号的总部管理员绑定；
 - 验证目标用户的 HQ 绑定和既有门店角色不变。
 
 ### 阶段 2：收口总部访问判断
@@ -252,7 +239,7 @@ HQ_MEMBER_BINDING_DISABLED
 ## 8. 必须保持不变的行为
 
 - 现有门店岗位定义和门店成员关系不变；
-- `zhouluoren` 或本机 `xiaoming` 的既有 `MANAGER` 门店身份不被覆盖；
+- 选中账号的既有 `MANAGER` 门店身份不被覆盖；
 - 现有 `HQ_ADMIN` 权限目录和全局权限含义不被扩大；
 - 权限发布、回滚、缓存失效和审计语义保持不变；
 - 门店店长继续可以维护当前门店人员；
@@ -264,9 +251,9 @@ HQ_MEMBER_BINDING_DISABLED
 
 | 场景 | 处理 |
 |---|---|
-| `HQ_ADMIN_USERNAME` 未配置或不符合环境约定 | 在任何写入前失败，不使用默认用户名 |
-| `HQ_ADMIN_PASSWORD` 未配置且目标用户不存在 | 迁移失败，不写入半成品用户 |
-| `HQ_ADMIN_USERNAME` 对应用户已存在 | 不改密码，只补齐 HQ 绑定 |
+| 配置账号不存在 | 返回 `HQ_ADMIN_TARGET_NOT_FOUND`，不回退到其他账号 |
+| 未配置且 `zhouluoren` 不存在、`xiaoming` 存在 | 使用 `xiaoming`，不改密码，只补齐 HQ 绑定 |
+| 未配置且两个回退账号均不存在 | 返回 `HQ_ADMIN_TARGET_NOT_FOUND`，不写入用户或绑定 |
 | 目标用户处于非激活状态 | 返回 `HQ_ADMIN_TARGET_INACTIVE`，不自动激活 |
 | 其他用户已有有效 HQ_ADMIN/HQ 绑定 | 返回 `HQ_ADMIN_BINDING_CONFLICT`，不自动停用或删除 |
 | 目标用户已有 HQ_ADMIN/HQ 绑定 | 跳过并报告幂等 |
@@ -282,11 +269,11 @@ HQ_MEMBER_BINDING_DISABLED
 
 ### 10.1 迁移脚本
 
-- 测试/生产显式配置 `HQ_ADMIN_USERNAME=zhouluoren` 时创建或补齐 `zhouluoren`、`HQ_ADMIN` 和总部绑定；
-- 本机配置 `HQ_ADMIN_USERNAME=xiaoming` 时创建或补齐 `xiaoming`；
+- 所有环境执行脚本时按选择规则补齐目标账号的 `HQ_ADMIN` 和总部绑定；
+- 配置账号不存在，或两个回退账号均不存在时在任何写入前失败；
 - 目标用户已有 `MANAGER` 时保留门店成员关系；
 - 第二次执行不重复创建用户、角色或绑定；
-- 缺少密码时不创建新用户；
+- 不读取或设置总部管理员密码；
 - 存在其他有效总部绑定时返回冲突并回滚；
 - 目标用户非激活时不自动激活；
 - 目标用户自己的停用总部绑定可恢复并留下审计；
@@ -326,7 +313,7 @@ HQ_MEMBER_BINDING_DISABLED
 
 ### 本机环境配置
 
-- `.env`：设置 `HQ_ADMIN_USERNAME=xiaoming` 和本机 `HQ_ADMIN_PASSWORD`；该文件不提交。
+- 不需要设置总部管理员用户名或密码环境变量；本机目标账号同样为 `zhouluoren`。
 
 ### 已生成文档
 
@@ -336,8 +323,8 @@ HQ_MEMBER_BINDING_DISABLED
 
 ## 12. 验收标准
 
-- 本机执行迁移后，`xiaoming` 同时拥有 `MANAGER/STORE` 和 `HQ_ADMIN/HQ`；
-- 测试/生产显式配置目标为 `zhouluoren`，密码不出现在代码和脚本中；
+- 所有环境执行迁移后，按选择规则确定的目标账号拥有有效 `HQ_ADMIN/HQ`；
+- `zhouluoren` 的密码不由迁移脚本处理；
 - `isAuditor=true` 不再批量产生总部绑定；
 - 复合角色用户可见“门店审核”“系统设置”和当前门店“人员管理”；
 - 总部管理员不能从页面或公开 API 修改、绑定其他人员；

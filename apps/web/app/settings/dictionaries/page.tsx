@@ -13,6 +13,7 @@ type DirectoryEntry = DictionaryCatalogEntry & { kind: "dictionary" | "template"
 type ImportRow = { code: string; name: string; sortOrder?: number; parentId?: string | null; status?: DictionaryStatus };
 
 const emptyPage: DictionaryItemsPage = { items: [], total: 0, page: 1, pageSize: 20, dictionaryVersion: 1, parent: null };
+const DIRECTORY_PAGE_SIZE_OPTIONS = [20, 50, 100];
 
 export default function DictionarySettingsPage() {
   const router = useRouter();
@@ -22,6 +23,10 @@ export default function DictionarySettingsPage() {
   const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>();
   const [directoryKeyword, setDirectoryKeyword] = useState("");
+  const [directoryQuery, setDirectoryQuery] = useState("");
+  const [directoryPage, setDirectoryPage] = useState(1);
+  const [directoryPageSize, setDirectoryPageSize] = useState(DIRECTORY_PAGE_SIZE_OPTIONS[0]);
+  const [directoryTotal, setDirectoryTotal] = useState(0);
   const [itemKeyword, setItemKeyword] = useState("");
   const [itemStatus, setItemStatus] = useState<DictionaryStatus | undefined>();
   const [page, setPage] = useState(1);
@@ -47,15 +52,55 @@ export default function DictionarySettingsPage() {
     if (!storeId && !user?.isAuditor) return;
     setLoading(true);
     try {
-      const [dictionaries, templates] = await Promise.all([
-        dictionaryApi.catalog({ storeId }),
-        dictionaryTemplateApi.catalog()
+      const keyword = directoryQuery.trim() || undefined;
+      const [dictionaryFirstPage, templateFirstPage] = await Promise.all([
+        dictionaryApi.catalog({ storeId, keyword, page: 1, pageSize: directoryPageSize }),
+        dictionaryTemplateApi.catalog({ keyword, page: 1, pageSize: directoryPageSize })
       ]);
+      const fetchRange = async (
+        firstPage: DictionaryCatalogPage,
+        fetchPage: (page: number) => Promise<DictionaryCatalogPage>,
+        total: number,
+        start: number,
+        length: number
+      ) => {
+        const result: DictionaryCatalogEntry[] = [];
+        let cursor = start;
+        let remaining = Math.min(length, Math.max(0, total - start));
+        while (remaining > 0) {
+          const sourcePage = Math.floor(cursor / directoryPageSize) + 1;
+          const response = sourcePage === 1 ? firstPage : await fetchPage(sourcePage);
+          const offset = cursor % directoryPageSize;
+          const items = response.items.slice(offset, offset + remaining);
+          result.push(...items);
+          if (!items.length) break;
+          cursor += items.length;
+          remaining -= items.length;
+        }
+        return result;
+      };
+      const globalOffset = (directoryPage - 1) * directoryPageSize;
+      const dictionaryItems = await fetchRange(
+        dictionaryFirstPage,
+        (page) => dictionaryApi.catalog({ storeId, keyword, page, pageSize: directoryPageSize }),
+        dictionaryFirstPage.total,
+        globalOffset,
+        directoryPageSize
+      );
+      const templateOffset = Math.max(0, globalOffset - dictionaryFirstPage.total);
+      const templateItems = await fetchRange(
+        templateFirstPage,
+        (page) => dictionaryTemplateApi.catalog({ keyword, page, pageSize: directoryPageSize }),
+        templateFirstPage.total,
+        templateOffset,
+        Math.max(0, directoryPageSize - dictionaryItems.length)
+      );
       const rows: DirectoryEntry[] = [
-        ...dictionaries.items.map((item) => ({ ...item, kind: "dictionary" as const, readOnly: false })),
-        ...templates.items.map((item) => ({ ...item, kind: "template" as const, readOnly: !user?.isAuditor, inherited: !user?.isAuditor }))
+        ...dictionaryItems.map((item) => ({ ...item, kind: "dictionary" as const, readOnly: false })),
+        ...templateItems.map((item) => ({ ...item, kind: "template" as const, readOnly: !user?.isAuditor, inherited: !user?.isAuditor }))
       ];
       setDirectory(rows);
+      setDirectoryTotal(dictionaryFirstPage.total + templateFirstPage.total);
       const nextKey = selectedKey && rows.some((item) => `${item.kind}:${item.id}` === selectedKey) ? selectedKey : rows[0] ? `${rows[0].kind}:${rows[0].id}` : undefined;
       setSelectedKey(nextKey);
       if (initial && !nextKey) setItemsPage(emptyPage);
@@ -65,7 +110,7 @@ export default function DictionarySettingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedKey, storeId, user?.isAuditor]);
+  }, [directoryPage, directoryPageSize, directoryQuery, selectedKey, storeId, user?.isAuditor]);
 
   const loadItems = useCallback(async () => {
     if (!selected) return;
@@ -83,6 +128,10 @@ export default function DictionarySettingsPage() {
 
   useEffect(() => { void loadDirectory(true); }, [loadDirectory]);
   useEffect(() => { void loadItems(); }, [loadItems]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDirectoryQuery(directoryKeyword.trim()), 260);
+    return () => window.clearTimeout(timer);
+  }, [directoryKeyword]);
 
   const refresh = async () => { await loadDirectory(false); await loadItems(); };
   const openCreate = () => { setEditing({}); setCode(""); setName(""); };
@@ -170,7 +219,6 @@ export default function DictionarySettingsPage() {
     const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" })); link.download = `${selected.code}-page-${page}.csv`; link.click(); URL.revokeObjectURL(link.href);
   };
 
-  const filteredDirectory = directory.filter((item) => !directoryKeyword.trim() || `${item.name} ${item.code}`.toLowerCase().includes(directoryKeyword.trim().toLowerCase()));
   const columns = [
     { title: "名称", dataIndex: "name", key: "name", render: (value: string, item: DictionaryItemEntry) => <Space><Typography.Text strong>{value}</Typography.Text>{item.parentId ? <Tag>子级</Tag> : null}</Space> },
     { title: "编码", dataIndex: "code", key: "code" },
@@ -181,17 +229,51 @@ export default function DictionarySettingsPage() {
   ];
 
   if (loading) return <div className="management-page"><Spin description="正在加载字典目录…" /></div>;
-  return <SettingsCapabilityGuard capabilityCodes={["settings.dictionary", "store.dictionary"]}><div className="management-page settings-workspace"><Space direction="vertical" size={20} style={{ width: "100%" }}>
-    <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/settings")}>返回职责工作台</Button>
-    <div><Typography.Title level={2}>基础字典模板</Typography.Title><Typography.Paragraph type="secondary">目录按需加载，字典项支持服务端分页、搜索和逐项维护；变更即时生效并自动记录版本。</Typography.Paragraph></div>
+  return <SettingsCapabilityGuard capabilityCodes={["settings.dictionary", "store.dictionary"]}><div className="management-page settings-workspace dictionary-settings-page"><Space direction="vertical" size={20} style={{ width: "100%" }}>
+    <div className="dictionary-settings-header">
+      <Button className="dictionary-back-button" icon={<ArrowLeftOutlined />} onClick={() => router.push("/settings")}>返回职责工作台</Button>
+      <div className="dictionary-settings-heading">
+        <div>
+          <Typography.Title level={2} className="dictionary-settings-title">基础字典</Typography.Title>
+          <Typography.Paragraph className="dictionary-settings-description" type="secondary">维护门店日常使用的业务选项。搜索目录后，右侧可继续维护字典项、状态和版本。</Typography.Paragraph>
+        </div>
+        <Tag className="dictionary-count-tag">{directoryTotal} 个字典</Tag>
+      </div>
+    </div>
     {error ? <Alert type="error" showIcon title={error} action={<Button onClick={() => void loadDirectory(true)}>重新加载</Button>} /> : null}
-    <div style={{ display: "grid", gridTemplateColumns: "280px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
-      <Card title="字典目录" extra={<Button icon={<ReloadOutlined />} onClick={() => void loadDirectory(false)} />}>
-        <Input.Search placeholder="搜索名称或编码" allowClear onChange={(event) => setDirectoryKeyword(event.target.value)} />
-        <div style={{ marginTop: 12, maxHeight: 620, overflow: "auto" }}>{filteredDirectory.length ? filteredDirectory.map((item) => <Card.Grid key={`${item.kind}:${item.id}`} hoverable style={{ width: "100%", padding: 12, background: selectedKey === `${item.kind}:${item.id}` ? "#e6f4ff" : undefined }} onClick={() => { setSelectedKey(`${item.kind}:${item.id}`); setParentId(undefined); setPage(1); }}><Space direction="vertical" size={4} style={{ width: "100%" }}><Space><Typography.Text strong>{item.name}</Typography.Text><Tag>{item.kind === "template" ? "总部模板" : item.source === "SYSTEM" ? "系统固定" : "门店"}</Tag></Space><Typography.Text type="secondary">{item.code} · v{item.version}</Typography.Text><Typography.Text type="secondary">启用 {item.activeItemCount} / 停用 {item.inactiveItemCount}</Typography.Text></Space></Card.Grid>) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无字典" />}</div>
+    <div className="dictionary-workspace-layout">
+      <Card className="dictionary-directory-card" title={<div className="dictionary-card-heading"><span>字典目录</span><Typography.Text type="secondary">按名称或编码查找</Typography.Text></div>} extra={<Button aria-label="刷新字典目录" icon={<ReloadOutlined />} onClick={() => void loadDirectory(false)} />}>
+        <div className="dictionary-directory-toolbar">
+          <Input.Search value={directoryKeyword} placeholder="搜索名称或编码" allowClear enterButton onChange={(event) => { setDirectoryKeyword(event.target.value); setDirectoryPage(1); }} onSearch={(value) => { setDirectoryPage(1); setDirectoryQuery(value.trim()); }} />
+          <Typography.Text type="secondary">{directoryQuery ? `正在显示“${directoryQuery}”的搜索结果` : "目录搜索由服务端处理"}</Typography.Text>
+        </div>
+        <div className="dictionary-directory-list" aria-label="字典目录列表">
+          {directory.length ? directory.map((item) => {
+            const itemKey = `${item.kind}:${item.id}`;
+            return <button key={itemKey} type="button" className={`dictionary-directory-item${selectedKey === itemKey ? " is-selected" : ""}`} aria-pressed={selectedKey === itemKey} onClick={() => { setSelectedKey(itemKey); setParentId(undefined); setPage(1); }}>
+              <span className="dictionary-directory-item-heading"><Typography.Text strong>{item.name}</Typography.Text><Tag>{item.kind === "template" ? "总部模板" : item.source === "SYSTEM" ? "系统固定" : "门店"}</Tag></span>
+              <span className="dictionary-directory-item-meta"><span>{item.code}</span><span>v{item.version}</span></span>
+              <span className="dictionary-directory-item-status">启用 {item.activeItemCount} · 停用 {item.inactiveItemCount}</span>
+            </button>;
+          }) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={directoryQuery ? "没有匹配的字典" : "暂无字典"} />}
+        </div>
+        <div className="dictionary-directory-pagination">
+          <Pagination
+            current={directoryPage}
+            pageSize={directoryPageSize}
+            total={directoryTotal}
+            showSizeChanger
+            pageSizeOptions={DIRECTORY_PAGE_SIZE_OPTIONS}
+            onChange={(nextPage, nextPageSize) => {
+              setDirectoryPage(nextPageSize === directoryPageSize ? nextPage : 1);
+              setDirectoryPageSize(nextPageSize);
+            }}
+            showTotal={(total) => `共 ${total} 个`}
+          />
+        </div>
       </Card>
-      <Card title={selected ? <Space>{selected.name}<Tag>{selected.code}</Tag><Tag color={selected.kind === "template" ? "blue" : "green"}>{selected.kind === "template" ? "总部模板" : "门店字典"}</Tag></Space> : "字典项工作区"} extra={selected ? <Space><Button icon={<DownloadOutlined />} onClick={exportCurrentPage}>导出当前页</Button>{canCreate ? <Upload showUploadList={false} beforeUpload={(file) => { void previewFile(file); return false; }} accept=".csv,.json,.xlsx,.xls"><Button icon={<ImportOutlined />}>导入预览</Button></Upload> : null}{canCreate ? <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增字典项</Button> : null}</Space> : null}>
-        {selected ? <Space direction="vertical" size={16} style={{ width: "100%" }}><Space wrap><Input.Search placeholder="搜索字典项名称或编码" allowClear style={{ width: 280 }} onSearch={(value) => { setItemKeyword(value); setPage(1); }} /><Select allowClear placeholder="状态" style={{ width: 120 }} value={itemStatus} onChange={(value) => { setItemStatus(value); setPage(1); }} options={[{ value: "ACTIVE", label: "启用" }, { value: "INACTIVE", label: "停用" }]} />{itemsPage.parent ? <Button onClick={() => { setParentId(itemsPage.parent?.parentId ?? undefined); setPage(1); }}>返回上级：{itemsPage.parent.name}</Button> : null}</Space><Table rowKey="id" loading={itemsLoading} dataSource={itemsPage.items} columns={columns} pagination={false} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无符合条件的字典项" /> }} /><Pagination current={itemsPage.page} pageSize={itemsPage.pageSize} total={itemsPage.total} showSizeChanger pageSizeOptions={[20, 50, 100]} onChange={(nextPage, nextPageSize) => { setPage(nextPage); setPageSize(nextPageSize); }} showTotal={(total) => `共 ${total} 条`} /></Space> : <Empty description="请选择左侧字典" />}
+      <Card className="dictionary-items-card" title={selected ? <div className="dictionary-card-heading"><span>{selected.name}</span><span className="dictionary-card-heading-tags"><Tag>{selected.code}</Tag><Tag color={selected.kind === "template" ? "blue" : "green"}>{selected.kind === "template" ? "总部模板" : "门店字典"}</Tag></span></div> : "字典项工作区"} extra={selected ? <Space wrap className="dictionary-card-actions"><Button icon={<DownloadOutlined />} onClick={exportCurrentPage}>导出当前页</Button>{canCreate ? <Upload showUploadList={false} beforeUpload={(file) => { void previewFile(file); return false; }} accept=".csv,.json,.xlsx,.xls"><Button icon={<ImportOutlined />}>导入预览</Button></Upload> : null}{canCreate ? <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增字典项</Button> : null}</Space> : null}>
+        {selected ? <div className="dictionary-items-content"><div className="dictionary-items-toolbar"><Input.Search className="dictionary-items-search" placeholder="搜索字典项名称或编码" allowClear enterButton onSearch={(value) => { setItemKeyword(value); setPage(1); }} /><Select allowClear className="dictionary-status-filter" placeholder="状态" value={itemStatus} onChange={(value) => { setItemStatus(value); setPage(1); }} options={[{ value: "ACTIVE", label: "启用" }, { value: "INACTIVE", label: "停用" }]} />{itemsPage.parent ? <Button onClick={() => { setParentId(itemsPage.parent?.parentId ?? undefined); setPage(1); }}>返回上级：{itemsPage.parent.name}</Button> : null}</div><Table className="dictionary-items-table" rowKey="id" loading={itemsLoading} dataSource={itemsPage.items} columns={columns} pagination={false} scroll={{ x: 760 }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无符合条件的字典项" /> }} /><div className="dictionary-items-pagination"><Pagination current={itemsPage.page} pageSize={itemsPage.pageSize} total={itemsPage.total} showSizeChanger pageSizeOptions={[20, 50, 100]} onChange={(nextPage, nextPageSize) => { setPage(nextPage); setPageSize(nextPageSize); }} showTotal={(total) => `共 ${total} 条`} /></div></div> : <Empty description="请选择左侧字典" />}
       </Card>
     </div>
     <Modal open={Boolean(editing)} title={editing?.item ? "编辑字典项" : "新增字典项"} confirmLoading={saving} onCancel={() => setEditing(undefined)} onOk={() => void saveItem()} okText="保存"><Space direction="vertical" style={{ width: "100%" }}><Input value={code} disabled={Boolean(editing?.item)} placeholder="字典编码（不可重复）" onChange={(event) => setCode(event.target.value)} /><Input value={name} placeholder="显示名称" onChange={(event) => setName(event.target.value)} /></Space></Modal>

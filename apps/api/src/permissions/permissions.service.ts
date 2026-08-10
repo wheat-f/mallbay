@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable } from "@nestjs/common";
 import { PermissionBindingStatus, PermissionPolicyVersionStatus, PermissionRoleStatus, Prisma, PermissionScopeType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { RuntimeAccessSnapshotStore } from "./domain/runtime-access-snapshot.store";
@@ -69,7 +69,7 @@ export class PermissionsService {
     const [user, bindings, published] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, isAuditor: true, storeMembers: { select: { storeId: true, position: true } } }
+        select: { id: true, storeMembers: { select: { storeId: true, position: true } } }
       }),
       this.prisma.permissionRoleBinding.findMany({
         where: {
@@ -136,8 +136,7 @@ export class PermissionsService {
     }
 
     if (bindings.length === 0) {
-      this.addLegacyPermissions(grants, user.isAuditor, user.storeMembers, context);
-      if (user.isAuditor) roles.push({ roleCode: "HQ_ADMIN", roleName: "总部管理员", scopeType: PermissionScopeType.HQ, scopeIds: [] });
+      this.addLegacyStorePermissions(grants, user.storeMembers, context);
       for (const member of user.storeMembers) {
         if (!context.storeId || context.storeId === member.storeId) {
           roles.push({ roleCode: member.position, roleName: legacyRoleNames[member.position] ?? member.position, scopeType: PermissionScopeType.STORE, scopeIds: [member.storeId] });
@@ -378,13 +377,10 @@ export class PermissionsService {
     if (!hqRole || !canManagePermissions("HQ_ADMIN")) throw new Error("发布后必须保留总部管理员权限");
     const hqAdminCount = await this.prisma.permissionRoleBinding.count({ where: { roleId: hqRole.id, scopeType: PermissionScopeType.HQ, status: PermissionBindingStatus.ACTIVE } });
     if (hqAdminCount <= 0) throw new Error("不能发布会移除最后一个总部管理员的配置");
-    const [actorUser, actorBindings] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: actorId }, select: { isAuditor: true } }),
-      this.prisma.permissionRoleBinding.findMany({ where: { userId: actorId, status: PermissionBindingStatus.ACTIVE }, select: { roleId: true } })
-    ]);
+    const actorBindings = await this.prisma.permissionRoleBinding.findMany({ where: { userId: actorId, status: PermissionBindingStatus.ACTIVE }, select: { roleId: true } });
     const actorRoleIds = [...new Set(actorBindings.map((binding) => binding.roleId))];
     const actorRoles = await this.prisma.permissionRole.findMany({ where: { id: { in: actorRoleIds }, status: PermissionRoleStatus.ACTIVE }, select: { id: true, code: true } });
-    const actorCanManage = actorRoles.some((role) => canManagePermissions(role.code)) || (actorBindings.length === 0 && Boolean(actorUser?.isAuditor) && canManagePermissions("HQ_ADMIN"));
+    const actorCanManage = actorRoles.some((role) => canManagePermissions(role.code));
     if (!actorCanManage) throw new Error("发布后当前操作者将失去权限发布能力");
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.permissionPolicyVersion.updateMany({ where: { status: PermissionPolicyVersionStatus.PUBLISHED }, data: { status: PermissionPolicyVersionStatus.ROLLED_BACK } });
@@ -464,6 +460,22 @@ export class PermissionsService {
     return bindings.map((binding) => ({ ...binding, role: roleMap.get(binding.roleId) ?? null, user: userMap.get(binding.userId) ?? null }));
   }
 
+  async assertRoleBindingWriteAllowed(actorId: string, targetUserId: string, scopeType: PermissionScopeType) {
+    const result = await this.getForUser(actorId);
+    const isHeadquartersAdmin = result.roles.some((role) => role.roleCode === "HQ_ADMIN" && role.scopeType === PermissionScopeType.HQ);
+    if (isHeadquartersAdmin && (targetUserId !== actorId || scopeType === PermissionScopeType.HQ)) {
+      throw new ForbiddenException({
+        code: "HQ_MEMBER_BINDING_DISABLED",
+        message: "总部成员绑定暂未开放，请通过权限迁移脚本初始化总部管理员"
+      });
+    }
+  }
+
+  async assertExistingRoleBindingWriteAllowed(actorId: string, bindingId: string) {
+    const binding = await this.prisma.permissionRoleBinding.findUnique({ where: { id: bindingId }, select: { userId: true, scopeType: true } });
+    if (binding) await this.assertRoleBindingWriteAllowed(actorId, binding.userId, binding.scopeType);
+  }
+
   async bindRole(input: { userId: string; roleId: string; scopeType: PermissionScopeType; storeId?: string; createdById: string }) {
     if (input.scopeType === PermissionScopeType.STORE && !input.storeId) throw new Error("门店范围绑定必须提供 storeId");
     if (input.scopeType === PermissionScopeType.HQ && input.storeId) throw new Error("总部范围绑定不能提供 storeId");
@@ -531,17 +543,11 @@ export class PermissionsService {
     return latest ? latest.updatedAt.getTime() : 0;
   }
 
-  private addLegacyPermissions(
+  private addLegacyStorePermissions(
     grants: Array<{ code: string; action: string; scope: string; bindingScope: { scopeType: PermissionScopeType; scopeIds: string[] } }>,
-    isAuditor: boolean,
     members: Array<{ storeId: string; position: string }>,
     context: PermissionContext
   ) {
-    if (isAuditor) {
-      for (const [resource, action] of [["customers", "read"], ["customers", "write"], ["orders", "read"], ["orders", "write"], ["construction", "read"], ["construction", "write"], ["inventory", "read"], ["inventory", "write"], ["products", "read"], ["products", "write"], ["purchase", "read"], ["purchase", "write"], ["finance", "read"], ["finance", "write"], ["after-sales", "read"], ["after-sales", "write"], ["reports", "read"], ["finance.application", "submit"], ["finance.document", "read"], ["finance.document", "attach"], ["finance.expense", "review"], ["finance.reimbursement", "review"], ["finance.reimbursement", "pay"]]) {
-        grants.push({ code: resource, action, scope: "GLOBAL", bindingScope: { scopeType: PermissionScopeType.HQ, scopeIds: [] } });
-      }
-    }
     for (const member of members) {
       if (context.storeId && context.storeId !== member.storeId) continue;
       for (const [resource, action, scope] of legacyPermissionMap[member.position] ?? []) grants.push({ code: resource, action, scope, bindingScope: { scopeType: PermissionScopeType.STORE, scopeIds: [member.storeId] } });

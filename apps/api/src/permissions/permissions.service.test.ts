@@ -60,6 +60,50 @@ test("legacy users retain compatibility permissions before migration", async () 
   assert.equal(await service.authorize("u1", "orders.edit", "write", { storeId: "s2" }), false);
 });
 
+test("legacy isAuditor users do not receive HQ permissions without an active HQ binding", async () => {
+  const service = buildService({
+    user: { findUnique: async () => ({ id: "auditor-1", isAuditor: true, storeMembers: [] }) },
+    permissionRoleBinding: {
+      findMany: async () => [],
+      findFirst: async () => null
+    },
+    permissionRole: { findMany: async () => [] },
+    permissionRoleGrant: { findMany: async () => [] }
+  });
+  const result = await service.getForUser("auditor-1");
+  assert.equal(result.roles.some((role) => role.roleCode === "HQ_ADMIN"), false);
+  assert.equal(await service.authorize("auditor-1", "settings", "read"), false);
+});
+
+test("HQ administrators cannot write other personnel or HQ role bindings", async () => {
+  const service = buildService({
+    user: { findUnique: async () => ({ id: "hq-1", isAuditor: false, storeMembers: [] }) },
+    permissionRoleBinding: {
+      findMany: async () => [{ id: "hq-binding", roleId: "hq-role", scopeType: "HQ", storeId: null }],
+      findFirst: async () => null
+    },
+    permissionRole: { findMany: async () => [{ id: "hq-role", code: "HQ_ADMIN", name: "总部管理员" }] },
+    permissionRoleGrant: { findMany: async () => [{ roleId: "hq-role", permissionCode: "settings", action: "write", scope: "GLOBAL" }] }
+  });
+  let otherUserError: unknown;
+  try {
+    await service.assertRoleBindingWriteAllowed("hq-1", "other-user", "STORE");
+  } catch (error) {
+    otherUserError = error;
+  }
+  assert.ok(otherUserError);
+  assert.equal((otherUserError as { getResponse: () => { code?: string } }).getResponse().code, "HQ_MEMBER_BINDING_DISABLED");
+
+  let headquartersScopeError: unknown;
+  try {
+    await service.assertRoleBindingWriteAllowed("hq-1", "hq-1", "HQ");
+  } catch (error) {
+    headquartersScopeError = error;
+  }
+  assert.ok(headquartersScopeError);
+  assert.equal((headquartersScopeError as { getResponse: () => { code?: string } }).getResponse().code, "HQ_MEMBER_BINDING_DISABLED");
+});
+
 test("legacy finance capability matrix preserves submit, review, and payment boundaries", async () => {
   const createLegacyService = (position: string, userId: string) => buildService({
     user: {

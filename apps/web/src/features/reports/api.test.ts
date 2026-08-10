@@ -11,7 +11,7 @@ test("reportsApi.summary queries /reports/summary by store", async () => {
   };
   try {
     await reportsApi.summary("store-1");
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/reports/summary?storeId=store-1");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/reports/summary?storeId=store-1");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -26,7 +26,7 @@ test("reportsApi.summary omits storeId for admin all-store reports", async () =>
   };
   try {
     await reportsApi.summary();
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/reports/summary");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/reports/summary");
   } finally {
     globalThis.fetch = originalFetch;
   }

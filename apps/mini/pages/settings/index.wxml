@@ -5,7 +5,7 @@
 
     <view class="field">
       <text class="label">API 地址</text>
-      <input value="{{apiBaseUrl}}" data-field="apiBaseUrl" bindinput="onInput" placeholder="http://localhost:3001" />
+      <input value="{{apiBaseUrl}}" data-field="apiBaseUrl" bindinput="onInput" placeholder="http://localhost:4001" />
     </view>
 
     <view class="field">

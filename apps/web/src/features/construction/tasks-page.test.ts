@@ -474,7 +474,7 @@ test("construction profile page follows the archive workspace", () => {
   assert.doesNotMatch(pageSource, /立即同步/);
   assert.doesNotMatch(pageSource, /清理缓存/);
   assert.doesNotMatch(pageSource, /v\d+\.\d+\.\d+-dev/);
-  assert.doesNotMatch(pageSource, /localhost:3001/);
+  assert.doesNotMatch(pageSource, /localhost:4001/);
   assert.match(cssSource, /\.worker-profile-page/);
   assert.match(cssSource, /\.worker-profile-grid/);
   assert.match(cssSource, /\.worker-archive-hero/);

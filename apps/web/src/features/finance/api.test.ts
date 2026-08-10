@@ -11,7 +11,7 @@ test("financeApi.createExpense posts JSON to /finance/expenses", async () => {
   };
   try {
     await financeApi.createExpense({ storeId: "store-1", title: "耗材", amountCents: 1000, reason: "采购" });
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/finance/expenses");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/finance/expenses");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
   } finally {
     globalThis.fetch = originalFetch;

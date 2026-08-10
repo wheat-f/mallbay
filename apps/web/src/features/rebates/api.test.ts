@@ -11,7 +11,7 @@ test("rebatesApi.apply posts JSON to /rebates", async () => {
   };
   try {
     await rebatesApi.apply({ orderId: "order-1", amountCents: 1000, reason: "返利" });
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/rebates");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/rebates");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
   } finally {
     globalThis.fetch = originalFetch;

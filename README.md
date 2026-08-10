@@ -20,7 +20,7 @@ pnpm dev
 默认端口：
 
 - Web: http://localhost:3000
-- API: http://localhost:3001
+- API: http://localhost:4001
 - PostgreSQL: localhost:55432
 - Redis: localhost:16379（容器内仍为 6379，可通过 `REDIS_HOST_PORT` 覆盖宿主机端口）
 

@@ -18,7 +18,7 @@ import type { MulterFile } from "./multer-file.type";
  * 本地开发可设置：
  *   OSS_PROVIDER=local
  *   OSS_LOCAL_DIR=.local/oss
- *   OSS_PUBLIC_BASE_URL=http://localhost:3001/local-oss
+ *   OSS_PUBLIC_BASE_URL=http://localhost:4001/local-oss
  */
 @Injectable()
 export class OssService {
@@ -55,7 +55,7 @@ export class OssService {
   }
 
   private buildLocalUrl(key: string): string {
-    const baseUrl = process.env.OSS_PUBLIC_BASE_URL ?? "http://localhost:3001/local-oss";
+    const baseUrl = process.env.OSS_PUBLIC_BASE_URL ?? "http://localhost:4001/local-oss";
     return `${baseUrl.replace(/\/$/, "")}/${key.split("/").map(encodeURIComponent).join("/")}`;
   }
 

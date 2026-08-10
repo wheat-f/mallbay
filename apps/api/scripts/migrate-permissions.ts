@@ -1,9 +1,45 @@
 import { PermissionRoleType, PermissionScopeType, Prisma } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
+import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../src/prisma/prisma.service";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@localhost:55432/mallbay?schema=public";
 const prisma = new PrismaService(new ConfigService({ DATABASE_URL: process.env.DATABASE_URL }));
+
+const HQ_ADMIN_USERNAME = process.env.HQ_ADMIN_USERNAME?.trim();
+const HQ_ADMIN_PASSWORD = process.env.HQ_ADMIN_PASSWORD;
+
+function assertBootstrapConfiguration() {
+  if (!HQ_ADMIN_USERNAME) {
+    throw new Error("HQ_ADMIN_CONFIG_INVALID: HQ_ADMIN_USERNAME 必须由当前环境显式配置");
+  }
+}
+
+async function assertBootstrapPreconditions() {
+  assertBootstrapConfiguration();
+  const [role, targetUser] = await Promise.all([
+    prisma.permissionRole.findUnique({ where: { code: "HQ_ADMIN" }, select: { id: true } }),
+    prisma.user.findUnique({ where: { username: HQ_ADMIN_USERNAME }, select: { id: true, isActive: true } })
+  ]);
+  if (targetUser?.isActive === false) {
+    throw new Error("HQ_ADMIN_TARGET_INACTIVE: 总部管理员目标账号已停用，请先人工启用");
+  }
+  if (!targetUser && !HQ_ADMIN_PASSWORD) {
+    throw new Error("HQ_ADMIN_PASSWORD 未配置，无法创建总部管理员目标账号");
+  }
+  if (!role) return;
+  const conflicts = await prisma.permissionRoleBinding.findMany({
+    where: { roleId: role.id, scopeType: PermissionScopeType.HQ, status: "ACTIVE" },
+    select: { userId: true }
+  });
+  const conflictUserIds = conflicts.filter((item) => item.userId !== targetUser?.id).map((item) => item.userId);
+  const conflictUsers = conflictUserIds.length
+    ? await prisma.user.findMany({ where: { id: { in: conflictUserIds } }, select: { username: true } })
+    : [];
+  if (conflictUsers.length > 0) {
+    throw new Error(`HQ_ADMIN_BINDING_CONFLICT: 已存在其他有效总部管理员 ${conflictUsers.map((item) => item.username).join(", ")}`);
+  }
+}
 
 const roleDefinitions: Record<string, { name: string; grants: Array<[string, string, string]> }> = {
   HQ_ADMIN: {
@@ -46,7 +82,66 @@ const definitions = Object.keys(roleDefinitions).length
   ? [...new Set(Object.values(roleDefinitions).flatMap((role) => role.grants.map(([resource]) => resource)))]
   : [];
 
+async function ensureHeadquartersAdmin(roleId: string) {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('mallbay:hq-admin-bootstrap', 0))`;
+    const targetUsername = HQ_ADMIN_USERNAME!;
+    const [role, existingTarget] = await Promise.all([
+      tx.permissionRole.findUnique({ where: { id: roleId }, select: { id: true, code: true, status: true } }),
+      tx.user.findUnique({ where: { username: targetUsername }, select: { id: true, isActive: true } })
+    ]);
+    if (!role || role.status !== "ACTIVE") throw new Error("HQ_ADMIN 角色不存在或已停用");
+    if (existingTarget?.isActive === false) throw new Error("HQ_ADMIN_TARGET_INACTIVE: 总部管理员目标账号已停用，请先人工启用");
+
+    const activeBindings = await tx.permissionRoleBinding.findMany({
+      where: { roleId: role.id, scopeType: PermissionScopeType.HQ, status: "ACTIVE" },
+      select: { userId: true }
+    });
+    const conflictUserIds = activeBindings.filter((binding) => binding.userId !== existingTarget?.id).map((binding) => binding.userId);
+    if (conflictUserIds.length > 0) {
+      const conflictUsers = await tx.user.findMany({ where: { id: { in: conflictUserIds } }, select: { username: true } });
+      throw new Error(`HQ_ADMIN_BINDING_CONFLICT: 已存在其他有效总部管理员 ${conflictUsers.map((user) => user.username).join(", ")}`);
+    }
+
+    let user = existingTarget;
+    let userCreated = false;
+    if (!user) {
+      if (!HQ_ADMIN_PASSWORD) throw new Error("HQ_ADMIN_PASSWORD 未配置，无法创建总部管理员目标账号");
+      user = await tx.user.create({ data: { username: targetUsername, passwordHash: await bcrypt.hash(HQ_ADMIN_PASSWORD, 12), isActive: true }, select: { id: true, isActive: true } });
+      userCreated = true;
+    }
+
+    const existingBinding = await tx.permissionRoleBinding.findFirst({
+      where: { userId: user.id, roleId: role.id, scopeType: PermissionScopeType.HQ, storeId: null },
+      select: { id: true, status: true }
+    });
+    let bindingCreated = false;
+    let bindingReactivated = false;
+    let bindingId = existingBinding?.id ?? null;
+    if (!existingBinding) {
+      const binding = await tx.permissionRoleBinding.create({ data: { userId: user.id, roleId: role.id, scopeType: PermissionScopeType.HQ, storeId: null, status: "ACTIVE" } });
+      bindingCreated = true;
+      bindingId = binding.id;
+    } else if (existingBinding.status === "DISABLED") {
+      await tx.permissionRoleBinding.update({ where: { id: existingBinding.id }, data: { status: "ACTIVE", effectiveAt: new Date(), expiredAt: null } });
+      bindingReactivated = true;
+    }
+
+    await tx.auditEvent.create({
+      data: {
+        action: "permissions.hq_admin.initialized",
+        actorId: null,
+        targetType: "User",
+        targetId: user.id,
+        metadata: { username: targetUsername, userCreated, bindingCreated, bindingReactivated, bindingId }
+      }
+    });
+    return { userCreated, bindingCreated, bindingReactivated, userId: user.id, bindingId };
+  });
+}
+
 async function main() {
+  await assertBootstrapPreconditions();
   for (const resource of definitions) {
     await prisma.permissionDefinition.upsert({
       where: { code: resource },
@@ -78,7 +173,7 @@ async function main() {
     }
   }
 
-  const users = await prisma.user.findMany({ select: { id: true, isAuditor: true, storeMembers: { select: { storeId: true, position: true } } } });
+  const users = await prisma.user.findMany({ select: { id: true, storeMembers: { select: { storeId: true, position: true } } } });
   let created = 0;
   let skipped = 0;
   const createdDetails: unknown[] = [];
@@ -87,7 +182,6 @@ async function main() {
   const unmappedDetails: unknown[] = [];
   for (const user of users) {
     const requested: Array<{ roleCode: string; scopeType: PermissionScopeType; storeId?: string }> = [];
-    if (user.isAuditor) requested.push({ roleCode: "HQ_ADMIN", scopeType: PermissionScopeType.HQ });
     for (const member of user.storeMembers) requested.push({ roleCode: member.position, scopeType: PermissionScopeType.STORE, storeId: member.storeId });
 
     for (const binding of requested) {
@@ -114,6 +208,15 @@ async function main() {
       }
     }
   }
+  const hqAdminRoleId = roleIds.get("HQ_ADMIN");
+  if (!hqAdminRoleId) throw new Error("HQ_ADMIN 角色初始化失败");
+  const hqAdmin = await ensureHeadquartersAdmin(hqAdminRoleId);
+  if (hqAdmin.userCreated) created++;
+  if (hqAdmin.bindingCreated) created++;
+  if (hqAdmin.bindingReactivated) skipped++;
+  if (hqAdmin.bindingCreated || hqAdmin.bindingReactivated) {
+    createdDetails.push({ userId: hqAdmin.userId, roleCode: "HQ_ADMIN", scopeType: PermissionScopeType.HQ, bindingId: hqAdmin.bindingId, action: hqAdmin.bindingReactivated ? "reactivated" : "created" });
+  }
   const policyGrants = Object.entries(roleDefinitions).flatMap(([roleCode, definition]) => definition.grants.map(([permissionCode, action, scope]) => ({ roleCode, permissionCode, action, scope })));
   const policyPayload = { source: "legacy-migration", roleCodes: Object.keys(roleDefinitions), grants: policyGrants };
   const published = await prisma.permissionPolicyVersion.findFirst({ where: { status: "PUBLISHED" } });
@@ -130,4 +233,9 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
 }
 
-main().finally(() => prisma.$disconnect());
+main()
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  })
+  .finally(() => prisma.$disconnect());

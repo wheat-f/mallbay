@@ -2,7 +2,7 @@ import type { AuthResponse } from "@mallbay/shared";
 import { useAuthStore } from "../stores/auth-store";
 import { createApiError } from "./api-error";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4001";
 const AUTH_PATH = "/auth";
 const REFRESH_PATH = "/auth/refresh";
 let pendingRefreshSession: Promise<boolean> | null = null;

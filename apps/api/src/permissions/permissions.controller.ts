@@ -56,24 +56,28 @@ export class PermissionsController {
   @Post("permissions/role-bindings")
   async bindRole(@Req() request: { user: { id: string } }, @Body() body: { userId: string; roleId: string; scopeType: PermissionScopeType; storeId?: string }) {
     await this.assertPolicyAdmin(request.user.id);
+    await this.permissions.assertRoleBindingWriteAllowed(request.user.id, body.userId, body.scopeType);
     return this.permissions.bindRole({ ...body, createdById: request.user.id });
   }
 
   @Post("users/:userId/role-bindings")
   async bindUserRole(@Req() request: { user: { id: string } }, @Param("userId") userId: string, @Body() body: { roleId: string; scopeType: PermissionScopeType; storeId?: string }) {
     await this.assertPolicyAdmin(request.user.id);
+    await this.permissions.assertRoleBindingWriteAllowed(request.user.id, userId, body.scopeType);
     return this.permissions.bindRole({ ...body, userId, createdById: request.user.id });
   }
 
   @Patch("users/:userId/role-bindings/:bindingId")
-  async updateUserRoleBinding(@Req() request: { user: { id: string } }, @Param("bindingId") bindingId: string, @Body() body: { status?: "ACTIVE" | "DISABLED" }) {
+  async updateUserRoleBinding(@Req() request: { user: { id: string } }, @Param("userId") userId: string, @Param("bindingId") bindingId: string, @Body() body: { status?: "ACTIVE" | "DISABLED" }) {
     await this.assertPolicyAdmin(request.user.id);
     if (body.status !== "DISABLED") throw new ForbiddenException("角色绑定仅支持即时停用");
+    await this.permissions.assertExistingRoleBindingWriteAllowed(request.user.id, bindingId);
     return this.permissions.disableBinding(bindingId, request.user.id);
   }
   @Post("permissions/role-bindings/:id/disable")
   async disableBinding(@Req() request: { user: { id: string } }, @Param("id") id: string) {
     await this.assertPolicyAdmin(request.user.id);
+    await this.permissions.assertExistingRoleBindingWriteAllowed(request.user.id, id);
     return this.permissions.disableBinding(id, request.user.id);
   }
 

@@ -28,7 +28,7 @@ export type ManagementMenuItem = {
   href: string;
   icon: ReactNode;
   positions?: StorePosition[];
-  auditorOnly?: boolean;
+  headquartersOnly?: boolean;
   permissionCode?: string;
 };
 
@@ -81,8 +81,8 @@ export const managementMenuItems: ManagementMenuItem[] = [
   { key: "reports", label: "报表分析", href: "/reports", icon: <DashboardOutlined />, positions: ["MANAGER", "SALES", "FINANCE"] },
   { key: "invoices", label: "发票管理", href: "/invoices", icon: <FileDoneOutlined />, positions: ["MANAGER", "FINANCE"] },
   { key: "rebates", label: "返利管理", href: "/rebates", icon: <GiftOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "FINANCE"] },
-  { key: "admin", label: "门店审核", href: "/admin", icon: <AuditOutlined />, auditorOnly: true },
-  { key: "settings", label: "系统设置", href: "/settings", icon: <SettingOutlined />, positions: ["MANAGER"], auditorOnly: true }
+  { key: "admin", label: "门店审核", href: "/admin", icon: <AuditOutlined />, headquartersOnly: true },
+  { key: "settings", label: "系统设置", href: "/settings", icon: <SettingOutlined />, positions: ["MANAGER"], headquartersOnly: true }
 ];
 
 const menuPermissionCodes: Record<string, string> = {
@@ -106,18 +106,18 @@ const managementMenuGroupDefinitions: Array<{ key: string; label: string; icon: 
 
 export function getManagementMenuItems(input: {
   position?: StorePosition | null;
-  isAuditor?: boolean | null;
+  isHeadquartersAdmin?: boolean | null;
   storeId?: string | null;
   permissions?: Array<{ code: string; actions: string[] }>;
 }) {
-  const { position, isAuditor, storeId, permissions } = input;
+  const { position, isHeadquartersAdmin, storeId, permissions } = input;
   return managementMenuItems
     .filter((item) => {
       const allowedByStorePosition = position && item.positions?.includes(position);
-      const allowedByAuditor = Boolean(isAuditor && item.auditorOnly);
+      const allowedByHeadquarters = Boolean(isHeadquartersAdmin && item.headquartersOnly);
       const permissionCode = item.permissionCode ?? menuPermissionCodes[item.key];
       const allowedByPermission = !permissions || !permissionCode || permissions.some((permission) => permission.code === permissionCode && permission.actions.includes("read"));
-      return (allowedByStorePosition || allowedByAuditor) && allowedByPermission;
+      return (allowedByStorePosition || allowedByHeadquarters) && allowedByPermission;
     })
     .map((item) => ({
       ...item,
@@ -127,7 +127,7 @@ export function getManagementMenuItems(input: {
 
 export function getManagementMenuGroups(input: {
   position?: StorePosition | null;
-  isAuditor?: boolean | null;
+  isHeadquartersAdmin?: boolean | null;
   storeId?: string | null;
   permissions?: Array<{ code: string; actions: string[] }>;
 }) {

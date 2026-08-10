@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # ─────────────────────────────────────────────────────────────────
 # Stage 1: base — Node + pnpm
 # ─────────────────────────────────────────────────────────────────
@@ -17,7 +19,14 @@ COPY packages/shared/package.json ./packages/shared/
 COPY apps/api/package.json        ./apps/api/
 COPY apps/web/package.json        ./apps/web/
 
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=mallbay-pnpm-store,target=/root/.local/share/pnpm/store,sharing=locked \
+    pnpm install --frozen-lockfile \
+      --fetch-timeout=600000 \
+      --fetch-retries=5 \
+      --fetch-retry-factor=2 \
+      --fetch-retry-mintimeout=20000 \
+      --fetch-retry-maxtimeout=120000 \
+      --network-concurrency=8
 
 # ─────────────────────────────────────────────────────────────────
 # Stage 3: builder — Next.js production build (standalone output)

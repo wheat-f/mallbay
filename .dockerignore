@@ -11,6 +11,23 @@ apps/**/out
 .nx/cache
 .nx/workspace-data
 
+# Local tooling, caches, documentation and temporary artifacts
+.agents
+.codegraph
+.codex
+.impeccable
+.local
+.pnpm-store
+.tmp
+tmp
+docs
+CONTEXT.md
+DESIGN.md
+PRODUCT.md
+design-qa.md
+*.latest.log
+*.start.log
+
 # Git
 .git
 .gitignore

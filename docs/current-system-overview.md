@@ -25,7 +25,7 @@ pnpm dev
 默认地址：
 
 - Web：`http://localhost:3000`
-- API：`http://localhost:3001`
+- API：`http://localhost:4001`
 - API 健康检查：`GET /health`
 
 ## 2. 当前业务域

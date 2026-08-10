@@ -29,7 +29,7 @@ test("customerSettlementApi.statements reads the semantic settlement projection"
     const result = await customerSettlementApi.statements({ storeId: "store-1", customerId: "customer-1" });
     assert.equal(result.semantics.dateBasis, "ORDER_CREATED_AT");
     assert.equal(result.semantics.allocationType, "CUSTOMER_STATEMENT_ITEM");
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/customer-statements?storeId=store-1&customerId=customer-1");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/customer-statements?storeId=store-1&customerId=customer-1");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -57,7 +57,7 @@ test("customerSettlementApi.statementCandidates reads candidate order semantics"
   try {
     const result = await customerSettlementApi.statementCandidates({ storeId: "store-1", customerId: "customer-1" });
     assert.equal(result.semantics.dateBasis, "ORDER_CREATED_AT");
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/customer-statements/candidate-orders?storeId=store-1&customerId=customer-1");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/customer-statements/candidate-orders?storeId=store-1&customerId=customer-1");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -87,7 +87,7 @@ test("customerSettlementApi.receipts reads collection and reversal semantics", a
     const result = await customerSettlementApi.receipts({ storeId: "store-1", customerId: "customer-1" });
     assert.equal(result.semantics.dateBasis, "RECEIVED_AT");
     assert.equal(result.semantics.amountTypes.reversed, "REVERSAL_AMOUNT");
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/customer-receipts?storeId=store-1&customerId=customer-1");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/customer-receipts?storeId=store-1&customerId=customer-1");
   } finally {
     globalThis.fetch = originalFetch;
   }

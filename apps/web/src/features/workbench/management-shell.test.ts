@@ -34,7 +34,7 @@ test("management shell wraps business routes and excludes public and mobile rout
 
   assert.match(source, /shouldUseManagementShell/);
   assert.match(source, /management-brand-title">mallbay</);
-  assert.match(source, /user\?\.isAuditor \? "运营管理" : "mallbay"/);
+  assert.match(source, /isHeadquartersAdmin \? "运营管理" : "mallbay"/);
   assert.doesNotMatch(source, />MallBay</);
   assert.doesNotMatch(source, /: "MallBay"/);
   assert.match(source, /门店运营系统/);

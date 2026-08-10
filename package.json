@@ -5,7 +5,7 @@
   "packageManager": "pnpm@11.0.9",
   "scripts": {
     "dev": "nx run-many -t dev --parallel=2",
-    "dev:clean": "lsof -ti :3000,3001 | xargs kill -9 2>/dev/null; pnpm dev",
+    "dev:clean": "node scripts/kill-dev-ports.mjs && pnpm dev",
     "dev:web": "nx dev web",
     "dev:api": "nx dev api",
     "build": "nx run-many -t build",

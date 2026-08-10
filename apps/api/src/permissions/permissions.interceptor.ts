@@ -19,7 +19,7 @@ export class PermissionsInterceptor implements NestInterceptor {
       ? this.accessContext.resolve(request.user.id, { storeId })
       : this.permissions.getForUser(request.user.id, { storeId });
     return from(resolved).pipe(switchMap((result) => {
-      request.user!.isAuditor = result.roles.some((role) => role.scopeType === "HQ") && result.permissions.some((permission) => permission.code === "settings" && permission.actions.includes("write") && permission.scopes.includes("GLOBAL"));
+      request.user!.isAuditor = result.roles.some((role) => role.roleCode === "HQ_ADMIN" && role.scopeType === "HQ");
       return next.handle();
     }));
   }

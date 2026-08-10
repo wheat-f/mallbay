@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const webConfigDir = path.dirname(fileURLToPath(import.meta.url));
+const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4001").replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -20,7 +21,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://127.0.0.1:3001/:path*"
+        destination: `${apiBaseUrl}/:path*`
       }
     ];
   }

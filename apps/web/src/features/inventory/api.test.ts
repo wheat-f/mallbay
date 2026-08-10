@@ -20,7 +20,7 @@ test("inventoryApi.createBatch posts JSON to /inventory/batches", async () => {
       totalQuantity: 10
     });
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/batches");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/inventory/batches");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
   } finally {
     globalThis.fetch = originalFetch;
@@ -42,7 +42,7 @@ test("inventoryApi.outboundOrder posts selected outbound lines", async () => {
       lines: [{ allocationId: "allocation-1", quantity: 12, unit: "METER" }]
     });
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/orders/order-1/outbound");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/inventory/orders/order-1/outbound");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
     assert.equal(
       (calls[0] as { init: RequestInit }).init.body,
@@ -66,7 +66,7 @@ test("inventoryApi queries pending match orders by store", async () => {
   try {
     await inventoryApi.pendingMatchOrders("store-1");
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/orders/pending-match?storeId=store-1");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/inventory/orders/pending-match?storeId=store-1");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -96,7 +96,7 @@ test("inventoryApi queries inventory movements with advanced filters", async () 
 
     assert.equal(
       (calls[0] as { input: string }).input,
-      "http://localhost:3001/inventory/movements?storeId=store-1&productId=product-1&batchId=batch-1&orderId=order-1&movementType=ORDER_LOCK&createdById=user-1&createdFrom=2026-06-01&createdTo=2026-06-10"
+      "http://localhost:4001/inventory/movements?storeId=store-1&productId=product-1&batchId=batch-1&orderId=order-1&movementType=ORDER_LOCK&createdById=user-1&createdFrom=2026-06-01&createdTo=2026-06-10"
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -116,7 +116,7 @@ test("inventoryApi creates purchase order from purchase requirement", async () =
   try {
     await inventoryApi.createPurchaseOrderFromRequirement("pr-1", { supplierName: "3M" });
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/purchase-requirements/pr-1/purchase-orders");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/inventory/purchase-requirements/pr-1/purchase-orders");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
   } finally {
     globalThis.fetch = originalFetch;
@@ -140,11 +140,11 @@ test("purchaseApi uses the purchases boundary for purchase requirements and orde
     await purchaseApi.approveOrder("po-1");
     await purchaseApi.suppliers("store-1");
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/purchases/requirements?storeId=store-1");
-    assert.equal((calls[1] as { input: string }).input, "http://localhost:3001/purchases/requirements/pr-1/orders");
-    assert.equal((calls[2] as { input: string }).input, "http://localhost:3001/purchases/orders?storeId=store-1");
-    assert.equal((calls[3] as { input: string }).input, "http://localhost:3001/purchases/orders/po-1/approve");
-    assert.equal((calls[4] as { input: string }).input, "http://localhost:3001/purchases/suppliers?storeId=store-1");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/purchases/requirements?storeId=store-1");
+    assert.equal((calls[1] as { input: string }).input, "http://localhost:4001/purchases/requirements/pr-1/orders");
+    assert.equal((calls[2] as { input: string }).input, "http://localhost:4001/purchases/orders?storeId=store-1");
+    assert.equal((calls[3] as { input: string }).input, "http://localhost:4001/purchases/orders/po-1/approve");
+    assert.equal((calls[4] as { input: string }).input, "http://localhost:4001/purchases/suppliers?storeId=store-1");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -163,7 +163,7 @@ test("inventoryApi approves purchase orders", async () => {
   try {
     await inventoryApi.approvePurchaseOrder("po-1");
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/purchase-orders/po-1/approve");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/inventory/purchase-orders/po-1/approve");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
   } finally {
     globalThis.fetch = originalFetch;
@@ -183,7 +183,7 @@ test("inventoryApi cancels purchase orders with reason", async () => {
   try {
     await inventoryApi.cancelPurchaseOrder("po-1", { reason: "供应商缺货" });
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/purchase-orders/po-1/cancel");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/inventory/purchase-orders/po-1/cancel");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
     assert.equal((calls[0] as { init: RequestInit }).init.body, JSON.stringify({ reason: "供应商缺货" }));
   } finally {
@@ -205,8 +205,8 @@ test("inventoryApi splits batch and creates stock operation", async () => {
     await inventoryApi.splitBatch("batch-1", { quantityMeters: 30 });
     await inventoryApi.createStockOperation({ batchId: "batch-1", movementType: "DAMAGE_OUT", quantity: 3 });
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/batches/batch-1/split");
-    assert.equal((calls[1] as { input: string }).input, "http://localhost:3001/inventory/stock-operations");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/inventory/batches/batch-1/split");
+    assert.equal((calls[1] as { input: string }).input, "http://localhost:4001/inventory/stock-operations");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -229,14 +229,14 @@ test("inventoryApi manages supplier master data", async () => {
     await inventoryApi.createSupplierContact("supplier-1", { name: "李采购", phone: "13900000000", role: "售后" });
     await inventoryApi.createSupplierRatingHistory("supplier-1", { rating: 5, note: "交付及时" });
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/suppliers?storeId=store-1");
-    assert.equal((calls[1] as { input: string }).input, "http://localhost:3001/inventory/suppliers");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/inventory/suppliers?storeId=store-1");
+    assert.equal((calls[1] as { input: string }).input, "http://localhost:4001/inventory/suppliers");
     assert.equal((calls[1] as { init: RequestInit }).init.method, "POST");
-    assert.equal((calls[2] as { input: string }).input, "http://localhost:3001/inventory/suppliers/supplier-1");
+    assert.equal((calls[2] as { input: string }).input, "http://localhost:4001/inventory/suppliers/supplier-1");
     assert.equal((calls[2] as { init: RequestInit }).init.method, "PATCH");
-    assert.equal((calls[3] as { input: string }).input, "http://localhost:3001/inventory/suppliers/supplier-1/contacts");
+    assert.equal((calls[3] as { input: string }).input, "http://localhost:4001/inventory/suppliers/supplier-1/contacts");
     assert.equal((calls[3] as { init: RequestInit }).init.method, "POST");
-    assert.equal((calls[4] as { input: string }).input, "http://localhost:3001/inventory/suppliers/supplier-1/rating-history");
+    assert.equal((calls[4] as { input: string }).input, "http://localhost:4001/inventory/suppliers/supplier-1/rating-history");
     assert.equal((calls[4] as { init: RequestInit }).init.method, "POST");
   } finally {
     globalThis.fetch = originalFetch;
@@ -258,7 +258,7 @@ test("purchaseApi requests full purchase product details by dimension", async ()
 
     assert.equal(
       (calls[0] as { input: string }).input,
-      "http://localhost:3001/purchases/orders/export-details?storeId=store-1&exportDimension=supplier"
+      "http://localhost:4001/purchases/orders/export-details?storeId=store-1&exportDimension=supplier"
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -281,12 +281,12 @@ test("inventoryApi manages warehouse master data", async () => {
     await inventoryApi.updateWarehouse("warehouse-1", { name: "主仓库 A 区", isActive: true });
     await purchaseApi.warehouses("store-1");
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/inventory/warehouses?storeId=store-1");
-    assert.equal((calls[1] as { input: string }).input, "http://localhost:3001/inventory/warehouses");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/inventory/warehouses?storeId=store-1");
+    assert.equal((calls[1] as { input: string }).input, "http://localhost:4001/inventory/warehouses");
     assert.equal((calls[1] as { init: RequestInit }).init.method, "POST");
-    assert.equal((calls[2] as { input: string }).input, "http://localhost:3001/inventory/warehouses/warehouse-1");
+    assert.equal((calls[2] as { input: string }).input, "http://localhost:4001/inventory/warehouses/warehouse-1");
     assert.equal((calls[2] as { init: RequestInit }).init.method, "PATCH");
-    assert.equal((calls[3] as { input: string }).input, "http://localhost:3001/purchases/warehouses?storeId=store-1");
+    assert.equal((calls[3] as { input: string }).input, "http://localhost:4001/purchases/warehouses?storeId=store-1");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -311,7 +311,7 @@ test("inventoryApi.receivePurchaseItemBatches posts scanned batches once", async
     assert.equal(calls.length, 1);
     assert.equal(
       (calls[0] as { input: string }).input,
-      "http://localhost:3001/inventory/purchase-orders/items/poi-1/receive-batches"
+      "http://localhost:4001/inventory/purchase-orders/items/poi-1/receive-batches"
     );
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
     assert.equal(

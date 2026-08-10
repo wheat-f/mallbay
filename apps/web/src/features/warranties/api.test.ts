@@ -19,7 +19,7 @@ test("warrantiesApi.createFromOrder posts JSON to /warranties", async () => {
       startDate: "2026-06-01"
     });
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/warranties");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/warranties");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
   } finally {
     globalThis.fetch = originalFetch;
@@ -41,7 +41,7 @@ test("warrantiesApi.lookup queries warranty number", async () => {
 
     assert.equal(
       (calls[0] as { input: string }).input,
-      "http://localhost:3001/warranties/lookup?no=WAR202606010001"
+      "http://localhost:4001/warranties/lookup?no=WAR202606010001"
     );
   } finally {
     globalThis.fetch = originalFetch;

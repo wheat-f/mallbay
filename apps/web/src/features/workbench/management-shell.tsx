@@ -100,20 +100,21 @@ export function ManagementShell({ children }: { children: ReactNode }) {
   const storeMember = user?.storeMember;
   const permissionsQuery = useQuery({ queryKey: ["auth-permissions", storeMember?.store.id], queryFn: () => permissionsApi.me(storeMember?.store.id), enabled: Boolean(user?.id) });
   const runtimePermissions = permissionsQuery.data?.permissions;
+  const isHeadquartersAdmin = Boolean(permissionsQuery.data?.roles.some((role) => role.roleCode === "HQ_ADMIN" && role.scopeType === "HQ"));
   const displayName = user?.nickname ?? user?.username ?? "用户";
   const activeKey = getActiveManagementMenuKey(pathname);
   const canAccessSettings = runtimePermissions
     ? runtimePermissions.some((permission) => permission.code === "settings" && permission.actions.includes("read"))
-    : canAccessSystemSettings({ position: storeMember?.position, isAuditor: user?.isAuditor });
+    : canAccessSystemSettings({ position: storeMember?.position, isHeadquartersAdmin });
   const menuItems = getManagementMenuItems({
     position: storeMember?.position,
-    isAuditor: user?.isAuditor,
+    isHeadquartersAdmin,
     storeId: storeMember?.store.id,
     permissions: runtimePermissions
   }).filter((item) => item.key !== "settings" || canAccessSettings);
   const menuGroups = getManagementMenuGroups({
     position: storeMember?.position,
-    isAuditor: user?.isAuditor,
+    isHeadquartersAdmin,
     storeId: storeMember?.store.id,
     permissions: runtimePermissions
   })
@@ -175,7 +176,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
           }
         ]
       : []),
-    ...(user?.isAuditor
+    ...(isHeadquartersAdmin
       ? [
           { key: "admin", icon: <SwapOutlined />, label: "门店审核", onClick: () => router.push("/admin") }
         ]
@@ -190,7 +191,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
   ];
   const roleSwitcherLabel = storeMember
     ? POSITION_LABEL[storeMember.position] ?? storeMember.position
-    : user?.isAuditor ? "运营管理" : "角色切换";
+    : isHeadquartersAdmin ? "运营管理" : "角色切换";
 
   return (
     <div className="management-shell">
@@ -261,7 +262,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
           <div className="min-w-0">
             <div className="management-user-name">{displayName}</div>
             <div className="management-user-role">
-              {storeMember ? POSITION_LABEL[storeMember.position] ?? storeMember.position : user?.isAuditor ? "管理员" : "访客"}
+              {storeMember ? POSITION_LABEL[storeMember.position] ?? storeMember.position : isHeadquartersAdmin ? "管理员" : "访客"}
             </div>
           </div>
         </div>
@@ -271,7 +272,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
         <header className="management-topbar">
           <div className="management-topbar-left">
             <Typography.Text className="management-store-name">
-              {storeMember?.store.name ?? (user?.isAuditor ? "运营管理" : "mallbay")}
+              {storeMember?.store.name ?? (isHeadquartersAdmin ? "运营管理" : "mallbay")}
             </Typography.Text>
             {storeMember ? <Tag className="management-role-tag">{POSITION_LABEL[storeMember.position] ?? storeMember.position}</Tag> : null}
           </div>

@@ -14,7 +14,7 @@ test("afterSalesApi.create posts JSON to /after-sales", async () => {
   };
   try {
     await afterSalesApi.create({ orderId: "order-1", description: "返工" });
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/after-sales");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/after-sales");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
   } finally {
     globalThis.fetch = originalFetch;
@@ -36,7 +36,7 @@ test("afterSalesApi.judge posts responsibility and resolution without worker pho
       responsibility: "CONSTRUCTION",
       resolutionNote: "已补证"
     });
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/after-sales/after-sale-1/responsibility");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/after-sales/after-sale-1/responsibility");
     const body = JSON.parse(String((calls[0] as { init: RequestInit }).init.body));
     assert.equal(body.responsibility, "CONSTRUCTION");
     assert.equal(body.resolutionNote, "已补证");
@@ -62,7 +62,7 @@ test("afterSalesApi.submitEvidence posts worker photo evidence without responsib
       constructionPhotos: [{ url: "data:image/png;base64,after", note: "施工后复查" }],
       supplementPhotos: [{ url: "data:image/png;base64,supplement", note: "客户确认" }]
     });
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/after-sales/after-sale-1/evidence");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/after-sales/after-sale-1/evidence");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
     const body = JSON.parse(String((calls[0] as { init: RequestInit }).init.body));
     assert.deepEqual(body.constructionPhotos, [{ url: "data:image/png;base64,after", note: "施工后复查" }]);
@@ -85,7 +85,7 @@ test("afterSalesApi.detail gets a single after-sale detail", async () => {
   };
   try {
     await afterSalesApi.detail("after-sale-1");
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/after-sales/after-sale-1");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/after-sales/after-sale-1");
     assert.equal((calls[0] as { init: RequestInit }).init.method, undefined);
   } finally {
     globalThis.fetch = originalFetch;
@@ -104,7 +104,7 @@ test("afterSalesApi.close posts to the after-sale close endpoint", async () => {
   };
   try {
     await afterSalesApi.close("after-sale-1");
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/after-sales/after-sale-1/close");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/after-sales/after-sale-1/close");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
   } finally {
     globalThis.fetch = originalFetch;

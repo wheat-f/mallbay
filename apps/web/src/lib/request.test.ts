@@ -34,7 +34,7 @@ test("request sends auth token and parses JSON responses", async () => {
   });
 
   assert.deepEqual(result, { success: true });
-  assert.equal(capturedInput, "http://localhost:3001/test");
+  assert.equal(capturedInput, "http://localhost:4001/test");
   assert.equal(capturedInit?.credentials, "include");
   const authHeaders = capturedInit?.headers as Record<string, string>;
   assert.equal(typeof authHeaders["X-Request-Id"], "string");
@@ -117,9 +117,9 @@ test("request refreshes session and retries once after an authenticated 401 resp
 
   assert.deepEqual(result, { success: true });
   assert.deepEqual(calls, [
-    "GET http://localhost:3001/test Bearer expired-token",
-    "POST http://localhost:3001/auth/refresh ",
-    "GET http://localhost:3001/test Bearer fresh-token"
+    "GET http://localhost:4001/test Bearer expired-token",
+    "POST http://localhost:4001/auth/refresh ",
+    "GET http://localhost:4001/test Bearer fresh-token"
   ]);
   assert.equal(useAuthStore.getState().accessToken, "fresh-token");
 });
@@ -175,8 +175,8 @@ test("request restores the access token before the first authenticated request a
 
   assert.deepEqual(result, { success: true });
   assert.deepEqual(calls, [
-    "POST http://localhost:3001/auth/refresh ",
-    "GET http://localhost:3001/test Bearer fresh-token"
+    "POST http://localhost:4001/auth/refresh ",
+    "GET http://localhost:4001/test Bearer fresh-token"
   ]);
 });
 

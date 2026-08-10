@@ -7,6 +7,11 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: mallbay
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mallbay"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
@@ -15,9 +20,72 @@ services:
     ports:
       - "127.0.0.1:${REDIS_HOST_PORT:-16379}:6379"
     command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     volumes:
       - redis-data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mallbay?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local-development-access-secret}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-local-development-refresh-secret}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      AUTH_CREDENTIAL_ENCRYPTION_ENABLED: ${AUTH_CREDENTIAL_ENCRYPTION_ENABLED:-true}
+      WEB_ORIGIN: http://localhost:3000
+      OSS_PROVIDER: ${OSS_PROVIDER:-local}
+      OSS_LOCAL_DIR: /app/apps/api/.local/oss
+      OSS_PUBLIC_BASE_URL: http://localhost:3001/local-oss
+    volumes:
+      - oss-data:/app/apps/api/.local/oss
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3001/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+        NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED: ${NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED:-true}
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED: ${NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED:-true}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
 
 volumes:
   postgres-data:
   redis-data:
+  oss-data:

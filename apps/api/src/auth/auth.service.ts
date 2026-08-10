@@ -71,6 +71,10 @@ export class AuthService {
       throw new UnauthorizedException("账号或密码不正确");
     }
 
+    if (user.isActive === false) {
+      throw new UnauthorizedException("账号已停用，请联系管理员");
+    }
+
     const policy = await this.getSecurityPolicy();
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       throw new UnauthorizedException("账号已锁定，请稍后再试");
@@ -103,6 +107,10 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException("微信未绑定账号");
+    }
+
+    if (user.isActive === false) {
+      throw new UnauthorizedException("账号已停用，请联系管理员");
     }
 
     return this.issueAndPersistTokens(user.id, context);
@@ -199,8 +207,9 @@ export class AuthService {
     });
 
     const member = user.storeMembers[0] ?? null;
+    const isHeadquartersAdmin = await this.isEffectiveHeadquartersAdmin(user.id);
     return {
-      ...this.toAuthUser(user),
+      ...this.toAuthUser(user, isHeadquartersAdmin),
       storeMember: member
         ? { position: member.position, store: member.store }
         : null
@@ -268,9 +277,10 @@ export class AuthService {
         : this.prisma.authSession.create({ data: { id: sessionId, userId: user.id, tokenHash: refreshTokenHash, deviceName: getDeviceName(context.userAgent), userAgent: context.userAgent, ipAddress: context.ipAddress } })
     ]);
 
+    const isHeadquartersAdmin = await this.isEffectiveHeadquartersAdmin(user.id);
     return {
       user: {
-        ...this.toAuthUser(user),
+        ...this.toAuthUser(user, isHeadquartersAdmin),
         storeMember: member
           ? { position: member.position, store: member.store }
           : null
@@ -306,7 +316,7 @@ export class AuthService {
     wechatOpenId: string | null;
     alipayUserId: string | null;
     isAuditor: boolean;
-  }) {
+  }, effectiveIsAuditor = user.isAuditor) {
     return {
       id: user.id,
       username: user.username,
@@ -316,8 +326,21 @@ export class AuthService {
       phone: user.phone,
       wechatOpenId: user.wechatOpenId,
       alipayUserId: user.alipayUserId,
-      isAuditor: user.isAuditor
+      // Compatibility field derived from the active HQ_ADMIN/HQ binding.
+      isAuditor: effectiveIsAuditor
     };
+  }
+
+  private async isEffectiveHeadquartersAdmin(userId: string) {
+    const roleRepository = this.prisma.permissionRole as { findUnique?: Function } | undefined;
+    const bindingRepository = this.prisma.permissionRoleBinding as { findFirst?: Function } | undefined;
+    if (!roleRepository?.findUnique || !bindingRepository?.findFirst) return false;
+    const now = new Date();
+    const [role, binding] = await Promise.all([
+      roleRepository.findUnique({ where: { code: "HQ_ADMIN" }, select: { id: true, status: true } }),
+      bindingRepository.findFirst({ where: { userId, scopeType: "HQ", status: "ACTIVE", effectiveAt: { lte: now }, OR: [{ expiredAt: null }, { expiredAt: { gt: now } }] }, select: { roleId: true } })
+    ]);
+    return Boolean(role?.status === "ACTIVE" && binding?.roleId === role.id);
   }
 }
 

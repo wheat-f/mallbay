@@ -30,7 +30,7 @@ test("orderApi.create posts JSON to /orders", async () => {
     laborCostCents: 200000
   });
 
-  assert.equal(capturedInput, "http://localhost:3001/orders");
+  assert.equal(capturedInput, "http://localhost:4001/orders");
   assert.equal(capturedInit?.method, "POST");
   assert.deepEqual(result, { id: "order-1", orderNo: "ORD202605310001" });
 });
@@ -87,7 +87,7 @@ test("orderApi.updatePaymentAccount sends change reason in PATCH body", async ()
     changeReason: "财务账户名称调整"
   });
 
-  assert.equal(capturedInput, "http://localhost:3001/payment-accounts/account-1");
+  assert.equal(capturedInput, "http://localhost:4001/payment-accounts/account-1");
   assert.equal(capturedInit?.method, "PATCH");
   assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
     name: "新收款账户",
@@ -115,7 +115,7 @@ test("orderApi.updateCommercials patches order items amount and change reason", 
     changeReason: "客户变更施工范围"
   });
 
-  assert.equal(capturedInput, "http://localhost:3001/orders/order-1/commercials");
+  assert.equal(capturedInput, "http://localhost:4001/orders/order-1/commercials");
   assert.equal(capturedInit?.method, "PATCH");
   assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
     items: [{ id: "item-1", productId: "product-1", quantity: 2, unitPriceCents: 1000 }],
@@ -169,7 +169,7 @@ test("orderApi.returnToPendingDispatch posts return reason", async () => {
 
   await orderApi.returnToPendingDispatch("order-1", { reason: "客户变更产品，退回修改" });
 
-  assert.equal(capturedInput, "http://localhost:3001/orders/order-1/return-to-pending");
+  assert.equal(capturedInput, "http://localhost:4001/orders/order-1/return-to-pending");
   assert.equal(capturedInit?.method, "POST");
   assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
     reason: "客户变更产品，退回修改"
@@ -188,7 +188,7 @@ test("orderApi.auditEvents queries /orders/:id/audit-events", async () => {
 
   const result = await orderApi.auditEvents("order-1");
 
-  assert.equal(capturedInput, "http://localhost:3001/orders/order-1/audit-events");
+  assert.equal(capturedInput, "http://localhost:4001/orders/order-1/audit-events");
   assert.deepEqual(result, [
     { id: "audit-1", action: "ORDER_COMMERCIALS_UPDATED", createdAt: "2026-06-06T00:00:00.000Z" }
   ]);
@@ -213,7 +213,7 @@ test("orderApi.copyToDraft posts the selected vehicle and optional appointment",
     idempotencyKey: "copy-1"
   });
 
-  assert.equal(capturedInput, "http://localhost:3001/orders/order-1/copy");
+  assert.equal(capturedInput, "http://localhost:4001/orders/order-1/copy");
   assert.equal(capturedInit?.method, "POST");
   assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
     vehicleId: "vehicle-2",
@@ -235,7 +235,7 @@ test("orderApi.paymentAccountAuditEvents queries /payment-accounts/:id/audit-eve
 
   const result = await orderApi.paymentAccountAuditEvents("account-1");
 
-  assert.equal(capturedInput, "http://localhost:3001/payment-accounts/account-1/audit-events");
+  assert.equal(capturedInput, "http://localhost:4001/payment-accounts/account-1/audit-events");
   assert.deepEqual(result, [
     { id: "audit-1", action: "PAYMENT_ACCOUNT_UPDATED", createdAt: "2026-06-06T00:00:00.000Z" }
   ]);

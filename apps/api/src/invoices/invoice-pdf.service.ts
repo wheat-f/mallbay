@@ -22,7 +22,7 @@ export class InvoicePdfService {
     await mkdir(path.dirname(outputPath), { recursive: true });
     await writeFile(outputPath, buildInvoicePdf(invoice, invoiceNo));
 
-    const baseUrl = process.env.INVOICE_PDF_PUBLIC_BASE_URL ?? process.env.OSS_PUBLIC_BASE_URL ?? "http://localhost:3001/local-oss";
+    const baseUrl = process.env.INVOICE_PDF_PUBLIC_BASE_URL ?? process.env.OSS_PUBLIC_BASE_URL ?? "http://localhost:4001/local-oss";
     return `${baseUrl.replace(/\/$/, "")}/${relativeKey}`;
   }
 }

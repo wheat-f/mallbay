@@ -14,7 +14,7 @@ test("commissionsApi.generateSales posts to /commissions/orders/:orderId/sales",
   };
   try {
     await commissionsApi.generateSales("order-1");
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/commissions/orders/order-1/sales");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/commissions/orders/order-1/sales");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
   } finally {
     globalThis.fetch = originalFetch;

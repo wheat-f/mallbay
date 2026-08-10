@@ -28,6 +28,7 @@ model User {
 
   // 运营人员角色（目前仅审核员一个岗位）
   isAuditor         Boolean   @default(false)
+  isActive          Boolean   @default(true)
   loginFailureCount Int       @default(0)
   lockedUntil       DateTime?
 

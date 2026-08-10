@@ -24,7 +24,7 @@ test("constructionApi.upsertCapacity posts JSON to /construction/capacities", as
 
     assert.deepEqual(result, { id: "capacity-1" });
     assert.equal(calls.length, 1);
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/construction/capacities");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/construction/capacities");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
     assert.equal(
       (calls[0] as { init: RequestInit }).init.body,
@@ -57,7 +57,7 @@ test("constructionApi.assignOrder posts worker ids to /construction/orders/:id/a
 
     assert.equal(
       (calls[0] as { input: string }).input,
-      "http://localhost:3001/construction/orders/order-1/assign"
+      "http://localhost:4001/construction/orders/order-1/assign"
     );
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
     assert.equal((calls[0] as { init: RequestInit }).init.body, JSON.stringify({ workerUserIds: ["worker-1"] }));
@@ -79,7 +79,7 @@ test("constructionApi.fulfillment gets the order-scoped fulfillment view", async
   try {
     const result = await constructionApi.fulfillment("order-1");
     assert.deepEqual(result, { order: { id: "order-1" }, workflow: { currentStage: "IN_CONSTRUCTION" } });
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/construction/orders/order-1/fulfillment");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/construction/orders/order-1/fulfillment");
     assert.equal((calls[0] as { init?: RequestInit }).init?.method, undefined);
   } finally {
     globalThis.fetch = originalFetch;
@@ -99,7 +99,7 @@ test("constructionApi.fulfillments gets the stable fulfillment list view", async
   try {
     const result = await constructionApi.fulfillments({ storeId: "store-1" });
     assert.deepEqual(result, { items: [], generatedAt: "2026-08-10T00:00:00.000Z" });
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/construction/fulfillments?storeId=store-1");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/construction/fulfillments?storeId=store-1");
     assert.equal((calls[0] as { init?: RequestInit }).init?.method, undefined);
   } finally {
     globalThis.fetch = originalFetch;
@@ -121,7 +121,7 @@ test("constructionApi.schedules queries schedule list by store and date range", 
 
     assert.equal(
       (calls[0] as { input: string }).input,
-      "http://localhost:3001/construction/schedules?storeId=store-1&from=2026-06-01&to=2026-06-07"
+      "http://localhost:4001/construction/schedules?storeId=store-1&from=2026-06-01&to=2026-06-07"
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -147,7 +147,7 @@ test("constructionApi.upsertSchedule posts JSON to /construction/schedules", asy
       note: "早班"
     });
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/construction/schedules");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/construction/schedules");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
     assert.equal(
       (calls[0] as { init: RequestInit }).init.body,
@@ -179,7 +179,7 @@ test("constructionApi.offlineSync posts queued operations to /construction/offli
       operations: [{ clientOperationId: "op-1", type: "TASK_STATUS", payload: { orderId: "order-1" } }]
     });
 
-    assert.equal((calls[0] as { input: string }).input, "http://localhost:3001/construction/offline-sync");
+    assert.equal((calls[0] as { input: string }).input, "http://localhost:4001/construction/offline-sync");
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
     assert.equal(
       (calls[0] as { init: RequestInit }).init.body,

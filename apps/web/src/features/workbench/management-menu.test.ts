@@ -77,8 +77,8 @@ test("management menu exposes desktop worker self-service entries for constructi
   assert.equal(items.find((item) => item.label === "售后任务")?.href, "/after-sales/tasks");
 });
 
-test("management menu exposes auditor review entry", () => {
-  const items = getManagementMenuItems({ isAuditor: true });
+test("management menu exposes headquarters governance entry", () => {
+  const items = getManagementMenuItems({ isHeadquartersAdmin: true });
   const labels = items.map((item) => item.label);
   const settingsItem = items.find((item) => item.label === "系统设置");
 

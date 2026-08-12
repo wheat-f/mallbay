@@ -1,6 +1,10 @@
 # MallBay
 
-门店 SaaS monorepo，使用 pnpm workspace + Nx 管理：
+MallBay is an open-source full-stack store SaaS reference implementation built with Next.js, NestJS, Prisma, PostgreSQL, and Nx. It provides a reusable foundation for teams exploring multi-store operations, full-stack TypeScript architecture, and modular SaaS development.
+
+MallBay 是一个开源的全栈门店 SaaS 参考实现，采用 pnpm workspace 与 Nx 管理 monorepo，可作为多门店经营、全栈 TypeScript 架构和模块化 SaaS 开发的学习与实践基础。
+
+## 技术栈与项目结构
 
 - `apps/web`: Next.js + TypeScript + Tailwind + TanStack Query + Zustand + React Hook Form + Ant Design
 - `apps/api`: NestJS + Prisma + PostgreSQL + Redis 依赖预置
@@ -46,3 +50,7 @@ pnpm dev
 ## 测试账号
 邮箱：owner+smoke@mallbay.test
 密码：password123
+
+## 开源许可
+
+MallBay 基于 [Apache License 2.0](./LICENSE) 开源。你可以在许可证约定的范围内使用、修改和分发本项目。

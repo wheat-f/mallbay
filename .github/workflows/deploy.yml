@@ -100,6 +100,8 @@ jobs:
           context: .
           file: apps/api/Dockerfile
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ env.IMAGE_TAG }}
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ steps.tag.outputs.branch }}
@@ -143,6 +145,8 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ env.IMAGE_TAG }}
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ steps.tag.outputs.branch }}
@@ -189,6 +193,8 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ env.IMAGE_TAG }}
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-web:${{ steps.tag.outputs.branch }}

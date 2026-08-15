@@ -4,9 +4,12 @@ import { MetricsService } from "./metrics.service";
 import { StructuredLoggerService } from "./structured-logger.service";
 import { TraceService } from "./trace.service";
 import { AuditEventWriter } from "./audit-event-writer";
+import { OrderLifecycleObservability } from "../orders/domain/order-lifecycle-observability";
+import { MetricsController } from "./metrics.controller";
 
 @Module({
-  providers: [AuditLogService, AuditEventWriter, MetricsService, StructuredLoggerService, TraceService],
-  exports: [AuditLogService, AuditEventWriter, MetricsService, StructuredLoggerService, TraceService]
+  controllers: [MetricsController],
+  providers: [AuditLogService, AuditEventWriter, MetricsService, StructuredLoggerService, TraceService, OrderLifecycleObservability],
+  exports: [AuditLogService, AuditEventWriter, MetricsService, StructuredLoggerService, TraceService, OrderLifecycleObservability]
 })
 export class ObservabilityModule {}

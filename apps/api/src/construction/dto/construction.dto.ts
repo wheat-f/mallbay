@@ -122,6 +122,12 @@ export class UploadConstructionPhotoDto {
   @IsOptional()
   @IsDateString()
   takenAt?: string;
+
+  /** Stable client/ offline operation key used to make object and DB writes replay-safe. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  clientOperationId?: string;
 }
 
 export class VerifyMaterialBatchDto {
@@ -218,6 +224,11 @@ export class LeaveRequestDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  clientOperationId?: string;
 }
 
 export class UpdateLeaveRequestDto {
@@ -268,6 +279,11 @@ export class OfflinePhotoPayloadDto {
 export class OfflineTaskStatusPayloadDto {
   @IsString()
   orderId!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  expectedVersion!: number;
 
   @IsEnum(ConstructionTaskStatus)
   status!: ConstructionTaskStatus;

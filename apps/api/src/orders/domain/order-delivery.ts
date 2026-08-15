@@ -39,7 +39,8 @@ export type FinalizeDeliveryResult = {
 export async function finalizeOrderDelivery(
   tx: Prisma.TransactionClient,
   orderId: string,
-  actorId: string
+  actorId: string,
+  expectedVersion?: number
 ): Promise<FinalizeDeliveryResult> {
   const order = await tx.order.findUnique({
     where: { id: orderId },
@@ -77,6 +78,24 @@ export async function finalizeOrderDelivery(
   const warrantyYears = Math.max(1, ...order.items.map((item) => item.product.warrantyYears ?? 1));
   const endDate = new Date(startDate);
   endDate.setUTCFullYear(endDate.getUTCFullYear() + warrantyYears);
+  // Claim the order state before touching the unique warranty fact. This makes
+  // concurrent final-delivery commands serialize on the lifecycle version and
+  // avoids a second writer failing on Warranty.orderId after doing partial work.
+  const updated = await tx.order.updateMany({
+    where: {
+      id: order.id,
+      ...(expectedVersion === undefined ? {} : { lifecycleVersion: expectedVersion }),
+      status: { notIn: [OrderStatus.COMPLETED, OrderStatus.WARRANTIED, OrderStatus.CANCELLED] }
+    },
+    data: { status: OrderStatus.COMPLETED, lifecycleVersion: { increment: 1 } }
+  });
+  if (updated.count !== 1) {
+    const current = await tx.order.findUnique({ where: { id: order.id }, include: { warranty: true } });
+    if (current?.status === OrderStatus.COMPLETED && current.warranty?.status === WarrantyStatus.ACTIVE) {
+      return { orderId: order.id, warrantyId: current.warranty.id, status: "IDEMPOTENT" };
+    }
+    throw new BadRequestException("订单状态已被其他操作改变，请刷新后重试");
+  }
   let warranty = order.warranty;
   if (!warranty) {
     warranty = await tx.warranty.create({
@@ -101,17 +120,6 @@ export async function finalizeOrderDelivery(
       where: { id: warranty.id },
       data: { status: WarrantyStatus.ACTIVE, startDate, endDate }
     });
-  }
-  const updated = await tx.order.updateMany({
-    where: { id: order.id, status: { notIn: [OrderStatus.COMPLETED, OrderStatus.WARRANTIED, OrderStatus.CANCELLED] } },
-    data: { status: OrderStatus.COMPLETED }
-  });
-  if (updated.count !== 1) {
-    const current = await tx.order.findUnique({ where: { id: order.id }, include: { warranty: true } });
-    if (current?.status === OrderStatus.COMPLETED && current.warranty?.status === WarrantyStatus.ACTIVE) {
-      return { orderId: order.id, warrantyId: current.warranty.id, status: "IDEMPOTENT" };
-    }
-    throw new BadRequestException("订单状态已被其他操作改变，请刷新后重试");
   }
   await tx.auditEvent.create({
     data: {

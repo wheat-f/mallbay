@@ -29,10 +29,16 @@ export type AssignOrderPayload = {
   workerUserIds: string[];
 };
 
+export type LifecycleCommandOptions = {
+  commandId: string;
+  expectedVersion: number;
+};
+
 export type UploadConstructionPhotoPayload = {
   stage: ConstructionPhotoStage;
   url?: string;
   takenAt?: string;
+  clientOperationId?: string;
   file?: File;
 };
 
@@ -56,6 +62,7 @@ export type LeaveRequestPayload = {
   endDate: string;
   leaveType: string;
   reason?: string;
+  clientOperationId?: string;
 };
 
 export type LeaveRequestSummary = {
@@ -151,6 +158,7 @@ export type ConstructionFulfillmentView = {
     storeId: string;
     executionStoreId: string;
     status: string;
+    lifecycleVersion: number;
     appointmentDate?: string | null;
     appointmentTimeSlot?: string | null;
     constructionLocation?: string | null;
@@ -181,6 +189,13 @@ export type ConstructionFulfillmentView = {
     blockingReasons: string[];
     capabilities: Record<string, boolean>;
   };
+  lifecycle: {
+    orderId: string;
+    lifecycleVersion: number;
+    currentStage: string;
+    blockingReasonCodes: string[];
+    capabilities: Record<string, { visible: boolean; enabled: boolean; blockingReasonCodes: string[] }>;
+  };
   generatedAt: string;
 };
 
@@ -191,6 +206,7 @@ export type ConstructionFulfillmentListItem = {
   storeId: string;
   executionStoreId: string;
   status: string;
+  lifecycleVersion: number;
   constructionStatus: string;
   appointmentDate: string | null;
   appointmentTimeSlot: string | null;
@@ -200,6 +216,8 @@ export type ConstructionFulfillmentListItem = {
   assignments: Array<{ workerUserId: string }>;
   photoCount: number;
   workflow: ConstructionFulfillmentView["workflow"];
+  lifecycle?: ConstructionFulfillmentView["lifecycle"];
+  lifecycleError?: { code: string };
 };
 
 export type ConstructionFulfillmentList = {
@@ -259,6 +277,7 @@ export type CrossStoreTask = {
   sourceStoreId: string;
   executionStoreId: string;
   status: CrossStoreTaskStatus;
+  version: number;
   rejectionReason?: string | null;
   cancellationReason?: string | null;
   acceptanceRemark?: string | null;
@@ -270,11 +289,16 @@ export type CrossStoreTask = {
     id: string;
     orderNo: string;
     status: string;
+    lifecycleVersion: number;
     appointmentDate?: string | null;
     appointmentTimeSlot?: string | null;
     customer?: { id: string; name?: string | null; companyName?: string | null } | null;
     vehicle?: { id: string; carPlate?: string | null; carModel?: string | null } | null;
     amount?: { totalAmountCents: number; paidAmountCents: number; outstandingCents: number } | null;
+  };
+  lifecycle?: {
+    capabilities: Record<string, { visible: boolean; enabled: boolean; blockingReasonCodes: string[] }>;
+    actionImpactSummaries?: Record<string, string>;
   };
 };
 
@@ -316,18 +340,23 @@ export const constructionApi = {
   fulfillments: (query: ConstructionListQuery) =>
     request<ConstructionFulfillmentList>(`/construction/fulfillments${toQueryString(query)}`),
 
-  assignOrder: (orderId: string, payload: AssignOrderPayload) =>
+  assignOrder: (orderId: string, payload: AssignOrderPayload, command: LifecycleCommandOptions) =>
     request<unknown>(`/construction/orders/${orderId}/assign`, {
       method: "POST",
+      headers: lifecycleCommandHeaders(command),
       body: JSON.stringify(payload)
     }),
 
-  startOrder: (orderId: string) =>
-    request<unknown>(`/construction/orders/${orderId}/start`, { method: "POST" }),
+  startOrder: (orderId: string, command: LifecycleCommandOptions) =>
+    request<unknown>(`/construction/orders/${orderId}/start`, {
+      method: "POST",
+      headers: lifecycleCommandHeaders(command)
+    }),
 
-  completeOrder: (orderId: string, completedAt?: string) =>
+  completeOrder: (orderId: string, completedAt: string | undefined, command: LifecycleCommandOptions) =>
     request<unknown>(`/construction/orders/${orderId}/complete`, {
       method: "POST",
+      headers: lifecycleCommandHeaders(command),
       body: JSON.stringify({ completedAt })
     }),
 
@@ -337,6 +366,7 @@ export const constructionApi = {
       formData.set("file", payload.file);
       formData.set("stage", payload.stage);
       if (payload.takenAt) formData.set("takenAt", payload.takenAt);
+      if (payload.clientOperationId) formData.set("clientOperationId", payload.clientOperationId);
       return requestMultipart<unknown>(`/construction/records/${recordId}/photos`, formData);
     }
     return request<unknown>(`/construction/records/${recordId}/photos`, {
@@ -344,14 +374,16 @@ export const constructionApi = {
       body: JSON.stringify({
         stage: payload.stage,
         url: payload.url,
-        takenAt: payload.takenAt
+        takenAt: payload.takenAt,
+        clientOperationId: payload.clientOperationId
       })
     });
   },
 
-  qualityCheck: (recordId: string, payload: QualityCheckPayload) =>
+  qualityCheck: (recordId: string, payload: QualityCheckPayload, command: LifecycleCommandOptions) =>
     request<unknown>(`/construction/records/${recordId}/quality-check`, {
       method: "POST",
+      headers: lifecycleCommandHeaders(command),
       body: JSON.stringify(payload)
     }),
 
@@ -389,6 +421,7 @@ export const constructionApi = {
   createLeave: (payload: LeaveRequestPayload) =>
     request<unknown>("/construction/leaves", {
       method: "POST",
+      headers: payload.clientOperationId ? { "Idempotency-Key": payload.clientOperationId } : undefined,
       body: JSON.stringify(payload)
     }),
 
@@ -461,29 +494,32 @@ export const constructionApi = {
   crossStoreTask: (id: string) =>
     request<CrossStoreTask>(`/construction/cross-store/tasks/${id}`),
 
-  acceptCrossStoreTask: (id: string) =>
-    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}/accept`, { method: "POST" }),
+  acceptCrossStoreTask: (task: CrossStoreTask, command: LifecycleCommandOptions) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${task.id}/accept`, { method: "POST", headers: crossStoreCommandHeaders(task, command) }),
 
-  rejectCrossStoreTask: (id: string, reason: string) =>
-    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}/reject`, {
+  rejectCrossStoreTask: (task: CrossStoreTask, reason: string, command: LifecycleCommandOptions) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${task.id}/reject`, {
       method: "POST",
+      headers: crossStoreCommandHeaders(task, command),
       body: JSON.stringify({ reason })
     }),
 
-  cancelCrossStoreTask: (id: string, reason: string) =>
-    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}/cancel`, {
+  cancelCrossStoreTask: (task: CrossStoreTask, reason: string, command: LifecycleCommandOptions) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${task.id}/cancel`, {
       method: "POST",
+      headers: crossStoreCommandHeaders(task, command),
       body: JSON.stringify({ reason })
     }),
 
-  submitCrossStoreAcceptance: (id: string, remark: string) =>
-    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}/submit-acceptance`, {
+  submitCrossStoreAcceptance: (task: CrossStoreTask, remark: string, command: LifecycleCommandOptions) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${task.id}/submit-acceptance`, {
       method: "POST",
+      headers: crossStoreCommandHeaders(task, command),
       body: JSON.stringify({ remark })
     }),
 
-  acceptCrossStoreCompletion: (id: string) =>
-    request<CrossStoreTask>(`/construction/cross-store/tasks/${id}/source-accept`, { method: "POST" }),
+  acceptCrossStoreCompletion: (task: CrossStoreTask, command: LifecycleCommandOptions) =>
+    request<CrossStoreTask>(`/construction/cross-store/tasks/${task.id}/source-accept`, { method: "POST", headers: crossStoreCommandHeaders(task, command) }),
 
   crossStoreProductMappings: (sourceStoreId: string, executionStoreId: string) =>
     request<CrossStoreProductMapping[]>(
@@ -513,6 +549,41 @@ function toQueryString(query: Record<string, string | number | undefined>) {
   }
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
+}
+
+function lifecycleCommandHeaders(command: LifecycleCommandOptions) {
+  return {
+    "Idempotency-Key": command.commandId,
+    "X-Lifecycle-Version": String(command.expectedVersion)
+  };
+}
+
+function crossStoreCommandHeaders(task: CrossStoreTask, command: LifecycleCommandOptions) {
+  return { ...lifecycleCommandHeaders(command), "X-Task-Version": String(task.version) };
+}
+
+export function getLifecycleCommandId(
+  actorId: string,
+  storeId: string,
+  targetId: string,
+  commandType: string
+) {
+  const key = `mallbay:lifecycle-command:${actorId}:${storeId}:${targetId}:${commandType}`;
+  const existing = typeof window === "undefined" ? null : window.sessionStorage.getItem(key);
+  if (existing) return existing;
+  const commandId = globalThis.crypto?.randomUUID?.() ?? `cmd-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  if (typeof window !== "undefined") window.sessionStorage.setItem(key, commandId);
+  return commandId;
+}
+
+export function clearLifecycleCommandId(
+  actorId: string,
+  storeId: string,
+  targetId: string,
+  commandType: string
+) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(`mallbay:lifecycle-command:${actorId}:${storeId}:${targetId}:${commandType}`);
 }
 
 

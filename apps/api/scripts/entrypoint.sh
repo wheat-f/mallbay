@@ -10,5 +10,8 @@ echo "[entrypoint] Running Prisma migrations..."
 echo "[entrypoint] Running database invariant preflight..."
 node dist/prisma/preflight-db-invariants.js
 
+echo "[entrypoint] Running historical lifecycle data gate..."
+node dist/prisma/historical-lifecycle-gate.js
+
 echo "[entrypoint] Starting API server..."
 exec node /app/apps/api/dist/main.js

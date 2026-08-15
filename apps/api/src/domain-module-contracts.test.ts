@@ -19,6 +19,16 @@ test("platform and access seams delegate through stable contracts", async () => 
   assert.equal(persisted.length, 1);
   assert.equal((persisted[0] as { idempotencyKey?: string }).idempotencyKey, "tx-1");
 
+  const committedAudit = new AuditEventWriter({ record: () => { throw new Error("log sink unavailable"); } } as never);
+  const persistedDespiteLogFailure: unknown[] = [];
+  const committedResult = await committedAudit.writeTransactional(
+    { auditEvent: { create: async ({ data }: { data: unknown }) => { persistedDespiteLogFailure.push(data); } } },
+    { action: "TX_LOG_FAILURE", targetType: "test" }
+  );
+  assert.equal(committedResult.accepted, true);
+  assert.equal(committedResult.processLogAccepted, false);
+  assert.equal(persistedDespiteLogFailure.length, 1);
+
   const access = new AccessContext({
     getForUser: async (userId: string) => ({ userId }),
     authorize: async () => true,

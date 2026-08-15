@@ -4,7 +4,7 @@ import { App, Button, Card, Descriptions, Popconfirm, Space, Table, Tag, Typogra
 import { useMutation, useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { useParams } from "next/navigation";
-import { salesQuoteApi, type SalesQuoteRow } from "../../../../src/features/sales-quotes/api";
+import { clearQuoteConversionCommandId, getQuoteConversionCommandId, salesQuoteApi, type SalesQuoteRow } from "../../../../src/features/sales-quotes/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
 
@@ -16,6 +16,7 @@ const money = (value?: number | null) => value === undefined || value === null ?
 export default function SalesQuoteDetailPage() {
   const { id } = useParams<{ id: string }>();
   const storeId = useAuthStore((state) => state.user?.storeMember?.store.id);
+  const actorId = useAuthStore((state) => state.user?.id);
   const { message } = App.useApp();
   const query = useQuery({ queryKey: ["sales-quote", id, storeId], queryFn: () => salesQuoteApi.get(id, storeId!), enabled: Boolean(id && storeId) });
   const actionMutation = useMutation({
@@ -24,11 +25,11 @@ export default function SalesQuoteDetailPage() {
       if (action === "approve") return salesQuoteApi.approve(id, storeId!);
       if (action === "reject") return salesQuoteApi.reject(id, storeId!);
       if (action === "withdraw") return salesQuoteApi.withdraw(id, storeId!);
-      return salesQuoteApi.convertToOrder(id);
+      return salesQuoteApi.convertToOrder(id, getQuoteConversionCommandId(id, actorId!, storeId!));
     },
     onSuccess: (result, action) => {
       message.success("报价状态已更新");
-      if (action === "convert" && "orderId" in result) window.location.href = `/orders/${result.orderId}`;
+      if (action === "convert" && "orderId" in result) { clearQuoteConversionCommandId(id, actorId!, storeId!); window.location.href = `/orders/${result.orderId}`; }
       else query.refetch();
     },
     onError: (error: Error) => message.error(error.message)

@@ -15,6 +15,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { constructionApi, orderApi } from "../../../src/lib/api";
+import { clearLifecycleCommandId, getLifecycleCommandId } from "../../../src/features/construction/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import {
   getConstructionQualityResultLabel,
@@ -38,6 +39,7 @@ type OrderRow = {
   id: string;
   orderNo: string;
   status: string;
+  lifecycleVersion: number;
   appointmentDate?: string | null;
   appointmentTimeSlot?: string | null;
   constructionLocation?: string | null;
@@ -173,10 +175,14 @@ export default function ConstructionAssignmentsPage() {
       if (!selectedPendingOrder) {
         throw new Error("请先选择待派单订单");
       }
-      return constructionApi.assignOrder(selectedPendingOrder.id, { workerUserIds: selectedWorkerUserIds });
+      return constructionApi.assignOrder(selectedPendingOrder.id, { workerUserIds: selectedWorkerUserIds }, {
+        commandId: getLifecycleCommandId(user!.id, storeId!, selectedPendingOrder.id, "DISPATCH"),
+        expectedVersion: selectedOrder!.lifecycleVersion
+      });
     },
     onSuccess: async () => {
       if (selectedPendingOrderId) {
+        clearLifecycleCommandId(user!.id, storeId!, selectedPendingOrderId, "DISPATCH");
         clearDispatchDraft(selectedPendingOrderId);
       }
       message.success("派工已保存");

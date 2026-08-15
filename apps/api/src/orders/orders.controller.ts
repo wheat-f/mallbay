@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CreateOrderDto } from "./dto/create-order.dto";
@@ -23,8 +23,12 @@ export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
   @Post()
-  create(@Req() req: AuthRequest, @Body() dto: CreateOrderDto) {
-    return this.orders.create(req.user, dto);
+  create(
+    @Req() req: AuthRequest,
+    @Headers("idempotency-key") commandId: string | undefined,
+    @Body() dto: CreateOrderDto
+  ) {
+    return this.orders.create(req.user, commandId, dto);
   }
 
   @Get()
@@ -37,14 +41,25 @@ export class OrdersController {
     return this.orders.exportDetails(req.user, query);
   }
 
+  @Get("lifecycle/batch")
+  lifecycleBatch(@Req() req: AuthRequest, @Query("orderIds") rawOrderIds: string) {
+    return this.orders.lifecycleBatch(req.user, (rawOrderIds ?? "").split(",").filter(Boolean));
+  }
+
   @Get("historical-verification")
   listHistoricalVerification(@Req() req: AuthRequest, @Query("storeId") storeId: string, @Query("q") q?: string) {
     return this.orders.listHistoricalVerification(req.user, storeId, q);
   }
 
   @Post(":id/historical-verification")
-  markHistoricalVerified(@Req() req: AuthRequest, @Param("id") id: string, @Body() body: { note?: string }) {
-    return this.orders.markHistoricalVerified(req.user, id, body?.note);
+  markHistoricalVerified(
+    @Req() req: AuthRequest,
+    @Param("id") id: string,
+    @Headers("idempotency-key") commandId: string | undefined,
+    @Headers("x-lifecycle-version") expectedVersion: string | undefined,
+    @Body() body: { summary: string; factRefs: string[] }
+  ) {
+    return this.orders.markHistoricalVerified(req.user, id, body, { commandId, expectedVersion });
   }
 
   @Get(":id/audit-events")
@@ -55,6 +70,11 @@ export class OrdersController {
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.orders.detail(req.user, id);
+  }
+
+  @Get(":id/lifecycle")
+  lifecycle(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.orders.lifecycle(req.user, id);
   }
 
   @Post(":id/copy")
@@ -72,17 +92,19 @@ export class OrdersController {
   }
 
   @Post(":id/cancel")
-  cancelOrder(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ReturnOrderDto) {
-    return this.orders.cancelOrder(req.user, id, dto);
+  cancelOrder(@Req() req: AuthRequest, @Param("id") id: string, @Headers("idempotency-key") commandId: string | undefined, @Headers("x-lifecycle-version") expectedVersion: string | undefined, @Body() dto: ReturnOrderDto) {
+    return this.orders.cancelOrder(req.user, id, dto, { commandId, expectedVersion });
   }
 
   @Post(":id/return-to-pending")
   returnToPendingDispatch(
     @Req() req: AuthRequest,
     @Param("id") id: string,
+    @Headers("idempotency-key") commandId: string | undefined,
+    @Headers("x-lifecycle-version") expectedVersion: string | undefined,
     @Body() dto: ReturnOrderDto
   ) {
-    return this.orders.returnToPendingDispatch(req.user, id, dto);
+    return this.orders.returnToPendingDispatch(req.user, id, dto, { commandId, expectedVersion });
   }
 
   @Post(":id/amendment-requests")
@@ -110,8 +132,8 @@ export class OrdersController {
   }
 
   @Post(":id/final-delivery")
-  finalizeDelivery(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.orders.finalizeDelivery(req.user, id);
+  finalizeDelivery(@Req() req: AuthRequest, @Param("id") id: string, @Headers("idempotency-key") commandId: string | undefined, @Headers("x-lifecycle-version") expectedVersion: string | undefined) {
+    return this.orders.finalizeDelivery(req.user, id, { commandId, expectedVersion });
   }
 
   @Get(":id/payments")

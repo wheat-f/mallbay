@@ -750,6 +750,16 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum OrderLifecycleCommandStatus {
+  SUCCEEDED
+  REJECTED
+}
+
+enum OrderLifecycleVerificationStatus {
+  OPEN
+  RESOLVED
+}
+
 enum OrderAmendmentStatus {
   PENDING
   APPROVED
@@ -776,12 +786,18 @@ enum ConstructionTaskStatus {
   DISPATCHED
   IN_CONSTRUCTION
   COMPLETED
+  CANCELLED
 }
 
 enum ConstructionPhotoStage {
   BEFORE
   DURING
   AFTER
+}
+
+enum ConstructionEvidenceStatus {
+  APPLIED
+  REVOKED
 }
 
 enum QualityCheckResult {
@@ -1518,6 +1534,9 @@ model SalesQuote {
   validUntil                       DateTime
   approvedAt                       DateTime?
   convertedOrderId                 String?           @unique
+  idempotencyKey                   String?
+  idempotencyActorId               String?
+  requestFingerprint               String?
   appointmentDate                  DateTime?
   appointmentTimeSlot              String?
   constructionAddress              String?
@@ -1539,6 +1558,7 @@ model SalesQuote {
   @@index([executionStoreId, status, createdAt])
   @@index([customerId, createdAt])
   @@index([pricingCalculationId])
+  @@unique([storeId, idempotencyActorId, idempotencyKey])
 }
 
 model SalesQuoteItem {
@@ -1622,6 +1642,7 @@ model Order {
   appointmentDate      DateTime?
   appointmentTimeSlot  String?
   status               OrderStatus          @default(PENDING_DISPATCH)
+  lifecycleVersion     Int                  @default(1)
   remark               String?
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
@@ -1654,6 +1675,9 @@ model Order {
   receiptReversalAllocations CustomerReceiptReversalAllocation[]
   invoiceAllocations         InvoiceOrderAllocation[]
   crossStoreTask             CrossStoreConstructionTask?
+  lifecycleCommands          OrderLifecycleCommandRecord[]
+  lifecycleVersionChanges    OrderLifecycleVersionChange[]
+  lifecycleVerificationCases OrderLifecycleVerificationCase[]
 
   @@index([storeId, status])
   @@index([executionStoreId, status])
@@ -1661,6 +1685,66 @@ model Order {
   @@index([storeId, salesPersonId])
   @@index([customerId])
   @@index([vehicleId])
+}
+
+model OrderLifecycleCommandRecord {
+  id                 String                      @id @default(cuid())
+  orderId            String?
+  storeId            String
+  commandId          String
+  commandType        String
+  actorId            String
+  targetType         String
+  targetId           String
+  requestFingerprint String
+  expectedVersion    Int?
+  beforeVersion      Int?
+  afterVersion       Int?
+  status             OrderLifecycleCommandStatus
+  inputSummary       Json
+  resultSummary      Json?
+  createdAt          DateTime                    @default(now())
+  completedAt        DateTime?
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, commandId])
+  @@index([orderId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model OrderLifecycleVersionChange {
+  id            String   @id @default(cuid())
+  orderId       String
+  beforeVersion Int
+  afterVersion  Int
+  sourceType    String
+  sourceKey     String
+  sourceRefs    Json?
+  createdAt     DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, afterVersion])
+  @@unique([sourceType, sourceKey])
+  @@index([orderId, createdAt])
+}
+
+model OrderLifecycleVerificationCase {
+  id                String                           @id @default(cuid())
+  orderId           String
+  issueCodes        Json
+  status            OrderLifecycleVerificationStatus @default(OPEN)
+  detectedAt        DateTime                         @default(now())
+  detectedBy        String
+  resolutionSummary Json?
+  resolvedAt        DateTime?
+  resolvedBy        String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, status])
+  @@index([status, detectedAt])
 }
 
 model CrossStoreConstructionTask {
@@ -2180,6 +2264,9 @@ model ConstructionPhoto {
   stage        ConstructionPhotoStage
   url          String
   uploadedById String
+  clientOperationId String?           @unique
+  requestFingerprint String @default("")
+  status       ConstructionEvidenceStatus @default(APPLIED)
   takenAt      DateTime?
   createdAt    DateTime               @default(now())
 
@@ -2193,6 +2280,7 @@ model ConstructionPhoto {
 
 model LeaveRequest {
   id           String             @id @default(cuid())
+  clientOperationId String?        @unique
   storeId      String
   workerId     String
   startDate    DateTime           @db.Date
@@ -3260,6 +3348,7 @@ model SalesReturnDetail {
   sourceOutboundBatchId      String?
   inventoryBatchId           String?
   costStatus                 CostVerificationStatus?
+  verifiedUnitCostCents      Int?
   createdAt                  DateTime                  @default(now())
   updatedAt                  DateTime                  @updatedAt
 

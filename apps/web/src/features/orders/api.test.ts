@@ -28,7 +28,7 @@ test("orderApi.create posts JSON to /orders", async () => {
     constructionLocation: "IN_STORE",
     items: [{ productId: "product-1", quantity: 1, unitPriceCents: 5000000 }],
     laborCostCents: 200000
-  });
+  }, "command-order-1");
 
   assert.equal(capturedInput, "http://localhost:4001/orders");
   assert.equal(capturedInit?.method, "POST");
@@ -126,6 +126,43 @@ test("orderApi.updateCommercials patches order items amount and change reason", 
   });
 });
 
+test("orderApi records an allowlisted lifecycle page event without business form data", async () => {
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    capturedInit = init;
+    return {
+      ok: true,
+      json: async () => ({ accepted: true })
+    } as Response;
+  }) as typeof fetch;
+
+  await orderApi.recordLifecycleClientEvent({
+    event: "RESULT_UNKNOWN",
+    surface: "ORDER_CREATE",
+    commandType: "CREATE_ORDER"
+  });
+
+  assert.equal(capturedInit?.method, "POST");
+  assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
+    event: "RESULT_UNKNOWN",
+    surface: "ORDER_CREATE",
+    commandType: "CREATE_ORDER",
+    source: "WEB"
+  });
+});
+
+test("orderApi ignores lifecycle event transport failures so business actions are not blocked", async () => {
+  globalThis.fetch = (async () => {
+    throw new Error("offline");
+  }) as typeof fetch;
+
+  await orderApi.recordLifecycleClientEvent({
+    event: "VIEW_LATEST_VERSION",
+    surface: "CONSTRUCTION_OFFLINE",
+    commandType: "OFFLINE_SYNC"
+  });
+});
+
 test("orderApi.exportDetails requests the full filtered product detail endpoint", async () => {
   let capturedInput: RequestInfo | URL | undefined;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -167,10 +204,17 @@ test("orderApi.returnToPendingDispatch posts return reason", async () => {
     } as Response;
   }) as typeof fetch;
 
-  await orderApi.returnToPendingDispatch("order-1", { reason: "客户变更产品，退回修改" });
+  await orderApi.returnToPendingDispatch(
+    "order-1",
+    { reason: "客户变更产品，退回修改" },
+    { commandId: "command-order-1", expectedVersion: 3 }
+  );
 
   assert.equal(capturedInput, "http://localhost:4001/orders/order-1/return-to-pending");
   assert.equal(capturedInit?.method, "POST");
+  assert.equal((capturedInit?.headers as Record<string, string>)["Idempotency-Key"], "command-order-1");
+  assert.notEqual((capturedInit?.headers as Record<string, string>)["X-Request-Id"], "command-order-1");
+  assert.equal((capturedInit?.headers as Record<string, string>)["X-Lifecycle-Version"], "3");
   assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
     reason: "客户变更产品，退回修改"
   });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { OrderStatus, StorePosition, WarrantyStatus } from "@prisma/client";
+import { StorePosition, WarrantyStatus } from "@prisma/client";
 import { WarrantiesService } from "./warranties.service";
 
 const warrantyAccess = {
@@ -14,60 +14,6 @@ const warrantyAccess = {
     generatedAt: new Date().toISOString()
   })
 };
-
-test("WarrantiesService creates warranty from completed order with construction photos", async () => {
-  const writes: unknown[] = [];
-  const prisma = {
-    storeMember: { findUnique: async () => null },
-    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)
-  };
-  const tx = {
-    order: {
-      findUnique: async () => ({
-        id: "order-1",
-        storeId: "store-1",
-        customerId: "customer-1",
-        vehicleId: "vehicle-1",
-        status: OrderStatus.COMPLETED,
-        items: [{ product: { name: "PPF", warrantyYears: 5 } }],
-        constructionRecord: {
-          qualityResult: "PASS",
-          photos: [{ id: "photo-1", url: "https://oss/photo-before.jpg" }]
-        }
-      }),
-      update: async (args: unknown) => writes.push(args)
-    },
-    warranty: {
-      findUnique: async () => null,
-      create: async (args: unknown) => {
-        writes.push(args);
-        return {
-          id: "warranty-1",
-          warrantyNo: "WAR202606010001",
-          status: WarrantyStatus.ACTIVE
-        };
-      }
-    }
-  };
-  const service = new WarrantiesService(prisma as never, warrantyAccess as never);
-
-  const result = await service.createFromOrder(
-    {
-      id: "scheduler-1",
-      isAuditor: false,
-      storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
-    },
-    {
-      orderId: "order-1",
-      scope: "整车漆面保护膜",
-      startDate: "2026-06-01"
-    }
-  );
-
-  assert.equal(result.id, "warranty-1");
-  assert.equal(JSON.stringify(writes).includes("photo-before.jpg"), true);
-  assert.equal(JSON.stringify(writes).includes(WarrantyStatus.PENDING_ACTIVATION), true);
-});
 
 test("WarrantiesService looks up active warranty by warranty number for customer query", async () => {
   const prisma = {
@@ -85,50 +31,6 @@ test("WarrantiesService looks up active warranty by warranty number for customer
 
   assert.equal(result?.warrantyNo, "WAR202606010001");
   assert.equal(result?.status, WarrantyStatus.ACTIVE);
-});
-
-test("WarrantiesService returns the existing warranty for an idempotent retry", async () => {
-  const existing = {
-    id: "warranty-1",
-    orderId: "order-1",
-    warrantyNo: "WAR202606010001",
-    status: WarrantyStatus.ACTIVE,
-    photos: []
-  };
-  const prisma = {
-    storeMember: { findUnique: async () => null },
-    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({
-      order: {
-        findUnique: async () => ({
-          id: "order-1",
-          storeId: "store-1",
-          customerId: "customer-1",
-          vehicleId: "vehicle-1",
-          status: OrderStatus.WARRANTIED,
-          items: [],
-          constructionRecord: { qualityResult: "PASS", photos: [] }
-        })
-      },
-      warranty: {
-        findUnique: async () => existing,
-        create: async () => {
-          throw new Error("不应重复创建质保卡");
-        }
-      }
-    })
-  };
-  const service = new WarrantiesService(prisma as never, warrantyAccess as never);
-
-  const result = await service.createFromOrder(
-    {
-      id: "scheduler-1",
-      isAuditor: false,
-      storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
-    },
-    { orderId: "order-1", scope: "整车漆面保护膜", startDate: "2026-06-01" }
-  );
-
-  assert.deepEqual(result, existing);
 });
 
 test("WarrantiesService lists warranties with order customer and vehicle summary", async () => {

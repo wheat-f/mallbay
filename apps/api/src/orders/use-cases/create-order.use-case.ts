@@ -7,7 +7,7 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, CrossStoreTaskStatus, CustomerContactRole, CustomerVehicleStatus, DictionaryStatus, NotificationType, OrderStatus, Prisma, ProductStatus, ProductUnit, StorePosition, StoreStatus } from "@prisma/client";
+import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, CrossStoreTaskStatus, CustomerContactRole, CustomerVehicleStatus, DictionaryStatus, NotificationType, OrderStatus, PaymentDirection, PaymentRecordType, Prisma, ProductStatus, ProductUnit, StorePosition, StoreStatus } from "@prisma/client";
 import { type UserWithStoreMember } from "../../permissions/domain/access-types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AccessContext } from "../../permissions/domain/access-context";
@@ -48,6 +48,16 @@ export class CreateOrderUseCase {
   }
 
   async execute(user: UserWithStoreMember, dto: CreateOrderDto, options: CreateOrderOptions = {}) {
+    return this.executeWithin(this.prisma, user, dto, options);
+  }
+
+  /** Internal implementation entry used by OrderLifecycle's transaction. */
+  async executeWithin(
+    prisma: Pick<PrismaService, "$transaction"> | Prisma.TransactionClient,
+    user: UserWithStoreMember,
+    dto: CreateOrderDto,
+    options: CreateOrderOptions = {}
+  ) {
     if (!await this.accessContext.can(user.id, "orders", "write", { storeId: dto.storeId, ownerId: user.id })) {
       throw new ForbiddenException("无权限");
     }
@@ -81,7 +91,7 @@ export class CreateOrderUseCase {
       throw new BadRequestException("价格试算服务不可用，请重新试算");
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const execute = async (tx: Prisma.TransactionClient) => {
       const [sourceStore, executionStore] = isCrossStore
         ? await Promise.all([
           tx.store.findUnique({
@@ -379,7 +389,7 @@ export class CreateOrderUseCase {
       });
 
       if (dto.deposit && dto.deposit.amountCents > 0) {
-        await tx.orderPayment.create({
+        const initialPayment = await tx.orderPayment.create({
           data: {
             orderId: order.id,
             accountId: dto.deposit.accountId,
@@ -388,6 +398,21 @@ export class CreateOrderUseCase {
             paidAt: new Date(dto.deposit.paidAt),
             createdById: user.id,
             idempotencyKey: "INITIAL_DEPOSIT"
+          }
+        });
+        await tx.paymentRecord.create({
+          data: {
+            storeId: dto.storeId,
+            accountId: dto.deposit.accountId,
+            type: PaymentRecordType.ORDER_PAYMENT,
+            direction: PaymentDirection.INCOME,
+            amountCents: dto.deposit.amountCents,
+            sourceType: "ORDER_PAYMENT",
+            sourceId: initialPayment.id,
+            idempotencyKey: `ORDER_INITIAL_DEPOSIT:${order.id}`,
+            note: "订单初始定金",
+            createdById: user.id,
+            occurredAt: new Date(dto.deposit.paidAt)
           }
         });
       }
@@ -414,7 +439,10 @@ export class CreateOrderUseCase {
       }
 
       return crossStoreTask ? { ...order, crossStoreTask } : order;
-    });
+    };
+    return "$transaction" in prisma
+      ? prisma.$transaction(execute)
+      : execute(prisma as Prisma.TransactionClient);
   }
 
   private async reserveDailyCapacity(

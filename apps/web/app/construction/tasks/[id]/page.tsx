@@ -16,6 +16,7 @@ import { getWorkerPhotoStageLabel, getWorkerTaskStatusLabel } from "@mallbay/sha
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import type { ConstructionMaterialItem, ConstructionOrderMaterials, ConstructionFulfillmentView } from "../../../../src/features/construction/api";
+import { clearLifecycleCommandId, getLifecycleCommandId } from "../../../../src/features/construction/api";
 import { constructionApi } from "../../../../src/lib/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
@@ -103,7 +104,8 @@ export default function ConstructionTaskDetailPage() {
   );
   const hasLockedMaterials = (materialData?.summary.allocatedBatches ?? 0) > 0;
   const materialPickupState = getMaterialPickupState(materialData, materialsQuery.isLoading, pendingAllocationIds.length);
-  const completeBlockReason = getCompleteBlockReason(record?.status, pendingUploads, materialPickupState);
+  const completeCapability = fulfillment?.lifecycle.capabilities.completeConstruction;
+  const completeBlockReason = getAuthoritativeCompleteBlockReason(completeCapability, pendingUploads, materialPickupState);
 
   const invalidateTask = async () => {
     await Promise.all([
@@ -127,8 +129,12 @@ export default function ConstructionTaskDetailPage() {
   });
 
   const startMutation = useMutation({
-    mutationFn: () => constructionApi.startOrder(params.id),
+    mutationFn: () => constructionApi.startOrder(params.id, {
+      commandId: getLifecycleCommandId(user!.id, storeId!, params.id, "START_CONSTRUCTION"),
+      expectedVersion: fulfillment!.order.lifecycleVersion
+    }),
     onSuccess: async () => {
+      clearLifecycleCommandId(user!.id, storeId!, params.id, "START_CONSTRUCTION");
       message.success("已开工");
       await invalidateTask();
     },
@@ -136,8 +142,12 @@ export default function ConstructionTaskDetailPage() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: () => constructionApi.completeOrder(params.id, new Date().toISOString()),
+    mutationFn: () => constructionApi.completeOrder(params.id, new Date().toISOString(), {
+      commandId: getLifecycleCommandId(user!.id, storeId!, params.id, "COMPLETE_CONSTRUCTION"),
+      expectedVersion: fulfillment!.order.lifecycleVersion
+    }),
     onSuccess: async () => {
+      clearLifecycleCommandId(user!.id, storeId!, params.id, "COMPLETE_CONSTRUCTION");
       message.success("已完工");
       await invalidateTask();
     },
@@ -157,11 +167,11 @@ export default function ConstructionTaskDetailPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
-  const uploadStagePhoto = async (stage: PhotoStage, file: File, title: string) => {
+  const uploadStagePhoto = async (stage: PhotoStage, file: File, title: string, clientOperationId: string) => {
     if (!record) {
       throw new Error("未找到该施工任务");
     }
-    await constructionApi.uploadPhoto(record.id, { stage, file });
+    await constructionApi.uploadPhoto(record.id, { stage, file, clientOperationId });
     message.success(`${title}已上传`);
     await invalidateTask();
   };
@@ -194,7 +204,7 @@ export default function ConstructionTaskDetailPage() {
           </section>
 
           <section className="worker-task-progress" aria-label="施工阶段进度">
-            {getTaskSteps(record.status, pendingUploads, materialPickupState).map((step) => (
+            {getTaskSteps(fulfillment?.lifecycle.currentStage, pendingUploads, materialPickupState).map((step) => (
               <div key={step.label} className={step.state === "done" ? "is-done" : step.state === "active" ? "is-active" : undefined}>
                 <i>{step.state === "done" ? <CheckOutlined /> : step.index}</i>
                 <span>{step.label}</span>
@@ -203,9 +213,9 @@ export default function ConstructionTaskDetailPage() {
           </section>
 
           <section className="worker-task-detail-actions" aria-label="施工执行操作">
-            {canStartTask(record.status) ? (
-              <Button icon={<PlayCircleOutlined />} loading={startMutation.isPending} onClick={() => startMutation.mutate()}>
-                开始验车
+            {fulfillment?.lifecycle.capabilities.startConstruction?.visible ? (
+              <Button icon={<PlayCircleOutlined />} disabled={!fulfillment.lifecycle.capabilities.startConstruction.enabled} loading={startMutation.isPending} onClick={() => startMutation.mutate()}>
+                开始施工
               </Button>
             ) : null}
             <Button
@@ -216,11 +226,11 @@ export default function ConstructionTaskDetailPage() {
             >
               {pendingAllocationIds.length ? "领取物料" : hasLockedMaterials ? "物料已领取" : "无需领料"}
             </Button>
-            {canCompleteTask(record.status) ? (
+            {completeCapability?.visible ? (
               <Button
                 type="primary"
                 icon={<CheckOutlined />}
-                disabled={Boolean(completeBlockReason)}
+                disabled={!completeCapability.enabled || Boolean(completeBlockReason)}
                 loading={completeMutation.isPending}
                 onClick={() => completeMutation.mutate()}
               >
@@ -355,7 +365,8 @@ export default function ConstructionTaskDetailPage() {
                           showUploadList={false}
                           customRequest={async ({ file, onError, onSuccess }) => {
                             try {
-                              await uploadStagePhoto(item.stage, file as File, item.title);
+                              const clientOperationId = globalThis.crypto?.randomUUID?.() ?? `photo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                              await uploadStagePhoto(item.stage, file as File, item.title, clientOperationId);
                               onSuccess?.("ok");
                             } catch (error) {
                               onError?.(error as Error);
@@ -410,20 +421,22 @@ function formatNullableDate(value?: string | null) {
   return value ? value.slice(0, 16).replace("T", " ") : "暂未记录";
 }
 
-function getTaskSteps(status: string, pendingUploads: number, materialPickupState: MaterialPickupState) {
+function getTaskSteps(stage: string | undefined, pendingUploads: number, materialPickupState: MaterialPickupState) {
+  const inConstruction = stage === "IN_CONSTRUCTION" || stage === "REWORKING";
+  const constructionCompleted = ["PENDING_QUALITY", "PENDING_BALANCE", "PENDING_DELIVERY", "COMPLETED"].includes(stage ?? "");
   return [
     { index: 1, label: "接单", state: "done" },
     {
       index: 2,
       label: "领取物料",
-      state: materialPickupState.state === "done" ? "done" : status === "IN_CONSTRUCTION" ? "active" : "pending"
+      state: materialPickupState.state === "done" || inConstruction || constructionCompleted ? "done" : "active"
     },
     {
       index: 3,
       label: "照片凭证",
-      state: status === "COMPLETED" || pendingUploads === 0 ? "done" : status === "IN_CONSTRUCTION" ? "active" : "pending"
+      state: constructionCompleted || pendingUploads === 0 ? "done" : inConstruction ? "active" : "pending"
     },
-    { index: 4, label: "已完成", state: status === "COMPLETED" && pendingUploads === 0 ? "done" : "pending" }
+    { index: 4, label: "已完成", state: stage === "COMPLETED" ? "done" : constructionCompleted ? "active" : "pending" }
   ];
 }
 
@@ -448,12 +461,20 @@ function getMaterialPickupState(
   return { state: "done", label: "已领料", color: "success" };
 }
 
-function getCompleteBlockReason(
-  status: string | undefined,
+function getAuthoritativeCompleteBlockReason(
+  capability: { visible: boolean; enabled: boolean; blockingReasonCodes: string[] } | undefined,
   pendingUploads: number,
   materialPickupState: MaterialPickupState
 ) {
-  if (status !== "IN_CONSTRUCTION") return "";
+  if (!capability) return "履约能力加载中";
+  if (!capability.enabled && capability.blockingReasonCodes.length > 0) {
+    const labels: Record<string, string> = {
+      MATERIAL_PICKUP_REQUIRED: "请先领取已锁定的施工物料",
+      ORDER_NOT_IN_CONSTRUCTION: "当前订单尚未进入施工中",
+      HISTORICAL_VERIFICATION_REQUIRED: "历史履约事实待核验"
+    };
+    return capability.blockingReasonCodes.map((code) => labels[code] ?? code).join("、");
+  }
   if (materialPickupState.state === "pending") return "请先领取已锁定的施工物料";
   if (materialPickupState.state === "loading") return "物料状态加载中，请稍后提交完工";
   if (pendingUploads > 0) return "请先补齐必传施工照片后再提交完工";
@@ -470,12 +491,4 @@ function getDictionaryOptions(dictionaries: DictionaryItem[], code: string) {
   return (dictionaries.find((item) => item.code === code && item.status === "ACTIVE")?.dictionaryItems ?? [])
     .filter((item) => item.status === "ACTIVE")
     .map((item) => ({ value: item.code, label: item.name }));
-}
-
-function canStartTask(status: string) {
-  return status === "DISPATCHED" || status === "PENDING_DISPATCH";
-}
-
-function canCompleteTask(status: string) {
-  return status === "IN_CONSTRUCTION";
 }

@@ -165,7 +165,7 @@ test("create order page saves and restores the local draft", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
   assert.match(pageSource, /saveCreateOrderDraft\(localStorage/);
-  assert.match(pageSource, /loadCreateOrderDraft\(localStorage, storeId\)/);
+  assert.match(pageSource, /loadCreateOrderDraft\(localStorage, storeId, user\.id\)/);
   assert.match(pageSource, /form\.setFieldsValue\(\{\s*\.\.\.draft\.values,/);
   assert.match(pageSource, /draft\.values\.suggestedConstructionChargeYuan \?\? draft\.values\.suggestedLaborCostYuan/);
   assert.doesNotMatch(pageSource, /draft\.values\.suggestedConstructionChargeYuan \?\? draft\.values\.suggestedLaborCostYuan \?\? systemSuggestedConstructionChargeYuan/);
@@ -202,7 +202,7 @@ test("create order page separates system suggested construction charge from manu
   assert.match(pageSource, /readOnly/);
   assert.match(pageSource, /label="本单施工收费（元）"/);
   assert.doesNotMatch(pageSource, /使用系统建议/);
-  assert.match(pageSource, /onFinish=\{\(values\) => createMutation\.mutate\(values\)\}/);
+  assert.match(pageSource, /createMutation\.mutate\(values\);/);
   assert.doesNotMatch(pageSource, /createMutation\.mutate\(\{ \.\.\.values, suggestedConstructionChargeYuan \}\)/);
 });
 

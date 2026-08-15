@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
+import path from "node:path";
 import { CustomerAccount } from "./customers/domain/customer-account";
 import { SettlementView } from "./customer-settlements/domain/settlement-view";
 import { FinancialDocumentQuery } from "./finance/domain/financial-document-query";
@@ -21,6 +23,9 @@ import { FinanceModule } from "./finance/finance.module";
 import { FinanceQueryService } from "./finance/finance-query.service";
 import { ReportsModule } from "./reports/reports.module";
 import { ReportsService } from "./reports/reports.service";
+import { OrdersModule } from "./orders/orders.module";
+import { OrderLifecycle } from "./orders/domain/order-lifecycle";
+import { CreateOrderUseCase } from "./orders/use-cases/create-order.use-case";
 
 test("P1/P2 module seams delegate business calls without exposing implementations", async () => {
   const pricing = new PricingDecision({
@@ -141,6 +146,37 @@ test("deep modules do not re-export compatibility implementations", () => {
   assert.equal(exported(ReportsModule).has(ReportsService), false);
 });
 
+test("OrdersModule exposes only OrderLifecycle for lifecycle writes", () => {
+  const exports = new Set((Reflect.getMetadata("exports", OrdersModule) ?? []) as unknown[]);
+  assert.equal(exports.has(OrderLifecycle), true);
+  assert.equal(exports.has(CreateOrderUseCase), false);
+});
+
+test("production source keeps CreateOrderUseCase behind the OrderLifecycle seam", () => {
+  const sourceRoot = path.resolve(__dirname);
+  const allowed = new Set([
+    path.join(sourceRoot, "orders", "domain", "order-lifecycle.ts"),
+    path.join(sourceRoot, "orders", "orders.module.ts"),
+    path.join(sourceRoot, "orders", "use-cases", "create-order.use-case.ts")
+  ]);
+  const violations: string[] = [];
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolute);
+        continue;
+      }
+      if (!entry.name.endsWith(".ts") || entry.name.endsWith(".test.ts")) continue;
+      const source = readFileSync(absolute, "utf8");
+      if (source.includes("CreateOrderUseCase") && !allowed.has(absolute)) violations.push(path.relative(sourceRoot, absolute));
+      if (source.includes("registerConstructionHandler") || /orderLifecycle\s*\?/.test(source)) violations.push(path.relative(sourceRoot, absolute));
+    }
+  };
+  visit(sourceRoot);
+  assert.deepEqual(violations, []);
+});
+
 test("ProcurementFlow exposes the purchase seam for receipt operations", async () => {
   const flow = new ProcurementFlow({
     receivePurchaseItem: async (_user: unknown, itemId: string, input: unknown) => ({ itemId, input })
@@ -192,31 +228,8 @@ test("InventoryCatalog owns inventory and supplier master-data access", async ()
   ]);
 });
 
-test("ConstructionFulfillment exposes lifecycle and cross-store acceptance commands", async () => {
-  const calls: string[] = [];
-  const fulfillment = new ConstructionFulfillment(
-    {
-      assignOrder: async () => { calls.push("assign"); return { id: "order-1" }; },
-      completeOrderForOrder: async () => { calls.push("complete"); return { id: "order-1" }; },
-      uploadPhoto: async () => { calls.push("evidence"); return { id: "photo-1" }; },
-      syncOfflineOperations: async () => { calls.push("offline"); return { accepted: 1 }; }
-    } as never,
-    {
-      completeSourceAcceptance: async (_user: unknown, id: string) => { calls.push(`accept:${id}`); return { id }; }
-    } as never
-  );
-
-  await fulfillment.assign({} as never, "order-1", {} as never);
-  await fulfillment.complete({} as never, "order-1", {} as never);
-  await fulfillment.recordEvidence({} as never, "record-1", {} as never);
-  await fulfillment.syncOffline({} as never, {} as never);
-  await fulfillment.acceptCrossStoreBySource({} as never, "task-1");
-
-  assert.deepEqual(calls, ["assign", "complete", "evidence", "offline", "accept:task-1"]);
-});
-
 test("ConstructionFulfillment returns a stable task view without exposing Prisma records", async () => {
-  const fulfillment = new ConstructionFulfillment({} as never, {} as never, {
+  const facts = {
     order: {
       findUnique: async () => ({
         id: "order-1",
@@ -244,7 +257,11 @@ test("ConstructionFulfillment returns a stable task view without exposing Prisma
         warranty: null
       })
     }
-  } as never, undefined, { can: async () => true } as never);
+  };
+  const fulfillment = new ConstructionFulfillment({} as never, {} as never, {
+    getLifecycle: () => ({ currentStage: "IN_CONSTRUCTION", paymentStatus: "PAID", inventoryStatus: "NONE", qualityStatus: "NOT_CHECKED", warrantyStatus: "NONE", blockingReasons: [], capabilities: { canCollectBalance: false, canGenerateWarranty: false, canStartRework: false, canCompleteOrder: false } }),
+    getAuthoritativeLifecycle: async () => ({ orderId: "order-1", lifecycleVersion: 1, currentStage: "IN_CONSTRUCTION", blockingReasonCodes: [], capabilities: {} })
+  } as never, facts as never, { can: async () => true } as never);
 
   const view = await fulfillment.getFulfillmentView({ id: "auditor-1", isAuditor: true } as never, "order-1");
   assert.equal(view.order.executionStoreId, "store-1");
@@ -270,6 +287,7 @@ test("ConstructionFulfillment maps assignment records into a stable fulfillment 
         storeId: "source-store-1",
         executionStoreId: "execution-store-1",
         status: "IN_CONSTRUCTION",
+        lifecycleVersion: 1,
         appointmentDate: new Date("2026-08-09T00:00:00.000Z"),
         appointmentTimeSlot: "09:00-10:00",
         constructionLocation: "STORE",
@@ -280,7 +298,10 @@ test("ConstructionFulfillment maps assignment records into a stable fulfillment 
         warranty: null
       }
     }]
-  } as never, {} as never);
+  } as never, {} as never, {
+    getLifecycle: () => ({ currentStage: "IN_CONSTRUCTION", paymentStatus: "PAID", inventoryStatus: "NONE", qualityStatus: "NOT_CHECKED", warrantyStatus: "NONE", blockingReasons: [], capabilities: { canCollectBalance: false, canGenerateWarranty: false, canStartRework: false, canCompleteOrder: false } }),
+    listAuthoritativeLifecycle: async () => ({ "order-1": { ok: true, value: { orderId: "order-1", lifecycleVersion: 1, currentStage: "IN_CONSTRUCTION", blockingReasonCodes: [], capabilities: {} } } })
+  } as never, { order: { findMany: async () => [] } } as never, { can: async () => true } as never);
 
   const result = await fulfillment.listFulfillments({ id: "worker-1" } as never, { storeId: "execution-store-1" } as never);
   assert.equal(result.items.length, 1);
@@ -291,6 +312,7 @@ test("ConstructionFulfillment maps assignment records into a stable fulfillment 
     storeId: "source-store-1",
     executionStoreId: "execution-store-1",
     status: "IN_CONSTRUCTION",
+    lifecycleVersion: 1,
     constructionStatus: "IN_CONSTRUCTION",
     appointmentDate: "2026-08-09T00:00:00.000Z",
     appointmentTimeSlot: "09:00-10:00",
@@ -299,10 +321,26 @@ test("ConstructionFulfillment maps assignment records into a stable fulfillment 
     vehicle: { carPlate: "京A00001", carModel: "车型", carColor: "黑" },
     assignments: [{ workerUserId: "worker-1" }],
     photoCount: 1,
-    workflow: result.items[0].workflow
+    workflow: result.items[0].workflow,
+    lifecycle: result.items[0].lifecycle
   });
   assert.equal(result.items[0].workflow.currentStage, "IN_CONSTRUCTION");
   assert.equal(typeof result.generatedAt, "string");
+});
+
+test("ConstructionFulfillment keeps transport pass-through operations out of its public seam", () => {
+  for (const method of [
+    "listAssignments",
+    "recordEvidence",
+    "qualityHistory",
+    "getMaterials",
+    "verifyMaterialBatch",
+    "pickupMaterials",
+    "recordMaterialLoss",
+    "syncOffline"
+  ]) {
+    assert.equal(typeof (ConstructionFulfillment.prototype as unknown as Record<string, unknown>)[method], "undefined", `${method} must stay on its implementation adapter`);
+  }
 });
 
 test("Finance owns customer cash-fact writes and preserves the business idempotency key", async () => {

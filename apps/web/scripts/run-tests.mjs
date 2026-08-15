@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { access, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join, relative } from 'node:path';
 
@@ -26,7 +26,10 @@ if (testFiles.length === 0) {
   throw new Error('未找到 Web 测试文件');
 }
 
-const tsxCli = join(workspaceRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const localTsxCli = join(workspaceRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const rootTsxCli = join(workspaceRoot, '..', '..', 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const virtualStoreTsxCli = await findVirtualStoreTsxCli();
+const tsxCli = await firstExistingPath([localTsxCli, virtualStoreTsxCli, rootTsxCli]);
 const child = spawn(
   process.execPath,
   [
@@ -49,3 +52,31 @@ child.once('exit', (code, signal) => {
   if (signal) process.exitCode = 1;
   else process.exitCode = code ?? 1;
 });
+
+async function firstExistingPath(paths) {
+  for (const path of paths) {
+    try {
+      await access(path);
+      return path;
+    } catch {
+      // Try the next workspace layout.
+    }
+  }
+  throw new Error(`未找到 tsx CLI：${paths.join(', ')}`);
+}
+
+async function findVirtualStoreTsxCli() {
+  const virtualStore = join(workspaceRoot, '..', '..', 'node_modules', '.pnpm');
+  try {
+    const entries = await readdir(virtualStore);
+    const packageDir = entries
+      .filter((entry) => entry.startsWith('tsx@'))
+      .sort()
+      .at(-1);
+    return packageDir
+      ? join(virtualStore, packageDir, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+      : join(virtualStore, 'tsx', 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  } catch {
+    return join(virtualStore, 'tsx', 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  }
+}

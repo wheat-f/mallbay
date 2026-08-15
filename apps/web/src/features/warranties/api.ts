@@ -1,22 +1,9 @@
 import type { WarrantySummary } from "@mallbay/shared";
 import { request } from "../../lib/request";
 
-export type CreateWarrantyPayload = {
-  orderId: string;
-  scope: string;
-  startDate?: string;
-  endDate?: string;
-};
-
 export const warrantiesApi = {
   list: (storeId: string) =>
     request<WarrantySummary[]>(`/warranties${toQueryString({ storeId })}`),
-
-  createFromOrder: (payload: CreateWarrantyPayload) =>
-    request<WarrantySummary>("/warranties", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
 
   lookup: (warrantyNo: string) =>
     request<WarrantySummary>(`/warranties/lookup${toQueryString({ no: warrantyNo })}`, { auth: false }),

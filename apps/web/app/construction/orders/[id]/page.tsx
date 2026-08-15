@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { constructionApi } from "../../../../src/lib/api";
 import type { ConstructionFulfillmentView } from "../../../../src/features/construction/api";
+import { clearLifecycleCommandId, getLifecycleCommandId } from "../../../../src/features/construction/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 import {
   getConstructionPhotoStageLabel,
@@ -98,9 +99,13 @@ export default function ConstructionOrderDetailPage() {
       if (!record) {
         throw new Error("施工记录待生成，暂不能保存质检结果");
       }
-      return constructionApi.qualityCheck(record.id, values);
+      return constructionApi.qualityCheck(record.id, values, {
+        commandId: getLifecycleCommandId(user!.id, storeId!, params.id, "QUALITY_CHECK"),
+        expectedVersion: fulfillment!.order.lifecycleVersion
+      });
     },
     onSuccess: async () => {
+      clearLifecycleCommandId(user!.id, storeId!, params.id, "QUALITY_CHECK");
       message.success("质检结果已保存");
       qualityForm.resetFields();
       await queryClient.invalidateQueries({ queryKey: ["construction-order", storeId, params.id] });

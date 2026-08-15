@@ -6,6 +6,7 @@ import { CheckOutlined, CloseOutlined, LinkOutlined, PlusOutlined, StopOutlined 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { constructionApi, productApi, storeApi } from "../../../src/lib/api";
+import { clearLifecycleCommandId, getLifecycleCommandId } from "../../../src/features/construction/api";
 import type { CrossStoreProductMapping, CrossStoreTask, CrossStoreTaskScope, CrossStoreTaskStatus } from "../../../src/features/construction/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 
@@ -100,21 +101,31 @@ export default function CrossStoreConstructionPage() {
   const invalidateTasks = () => queryClient.invalidateQueries({ queryKey: ["cross-store-tasks", storeId] });
   const taskMutation = useMutation({
     mutationFn: async ({ kind, task, reason }: { kind: ActionModal extends infer _T ? "reject" | "cancel" | "submit" : never; task: CrossStoreTask; reason: string }) => {
-      if (kind === "reject") return constructionApi.rejectCrossStoreTask(task.id, reason);
-      if (kind === "cancel") return constructionApi.cancelCrossStoreTask(task.id, reason);
-      return constructionApi.submitCrossStoreAcceptance(task.id, reason);
+      const command = { commandId: getLifecycleCommandId(user!.id, storeId!, task.id, kind), expectedVersion: task.order.lifecycleVersion };
+      if (kind === "reject") return constructionApi.rejectCrossStoreTask(task, reason, command);
+      if (kind === "cancel") return constructionApi.cancelCrossStoreTask(task, reason, command);
+      return constructionApi.submitCrossStoreAcceptance(task, reason, command);
     },
-    onSuccess: async () => { setActionModal(null); actionForm.resetFields(); await invalidateTasks(); message.success("操作已提交"); },
+    onSuccess: async (_result, variables) => {
+      clearLifecycleCommandId(user!.id, storeId!, variables.task.id, variables.kind);
+      setActionModal(null); actionForm.resetFields(); await invalidateTasks(); message.success("操作已提交");
+    },
     onError: (error: Error) => message.error(error.message)
   });
   const acceptMutation = useMutation({
-    mutationFn: (task: CrossStoreTask) => constructionApi.acceptCrossStoreTask(task.id),
-    onSuccess: async () => { await invalidateTasks(); message.success("已接受协作任务"); },
+    mutationFn: (task: CrossStoreTask) => constructionApi.acceptCrossStoreTask(task, { commandId: getLifecycleCommandId(user!.id, storeId!, task.id, "accept"), expectedVersion: task.order.lifecycleVersion }),
+    onSuccess: async (_result, task) => {
+      clearLifecycleCommandId(user!.id, storeId!, task.id, "accept");
+      await invalidateTasks(); message.success("已接受协作任务");
+    },
     onError: (error: Error) => message.error(error.message)
   });
   const sourceAcceptMutation = useMutation({
-    mutationFn: (task: CrossStoreTask) => constructionApi.acceptCrossStoreCompletion(task.id),
-    onSuccess: async () => { await invalidateTasks(); message.success("已完成来源门店验收"); },
+    mutationFn: (task: CrossStoreTask) => constructionApi.acceptCrossStoreCompletion(task, { commandId: getLifecycleCommandId(user!.id, storeId!, task.id, "source-accept"), expectedVersion: task.order.lifecycleVersion }),
+    onSuccess: async (_result, task) => {
+      clearLifecycleCommandId(user!.id, storeId!, task.id, "source-accept");
+      await invalidateTasks(); message.success("已完成来源门店验收");
+    },
     onError: (error: Error) => message.error(error.message)
   });
   const mappingMutation = useMutation({
@@ -147,13 +158,14 @@ export default function CrossStoreConstructionPage() {
     { title: "订单金额", key: "amount", render: (_: unknown, task: CrossStoreTask) => task.order.amount ? `¥${(task.order.amount.totalAmountCents / 100).toFixed(2)}` : "—" },
     { title: "状态", key: "status", render: (_: unknown, task: CrossStoreTask) => <Tag color={statusColors[task.status]}>{statusLabels[task.status]}</Tag> },
     { title: "操作", key: "actions", render: (_: unknown, task: CrossStoreTask) => <Space wrap>
-      {scope === "EXECUTION" && task.status === "PENDING_ACCEPTANCE" && <><Button size="small" type="primary" icon={<CheckOutlined />} onClick={() => acceptMutation.mutate(task)}>接受</Button><Button size="small" danger icon={<CloseOutlined />} onClick={() => { setActionModal({ kind: "reject", task }); actionForm.resetFields(); }}>拒绝</Button></>}
-      {scope === "SOURCE" && !["COMPLETED", "CANCELLED", "IN_CONSTRUCTION", "PENDING_SOURCE_ACCEPTANCE"].includes(task.status) && <Button size="small" danger icon={<StopOutlined />} onClick={() => { setActionModal({ kind: "cancel", task }); actionForm.resetFields(); }}>取消协作</Button>}
-      {scope === "EXECUTION" && ["DISPATCHED", "IN_CONSTRUCTION"].includes(task.status) && <Button size="small" type="primary" onClick={() => { setActionModal({ kind: "submit", task }); actionForm.resetFields(); }}>提交施工验收</Button>}
-      {scope === "SOURCE" && task.status === "PENDING_SOURCE_ACCEPTANCE" && <Button size="small" type="primary" onClick={() => sourceAcceptMutation.mutate(task)}>确认验收</Button>}
+      {task.lifecycle?.capabilities.acceptCrossStore?.visible && <Button size="small" type="primary" icon={<CheckOutlined />} disabled={!task.lifecycle.capabilities.acceptCrossStore.enabled} onClick={() => acceptMutation.mutate(task)}>接受</Button>}
+      {task.lifecycle?.capabilities.rejectCrossStore?.visible && <Button size="small" danger icon={<CloseOutlined />} disabled={!task.lifecycle.capabilities.rejectCrossStore.enabled} onClick={() => { setActionModal({ kind: "reject", task }); actionForm.resetFields(); }}>拒绝</Button>}
+      {task.lifecycle?.capabilities.cancelCrossStore?.visible && <Button size="small" danger icon={<StopOutlined />} disabled={!task.lifecycle.capabilities.cancelCrossStore.enabled} onClick={() => { setActionModal({ kind: "cancel", task }); actionForm.resetFields(); }}>取消协作</Button>}
+      {task.lifecycle?.capabilities.submitCrossStoreAcceptance?.visible && <Button size="small" type="primary" disabled={!task.lifecycle.capabilities.submitCrossStoreAcceptance.enabled} onClick={() => { setActionModal({ kind: "submit", task }); actionForm.resetFields(); }}>提交施工验收</Button>}
+      {task.lifecycle?.capabilities.acceptCrossStoreBySource?.visible && <Button size="small" type="primary" disabled={!task.lifecycle.capabilities.acceptCrossStoreBySource.enabled} onClick={() => sourceAcceptMutation.mutate(task)}>确认验收</Button>}
       <Button size="small" icon={<LinkOutlined />} onClick={() => router.push(`/orders/${task.orderId}`)}>查看订单</Button>
     </Space> }
-  ], [acceptMutation, actionForm, router, scope, sourceAcceptMutation]);
+  ], [acceptMutation, actionForm, router, sourceAcceptMutation]);
 
   const mappingColumns = [
     { title: "来源产品", key: "source", render: (_: unknown, row: CrossStoreProductMapping) => productLabel(row.sourceProduct) },

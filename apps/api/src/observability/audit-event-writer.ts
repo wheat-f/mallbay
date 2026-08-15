@@ -12,10 +12,20 @@ export class AuditEventWriter {
     return { accepted: true, event };
   }
 
-  /** Persist first, then emit the process log, so a failed transaction is not reported as committed. */
+  /**
+   * Persist the business audit fact through the caller's transaction.  The
+   * process log is deliberately best-effort: a broken log sink must never
+   * abort the business transaction (or turn a committed command into an
+   * apparent failure).  The persisted AuditEvent remains the committed fact;
+   * callers can use processLogAccepted for observability metrics.
+   */
   async writeTransactional(prisma: Parameters<typeof persistAuditEvent>[0], event: AuditEvent) {
     await persistAuditEvent(prisma, event);
-    this.implementation.record(event);
-    return { accepted: true, event };
+    try {
+      this.implementation.record(event);
+      return { accepted: true, event, processLogAccepted: true };
+    } catch {
+      return { accepted: true, event, processLogAccepted: false };
+    }
   }
 }

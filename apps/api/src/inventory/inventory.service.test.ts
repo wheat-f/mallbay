@@ -278,8 +278,10 @@ test("InventoryService locks stock through allocations and creates purchase requ
         storeId: "store-1",
         orderNo: "ORD-1",
         items: [{ id: "item-1", productId: "product-1", quantity: 6, product: { unit: ProductUnit.ROLL } }]
-      })
+      }),
+      updateMany: async () => ({ count: 1 })
     },
+    orderLifecycleVersionChange: { create: async () => undefined },
     orderInventoryAllocation: {
       create: async (args: unknown) => updates.push(args)
     },
@@ -336,8 +338,10 @@ test("InventoryService auto locks using order item required base quantity", asyn
             inventoryAllocations: []
           }
         ]
-      })
+      }),
+      updateMany: async () => ({ count: 1 })
     },
+    orderLifecycleVersionChange: { create: async () => undefined },
     orderInventoryAllocation: {
       create: async (args: unknown) => {
         writes.push(args);
@@ -417,8 +421,10 @@ test("InventoryService reuses released allocation when locking the same order ba
             ]
           }
         ]
-      })
+      }),
+      updateMany: async () => ({ count: 1 })
     },
+    orderLifecycleVersionChange: { create: async () => undefined },
     orderInventoryAllocation: {
       create: async (args: unknown) => {
         writes.push({ kind: "create-allocation", args });
@@ -487,8 +493,10 @@ test("InventoryService locks selected batch by base unit quantity", async () => 
             inventoryAllocations: []
           }
         ]
-      })
+      }),
+      updateMany: async () => ({ count: 1 })
     },
+    orderLifecycleVersionChange: { create: async () => undefined },
     inventoryBatch: {
       findUnique: async () => ({
         id: "batch-1",
@@ -1910,8 +1918,10 @@ test("InventoryService partially outbounds locked inventory by selected unit", a
   const writes: unknown[] = [];
   const tx = {
     order: {
-      findUnique: async () => ({ id: "order-1", storeId: "store-1" })
+      findUnique: async () => ({ id: "order-1", storeId: "store-1" }),
+      updateMany: async () => ({ count: 1 })
     },
+    orderLifecycleVersionChange: { create: async () => undefined },
     orderInventoryAllocation: {
       findMany: async () => [
         {

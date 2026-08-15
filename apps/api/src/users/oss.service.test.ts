@@ -126,3 +126,28 @@ test("OssService stores after-sale photos under the after-sale namespace", async
     await fs.rm(localDir, { recursive: true, force: true });
   }
 });
+
+test("OssService removes only configured local construction objects", async () => {
+  const previousProvider = process.env.OSS_PROVIDER;
+  const previousLocalDir = process.env.OSS_LOCAL_DIR;
+  const previousPublicBaseUrl = process.env.OSS_PUBLIC_BASE_URL;
+  const localDir = await fs.mkdtemp(path.join(os.tmpdir(), "mallbay-oss-construction-cleanup-"));
+  process.env.OSS_PROVIDER = "local";
+  process.env.OSS_LOCAL_DIR = localDir;
+  process.env.OSS_PUBLIC_BASE_URL = "http://localhost:3001/local-oss";
+
+  try {
+    const service = new OssService();
+    const url = await service.uploadConstructionPhoto("store-1", "order-1", imageFile, "photo-op-1");
+    const key = new URL(url).pathname.replace(/^\/local-oss\//, "");
+    await assert.doesNotReject(() => fs.access(path.join(localDir, key)));
+    await service.removeConstructionPhoto(url);
+    await assert.rejects(fs.access(path.join(localDir, key)));
+    await assert.doesNotReject(() => service.removeConstructionPhoto("https://example.com/construction/not-owned.jpg"));
+  } finally {
+    process.env.OSS_PROVIDER = previousProvider;
+    process.env.OSS_LOCAL_DIR = previousLocalDir;
+    process.env.OSS_PUBLIC_BASE_URL = previousPublicBaseUrl;
+    await fs.rm(localDir, { recursive: true, force: true });
+  }
+});

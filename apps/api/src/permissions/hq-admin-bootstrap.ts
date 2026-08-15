@@ -7,6 +7,7 @@ export const FALLBACK_HQ_ADMIN_USERNAMES = ["zhouluoren", "xiaoming"] as const;
 export const HEADQUARTERS_ADMIN_GRANTS = [
   ["customers", "read", "GLOBAL"], ["customers", "write", "GLOBAL"],
   ["orders", "read", "GLOBAL"], ["orders", "write", "GLOBAL"],
+  ["orders.lifecycle", "finalize", "GLOBAL"], ["orders.lifecycle", "cancel", "GLOBAL"], ["orders.lifecycle", "cross_store_source_manage", "GLOBAL"], ["orders.lifecycle", "verification_view", "GLOBAL"], ["orders.lifecycle", "verification_resolve", "GLOBAL"],
   ["warranties", "read", "GLOBAL"], ["warranties", "write", "GLOBAL"],
   ["construction", "read", "GLOBAL"], ["construction", "write", "GLOBAL"],
   ["products", "read", "GLOBAL"], ["products", "write", "GLOBAL"],

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { createHash } from "node:crypto";
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   ConstructionTaskStatus,
   ConstructionLocation,
@@ -10,6 +10,7 @@ import {
   OrderStatus,
   PaymentDirection,
   PaymentRecordType,
+  PaymentType,
   NotificationType,
   QualityCheckResult,
   Prisma,
@@ -23,8 +24,7 @@ import { multiplyMoneyCents } from "../pricing/domain/money";
 import { AuditLogService, type AuditEvent } from "../observability/audit-log.service";
 import { AuditEventWriter } from "../observability/audit-event-writer";
 import { AccessContext } from "../permissions/domain/access-context";
-import { deriveOrderWorkflow } from "./domain/order-workflow";
-import { ensureBalanceTodos, finalizeOrderDelivery } from "./domain/order-delivery";
+import { ensureBalanceTodos } from "./domain/order-delivery";
 import { OrderLifecycle } from "./domain/order-lifecycle";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { CopyOrderToDraftDto } from "./dto/copy-order.dto";
@@ -35,7 +35,15 @@ import { ReturnOrderDto } from "./dto/return-order.dto";
 import { CreateOrderAmendmentRequestDto, ReviewOrderAmendmentRequestDto } from "./dto/order-amendment.dto";
 import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
-import { CreateOrderUseCase } from "./use-cases/create-order.use-case";
+
+type ExistingOrderPayment = {
+  id: string;
+  accountId?: string;
+  paymentType?: PaymentType;
+  amountCents?: number;
+  paidAt?: Date;
+  createdById?: string;
+};
 
 const INTERNAL_ORDER_AMOUNT_FIELDS = [
   "salesCommissionCents",
@@ -65,17 +73,23 @@ export type AuthenticatedOrderUser = UserWithStoreMember & {
 export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly createOrderUseCase: CreateOrderUseCase,
     private readonly auditLog: AuditLogService,
-    @Optional() private readonly orderLifecycle: OrderLifecycle | undefined,
-    @Optional() private readonly auditWriter: AuditEventWriter | undefined,
-    private readonly accessContext: AccessContext
+    private readonly orderLifecycle: OrderLifecycle,
+    private readonly accessContext: AccessContext,
+    @Optional() private readonly auditWriter: AuditEventWriter | undefined
   ) {}
 
-  async create(user: AuthenticatedOrderUser, dto: CreateOrderDto) {
+  async create(user: AuthenticatedOrderUser, commandId: string | undefined, dto: CreateOrderDto) {
     const actor = await this.withStoreMember(user);
-    return this.orderLifecycle?.createOrder(actor, dto)
-      ?? this.createOrderUseCase.execute(actor, dto);
+    return this.orderLifecycle.createOrder(actor, { commandId: commandId ?? "", source: "WEB" }, { source: "DIRECT", order: dto });
+  }
+
+  async lifecycle(user: AuthenticatedOrderUser, orderId: string) {
+    return this.orderLifecycle.getAuthoritativeLifecycle(await this.withStoreMember(user), orderId);
+  }
+
+  async lifecycleBatch(user: AuthenticatedOrderUser, orderIds: string[]) {
+    return this.orderLifecycle.listAuthoritativeLifecycle(await this.withStoreMember(user), [...new Set(orderIds)].slice(0, 100));
   }
 
   async list(user: AuthenticatedOrderUser, dto: ListOrdersDto) {
@@ -114,7 +128,9 @@ export class OrdersService {
           ...(canViewCosts ? item.amount : redactOrderAmount(item.amount)),
           pricingMode: getOrderPricingMode(item.amount)
         } : null,
-        status: getEffectiveOrderStatus(item.status, item.constructionRecord?.status)
+        // The persisted status is retained only for filtering/legacy fields;
+        // progress and actions come from the authoritative lifecycle result.
+        status: item.status
       }))
     };
   }
@@ -153,7 +169,7 @@ export class OrdersService {
       orderNo: order.orderNo,
       customerName: order.customer.companyName ?? order.customer.name ?? order.customer.contactPerson ?? "",
       vehicle: [order.vehicle?.carPlate, order.vehicle?.carModel, order.vehicle?.carColor].filter(Boolean).join(" / "),
-      status: getEffectiveOrderStatus(order.status, order.constructionRecord?.status),
+      status: order.status,
       constructionType: order.constructionType,
       appointmentDate: order.appointmentDate,
       appointmentTimeSlot: order.appointmentTimeSlot,
@@ -224,6 +240,7 @@ export class OrdersService {
     }
     await this.assertCanViewOrder(actor, order.storeId, order.salesPersonId);
     const canViewCosts = await this.accessContext.can(actor.id, "finance", "write", { storeId: order.storeId });
+    const lifecycle = await this.orderLifecycle.getAuthoritativeLifecycle(actor, id);
     return {
       ...order,
       items: order.items.map((item) => ({ ...item, quantity: toNullableNumber(item.quantity) })),
@@ -231,16 +248,8 @@ export class OrdersService {
         ...(canViewCosts ? order.amount : redactOrderAmount(order.amount)),
         pricingMode: getOrderPricingMode(order.amount)
       } : null,
-      historicalWarning: ((order.status === OrderStatus.COMPLETED || order.status === OrderStatus.WARRANTIED) && order.constructionRecord?.qualityResult == null)
-        ? "历史完成，质检记录缺失"
-        : null,
-      workflow: (this.orderLifecycle?.getLifecycle ?? this.orderLifecycle?.derive ?? deriveOrderWorkflow).call(this.orderLifecycle, {
-        status: order.status,
-        amount: order.amount,
-        constructionRecord: order.constructionRecord,
-        inventoryAllocations: order.items.flatMap((item) => item.inventoryAllocations),
-        warranty: order.warranty
-      })
+      historicalWarning: lifecycle.currentStage === "HISTORICAL_VERIFICATION" ? "历史完成，履约事实待核验" : null,
+      lifecycle
     };
   }
 
@@ -354,7 +363,11 @@ export class OrdersService {
 
   async addPayment(user: AuthenticatedOrderUser, orderId: string, dto: CreateOrderPaymentDto) {
     const actor = await this.withStoreMember(user);
-    return this.prisma.$transaction(async (tx) => {
+    const idempotencyKey = dto.idempotencyKey?.trim() || createHash("sha256")
+      .update(JSON.stringify({ orderId, accountId: dto.accountId, paymentType: dto.paymentType, amountCents: dto.amountCents, paidAt: dto.paidAt }))
+      .digest("hex");
+    try {
+      return await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
         include: { amount: true }
@@ -368,23 +381,30 @@ export class OrdersService {
       if (!Number.isInteger(dto.amountCents) || dto.amountCents <= 0) {
         throw new BadRequestException("收款金额必须大于 0");
       }
-      const idempotencyKey = dto.idempotencyKey?.trim() || createHash("sha256")
-        .update(JSON.stringify({ orderId, accountId: dto.accountId, paymentType: dto.paymentType, amountCents: dto.amountCents, paidAt: dto.paidAt }))
-        .digest("hex");
       const orderPaymentClient = tx.orderPayment as unknown as {
-        findUnique?: (args: unknown) => Promise<{ id: string } | null>;
+        findUnique?: (args: unknown) => Promise<ExistingOrderPayment | null>;
       };
       const existingPayment = await orderPaymentClient.findUnique?.({
-        where: { orderId_idempotencyKey: { orderId, idempotencyKey } }
+        where: { orderId_idempotencyKey: { orderId, idempotencyKey } },
+        select: { id: true, accountId: true, paymentType: true, amountCents: true, paidAt: true, createdById: true }
       });
-      if (existingPayment) return existingPayment;
+      if (existingPayment) {
+        assertOrderPaymentReplay(existingPayment, {
+          accountId: dto.accountId,
+          paymentType: dto.paymentType,
+          amountCents: dto.amountCents,
+          paidAt: new Date(dto.paidAt),
+          createdById: actor.id
+        });
+        return existingPayment;
+      }
 
       const account = await tx.paymentAccount.findUnique({ where: { id: dto.accountId } });
       if (!account || account.storeId !== order.storeId || !account.isActive) {
         throw new BadRequestException("收款账户不可用");
       }
 
-      const payment = await tx.orderPayment.create({
+      const payment: ExistingOrderPayment = await tx.orderPayment.create({
         data: {
           orderId,
           accountId: dto.accountId,
@@ -432,27 +452,53 @@ export class OrdersService {
 
       // 收款完成只形成现金事实；最终交付必须由归属门店店长/管理员
       // 通过显式 final-delivery command 执行，不能被财务收款动作隐式触发。
-      await (this.orderLifecycle?.ensureBalanceTodos(tx, orderId) ?? ensureBalanceTodos(tx, orderId));
+      await ensureBalanceTodos(tx, orderId);
+      const versionUpdate = await tx.order.updateMany({
+        where: { id: orderId, lifecycleVersion: order.lifecycleVersion },
+        data: { lifecycleVersion: { increment: 1 } }
+      });
+      if (versionUpdate.count !== 1) throw new ConflictException({ code: "LIFECYCLE_VERSION_CONFLICT", message: "订单履约事实已被其他操作更新，请刷新后重试" });
+      await tx.orderLifecycleVersionChange.create({
+        data: {
+          orderId,
+          beforeVersion: order.lifecycleVersion,
+          afterVersion: order.lifecycleVersion + 1,
+          sourceType: "CASH_FACT",
+          sourceKey: payment.id,
+          sourceRefs: { paymentId: payment.id, paymentRecordSourceId: payment.id }
+        }
+      });
 
-      return payment;
-    });
+        return payment;
+      });
+    } catch (error) {
+      // A PostgreSQL unique violation aborts the current transaction, so the
+      // replay lookup must happen on the root client after Prisma rolls the
+      // failed transaction back. This is the only safe way to recover the
+      // winner of a concurrent idempotent payment request.
+      if (isUniqueConstraintError(error)) {
+        const existingPayment = await this.prisma.orderPayment.findUnique({
+          where: { orderId_idempotencyKey: { orderId, idempotencyKey } },
+          select: { id: true, accountId: true, paymentType: true, amountCents: true, paidAt: true, createdById: true }
+        });
+        if (existingPayment) {
+          assertOrderPaymentReplay(existingPayment, {
+            accountId: dto.accountId,
+            paymentType: dto.paymentType,
+            amountCents: dto.amountCents,
+            paidAt: new Date(dto.paidAt),
+            createdById: actor.id
+          });
+          return existingPayment;
+        }
+      }
+      throw error;
+    }
   }
 
-  async finalizeDelivery(user: AuthenticatedOrderUser, orderId: string) {
+  async finalizeDelivery(user: AuthenticatedOrderUser, orderId: string, context: { commandId?: string; expectedVersion?: string }) {
     const actor = await this.withStoreMember(user);
-    if (this.orderLifecycle) {
-      return this.orderLifecycle.transition(actor, orderId, { type: "FINAL_DELIVERY" });
-    }
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId }, select: { storeId: true } });
-      if (!order) throw new NotFoundException("订单不存在");
-      if (!await this.accessContext.can(actor.id, "store", "write", { storeId: order.storeId })) {
-        throw new ForbiddenException("仅归属门店店长或管理员可以最终交付");
-      }
-      return this.orderLifecycle
-        ? this.orderLifecycle.finalizeDelivery(tx, orderId, actor.id)
-        : finalizeOrderDelivery(tx, orderId, actor.id);
-    });
+    return this.orderLifecycle.transition(actor, orderId, { type: "FINAL_DELIVERY" }, { ...context, source: "WEB" });
   }
 
   async listPayments(user: AuthenticatedOrderUser, orderId: string) {
@@ -683,91 +729,32 @@ export class OrdersService {
     return updated;
   }
 
-  async cancelOrder(user: AuthenticatedOrderUser, orderId: string, dto: ReturnOrderDto) {
+  async cancelOrder(user: AuthenticatedOrderUser, orderId: string, dto: ReturnOrderDto, context: { commandId?: string; expectedVersion?: string }) {
     const actor = await this.withStoreMember(user);
     const reason = dto.reason?.trim();
     if (!reason) throw new BadRequestException("取消订单必须填写原因");
-    if (this.orderLifecycle) {
-      return this.orderLifecycle.transition(actor, orderId, { type: "CANCEL", reason });
-    }
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, storeId: true, salesPersonId: true, status: true } });
-      if (!order) throw new NotFoundException("订单不存在");
-      if (!await this.accessContext.can(actor.id, "store", "write", { storeId: order.storeId })) throw new ForbiddenException("无权限");
-      if (order.status === OrderStatus.CANCELLED) return { id: order.id, status: order.status };
-      if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.WARRANTIED) throw new BadRequestException("当前订单阶段不允许取消");
-      const updated = await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.CANCELLED }, select: { id: true, status: true } });
-      await tx.notification.updateMany({ where: { type: NotificationType.ORDER_BALANCE_DUE, todoKey: { contains: ":" + order.id + ":" }, handledAt: null }, data: { handledAt: new Date() } });
-      await tx.auditEvent.create({ data: { action: "ORDER_CANCELLED", actorId: actor.id, storeId: order.storeId, targetType: "order", targetId: order.id, metadata: { orderId: order.id, reason, beforeStatus: order.status, afterStatus: OrderStatus.CANCELLED } } });
-      return updated;
-    });
+    return this.orderLifecycle.transition(actor, orderId, { type: "CANCEL", reason }, { ...context, source: "WEB" });
   }
 
-  async returnToPendingDispatch(user: AuthenticatedOrderUser, orderId: string, dto: ReturnOrderDto) {
+  async returnToPendingDispatch(user: AuthenticatedOrderUser, orderId: string, dto: ReturnOrderDto, context: { commandId?: string; expectedVersion?: string }) {
     const actor = await this.withStoreMember(user);
     const reason = dto.reason?.trim();
     if (!reason) {
       throw new BadRequestException("反审核退回必须填写原因");
     }
-    if (this.orderLifecycle) {
-      return this.orderLifecycle.transition(actor, orderId, { type: "RETURN_TO_PENDING_DISPATCH", reason });
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        select: {
-          id: true,
-          storeId: true,
-          salesPersonId: true,
-          status: true
-        }
-      });
-      if (!order) {
-        throw new NotFoundException("订单不存在");
-      }
-      if (!await this.canManageOrderCommercials(actor, order.storeId, order.salesPersonId)) {
-        throw new ForbiddenException("无权限");
-      }
-      if (order.status === OrderStatus.CANCELLED) {
-        throw new BadRequestException("已取消订单不能退回修改");
-      }
-      if (order.status === OrderStatus.PENDING_DISPATCH) {
-        return { id: orderId, status: OrderStatus.PENDING_DISPATCH };
-      }
-
-      const updated = await tx.order.update({
-        where: { id: orderId },
-        data: { status: OrderStatus.PENDING_DISPATCH },
-        select: { id: true, status: true }
-      });
-      const auditEvent = {
-        action: "ORDER_RETURNED_TO_PENDING_DISPATCH",
-        actorId: actor.id,
-        targetType: "order",
-        targetId: orderId,
-        metadata: {
-          storeId: order.storeId,
-          reason,
-          beforeStatus: order.status,
-          afterStatus: OrderStatus.PENDING_DISPATCH
-        }
-      };
-      await this.writeAuditTransactional(tx, auditEvent);
-      return updated;
-    });
+    return this.orderLifecycle.transition(actor, orderId, { type: "RETURN_TO_PENDING_DISPATCH", reason }, { ...context, source: "WEB" });
   }
 
   async listHistoricalVerification(user: AuthenticatedOrderUser, storeId: string, q?: string) {
     const actor = await this.withStoreMember(user);
-    if (!await this.accessContext.can(actor.id, "store", "write", { storeId })) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can(actor.id, "orders.lifecycle", "verification_view", { storeId })) throw new ForbiddenException("无权限");
     const keyword = q?.trim();
     const orders = await this.prisma.order.findMany({
       where: {
         storeId,
         status: { in: [OrderStatus.COMPLETED, OrderStatus.WARRANTIED] },
         AND: [
-          { OR: [{ constructionRecord: { is: null } }, { constructionRecord: { is: { qualityResult: null } } }] },
+          { OR: [{ constructionRecord: { is: null } }, { constructionRecord: { is: { qualityResult: null } } }, { lifecycleVerificationCases: { some: { status: "OPEN" } } }] },
           ...(keyword ? [{ OR: [
             { orderNo: { contains: keyword, mode: "insensitive" as const } },
             { customer: { name: { contains: keyword, mode: "insensitive" as const } } },
@@ -780,41 +767,26 @@ export class OrdersService {
         customer: { select: { name: true, companyName: true, contactPerson: true } },
         vehicle: { select: { carPlate: true, carModel: true } },
         salesPerson: { select: { id: true, username: true, nickname: true } },
-        constructionRecord: { select: { id: true, qualityResult: true } }
+        constructionRecord: { select: { id: true, qualityResult: true } },
+        lifecycleVerificationCases: { orderBy: { detectedAt: "desc" }, take: 1 }
       }
     });
-    const events = await this.prisma.auditEvent.findMany({
-      where: { action: "HISTORICAL_ORDER_VERIFIED", targetType: "order", targetId: { in: orders.map((order) => order.id) } },
-      orderBy: { createdAt: "desc" }
-    });
-    const verified = new Set(events.map((event) => event.targetId).filter(Boolean));
     return orders.map((order) => ({
       ...order,
-      historicalWarning: "历史完成，质检记录缺失",
-      verified: verified.has(order.id),
-      verification: events.find((event) => event.targetId === order.id) ?? null
+      historicalWarning: order.lifecycleVerificationCases[0]?.status === "RESOLVED" ? null : "历史完成，质检记录缺失",
+      verified: order.lifecycleVerificationCases[0]?.status === "RESOLVED",
+      verification: order.lifecycleVerificationCases[0] ?? null
     }));
   }
 
-  async markHistoricalVerified(user: AuthenticatedOrderUser, orderId: string, note?: string) {
+  async markHistoricalVerified(
+    user: AuthenticatedOrderUser,
+    orderId: string,
+    input: { summary: string; factRefs: string[] },
+    context: { commandId?: string; expectedVersion?: string }
+  ) {
     const actor = await this.withStoreMember(user);
-    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { constructionRecord: { select: { qualityResult: true } } } });
-    if (!order) throw new NotFoundException("订单不存在");
-    if (!await this.accessContext.can(actor.id, "store", "write", { storeId: order.storeId })) throw new ForbiddenException("无权限");
-    if (order.status !== OrderStatus.COMPLETED && order.status !== OrderStatus.WARRANTIED) throw new BadRequestException("仅历史完成订单可核验");
-    if (order.constructionRecord?.qualityResult != null) throw new BadRequestException("该订单已有质检结果，无需历史核验");
-    const existing = await this.prisma.auditEvent.findFirst({ where: { action: "HISTORICAL_ORDER_VERIFIED", targetType: "order", targetId: order.id }, orderBy: { createdAt: "desc" } });
-    if (existing) return existing;
-    return this.prisma.auditEvent.create({
-      data: {
-        action: "HISTORICAL_ORDER_VERIFIED",
-        actorId: actor.id,
-        storeId: order.storeId,
-        targetType: "order",
-        targetId: order.id,
-        metadata: { orderId: order.id, note: note?.trim() ?? "", verifiedAt: new Date().toISOString() }
-      }
-    });
+    return this.orderLifecycle.transition(actor, orderId, { type: "RESOLVE_HISTORICAL_VERIFICATION", input }, { ...context, source: "WEB" });
   }
 
   async listAuditEvents(user: AuthenticatedOrderUser, orderId: string) {
@@ -1173,19 +1145,6 @@ function isCurrentShanghaiMonth(value?: Date) {
   return formatter.format(value) === formatter.format(new Date());
 }
 
-function getEffectiveOrderStatus(
-  orderStatus: OrderStatus,
-  constructionStatus?: "DISPATCHED" | "IN_CONSTRUCTION" | "COMPLETED" | null
-) {
-  if (orderStatus === OrderStatus.CANCELLED || orderStatus === OrderStatus.WARRANTIED) {
-    return orderStatus;
-  }
-  // Construction completion is only the quality-gate boundary. Final delivery completes the order.\n  if (constructionStatus === "COMPLETED") return OrderStatus.IN_CONSTRUCTION;
-  if (constructionStatus === "IN_CONSTRUCTION") return OrderStatus.IN_CONSTRUCTION;
-  if (constructionStatus === "DISPATCHED") return OrderStatus.DISPATCHED;
-  return orderStatus;
-}
-
 type ExistingCommercialOrderItem = {
   id?: string;
   inventoryAllocations?: Array<{
@@ -1372,4 +1331,26 @@ function hashSensitiveField(value: string) {
 
 function getOrderPricingMode(amount: { pricingCalculationId?: string | null } | null | undefined) {
   return amount?.pricingCalculationId ? "ACTIVE" as const : "LEGACY" as const;
+}
+
+function assertOrderPaymentReplay(
+  existing: ExistingOrderPayment,
+  expected: { accountId: string; paymentType: PaymentType; amountCents: number; paidAt: Date; createdById: string }
+) {
+  const sameInput =
+    (existing.accountId === undefined || existing.accountId === expected.accountId) &&
+    (existing.paymentType === undefined || existing.paymentType === expected.paymentType) &&
+    (existing.amountCents === undefined || existing.amountCents === expected.amountCents) &&
+    (existing.paidAt === undefined || existing.paidAt.getTime() === expected.paidAt.getTime()) &&
+    (existing.createdById === undefined || existing.createdById === expected.createdById);
+  if (!sameInput) {
+    throw new ConflictException({
+      code: "COMMAND_ID_CONFLICT",
+      message: "相同支付幂等键已绑定不同输入，请使用新的支付意图"
+    });
+  }
+}
+
+function isUniqueConstraintError(error: unknown): error is Prisma.PrismaClientKnownRequestError {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }

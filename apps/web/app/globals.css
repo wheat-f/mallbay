@@ -21728,15 +21728,33 @@ button.workbench-task-row:hover {
   color: var(--mb-primary);
 }
 
-.construction-offline-state-badge.is-FAILED {
+.construction-offline-state-badge.is-RETRYABLE_FAILURE,
+.construction-offline-state-badge.is-REJECTED {
   background: var(--mb-danger-container);
   color: var(--mb-danger);
+}
+
+.construction-offline-state-badge.is-CONFLICT {
+  background: var(--mb-warning-container);
+  color: var(--mb-warning);
 }
 
 .construction-offline-state-badge.is-PENDING,
 .construction-offline-state-badge.is-undefined {
   background: var(--mb-surface-alt);
   color: var(--mb-text-secondary);
+}
+
+.construction-offline-state-badge.is-APPLIED,
+.construction-offline-state-badge.is-REPLAYED {
+  background: var(--mb-success-container);
+  color: var(--mb-success);
+}
+
+/* Compatibility styling for queues rendered by an older cached bundle. */
+.construction-offline-state-badge.is-FAILED {
+  background: var(--mb-danger-container);
+  color: var(--mb-danger);
 }
 
 .construction-offline-state-badge.is-SYNCED {

@@ -33,25 +33,12 @@ test("报价过期任务只把仍待审批的报价标记为过期并释放对�
 });
 
 test("报价重复转单返回既有订单而不是再次创建", async () => {
-  const prisma = {
-    salesQuote: {
-      findFirst: async () => ({
-        id: "quote-1",
-        storeId: "store-1",
-        salesPersonId: "user-1",
-        status: "CONVERTED",
-        convertedOrderId: "order-1",
-        validUntil: new Date("2026-07-17T00:00:00.000Z"),
-        items: [],
-        capacityReservation: null
-      })
-    }
-  };
-  let created = false;
+  let input: unknown;
+  const lifecycle = { createOrder: async (...args: unknown[]) => { input = args; return { orderId: "order-1", quoteId: "quote-1" }; } };
   const service = new SalesQuotesService(
-    prisma as never,
     {} as never,
-    { execute: async () => { created = true; return { id: "order-2" }; } } as never,
+    {} as never,
+    lifecycle as never,
     undefined,
     undefined,
     salesAccess as never
@@ -60,9 +47,10 @@ test("报价重复转单返回既有订单而不是再次创建", async () => {
     id: "user-1",
     isAuditor: false,
     storeMember: { storeId: "store-1", position: "MANAGER" }
-  } as never, "quote-1");
+  } as never, "quote-1", "command-quote-1");
   assert.deepEqual(result, { orderId: "order-1", quoteId: "quote-1" });
-  assert.equal(created, false);
+  assert.deepEqual((input as unknown[])[1], { commandId: "command-quote-1", source: "QUOTE_CONVERSION" });
+  assert.deepEqual((input as unknown[])[2], { source: "APPROVED_QUOTE", quoteId: "quote-1" });
 });
 
 test("报价详情按销售归属返回关联快照", async () => {

@@ -95,7 +95,15 @@ test("新价格快照成本缺失时禁止直接生成正式订单", async () =>
   await assert.rejects(service.validateOrder(user, {
     storeId: "store-1", pricingCalculationId: "calc-1",
     items: [{ productId: "product-1", quantity: 1, unitPriceCents: 100000 }], laborCostCents: 10000
-  }), /预计成本尚未完整/);
+  }), (error: any) => error.getResponse?.().code === "QUOTE_APPROVAL_REQUIRED");
+});
+
+test("成交价需要审批时返回结构化报价审批错误码", async () => {
+  const service = createService();
+  await assert.rejects(service.validateOrder(user, {
+    storeId: "store-1", pricingCalculationId: "calc-1",
+    items: [{ productId: "product-1", quantity: 1, unitPriceCents: 90000 }], laborCostCents: 10000
+  }), (error: any) => error.getResponse?.().code === "QUOTE_APPROVAL_REQUIRED");
 });
 
 test("已批准报价转正式订单时允许复用审批价但仍拒绝硬性阻断价", async () => {

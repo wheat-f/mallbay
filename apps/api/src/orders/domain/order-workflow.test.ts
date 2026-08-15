@@ -31,3 +31,16 @@ test("workflow marks final delivery only when quality and payment are complete",
   assert.equal(workflow.paymentStatus, "PAID");
 });
 
+test("workflow makes paid, quality-passed orders without a warranty eligible for atomic final delivery", () => {
+  const workflow = deriveOrderWorkflow({
+    status: OrderStatus.IN_CONSTRUCTION,
+    amount: { paidAmountCents: 10000, outstandingCents: 0 },
+    constructionRecord: { status: ConstructionTaskStatus.COMPLETED, qualityResult: QualityCheckResult.PASS },
+    warranty: null
+  });
+
+  assert.equal(workflow.currentStage, "PENDING_DELIVERY");
+  assert.equal(workflow.capabilities.canCompleteOrder, true);
+  assert.equal(workflow.capabilities.canGenerateWarranty, false);
+});
+

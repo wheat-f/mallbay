@@ -1,6 +1,6 @@
 "use client";
 
-import { App, Button, Card, Empty, Space, Table, Tag } from "antd";
+import { Alert, App, Button, Card, Empty, Space, Table, Tag } from "antd";
 import {
   CheckOutlined,
   EyeOutlined,
@@ -14,11 +14,17 @@ import { useMemo, useState } from "react";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
+import { clearLifecycleCommandId, getLifecycleCommandId } from "../../../src/features/construction/api";
 
 type TaskRow = {
   id: string;
   orderId: string;
   status: string;
+  lifecycleVersion: number;
+  lifecycle?: {
+    capabilities: Record<string, { visible: boolean; enabled: boolean; blockingReasonCodes: string[] }>;
+  };
+  lifecycleError?: { code: string };
   startedAt?: string | null;
   completedAt?: string | null;
   photoCount?: number;
@@ -47,8 +53,12 @@ export default function ConstructionTasksPage() {
   });
 
   const startMutation = useMutation({
-    mutationFn: (orderId: string) => constructionApi.startOrder(orderId),
-    onSuccess: async () => {
+    mutationFn: (row: TaskRow) => constructionApi.startOrder(row.orderId, {
+      commandId: getLifecycleCommandId(user!.id, storeId!, row.orderId, "START_CONSTRUCTION"),
+      expectedVersion: row.lifecycleVersion
+    }),
+    onSuccess: async (_, row) => {
+      clearLifecycleCommandId(user!.id, storeId!, row.orderId, "START_CONSTRUCTION");
       message.success("已开工");
       await queryClient.invalidateQueries({ queryKey: ["construction-tasks", storeId] });
     },
@@ -56,8 +66,12 @@ export default function ConstructionTasksPage() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: (orderId: string) => constructionApi.completeOrder(orderId, new Date().toISOString()),
-    onSuccess: async () => {
+    mutationFn: (row: TaskRow) => constructionApi.completeOrder(row.orderId, new Date().toISOString(), {
+      commandId: getLifecycleCommandId(user!.id, storeId!, row.orderId, "COMPLETE_CONSTRUCTION"),
+      expectedVersion: row.lifecycleVersion
+    }),
+    onSuccess: async (_, row) => {
+      clearLifecycleCommandId(user!.id, storeId!, row.orderId, "COMPLETE_CONSTRUCTION");
       message.success("已完工");
       await queryClient.invalidateQueries({ queryKey: ["construction-tasks", storeId] });
     },
@@ -69,6 +83,9 @@ export default function ConstructionTasksPage() {
       id: item.id,
       orderId: item.orderId,
       status: item.constructionStatus,
+      lifecycleVersion: item.lifecycleVersion,
+      lifecycle: item.lifecycle,
+      lifecycleError: item.lifecycleError,
       photoCount: item.photoCount,
       order: {
         orderNo: item.orderNo,
@@ -172,25 +189,28 @@ export default function ConstructionTasksPage() {
                   <dd>{formatPhotoProgress(row)}</dd>
                 </div>
               </dl>
+              {!row.lifecycle ? <Alert type="warning" showIcon title="履约状态加载失败" action={<Button size="small" onClick={() => tasksQuery.refetch()}>重试</Button>} /> : null}
               <Space wrap className="worker-task-center-actions">
                 <Button icon={<EyeOutlined />} onClick={() => router.push(`/construction/tasks/${row.orderId}`)}>
                   查看执行详情
                 </Button>
-                {canStartTask(row.status) ? (
+                {row.lifecycle?.capabilities.startConstruction?.visible ? (
                   <Button
                     icon={<PlayCircleOutlined />}
+                    disabled={!row.lifecycle.capabilities.startConstruction.enabled}
                     loading={startMutation.isPending}
-                    onClick={() => startMutation.mutate(row.orderId)}
+                    onClick={() => startMutation.mutate(row)}
                   >
                     开工
                   </Button>
                 ) : null}
-                {canCompleteTask(row.status) ? (
+                {row.lifecycle?.capabilities.completeConstruction?.visible ? (
                   <Button
                     type="primary"
                     icon={<CheckOutlined />}
+                    disabled={!row.lifecycle.capabilities.completeConstruction.enabled}
                     loading={completeMutation.isPending}
-                    onClick={() => completeMutation.mutate(row.orderId)}
+                    onClick={() => completeMutation.mutate(row)}
                   >
                     完工
                   </Button>
@@ -245,21 +265,24 @@ export default function ConstructionTasksPage() {
                   <Button icon={<EyeOutlined />} onClick={() => router.push(`/construction/tasks/${row.orderId}`)}>
                     查看执行详情
                   </Button>
-                  {canStartTask(row.status) ? (
+                  {!row.lifecycle ? <Button size="small" onClick={() => tasksQuery.refetch()}>重试履约状态</Button> : null}
+                  {row.lifecycle?.capabilities.startConstruction?.visible ? (
                     <Button
                       icon={<PlayCircleOutlined />}
+                      disabled={!row.lifecycle.capabilities.startConstruction.enabled}
                       loading={startMutation.isPending}
-                      onClick={() => startMutation.mutate(row.orderId)}
+                      onClick={() => startMutation.mutate(row)}
                     >
                       开工
                     </Button>
                   ) : null}
-                  {canCompleteTask(row.status) ? (
+                  {row.lifecycle?.capabilities.completeConstruction?.visible ? (
                     <Button
                       type="primary"
                       icon={<CheckOutlined />}
+                      disabled={!row.lifecycle.capabilities.completeConstruction.enabled}
                       loading={completeMutation.isPending}
-                      onClick={() => completeMutation.mutate(row.orderId)}
+                      onClick={() => completeMutation.mutate(row)}
                     >
                       完工
                     </Button>
@@ -282,14 +305,6 @@ function getStatusColor(status: string) {
   if (status === "COMPLETED") return "success";
   if (status === "IN_CONSTRUCTION") return "processing";
   return "default";
-}
-
-function canStartTask(status: string) {
-  return status === "DISPATCHED" || status === "PENDING_DISPATCH";
-}
-
-function canCompleteTask(status: string) {
-  return status === "IN_CONSTRUCTION";
 }
 
 function formatSchedule(row: TaskRow) {

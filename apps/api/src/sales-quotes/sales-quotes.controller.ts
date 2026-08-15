@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import type { PricingAuthenticatedUser } from "../pricing/pricing.service";
@@ -14,8 +14,8 @@ export class SalesQuotesController {
   constructor(private readonly quotes: SalesQuotesService) {}
 
   @Post()
-  create(@Req() req: AuthRequest, @Body() dto: CreateSalesQuoteDto) {
-    return this.quotes.create(req.user, dto);
+  create(@Req() req: AuthRequest, @Headers("idempotency-key") idempotencyKey: string | undefined, @Body() dto: CreateSalesQuoteDto) {
+    return this.quotes.create(req.user, idempotencyKey, dto);
   }
 
   @Get()
@@ -59,7 +59,7 @@ export class SalesQuotesController {
   }
 
   @Post(":id/convert-to-order")
-  convertToOrder(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.quotes.convertToOrder(req.user, id);
+  convertToOrder(@Req() req: AuthRequest, @Param("id") id: string, @Headers("idempotency-key") commandId: string | undefined) {
+    return this.quotes.convertToOrder(req.user, id, commandId);
   }
 }

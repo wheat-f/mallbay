@@ -126,6 +126,7 @@ JWT_ACCESS_SECRET=test-access-secret-xxxx
 JWT_REFRESH_SECRET=test-refresh-secret-xxxx
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
+METRICS_TOKEN=replace-with-a-random-internal-scrape-token
 AUTH_CREDENTIAL_ENCRYPTION_ENABLED=false
 
 # 域名
@@ -152,10 +153,17 @@ POSTGRES_PASSWORD=PROD_STRONG_PWD
 WEB_ORIGIN=https://yourdomain.com
 NEXT_PUBLIC_API_URL=https://api.yourdomain.com
 AUTH_CREDENTIAL_ENCRYPTION_ENABLED=true
+METRICS_TOKEN=replace-with-a-random-internal-scrape-token
 NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED=true
 OSS_BUCKET=mallbay-prod
 # ... 其余同上，值换成生产配置
 ```
+
+### 6. 内部指标抓取
+
+API 提供受保护的 `GET /internal/metrics` 快照接口，仅供预发/运维监控使用。请求必须携带 `X-Metrics-Token`，其值与 ECS `.env` 中的 `METRICS_TOKEN` 完全一致；未配置或令牌不匹配时返回 404，不向业务页面或浏览器公开。快照包含订单履约命令计数、重放/回滚计数和有界 P50/P95/P99 耗时样本。
+
+订单履约 API 启动后会运行 `OrderLifecycleReconciliationService`：默认每 5 分钟扫描历史履约不变量，并在发现终态质量、质保、版本账本或历史事实不一致时，以数据库 advisory lock 保护、幂等地创建或合并 OPEN 验证案例。该任务只登记待核查事实，不自动修改订单、施工或财务事实；扫描失败会记录 `order_lifecycle_reconciliation_failures_total`，应触发预发/生产告警。运维应同时关注 `order_lifecycle_reconciliation_violations_total`、`order_lifecycle_reconciliation_cases_created_total` 和 `order_lifecycle_reconciliation_cases_updated_total`，并通过订单详情的历史核查入口完成人工处置。
 
 ### 5. 首次启动数据库（先于 API 启动）
 

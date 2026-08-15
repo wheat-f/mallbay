@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   CREATE_ORDER_DRAFT_STORAGE_KEY,
+  acquireCreateOrderDraftLease,
+  renewCreateOrderDraftLease,
+  releaseCreateOrderDraftLease,
   loadCreateOrderDraft,
   removeCreateOrderDraft,
   saveCreateOrderDraft
@@ -89,4 +92,14 @@ test("create order draft keeps the server pricing snapshot for an explicit resto
   });
 
   assert.equal(loadCreateOrderDraft(storage, "store-1")?.pricingSnapshot?.pricingCalculationId, "calc-1");
+});
+
+test("create order draft lease prevents two tabs from submitting the same actor/store draft", () => {
+  const storage = new MemoryStorage();
+  assert.equal(acquireCreateOrderDraftLease(storage, "store-1", "draft-1", "tab-a", 1000, 15000, "actor-1"), true);
+  assert.equal(acquireCreateOrderDraftLease(storage, "store-1", "draft-1", "tab-b", 2000, 15000, "actor-1"), false);
+  assert.equal(acquireCreateOrderDraftLease(storage, "store-1", "draft-1", "tab-b", 2000, 15000, "actor-2"), true);
+  assert.equal(renewCreateOrderDraftLease(storage, "store-1", "draft-1", "tab-a", 2000, 15000, "actor-1"), true);
+  releaseCreateOrderDraftLease(storage, "store-1", "draft-1", "tab-a", "actor-1");
+  assert.equal(renewCreateOrderDraftLease(storage, "store-1", "draft-1", "tab-a", 3000, 15000, "actor-1"), false);
 });

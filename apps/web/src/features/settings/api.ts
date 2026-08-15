@@ -62,8 +62,12 @@ export type DictionaryCatalogEntry = Omit<DictionaryItem, "items" | "dictionaryI
   inactiveItemCount: number;
 };
 export type DictionaryCatalogPage = { items: DictionaryCatalogEntry[]; total: number; page: number; pageSize: number };
+export type DictionaryGovernanceKind = "dictionary" | "template";
+export type DictionaryGovernanceEntry = DictionaryCatalogEntry & { kind: DictionaryGovernanceKind; readOnly: boolean; inherited: boolean };
+export type DictionaryGovernanceCatalogPage = { items: DictionaryGovernanceEntry[]; total: number; page: number; pageSize: number };
 export type DictionaryItemsPage = { items: DictionaryItemEntry[]; total: number; page: number; pageSize: number; dictionaryVersion: number; parent?: { id: string; code: string; name: string; parentId?: string | null } | null };
 export type DictionaryImportPreview = { dictionaryId: string; dictionaryVersion: number; canCommit: boolean; summary: { total: number; create: number; update: number; error: number }; changes: Array<{ code: string; name: string; action: "CREATE" | "UPDATE" }>; errors: Array<{ code: string; message: string }> };
+export type DictionaryGovernanceImportPreview = DictionaryImportPreview & { templateId?: string };
 export type DictionaryPayload = {
   storeId: string;
   name: string;
@@ -74,6 +78,17 @@ export type DictionaryPayload = {
   allowCustomItems?: boolean;
   allowDisableItems?: boolean;
   allowHierarchy?: boolean;
+};
+
+export const dictionaryGovernanceApi = {
+  catalog: (params: { storeId?: string; keyword?: string; page?: number; pageSize?: number } = {}) => request<DictionaryGovernanceCatalogPage>(`/settings/dictionary-governance/catalog?${new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]))}`),
+  listItems: (kind: DictionaryGovernanceKind, id: string, params: { keyword?: string; status?: DictionaryStatus; parentId?: string; page?: number; pageSize?: number } = {}) => request<DictionaryItemsPage>(`/settings/dictionary-governance/${kind}/${id}/items?${new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]))}`),
+  createItem: (kind: DictionaryGovernanceKind, id: string, payload: { code: string; name: string; parentId?: string | null; sortOrder?: number }) => request<DictionaryItemEntry>(`/settings/dictionary-governance/${kind}/${id}/items`, { method: "POST", body: JSON.stringify(payload) }),
+  updateItem: (kind: DictionaryGovernanceKind, itemId: string, payload: Record<string, unknown>) => request<DictionaryItemEntry>(`/settings/dictionary-governance/${kind}/items/${itemId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  setItemStatus: (kind: DictionaryGovernanceKind, itemId: string, status: DictionaryStatus, reason?: string, version?: number) => request<DictionaryItemEntry>(`/settings/dictionary-governance/${kind}/items/${itemId}/status`, { method: "PATCH", body: JSON.stringify({ status, reason, version }) }),
+  removeItem: (kind: DictionaryGovernanceKind, itemId: string, reason: string) => request<DictionaryItemEntry>(`/settings/dictionary-governance/${kind}/items/${itemId}`, { method: "DELETE", body: JSON.stringify({ reason }) }),
+  previewImport: (kind: DictionaryGovernanceKind, id: string, items: Array<{ code: string; name: string; sortOrder?: number; parentId?: string | null; status?: DictionaryStatus }>) => request<DictionaryGovernanceImportPreview>(`/settings/dictionary-governance/${kind}/${id}/items/import/preview`, { method: "POST", body: JSON.stringify({ items }) }),
+  commitImport: (kind: DictionaryGovernanceKind, id: string, items: Array<{ code: string; name: string; sortOrder?: number; parentId?: string | null; status?: DictionaryStatus }>, version: number) => request<{ created: DictionaryItemEntry[]; updated: DictionaryItemEntry[]; version: number }>(`/settings/dictionary-governance/${kind}/${id}/items/import/commit`, { method: "POST", body: JSON.stringify({ items, version }) })
 };
 
 export const dictionaryApi = {

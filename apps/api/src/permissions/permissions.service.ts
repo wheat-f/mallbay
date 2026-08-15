@@ -32,6 +32,7 @@ const legacyPermissionMap: Record<string, Array<[string, string, string]>> = {
     MANAGER: [
     ["customers", "read", "STORE"], ["customers", "write", "STORE"],
     ["orders", "read", "STORE"], ["orders", "write", "STORE"],
+    ["orders.lifecycle", "finalize", "STORE"], ["orders.lifecycle", "cancel", "STORE"], ["orders.lifecycle", "cross_store_source_manage", "STORE"], ["orders.lifecycle", "verification_view", "STORE"], ["orders.lifecycle", "verification_resolve", "STORE"],
     ["warranties", "read", "STORE"], ["warranties", "write", "STORE"],
     ["construction", "read", "STORE"], ["construction", "write", "STORE"],
     ["inventory", "read", "STORE"], ["inventory", "write", "STORE"],

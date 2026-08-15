@@ -49,4 +49,3 @@ export type { CreateOrderPayload, OrderAuditEvent, OrderListQuery } from "../fea
 export type { CreateProductPayload, ProductListQuery } from "../features/products/api";
 export type { ApplyRebatePayload } from "../features/rebates/api";
 export type { StoreDetail, StoreListItem, StoreListResult } from "../features/stores/api";
-export type { CreateWarrantyPayload } from "../features/warranties/api";

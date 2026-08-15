@@ -11,10 +11,12 @@ import { SettingsAuditController } from "./audit.controller";
 import { SettingsAuditService } from "./audit.service";
 import { DictionaryTemplatesController } from "./dictionary-templates.controller";
 import { DictionaryTemplatesService } from "./dictionary-templates.service";
+import { DictionaryGovernanceController } from "./dictionary-governance.controller";
+import { DictionaryGovernanceService } from "./dictionary-governance.service";
 import { OssConnectionController } from "./oss-connection.controller";
 import { OssConnectionService } from "./oss-connection.service";
 import { SettingsMigrationReviewsController } from "./migration-reviews.controller";
 import { SettingsMigrationReviewsService } from "./migration-reviews.service";
 
-@Module({ imports: [PrismaModule, PermissionsModule], controllers: [DictionariesController, SettingsController, ConfigVersionsController, SettingsAuditController, DictionaryTemplatesController, OssConnectionController, SettingsMigrationReviewsController], providers: [DictionariesService, SettingsAccessService, ConfigVersionsService, SettingsAuditService, DictionaryTemplatesService, OssConnectionService, SettingsMigrationReviewsService], exports: [DictionariesService, SettingsAccessService] })
+@Module({ imports: [PrismaModule, PermissionsModule], controllers: [DictionariesController, DictionaryGovernanceController, SettingsController, ConfigVersionsController, SettingsAuditController, DictionaryTemplatesController, OssConnectionController, SettingsMigrationReviewsController], providers: [DictionariesService, DictionaryGovernanceService, SettingsAccessService, ConfigVersionsService, SettingsAuditService, DictionaryTemplatesService, OssConnectionService, SettingsMigrationReviewsService], exports: [DictionariesService, SettingsAccessService, DictionaryGovernanceService] })
 export class SettingsModule {}

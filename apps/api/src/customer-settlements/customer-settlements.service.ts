@@ -13,6 +13,7 @@ import {
   CustomerType,
   OrderStatus,
   PaymentType,
+  Prisma,
   StorePosition
 } from "@prisma/client";
 import type { UserWithStoreMember } from "../permissions/domain/access-types";
@@ -376,6 +377,12 @@ export class CustomerSettlementsService {
             outstandingCents: { decrement: allocation.amountCents }
           }
         });
+        await this.bumpOrderLifecycleVersion(tx, allocation.orderId, `CUSTOMER_RECEIPT:${receipt.id}:${allocation.orderId}`, {
+          customerReceiptId: receipt.id,
+          orderId: allocation.orderId,
+          amountCents: allocation.amountCents,
+          direction: "POSTED"
+        });
       }
 
       if (this.finance) {
@@ -487,6 +494,13 @@ export class CustomerSettlementsService {
             paidAmountCents: { decrement: allocation.amountCents },
             outstandingCents: { increment: allocation.amountCents }
           }
+        });
+        await this.bumpOrderLifecycleVersion(tx, allocation.orderId, `CUSTOMER_RECEIPT_REVERSAL:${reversal.id}:${allocation.orderId}`, {
+          customerReceiptReversalId: reversal.id,
+          receiptId: receipt.id,
+          orderId: allocation.orderId,
+          amountCents: allocation.amountCents,
+          direction: "REVERSED"
         });
       }
 
@@ -728,6 +742,46 @@ export class CustomerSettlementsService {
   ) {
     if (this.auditWriter) return this.auditWriter.writeTransactional(prisma, event);
     return persistAuditEvent(prisma, event);
+  }
+
+  /**
+   * Customer receipts are a cash-fact owner outside OrdersService, but their
+   * allocation changes the order's authoritative payment/capability result.
+   * Keep the version ledger in the same transaction as the amount update so a
+   * stale final-delivery or cancellation command cannot commit after a receipt
+   * posts (or reverses) against the order.
+   */
+  private async bumpOrderLifecycleVersion(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    sourceKey: string,
+    sourceRefs: Prisma.InputJsonObject
+  ) {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      select: { lifecycleVersion: true }
+    });
+    if (!order) throw new NotFoundException("订单不存在");
+    const updated = await tx.order.updateMany({
+      where: { id: orderId, lifecycleVersion: order.lifecycleVersion },
+      data: { lifecycleVersion: { increment: 1 } }
+    });
+    if (updated.count !== 1) {
+      throw new ConflictException({
+        code: "LIFECYCLE_VERSION_CONFLICT",
+        message: "订单履约事实已被其他操作更新，请刷新后重试"
+      });
+    }
+    await tx.orderLifecycleVersionChange.create({
+      data: {
+        orderId,
+        beforeVersion: order.lifecycleVersion,
+        afterVersion: order.lifecycleVersion + 1,
+        sourceType: "CASH",
+        sourceKey,
+        sourceRefs
+      }
+    });
   }
 }
 

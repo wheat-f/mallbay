@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { CapacityReservationStatus, Prisma, PricingApprovalStatus, PricingApprovalType, SalesQuoteStatus, StoreStatus } from "@prisma/client";
 import type { UserWithStoreMember } from "../permissions/domain/access-types";
 import { AccessContext } from "../permissions/domain/access-context";
@@ -9,26 +9,40 @@ import { ConstructionLocation, ConstructionType } from "@prisma/client";
 import { evaluatePricingGuard, type PricingCalculationResult, type PricingProtectionPolicy } from "../pricing/domain/pricing-engine";
 import type { PricingAuthenticatedUser } from "../pricing/pricing.service";
 import { CreateSalesQuoteDto, ExportSalesQuoteDetailsDto, ListSalesQuotesDto, RecalculateSalesQuoteDto, ReviewSalesQuoteDto, SubmitSalesQuoteDto, WithdrawSalesQuoteDto } from "./dto/sales-quote.dto";
-import { CreateOrderUseCase } from "../orders/use-cases/create-order.use-case";
+import { OrderLifecycle } from "../orders/domain/order-lifecycle";
 import { AuditLogService } from "../observability/audit-log.service";
 import { AuditEventWriter } from "../observability/audit-event-writer";
 import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
+import { fingerprintCommand } from "../orders/domain/order-lifecycle-command";
 
 @Injectable()
 export class SalesQuotesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly capacityReservations: CapacityReservationService,
-    private readonly createOrderUseCase: CreateOrderUseCase,
+    private readonly orderLifecycle: OrderLifecycle,
     @Optional() private readonly audit?: AuditLogService,
     @Optional() private readonly auditWriter?: AuditEventWriter,
     @Optional() private readonly accessContext?: AccessContext
   ) {}
 
-  async create(user: PricingAuthenticatedUser, dto: CreateSalesQuoteDto) {
+  async create(user: PricingAuthenticatedUser, rawIdempotencyKey: string | undefined, dto: CreateSalesQuoteDto) {
     const actor = await this.withStoreMember(user);
     if (!await this.canOrdersWrite(actor, dto.storeId, actor.id)) throw new ForbiddenException("无权限");
+    const idempotencyKey = rawIdempotencyKey?.trim();
+    if (!idempotencyKey) throw new BadRequestException({ code: "COMMAND_ID_REQUIRED", message: "缺少报价创建标识" });
+    const requestFingerprint = fingerprintCommand("CREATE_SALES_QUOTE", dto.storeId, dto);
+    const existingIntent = await this.prisma.salesQuote.findUnique({
+      where: { storeId_idempotencyActorId_idempotencyKey: { storeId: dto.storeId, idempotencyActorId: actor.id, idempotencyKey } },
+      include: { items: true, approvals: true }
+    });
+    if (existingIntent) {
+      if (existingIntent.requestFingerprint !== requestFingerprint) {
+        throw new ConflictException({ code: "COMMAND_ID_CONFLICT", message: "该报价创建标识已绑定不同输入" });
+      }
+      return existingIntent;
+    }
     const executionStoreId = dto.executionStoreId?.trim() || dto.storeId;
     if (executionStoreId !== dto.storeId) {
       const [sourceStore, executionStore] = await Promise.all([
@@ -129,14 +143,19 @@ export class SalesQuotesService {
     const marginCheck = guard.checks.find((check) => check.scope === "MARGIN");
     const approvalType = usesTemporaryCost || marginCheck?.decision === "APPROVAL_REQUIRED" ? PricingApprovalType.MARGIN : PricingApprovalType.DEVIATION;
     const validUntil = new Date(Date.now() + (dto.validHours ?? output.protectionPolicy.softHoldHours ?? 24) * 60 * 60 * 1000);
-    const quote = await this.prisma.salesQuote.create({
-      data: {
+    try {
+      const { quote } = await this.prisma.$transaction(async (tx) => {
+      const quote = await tx.salesQuote.create({
+        data: {
         storeId: dto.storeId,
         executionStoreId,
         quoteNo: createQuoteNo(),
         customerId: dto.customerId,
         vehicleId: dto.vehicleId,
         salesPersonId: actor.id,
+        idempotencyKey,
+        idempotencyActorId: actor.id,
+        requestFingerprint,
         pricingCalculationId: snapshot.id,
         status: submitForApproval ? SalesQuoteStatus.PENDING_APPROVAL : SalesQuoteStatus.DRAFT,
         vehicleClassSnapshot: vehicleClassSnapshot as Prisma.InputJsonValue,
@@ -191,12 +210,11 @@ export class SalesQuotesService {
           })
         },
         ...(submitForApproval ? { approvals: { create: { approvalType, submittedById: actor.id } } } : {})
-      },
-      include: { items: true, approvals: true }
-    });
-    if (submitForApproval) {
-      try {
-        await this.capacityReservations.holdQuote({
+        },
+        include: { items: true, approvals: true }
+      });
+      if (submitForApproval) {
+        await this.capacityReservations.holdQuoteWithin(tx, {
           storeId: executionStoreId,
           quoteId: quote.id,
           appointmentDate: dto.appointmentDate,
@@ -204,13 +222,33 @@ export class SalesQuotesService {
           constructionType: dto.constructionType,
           expiresAt: validUntil
         });
-      } catch (error) {
-        await this.prisma.salesQuote.delete({ where: { id: quote.id } });
-        throw error;
       }
+      await tx.auditEvent.create({
+        data: {
+          action: submitForApproval ? "sales_quote_submitted" : "sales_quote_draft_created",
+          actorId: actor.id,
+          storeId: dto.storeId,
+          targetType: "SalesQuote",
+          targetId: quote.id,
+          metadata: { storeId: dto.storeId, quoteNo: quote.quoteNo, approvalType }
+        }
+      });
+      return { quote };
+    });
+      return quote;
+    } catch (error) {
+      if (isUniqueConflict(error)) {
+        const concurrent = await this.prisma.salesQuote.findUnique({
+          where: { storeId_idempotencyActorId_idempotencyKey: { storeId: dto.storeId, idempotencyActorId: actor.id, idempotencyKey } },
+          include: { items: true, approvals: true }
+        });
+        if (concurrent) {
+          if (concurrent.requestFingerprint !== requestFingerprint) throw new ConflictException({ code: "COMMAND_ID_CONFLICT", message: "该报价创建标识已绑定不同输入" });
+          return concurrent;
+        }
+      }
+      throw error;
     }
-    await this.recordAudit({ action: submitForApproval ? "sales_quote_submitted" : "sales_quote_draft_created", actorId: actor.id, targetType: "SalesQuote", targetId: quote.id, metadata: { storeId: dto.storeId, quoteNo: quote.quoteNo, approvalType } });
-    return quote;
   }
 
   async list(user: PricingAuthenticatedUser, dto: ListSalesQuotesDto) {
@@ -468,7 +506,7 @@ export class SalesQuotesService {
     if (quote.status === SalesQuoteStatus.PENDING_APPROVAL) {
       await this.withdraw(user, id, { storeId: dto.storeId, reason: "RECALCULATED" });
     }
-    const next = await this.create(user, {
+    const next = await this.create(user, `RECALCULATE:${id}:${Date.now()}`, {
       storeId: dto.storeId,
       executionStoreId: quote.executionStoreId,
       customerId: quote.customerId,
@@ -491,70 +529,13 @@ export class SalesQuotesService {
     return { previousQuoteId: id, quote: next };
   }
 
-  async convertToOrder(user: PricingAuthenticatedUser, id: string) {
+  async convertToOrder(user: PricingAuthenticatedUser, id: string, commandId: string | undefined) {
     const actor = await this.withStoreMember(user);
-    const quote = await this.prisma.salesQuote.findFirst({
-      where: { id },
-      include: { items: true, capacityReservation: true }
-    });
-    if (!quote) throw new NotFoundException("报价单不存在");
-    if (!await this.canQuoteActor(actor, quote.storeId, quote.salesPersonId)) {
-      throw new ForbiddenException("只有报价销售或店长可以转订单");
-    }
-    if (quote.convertedOrderId) return { orderId: quote.convertedOrderId, quoteId: quote.id };
-    if (quote.status !== SalesQuoteStatus.APPROVED || quote.validUntil <= new Date()) {
-      throw new BadRequestException("只有有效的已批准报价单可以转订单");
-    }
-    if (!quote.vehicleId) {
-      throw new BadRequestException("报价单未选择车辆，请补齐车辆后再生成正式订单");
-    }
-    if (quote.costCompleteness === "TEMPORARY" && (quote.temporaryCostCents === null || !quote.temporaryCostReason?.trim())) {
-      throw new BadRequestException("临时成本报价缺少冻结的金额或成本依据，不能转正式订单");
-    }
-
-    const input = await this.prisma.pricingCalculation.findUnique({ where: { id: quote.pricingCalculationId }, select: { inputSnapshot: true } });
-    const pricingInput = input?.inputSnapshot as unknown as { constructionType: ConstructionType; constructionLocation: ConstructionLocation } | undefined;
-    if (!pricingInput) throw new BadRequestException("报价单缺少施工快照");
-
-    // Mark conversion in progress using the existing terminal status so a second
-    // request cannot create a duplicate order while the first request is running.
-    const claimed = await this.prisma.salesQuote.updateMany({
-      where: { id: quote.id, status: SalesQuoteStatus.APPROVED, convertedOrderId: null },
-      data: { status: SalesQuoteStatus.CONVERTED }
-    });
-    if (claimed.count !== 1) throw new BadRequestException("报价单正在转订单或已完成转单");
-
-    try {
-      const order = await this.createOrderUseCase.execute(actor, {
-        storeId: quote.storeId,
-        executionStoreId: quote.executionStoreId,
-        customerId: quote.customerId,
-        vehicleId: quote.vehicleId,
-        salesPersonId: quote.salesPersonId,
-        constructionType: pricingInput.constructionType,
-        constructionLocation: pricingInput.constructionLocation,
-        constructionAddress: quote.constructionAddress ?? undefined,
-        appointmentDate: quote.appointmentDate?.toISOString(),
-        appointmentTimeSlot: quote.appointmentTimeSlot ?? undefined,
-        items: quote.items.map((item) => ({ productId: item.productId, quantity: decimalToNumber(item.quantity), unitPriceCents: item.finalUnitPriceCents })),
-        constructionChargeCents: quote.finalConstructionChargeCents ?? quote.finalLaborCostCents,
-        pricingCalculationId: quote.pricingCalculationId,
-        capacityReservationId: quote.capacityReservation?.id,
-        remark: `由报价单 ${quote.quoteNo} 转入`
-      }, {
-        approvedQuote: true,
-        allowTemporaryCost: quote.costCompleteness === "TEMPORARY",
-        temporaryCost: quote.costCompleteness === "TEMPORARY" && quote.temporaryCostCents !== null && quote.temporaryCostReason
-          ? { cents: quote.temporaryCostCents, reason: quote.temporaryCostReason }
-          : undefined
-      });
-      await this.prisma.salesQuote.update({ where: { id: quote.id }, data: { convertedOrderId: order.id } });
-      await this.recordAudit({ action: "sales_quote_converted", actorId: actor.id, targetType: "SalesQuote", targetId: quote.id, metadata: { orderId: order.id, storeId: quote.storeId } });
-      return { orderId: order.id, quoteId: quote.id };
-    } catch (error) {
-      await this.prisma.salesQuote.update({ where: { id: quote.id }, data: { status: SalesQuoteStatus.APPROVED } });
-      throw error;
-    }
+    return this.orderLifecycle.createOrder(
+      actor,
+      { commandId: commandId ?? "", source: "QUOTE_CONVERSION" },
+      { source: "APPROVED_QUOTE", quoteId: id }
+    );
   }
 
   private async withStoreMember(user: PricingAuthenticatedUser): Promise<UserWithStoreMember> {
@@ -593,6 +574,10 @@ export class SalesQuotesService {
     this.audit?.record(event);
     await persistAuditEvent(this.prisma, event);
   }
+}
+
+function isUniqueConflict(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "P2002");
 }
 
 function createQuoteNo() {

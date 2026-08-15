@@ -254,9 +254,12 @@ test("order commercial editor shows the selected product sales unit beside quant
 test("finance users cannot modify order business data or operate fulfillment", () => {
   const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
 
-  assert.match(pageSource, /canOperateFulfillment/);
+  assert.doesNotMatch(pageSource, /canOperateFulfillment/);
+  assert.match(pageSource, /lifecycle\?\.capabilities/);
+  assert.match(pageSource, /capability\?\.visible/);
+  assert.match(pageSource, /disabled: !capability\.enabled/);
   assert.match(pageSource, /&& canManageOrderAmendment/);
-  assert.match(pageSource, /PENDING_DISPATCH" && canOperateFulfillment/);
+  assert.match(pageSource, /lifecycle\?\.capabilities\.dispatch\?\.enabled/);
   assert.match(pageSource, /position === "FINANCE"/);
 });
 

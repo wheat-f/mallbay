@@ -1,7 +1,7 @@
 "use client";
 
 import type { ConstructionType, OrderStatus } from "@mallbay/shared";
-import { App, Button, Card, DatePicker, Input, Popconfirm, Progress, Select, Space, Table, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, DatePicker, Input, Popconfirm, Progress, Select, Space, Table, Tag, Typography } from "antd";
 import {
   CreditCardOutlined,
   DownloadOutlined,
@@ -16,7 +16,7 @@ import dayjs from "dayjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { orderApi } from "../../src/lib/api";
-import type { OrderPaymentStatus } from "../../src/features/orders/api";
+import type { AuthoritativeLifecycleResult, OrderPaymentStatus } from "../../src/features/orders/api";
 import {
   CONSTRUCTION_TYPE_LABEL,
   ORDER_STATUS_LABEL,
@@ -48,6 +48,8 @@ type OrderRow = {
   appointmentTimeSlot?: string | null;
   createdAt: string;
 };
+
+type LifecycleBatchEntry = { ok: true; value: AuthoritativeLifecycleResult } | { ok: false; error: { code: string } };
 
 type SalesExportDimension = "customer" | "date" | "product";
 
@@ -180,6 +182,12 @@ function OrdersContent() {
   });
 
   const rows = useMemo(() => (ordersQuery.data?.items ?? []) as OrderRow[], [ordersQuery.data]);
+  const lifecycleBatchQuery = useQuery({
+    queryKey: ["orders-lifecycle-batch", rows.map((row) => row.id).join(",")],
+    queryFn: () => orderApi.lifecycleBatch(rows.map((row) => row.id)),
+    enabled: rows.length > 0
+  });
+  const lifecycleById = lifecycleBatchQuery.data as Record<string, LifecycleBatchEntry> | undefined;
   const openOrderPaymentEntry = (order: OrderRow) => {
     setPaymentOrder(order);
   };
@@ -237,8 +245,12 @@ function OrdersContent() {
   const orderSummary = useMemo(() => {
     const totalAmount = rows.reduce((sum, row) => sum + (row.amount?.totalAmountCents ?? 0), 0);
     const outstanding = rows.reduce((sum, row) => sum + (row.amount?.outstandingCents ?? 0), 0);
-    const riskyCount = rows.filter((row) => (row.amount?.outstandingCents ?? 0) > 0 || row.status === "CANCELLED").length;
-    const inProgressCount = rows.filter((row) => row.status === "DISPATCHED" || row.status === "IN_CONSTRUCTION").length;
+    const lifecycleStages = rows.map((row) => lifecycleById?.[row.id]).filter((entry): entry is LifecycleBatchEntry & { ok: true } => Boolean(entry?.ok));
+    const riskyCount = rows.filter((row) => {
+      const lifecycle = lifecycleById?.[row.id];
+      return (row.amount?.outstandingCents ?? 0) > 0 || (lifecycle?.ok === true && lifecycle.value.currentStage === "CANCELLED");
+    }).length;
+    const inProgressCount = lifecycleStages.filter((entry) => ["DISPATCHED", "READY_TO_START", "IN_CONSTRUCTION", "REWORKING", "PENDING_QUALITY", "PENDING_BALANCE"].includes(entry.value.currentStage)).length;
 
     return {
       total: ordersQuery.data?.total ?? rows.length,
@@ -247,7 +259,7 @@ function OrdersContent() {
       riskyCount,
       inProgressCount
     };
-  }, [ordersQuery.data?.total, rows]);
+  }, [lifecycleById, ordersQuery.data?.total, rows]);
 
   return (
     <>
@@ -268,7 +280,7 @@ function OrdersContent() {
             >
               导出产品明细
             </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/orders/create")}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => { void orderApi.recordLifecycleClientEvent({ event: "CREATE_NEW_INTENT", surface: "ORDER_LIST" }); router.push("/orders/create"); }}>
               新建订单
             </Button>
           </StorePageHeader>
@@ -289,7 +301,7 @@ function OrdersContent() {
                   </Typography.Text>
                 </div>
                 <Space>
-                  <Button type="primary" onClick={() => router.push("/orders/create?draft=local")}>
+                  <Button type="primary" onClick={() => { void orderApi.recordLifecycleClientEvent({ event: "CREATE_NEW_INTENT", surface: "ORDER_LIST" }); router.push("/orders/create?draft=local"); }}>
                     继续编辑
                   </Button>
                   <Popconfirm
@@ -436,7 +448,7 @@ function OrdersContent() {
               {rows.length > 0 ? (
                 rows.map((row) => {
                   const payment = getPaymentStatus(row);
-                  const progress = getConstructionProgress(row.status);
+                  const lifecycle = lifecycleById?.[row.id];
 
                   return (
                     <article key={row.id} className="orders-mobile-card">
@@ -447,7 +459,7 @@ function OrdersContent() {
                           </Typography.Text>
                           <div className="orders-mobile-customer">{getOrderCustomerName(row)}</div>
                         </div>
-                        <Tag>{getOrderStatusLabel(row.status)}</Tag>
+                        <Tag>{lifecycle && lifecycle.ok ? getOrderStageLabel(lifecycle.value.currentStage) : "履约状态加载失败"}</Tag>
                       </div>
 
                       <div className="orders-mobile-vehicle">{getOrderVehicleSummary(row)}</div>
@@ -479,13 +491,7 @@ function OrdersContent() {
                         </div>
                       </dl>
 
-                      <div className="orders-mobile-progress">
-                        <div className="orders-progress-label">
-                          <span>{progress.label}</span>
-                          <span>{progress.percent}%</span>
-                        </div>
-                        <Progress percent={progress.percent} showInfo={false} size="small" status={progress.status} />
-                      </div>
+                      {lifecycle && lifecycle.ok ? <LifecycleProgress stage={lifecycle.value.currentStage} /> : <Alert type="warning" showIcon title="履约状态加载失败" action={<Button size="small" onClick={() => lifecycleBatchQuery.refetch()}>重试</Button>} />}
 
                       <div className="orders-mobile-actions">
                         <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/orders/${row.id}`)}>
@@ -508,7 +514,7 @@ function OrdersContent() {
             <Table<OrderRow>
               className="orders-desktop-table"
               rowKey="id"
-              loading={ordersQuery.isLoading}
+              loading={ordersQuery.isLoading || lifecycleBatchQuery.isLoading}
               dataSource={rows}
               scroll={{ x: 1200 }}
               pagination={{
@@ -585,16 +591,10 @@ function OrdersContent() {
               title: "施工进度",
               width: 150,
               render: (_, row) => {
-                const progress = getConstructionProgress(row.status);
-                return (
-                  <Space className="w-full" orientation="vertical" size={2}>
-                    <div className="orders-progress-label">
-                      <span>{progress.label}</span>
-                      <span>{progress.percent}%</span>
-                    </div>
-                    <Progress percent={progress.percent} showInfo={false} size="small" status={progress.status} />
-                  </Space>
-                );
+                const lifecycle = lifecycleById?.[row.id];
+                return lifecycle && lifecycle.ok
+                  ? <LifecycleProgress stage={lifecycle.value.currentStage} />
+                  : <Space><Typography.Text type="warning">履约状态加载失败</Typography.Text><Button size="small" onClick={() => lifecycleBatchQuery.refetch()}>重试</Button></Space>;
               }
             },
             {
@@ -605,7 +605,10 @@ function OrdersContent() {
             {
               title: "状态",
               width: 100,
-              render: (_, row) => <Tag>{getOrderStatusLabel(row.status)}</Tag>
+              render: (_, row) => {
+                const lifecycle = lifecycleById?.[row.id];
+                return <Tag>{lifecycle?.ok ? getOrderStageLabel(lifecycle.value.currentStage) : "履约状态加载失败"}</Tag>;
+              }
             },
             {
               title: "操作",
@@ -678,6 +681,32 @@ function getOrderVehicleSummary(row: OrderRow) {
   return [row.vehicle?.carModel, plateAndColor].filter(Boolean).join(" · ") || "-";
 }
 
+function getOrderStageLabel(stage: string) {
+  const labels: Record<string, string> = {
+    PENDING_DISPATCH: "待派工",
+    PENDING_MATERIAL_PICKUP: "待领料",
+    READY_TO_START: "待开工",
+    IN_CONSTRUCTION: "施工中",
+    PENDING_QUALITY: "待质检",
+    REWORKING: "返工中",
+    PENDING_BALANCE: "待收尾款",
+    READY_FOR_FINAL_DELIVERY: "待最终交付",
+    COMPLETED: "已完工",
+    WARRANTIED: "已质保",
+    CANCELLED: "已取消",
+    HISTORICAL_VERIFICATION: "待历史核验"
+  };
+  return labels[stage] ?? "履约阶段待确认";
+}
+
+function LifecycleProgress({ stage }: { stage: string }) {
+  const progress = getConstructionProgress(stage);
+  return <Space className="w-full" orientation="vertical" size={2}>
+    <div className="orders-progress-label"><span>{getOrderStageLabel(stage)}</span><span>{progress.percent}%</span></div>
+    <Progress percent={progress.percent} showInfo={false} size="small" status={progress.status} />
+  </Space>;
+}
+
 function getPaymentStatus(row: OrderRow) {
   const amount = row.amount;
   if (!amount || amount.paidAmountCents <= 0) {
@@ -701,6 +730,17 @@ function getConstructionProgress(status: string): {
       return { label: "已质保", percent: 100, status: "success" };
     case "IN_CONSTRUCTION":
       return { label: "施工中", percent: 65, status: "active" };
+    case "PENDING_QUALITY":
+      return { label: "待质检", percent: 80, status: "active" };
+    case "REWORKING":
+      return { label: "返工中", percent: 65, status: "active" };
+    case "PENDING_BALANCE":
+      return { label: "待收尾款", percent: 90, status: "active" };
+    case "READY_FOR_FINAL_DELIVERY":
+      return { label: "待最终交付", percent: 95, status: "active" };
+    case "READY_TO_START":
+    case "PENDING_MATERIAL_PICKUP":
+      return { label: "待开工", percent: 25, status: "active" };
     case "DISPATCHED":
       return { label: "已派工", percent: 25, status: "active" };
     case "CANCELLED":

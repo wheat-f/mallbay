@@ -55,8 +55,8 @@ test("construction tasks page is a desktop worker task center, not the mobile sh
   assert.match(pageSource, /已完成/);
   assert.match(pageSource, /buildWorkerTaskSegments/);
   assert.match(pageSource, /filterWorkerTasks/);
-  assert.match(pageSource, /canStartTask/);
-  assert.match(pageSource, /canCompleteTask/);
+  assert.match(pageSource, /lifecycle\.capabilities\.startConstruction/);
+  assert.match(pageSource, /lifecycle\.capabilities\.completeConstruction/);
   assert.doesNotMatch(pageSource, /router\.push\("\/construction\/camera"\)/);
   assert.match(cssSource, /\.worker-task-center-page/);
   assert.match(cssSource, /\.worker-task-center-hero/);
@@ -90,7 +90,7 @@ test("construction task detail page is a desktop execution workspace", () => {
   assert.match(pageSource, /previewPhoto/);
   assert.match(pageSource, /<Modal/);
   assert.match(pageSource, /<Image src=\{previewPhoto\.url\}/);
-  assert.match(pageSource, /开始验车/);
+  assert.match(pageSource, /开始施工/);
   assert.match(pageSource, /上传文件/);
   assert.match(pageSource, /提交完工/);
   assert.match(pageSource, /领取物料/);
@@ -433,6 +433,16 @@ test("construction offline page follows the prototype upload queue layout", () =
   assert.match(pageSource, /lastSyncStorageKey/);
   assert.match(pageSource, /清理缓存/);
   assert.match(pageSource, /Table/);
+  assert.match(pageSource, /synced\.code/);
+  assert.match(pageSource, /row\.code/);
+  assert.match(pageSource, /REPLAYED/);
+  assert.match(pageSource, /CONFLICT/);
+  assert.match(pageSource, /RETRYABLE_FAILURE/);
+  assert.match(pageSource, /REJECTED/);
+  assert.match(pageSource, /本次同步结果/);
+  assert.match(pageSource, /查看最新任务/);
+  assert.match(pageSource, /lastSyncSummaryStorageKey/);
+  assert.match(pageSource, /清除本次摘要/);
   assert.doesNotMatch(pageSource, /from "next\/image"/);
   assert.match(cssSource, /\.worker-offline-page/);
   assert.match(cssSource, /\.worker-offline-grid/);
@@ -442,6 +452,9 @@ test("construction offline page follows the prototype upload queue layout", () =
   assert.match(cssSource, /\.construction-offline-order-group/);
   assert.match(cssSource, /\.construction-offline-queue-item/);
   assert.match(cssSource, /\.construction-offline-state-badge/);
+  assert.match(cssSource, /\.construction-offline-state-badge\.is-APPLIED/);
+  assert.match(cssSource, /\.construction-offline-state-badge\.is-CONFLICT/);
+  assert.match(cssSource, /\.construction-offline-state-badge\.is-RETRYABLE_FAILURE/);
   assert.match(cssSource, /\.construction-offline-table-card/);
   assert.match(cssSource, /\.construction-offline-mobile-cards/);
   assert.match(cssSource, /\.construction-offline-group/);

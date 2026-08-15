@@ -5,11 +5,11 @@ import { Alert, App, Button, Card, Empty, Input, Modal, Pagination, Select, Spac
 import { ArrowLeftOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ImportOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { dictionaryApi, dictionaryTemplateApi, type DictionaryCatalogEntry, type DictionaryCatalogPage, type DictionaryImportPreview, type DictionaryItemEntry, type DictionaryItemsPage, type DictionaryStatus } from "../../../src/features/settings/api";
+import { dictionaryGovernanceApi, type DictionaryGovernanceEntry, type DictionaryGovernanceImportPreview, type DictionaryItemEntry, type DictionaryItemsPage, type DictionaryStatus } from "../../../src/features/settings/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { SettingsCapabilityGuard } from "../../../src/features/settings/capability-guard";
 
-type DirectoryEntry = DictionaryCatalogEntry & { kind: "dictionary" | "template"; readOnly: boolean; inherited?: boolean };
+type DirectoryEntry = DictionaryGovernanceEntry;
 type ImportRow = { code: string; name: string; sortOrder?: number; parentId?: string | null; status?: DictionaryStatus };
 
 const emptyPage: DictionaryItemsPage = { items: [], total: 0, page: 1, pageSize: 20, dictionaryVersion: 1, parent: null };
@@ -40,7 +40,7 @@ export default function DictionarySettingsPage() {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
-  const [importPreview, setImportPreview] = useState<DictionaryImportPreview>();
+  const [importPreview, setImportPreview] = useState<DictionaryGovernanceImportPreview>();
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
 
   const selected = useMemo(() => directory.find((item) => `${item.kind}:${item.id}` === selectedKey), [directory, selectedKey]);
@@ -53,54 +53,10 @@ export default function DictionarySettingsPage() {
     setLoading(true);
     try {
       const keyword = directoryQuery.trim() || undefined;
-      const [dictionaryFirstPage, templateFirstPage] = await Promise.all([
-        dictionaryApi.catalog({ storeId, keyword, page: 1, pageSize: directoryPageSize }),
-        dictionaryTemplateApi.catalog({ keyword, page: 1, pageSize: directoryPageSize })
-      ]);
-      const fetchRange = async (
-        firstPage: DictionaryCatalogPage,
-        fetchPage: (page: number) => Promise<DictionaryCatalogPage>,
-        total: number,
-        start: number,
-        length: number
-      ) => {
-        const result: DictionaryCatalogEntry[] = [];
-        let cursor = start;
-        let remaining = Math.min(length, Math.max(0, total - start));
-        while (remaining > 0) {
-          const sourcePage = Math.floor(cursor / directoryPageSize) + 1;
-          const response = sourcePage === 1 ? firstPage : await fetchPage(sourcePage);
-          const offset = cursor % directoryPageSize;
-          const items = response.items.slice(offset, offset + remaining);
-          result.push(...items);
-          if (!items.length) break;
-          cursor += items.length;
-          remaining -= items.length;
-        }
-        return result;
-      };
-      const globalOffset = (directoryPage - 1) * directoryPageSize;
-      const dictionaryItems = await fetchRange(
-        dictionaryFirstPage,
-        (page) => dictionaryApi.catalog({ storeId, keyword, page, pageSize: directoryPageSize }),
-        dictionaryFirstPage.total,
-        globalOffset,
-        directoryPageSize
-      );
-      const templateOffset = Math.max(0, globalOffset - dictionaryFirstPage.total);
-      const templateItems = await fetchRange(
-        templateFirstPage,
-        (page) => dictionaryTemplateApi.catalog({ keyword, page, pageSize: directoryPageSize }),
-        templateFirstPage.total,
-        templateOffset,
-        Math.max(0, directoryPageSize - dictionaryItems.length)
-      );
-      const rows: DirectoryEntry[] = [
-        ...dictionaryItems.map((item) => ({ ...item, kind: "dictionary" as const, readOnly: false })),
-        ...templateItems.map((item) => ({ ...item, kind: "template" as const, readOnly: !user?.isAuditor, inherited: !user?.isAuditor }))
-      ];
+      const result = await dictionaryGovernanceApi.catalog({ storeId, keyword, page: directoryPage, pageSize: directoryPageSize });
+      const rows: DirectoryEntry[] = result.items;
       setDirectory(rows);
-      setDirectoryTotal(dictionaryFirstPage.total + templateFirstPage.total);
+      setDirectoryTotal(result.total);
       const nextKey = selectedKey && rows.some((item) => `${item.kind}:${item.id}` === selectedKey) ? selectedKey : rows[0] ? `${rows[0].kind}:${rows[0].id}` : undefined;
       setSelectedKey(nextKey);
       if (initial && !nextKey) setItemsPage(emptyPage);
@@ -117,7 +73,7 @@ export default function DictionarySettingsPage() {
     setItemsLoading(true);
     try {
       const params = { keyword: itemKeyword.trim() || undefined, status: itemStatus, parentId, page, pageSize };
-      const result = selected.kind === "template" ? await dictionaryTemplateApi.listItemsPage(selected.id, params) : await dictionaryApi.listItemsPage(selected.id, params);
+      const result = await dictionaryGovernanceApi.listItems(selected.kind, selected.id, params);
       setItemsPage(result);
     } catch (reason) {
       message.error(reason instanceof Error ? reason.message : "字典项加载失败");
@@ -142,12 +98,9 @@ export default function DictionarySettingsPage() {
     setSaving(true);
     try {
       if (editing.item) {
-        if (selected.kind === "template") await dictionaryTemplateApi.updateItem(editing.item.id, { name: name.trim(), version: itemsPage.dictionaryVersion });
-        else await dictionaryApi.updateItem(editing.item.id, { name: name.trim(), version: itemsPage.dictionaryVersion });
-      } else if (selected.kind === "template") {
-        await dictionaryTemplateApi.createItem(selected.id, { code: code.trim(), name: name.trim() });
+        await dictionaryGovernanceApi.updateItem(selected.kind, editing.item.id, { name: name.trim(), version: itemsPage.dictionaryVersion });
       } else {
-        await dictionaryApi.createItem(selected.id, { code: code.trim(), name: name.trim() });
+        await dictionaryGovernanceApi.createItem(selected.kind, selected.id, { code: code.trim(), name: name.trim() });
       }
       message.success("字典项已保存");
       setEditing(undefined);
@@ -163,8 +116,7 @@ export default function DictionarySettingsPage() {
     const reason = nextStatus === "INACTIVE" ? window.prompt("请输入停用原因", "停用前确认影响范围")?.trim() : undefined;
     if (nextStatus === "INACTIVE" && !reason) return;
     try {
-      if (selected.kind === "template") await dictionaryTemplateApi.setItemStatus(item.id, nextStatus, reason, itemsPage.dictionaryVersion);
-      else await dictionaryApi.setItemStatus(item.id, nextStatus, reason, itemsPage.dictionaryVersion);
+      await dictionaryGovernanceApi.setItemStatus(selected.kind, item.id, nextStatus, reason, itemsPage.dictionaryVersion);
       message.success("字典项状态已更新");
       await loadDirectory(false);
       await loadItems();
@@ -176,7 +128,7 @@ export default function DictionarySettingsPage() {
     const reason = window.prompt("请输入删除原因", "删除前确认未被引用")?.trim();
     if (!reason) return;
     Modal.confirm({ title: "确认删除字典项？", content: `删除 ${item.name} 后不可恢复；已被引用项只能停用。`, okText: "确认删除", cancelText: "取消", okButtonProps: { danger: true }, onOk: async () => {
-      try { await dictionaryApi.removeItem(item.id, reason); message.success("字典项已删除"); await loadDirectory(false); await loadItems(); }
+      try { await dictionaryGovernanceApi.removeItem(selected.kind, item.id, reason); message.success("字典项已删除"); await loadDirectory(false); await loadItems(); }
       catch (reason) { message.error(reason instanceof Error ? reason.message : "删除失败，被引用项只能停用"); }
     } });
   };
@@ -195,7 +147,7 @@ export default function DictionarySettingsPage() {
     if (!selected) return;
     try {
       const rows = await parseImportFile(file);
-      const preview = selected.kind === "template" ? await dictionaryTemplateApi.previewImport(selected.id, rows) : await dictionaryApi.previewImport(selected.id, rows);
+      const preview = await dictionaryGovernanceApi.previewImport(selected.kind, selected.id, rows);
       setImportRows(rows);
       setImportPreview(preview);
     } catch (reason) { message.error(reason instanceof Error ? reason.message : "导入预览失败"); }
@@ -204,8 +156,7 @@ export default function DictionarySettingsPage() {
   const commitImport = async () => {
     if (!selected || !importPreview) return;
     try {
-      if (selected.kind === "template") await dictionaryTemplateApi.commitImport(selected.id, importRows, importPreview.dictionaryVersion);
-      else await dictionaryApi.commitImport(selected.id, importRows, importPreview.dictionaryVersion);
+      await dictionaryGovernanceApi.commitImport(selected.kind, selected.id, importRows, importPreview.dictionaryVersion);
       message.success("导入已提交，整批字典项已生效");
       setImportPreview(undefined);
       await loadDirectory(false);

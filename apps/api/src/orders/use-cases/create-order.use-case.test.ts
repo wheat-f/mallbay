@@ -63,7 +63,8 @@ test("CreateOrderUseCase creates order items amount and deposit payment in one t
       }
     },
     paymentAccount: { findUnique: async () => ({ id: "account-1", storeId: "store-1", isActive: true }) },
-    orderPayment: { create: async () => operations.push("orderPayment.create") }
+    orderPayment: { create: async () => { operations.push("orderPayment.create"); return { id: "payment-1" }; } },
+    paymentRecord: { create: async () => operations.push("paymentRecord.create") }
   };
   const prisma = {
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
@@ -116,7 +117,8 @@ test("CreateOrderUseCase creates order items amount and deposit payment in one t
         profitCents: 5200000
       }
     }),
-    "orderPayment.create"
+    "orderPayment.create",
+    "paymentRecord.create"
   ]);
 });
 

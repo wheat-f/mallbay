@@ -3,7 +3,7 @@
 import { App, Button, Card, Popconfirm, Space, Table, Tag, Typography } from "antd";
 import { CheckOutlined, CloseOutlined, DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { salesQuoteApi, type SalesQuoteRow } from "../../../src/features/sales-quotes/api";
+import { clearQuoteConversionCommandId, getQuoteConversionCommandId, salesQuoteApi, type SalesQuoteRow } from "../../../src/features/sales-quotes/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { exportRowsToExcel } from "../../../src/lib/export-excel";
@@ -16,6 +16,7 @@ export default function SalesQuotesPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const storeId = useAuthStore((state) => state.user?.storeMember?.store.id);
+  const actorId = useAuthStore((state) => state.user?.id);
   const canViewCosts = Boolean(useAuthStore((state) => state.user?.isAuditor || ["MANAGER", "FINANCE"].includes(state.user?.storeMember?.position ?? "")));
   const query = useQuery({ queryKey: ["sales-quotes", storeId], queryFn: () => salesQuoteApi.list(storeId!), enabled: Boolean(storeId) });
   const reviewMutation = useMutation({
@@ -24,8 +25,8 @@ export default function SalesQuotesPage() {
     onError: (error: Error) => message.error(error.message)
   });
   const convertMutation = useMutation({
-    mutationFn: (id: string) => salesQuoteApi.convertToOrder(id),
-    onSuccess: (result) => { message.success("报价已转为正式订单"); window.location.href = `/orders/${result.orderId}`; },
+    mutationFn: (id: string) => salesQuoteApi.convertToOrder(id, getQuoteConversionCommandId(id, actorId!, storeId!)),
+    onSuccess: (result) => { clearQuoteConversionCommandId(result.quoteId, actorId!, storeId!); message.success("报价已转为正式订单"); window.location.href = `/orders/${result.orderId}`; },
     onError: (error: Error) => message.error(error.message)
   });
   const withdrawMutation = useMutation({

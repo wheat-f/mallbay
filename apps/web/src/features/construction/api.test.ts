@@ -53,13 +53,20 @@ test("constructionApi.assignOrder posts worker ids to /construction/orders/:id/a
     });
   };
   try {
-    await constructionApi.assignOrder("order-1", { workerUserIds: ["worker-1"] });
+    await constructionApi.assignOrder(
+      "order-1",
+      { workerUserIds: ["worker-1"] },
+      { commandId: "dispatch-command-1", expectedVersion: 3 }
+    );
 
     assert.equal(
       (calls[0] as { input: string }).input,
       "http://localhost:4001/construction/orders/order-1/assign"
     );
     assert.equal((calls[0] as { init: RequestInit }).init.method, "POST");
+    const headers = new Headers((calls[0] as { init: RequestInit }).init.headers);
+    assert.equal(headers.get("Idempotency-Key"), "dispatch-command-1");
+    assert.equal(headers.get("X-Lifecycle-Version"), "3");
     assert.equal((calls[0] as { init: RequestInit }).init.body, JSON.stringify({ workerUserIds: ["worker-1"] }));
   } finally {
     globalThis.fetch = originalFetch;

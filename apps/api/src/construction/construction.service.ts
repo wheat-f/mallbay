@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { createHash } from "node:crypto";
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
+  ConstructionEvidenceStatus,
   ConstructionPhotoStage,
   ConstructionTaskStatus,
   CrossStoreTaskStatus,
@@ -53,21 +55,13 @@ export type AuthenticatedConstructionUser = UserWithStoreMember & {
 export class ConstructionService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    private readonly orderLifecycle: OrderLifecycle,
     @Optional() @Inject(OssService) private readonly oss?: OssService,
     @Optional() private readonly costSettlements?: ConstructionCostSettlementService,
     @Optional() private readonly notifications?: NotificationsService,
-    @Optional() private readonly orderLifecycle?: OrderLifecycle,
     @Optional() private readonly notificationDispatcher?: NotificationDispatcher,
     @Optional() private readonly accessContext?: AccessContext
-  ) {
-    this.orderLifecycle?.registerConstructionHandler(async (actor, orderId, command) => {
-      if (command.type === "DISPATCH") return this.assignOrderInternal(actor, orderId, command.input as AssignOrderDto);
-      if (command.type === "START_CONSTRUCTION") return this.startOrderInternal(actor, orderId, command.input as StartConstructionDto);
-      if (command.type === "COMPLETE_CONSTRUCTION") return this.completeOrderForOrderInternal(actor, orderId, command.input as CompleteConstructionDto);
-      if (command.type === "QUALITY_CHECK") return this.qualityCheckInternal(actor, command.recordId, command.input as QualityCheckDto);
-      throw new BadRequestException("不支持的施工履约状态");
-    });
-  }
+  ) {}
 
   private canAccess(actor: AuthenticatedConstructionUser | UserWithStoreMember, capability: string, action: string, storeId: string, ownerId?: string) {
     if (!this.accessContext) throw new Error("ConstructionService access context is not configured");
@@ -142,148 +136,42 @@ export class ConstructionService {
     });
   }
 
-  async assignOrder(user: AuthenticatedConstructionUser, orderId: string, dto: AssignOrderDto) {
+  async assignOrder(user: AuthenticatedConstructionUser, orderId: string, dto: AssignOrderDto, context: { commandId: string; expectedVersion: number }) {
     const actor = await this.withStoreMember(user);
-    if (this.orderLifecycle) {
-      return this.orderLifecycle.transition(actor, orderId, { type: "DISPATCH", input: dto });
-    }
-    return this.assignOrderInternal(actor, orderId, dto);
+    return this.orderLifecycle.transition(actor, orderId, { type: "DISPATCH", input: dto }, { ...context, source: "CONSTRUCTION_WEB" });
   }
 
-  private async assignOrderInternal(actor: UserWithStoreMember, orderId: string, dto: AssignOrderDto) {
-    const workerIds = [...new Set(dto.workerUserIds)];
-    if (workerIds.length < 1 || workerIds.length > 3) {
-      throw new BadRequestException("施工人员必须为 1 到 3 人");
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId } });
-      if (!order) {
-        throw new NotFoundException("订单不存在");
-      }
-      const executionStoreId = order.executionStoreId ?? order.storeId;
-      if (!await this.canAccess(actor, "construction", "write", executionStoreId)) {
-        throw new ForbiddenException("无权限");
-      }
-      if (order.status !== OrderStatus.PENDING_DISPATCH) {
-        throw new BadRequestException("只有待派单订单可以派单");
-      }
-      const existingRecord = await tx.constructionRecord.findUnique({
-        where: { orderId },
-        select: { id: true }
-      });
-      if (existingRecord) {
-        throw new BadRequestException("该订单已生成施工工单，请刷新施工列表");
-      }
-
-      const executionStore = order.storeId === executionStoreId
-        ? { financialEntityId: "" }
-        : await tx.store.findUnique({
-          where: { id: executionStoreId },
-          select: { financialEntityId: true }
-        });
-      if (!executionStore) {
-        throw new NotFoundException("执行门店不存在");
-      }
-      const members = await tx.storeMember.findMany({
-        where: {
-          userId: { in: workerIds },
-          position: { in: [StorePosition.CONSTRUCTION, StorePosition.APPRENTICE] },
-          store: { financialEntityId: executionStore.financialEntityId }
-        }
-      });
-      if (members.length !== workerIds.length) {
-        throw new BadRequestException("施工人员必须属于同一财务主体内的有效施工岗位");
-      }
-
-      const assignmentDate = order.appointmentDate ?? new Date();
-      for (const workerId of workerIds) {
-        const leave = await tx.leaveRequest.findFirst({
-          where: {
-            workerId,
-            status: LeaveRequestStatus.APPROVED,
-            startDate: { lte: assignmentDate },
-            endDate: { gte: assignmentDate }
-          }
-        });
-        if (leave) {
-          throw new BadRequestException("施工人员请假中，不能派单");
-        }
-      }
-
-      const record = await tx.constructionRecord.create({
-        data: {
-          storeId: executionStoreId,
-          orderId,
-          dispatchedById: actor.id,
-          status: ConstructionTaskStatus.DISPATCHED
-        }
-      });
-      await tx.constructionAssignment.createMany({
-        data: workerIds.map((workerUserId) => ({
-          recordId: record.id,
-          orderId,
-          workerUserId
-        }))
-      });
-      await tx.order.update({
-        where: { id: orderId },
-        data: { status: OrderStatus.DISPATCHED }
-      });
-      if (order.storeId !== executionStoreId) {
-        await tx.crossStoreConstructionTask.updateMany({
-          where: { orderId, status: CrossStoreTaskStatus.READY_TO_DISPATCH },
-          data: {
-            status: CrossStoreTaskStatus.DISPATCHED,
-            dispatchedAt: new Date(),
-            version: { increment: 1 }
-          }
-        });
-      }
-      return record;
-    });
-  }
-
-  async startOrder(user: AuthenticatedConstructionUser, orderId: string, dto: StartConstructionDto = {}) {
+  async startOrder(user: AuthenticatedConstructionUser, orderId: string, dto: StartConstructionDto = {}, context: { commandId: string; expectedVersion: number }) {
     const actor = await this.withStoreMember(user);
-    if (this.orderLifecycle) {
-      return this.orderLifecycle.transition(actor, orderId, { type: "START_CONSTRUCTION", input: dto });
-    }
-    return this.startOrderInternal(actor, orderId, dto);
-  }
-
-  private async startOrderInternal(actor: UserWithStoreMember, orderId: string, dto: StartConstructionDto = {}) {
-    const record = await this.findRecordForOrder(orderId);
-    await this.assertAssignedWorker(actor, record);
-    if (record.order.status !== OrderStatus.DISPATCHED) {
-      throw new BadRequestException("只有已派单订单可以开工");
-    }
-    const startedAt = dto.startedAt ? new Date(dto.startedAt) : new Date();
-    return this.prisma.$transaction(async (tx) => {
-      await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.IN_CONSTRUCTION } });
-      await tx.crossStoreConstructionTask.updateMany({
-        where: { orderId, status: CrossStoreTaskStatus.DISPATCHED },
-        data: {
-          status: CrossStoreTaskStatus.IN_CONSTRUCTION,
-          constructionStartedAt: startedAt,
-          version: { increment: 1 }
-        }
-      });
-      return tx.constructionRecord.update({
-        where: { id: record.id },
-        data: { startedAt, status: ConstructionTaskStatus.IN_CONSTRUCTION }
-      });
-    });
+    return this.orderLifecycle.transition(actor, orderId, { type: "START_CONSTRUCTION", input: dto }, { ...context, source: "CONSTRUCTION_WEB" });
   }
 
   async uploadPhoto(
     user: AuthenticatedConstructionUser,
     recordId: string,
     dto: UploadConstructionPhotoDto,
-    file?: MulterFile
+    file?: MulterFile,
+    clientOperationId?: string
   ) {
     const actor = await this.withStoreMember(user);
     const record = await this.findRecord(recordId);
+    const operationId = clientOperationId?.trim() || undefined;
+    const requestFingerprint = buildConstructionEvidenceFingerprint(recordId, actor.id, dto, file);
+    if (operationId) {
+      const existing = await this.prisma.constructionPhoto.findUnique({ where: { clientOperationId: operationId } });
+      if (existing) {
+        assertConstructionEvidenceReplay(existing, {
+          actorId: actor.id,
+          recordId,
+          stage: dto.stage,
+          requestFingerprint
+        });
+        return toConstructionPhotoResponse(existing);
+      }
+    }
+    if (record.status === ConstructionTaskStatus.DISPATCHED && dto.stage !== ConstructionPhotoStage.BEFORE) {
+      throw new BadRequestException({ code: "EVIDENCE_STAGE_NOT_ALLOWED", message: "正式开工前只能上传 BEFORE 验车证据" });
+    }
     const assignedWorkerId = this.getAssignedWorkerId(actor.id, record);
     if (
       assignedWorkerId !== actor.id &&
@@ -292,216 +180,62 @@ export class ConstructionService {
     ) {
       throw new ForbiddenException("无权限");
     }
-    const url = dto.url ?? (file ? await this.oss?.uploadConstructionPhoto(record.storeId, record.orderId, file) : undefined);
+    const uploadedObject = !dto.url && file
+      ? await this.oss?.uploadConstructionPhoto(record.storeId, record.orderId, file, operationId)
+      : undefined;
+    const url = dto.url ?? uploadedObject;
     if (!url) {
       throw new BadRequestException("请上传施工照片");
     }
-    return this.prisma.constructionPhoto.create({
-      data: {
-        recordId,
-        stage: dto.stage,
-        url,
-        uploadedById: actor.id,
-        takenAt: dto.takenAt ? new Date(dto.takenAt) : undefined
-      }
-    });
-  }
-
-  async completeOrder(user: AuthenticatedConstructionUser, recordId: string, dto: CompleteConstructionDto) {
-    const actor = await this.withStoreMember(user);
-    const record = await this.findRecord(recordId);
-    if (this.orderLifecycle) {
-      return this.orderLifecycle.transition(actor, record.orderId, { type: "COMPLETE_CONSTRUCTION", input: dto });
-    }
-    return this.completeRecord(actor, record, dto);
-  }
-
-  async completeOrderForOrder(user: AuthenticatedConstructionUser, orderId: string, dto: CompleteConstructionDto) {
-    const actor = await this.withStoreMember(user);
-    if (this.orderLifecycle) {
-      return this.orderLifecycle.transition(actor, orderId, { type: "COMPLETE_CONSTRUCTION", input: dto });
-    }
-    return this.completeOrderForOrderInternal(actor, orderId, dto);
-  }
-
-  private async completeOrderForOrderInternal(actor: UserWithStoreMember, orderId: string, dto: CompleteConstructionDto) {
-    const record = await this.findRecordForOrder(orderId);
-    return this.completeRecord(actor, record, dto);
-  }
-
-  private async completeRecord(
-    actor: UserWithStoreMember,
-    record: ConstructionRecordWithRelations,
-    dto: CompleteConstructionDto
-  ) {
-    await this.assertAssignedWorker(actor, record);
-    if (record.order.status !== OrderStatus.IN_CONSTRUCTION) {
-      throw new BadRequestException("只有施工中订单可以完工");
-    }
-    const stages = new Set(record.photos.map((photo) => photo.stage));
-    if (!stages.has(ConstructionPhotoStage.BEFORE) || !stages.has(ConstructionPhotoStage.AFTER)) {
-      throw new BadRequestException("完工前必须上传施工前和施工后照片");
-    }
-    await this.assertLockedMaterialsPickedUp(record.orderId);
-    const completedAt = dto.completedAt ? new Date(dto.completedAt) : new Date();
-    const startedAt = record.startedAt ?? completedAt;
-    const actualMinutes = Math.max(0, Math.round((completedAt.getTime() - startedAt.getTime()) / 60000));
-    const overtimeMinutes = Math.max(0, actualMinutes - 8 * 60);
-
-    const isCrossStore = record.order.storeId !== (record.order.executionStoreId ?? record.order.storeId);
-    const updated = isCrossStore
-      ? await this.prisma.$transaction(async (tx) => {
-        const completedRecord = await tx.constructionRecord.update({
-          where: { id: record.id },
-          data: { status: ConstructionTaskStatus.COMPLETED, completedAt, actualMinutes, overtimeMinutes }
-        });
-        await tx.crossStoreConstructionTask.updateMany({
-          where: { orderId: record.orderId, status: { in: [CrossStoreTaskStatus.DISPATCHED, CrossStoreTaskStatus.IN_CONSTRUCTION] } },
-          data: { status: CrossStoreTaskStatus.PENDING_SOURCE_ACCEPTANCE, submittedForAcceptanceAt: completedAt, version: { increment: 1 } }
-        });
-        return completedRecord;
-      })
-      : await this.prisma.constructionRecord.update({
-        where: { id: record.id },
-        data: { status: ConstructionTaskStatus.COMPLETED, completedAt, actualMinutes, overtimeMinutes }
-      });
-    await this.createCommissionSnapshots(actor.id, record);
-    await this.costSettlements?.initializeForCompletedRecord(record.id, actor.id);
-    if (isCrossStore) {
-      const recipients = await this.prisma.storeMember.findMany({
-        where: { storeId: record.order.storeId, position: StorePosition.MANAGER },
-        select: { userId: true }
-      });
-      await Promise.all(recipients.map(({ userId }) => this.dispatchNotification(
-        userId,
-        NotificationType.CROSS_STORE_TASK_SUBMITTED,
-        { orderId: record.orderId, constructionRecordId: record.id }
-      )));
-    }
-    return updated;
-  }
-
-  private async assertLockedMaterialsPickedUp(orderId: string) {
-    const allocations = await this.prisma.orderInventoryAllocation.findMany({
-      where: { orderId },
-      select: { id: true }
-    });
-    if (allocations.length === 0) return;
-
-    const allocationIds = allocations.map((allocation) => allocation.id);
-    const pickupMovements = await this.prisma.inventoryMovement.findMany({
-      where: {
-        orderId,
-        sourceType: "CONSTRUCTION_MATERIAL_PICKUP",
-        sourceId: { in: allocationIds }
-      },
-      select: { sourceId: true }
-    });
-    const pickedAllocationIds = new Set(pickupMovements.map((movement) => movement.sourceId).filter(Boolean));
-    if (pickedAllocationIds.size < allocationIds.length) {
-      throw new BadRequestException("请先领取已锁定的施工物料");
-    }
-  }
-
-  async qualityCheck(user: AuthenticatedConstructionUser, recordId: string, dto: QualityCheckDto) {
-    const actor = await this.withStoreMember(user);
-    if (this.orderLifecycle) {
-      const record = await this.findRecord(recordId);
-      return this.orderLifecycle.transition(actor, record.orderId, { type: "QUALITY_CHECK", recordId, input: dto });
-    }
-    return this.qualityCheckInternal(actor, recordId, dto);
-  }
-
-  private async qualityCheckInternal(actor: UserWithStoreMember, recordId: string, dto: QualityCheckDto) {
-    const record = await this.findRecord(recordId);
-    if (!await this.canAccess(actor, "construction", "write", record.storeId)) {
-      throw new ForbiddenException("无权限");
-    }
-    const checkedAt = new Date();
-    if (dto.result === QualityCheckResult.REWORK_REQUIRED) {
-      if (!dto.note?.trim()) throw new BadRequestException("质检不通过必须填写返工原因");
-      if (!dto.responsibilityType?.trim()) throw new BadRequestException("质检不通过必须填写责任类型");
-    }
-    const isRecheck = record.qualityResult === QualityCheckResult.REWORK_REQUIRED;
-    const update = dto.result === QualityCheckResult.REWORK_REQUIRED
-      ? {
-          qualityResult: dto.result,
-          qualityNote: dto.note,
-          qualityCheckedById: actor.id,
-          qualityCheckedAt: checkedAt,
-          status: ConstructionTaskStatus.IN_CONSTRUCTION,
-          reworkCount: { increment: 1 },
-          currentReworkReason: dto.note!.trim(),
-          currentResponsibilityType: dto.responsibilityType?.trim() ?? null
+    try {
+      const photo = await this.prisma.constructionPhoto.create({
+        data: {
+          recordId,
+          stage: dto.stage,
+          url,
+          uploadedById: actor.id,
+          clientOperationId: operationId,
+          requestFingerprint,
+          status: ConstructionEvidenceStatus.APPLIED,
+          takenAt: dto.takenAt ? new Date(dto.takenAt) : undefined
         }
-      : {
-          qualityResult: dto.result,
-          qualityNote: dto.note,
-          qualityCheckedById: actor.id,
-          qualityCheckedAt: checkedAt,
-          status: ConstructionTaskStatus.COMPLETED,
-          currentReworkReason: null,
-          currentResponsibilityType: null
-        };
-    const transaction = (this.prisma as unknown as {
-      $transaction?: <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>;
-    }).$transaction ?? (async <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) => fn(this.prisma as never));
-    const updated = await transaction(async (tx: Prisma.TransactionClient) => {
-      if (dto.result === QualityCheckResult.REWORK_REQUIRED) {
-        await tx.order.update({ where: { id: record.orderId }, data: { status: OrderStatus.IN_CONSTRUCTION } });
-      }
-      const next = await tx.constructionRecord.update({ where: { id: recordId }, data: update });
-      if (typeof tx.constructionQualityHistory?.create === "function") {
-        await tx.constructionQualityHistory.create({
-          data: {
-            storeId: record.storeId,
-            recordId: record.id,
-            orderId: record.orderId,
-            result: dto.result,
-            note: dto.note?.trim() || null,
-            responsibilityType: dto.responsibilityType?.trim() || null,
-            checkedById: actor.id,
-            checkedAt: checkedAt
-          }
-        });
-      }
-      if (dto.result === QualityCheckResult.PASS && typeof tx.orderAmount?.findUnique === "function") {
-        const amount = await tx.orderAmount.findUnique({
-          where: { orderId: record.orderId },
-          select: { outstandingCents: true }
-        });
-        // 质检只形成质量事实；最终交付必须由归属门店店长/管理员
-        // 通过订单 final-delivery command 显式执行。
-        if (amount && typeof tx.notification?.createMany === "function") {
-          await (this.orderLifecycle?.ensureBalanceTodos(tx, record.orderId) ?? ensureBalanceTodos(tx, record.orderId));
-        }
-      }
-      const events = dto.result === QualityCheckResult.REWORK_REQUIRED
-        ? ["QUALITY_CHECK_FAILED", "REWORK_STARTED"]
-        : (isRecheck ? ["REWORK_COMPLETED", "QUALITY_RECHECKED"] : ["QUALITY_CHECK_PASSED"]);
-      for (const action of events) {
-        if (!tx.auditEvent?.create) continue;
-        await tx.auditEvent.create({
-          data: {
-            action,
+      });
+      return toConstructionPhotoResponse(photo);
+    } catch (error) {
+      if (operationId && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const existing = await this.prisma.constructionPhoto.findUnique({ where: { clientOperationId: operationId } });
+        if (existing) {
+          assertConstructionEvidenceReplay(existing, {
             actorId: actor.id,
-            storeId: record.storeId,
-            targetType: "order",
-            targetId: record.orderId,
-            metadata: {
-              orderId: record.orderId,
-              constructionRecordId: record.id,
-              originalQualityResult: record.qualityResult,
-              recheckResult: dto.result,
-              reworkReason: dto.note ?? null,
-              responsibilityType: dto.responsibilityType ?? null
-            }
-          }
-        });
+            recordId,
+            stage: dto.stage,
+            requestFingerprint
+          });
+          return toConstructionPhotoResponse(existing);
+        }
       }
-      return next;
-    });
-    return updated;
+      if (uploadedObject) {
+        await this.oss?.removeConstructionPhoto(uploadedObject).catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
+  async completeOrder(user: AuthenticatedConstructionUser, recordId: string, dto: CompleteConstructionDto, context: { commandId: string; expectedVersion: number }) {
+    const actor = await this.withStoreMember(user);
+    const record = await this.findRecord(recordId);
+    return this.orderLifecycle.transition(actor, record.orderId, { type: "COMPLETE_CONSTRUCTION", input: dto }, { ...context, source: "CONSTRUCTION_WEB" });
+  }
+
+  async completeOrderForOrder(user: AuthenticatedConstructionUser, orderId: string, dto: CompleteConstructionDto, context: { commandId: string; expectedVersion: number }) {
+    const actor = await this.withStoreMember(user);
+    return this.orderLifecycle.transition(actor, orderId, { type: "COMPLETE_CONSTRUCTION", input: dto }, { ...context, source: "CONSTRUCTION_WEB" });
+  }
+
+  async qualityCheck(user: AuthenticatedConstructionUser, recordId: string, dto: QualityCheckDto, context: { commandId: string; expectedVersion: number }) {
+    const actor = await this.withStoreMember(user);
+    const record = await this.findRecord(recordId);
+    return this.orderLifecycle.transition(actor, record.orderId, { type: "QUALITY_CHECK", recordId, input: dto }, { ...context, source: "CONSTRUCTION_WEB" });
   }
 
   async listQualityHistory(user: AuthenticatedConstructionUser, recordId: string) {
@@ -630,20 +364,23 @@ export class ConstructionService {
     if (!allocation) {
       throw new NotFoundException("订单未锁定该批次");
     }
-    await this.prisma.inventoryMovement.create({
-      data: {
-        storeId: allocation.storeId,
-        batchId: allocation.batchId,
-        productId: allocation.productId,
-        orderId,
-        movementType: InventoryMovementType.STOCK_ADJUST,
-        quantity: 0,
-        unit: allocation.batch.unit,
-        sourceType: "CONSTRUCTION_MATERIAL_VERIFY",
-        sourceId: allocation.id,
-        createdById: actor.id,
-        note: dto.note ?? `施工物料批次核验：${allocation.batch.batchNo}`
-      }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.inventoryMovement.create({
+        data: {
+          storeId: allocation.storeId,
+          batchId: allocation.batchId,
+          productId: allocation.productId,
+          orderId,
+          movementType: InventoryMovementType.STOCK_ADJUST,
+          quantity: 0,
+          unit: allocation.batch.unit,
+          sourceType: "CONSTRUCTION_MATERIAL_VERIFY",
+          sourceId: allocation.id,
+          createdById: actor.id,
+          note: dto.note ?? `施工物料批次核验：${allocation.batch.batchNo}`
+        }
+      });
+      await this.invalidateOrderLifecycleFact(tx, orderId, "CONSTRUCTION_MATERIAL_VERIFY", allocation.id, { allocationId: allocation.id });
     });
     return this.getOrderMaterials(user, orderId);
   }
@@ -671,20 +408,23 @@ export class ConstructionService {
     const pickedAllocationIds = new Set(existingPickupMovements.map((movement) => movement.sourceId).filter(Boolean));
     const pendingAllocations = allocations.filter((allocation) => !pickedAllocationIds.has(allocation.id));
     if (pendingAllocations.length > 0) {
-      await this.prisma.inventoryMovement.createMany({
-        data: pendingAllocations.map((allocation) => ({
-          storeId: allocation.storeId,
-          batchId: allocation.batchId,
-          productId: allocation.productId,
-          orderId,
-          movementType: InventoryMovementType.STOCK_ADJUST,
-          quantity: 0,
-          unit: allocation.batch.unit,
-          sourceType: "CONSTRUCTION_MATERIAL_PICKUP",
-          sourceId: allocation.id,
-          createdById: actor.id,
-          note: dto.note ?? `施工领取物料：${allocation.batch.batchNo}`
-        }))
+      await this.prisma.$transaction(async (tx) => {
+        await tx.inventoryMovement.createMany({
+          data: pendingAllocations.map((allocation) => ({
+            storeId: allocation.storeId,
+            batchId: allocation.batchId,
+            productId: allocation.productId,
+            orderId,
+            movementType: InventoryMovementType.STOCK_ADJUST,
+            quantity: 0,
+            unit: allocation.batch.unit,
+            sourceType: "CONSTRUCTION_MATERIAL_PICKUP",
+            sourceId: allocation.id,
+            createdById: actor.id,
+            note: dto.note ?? `施工领取物料：${allocation.batch.batchNo}`
+          }))
+        });
+        await this.invalidateOrderLifecycleFact(tx, orderId, "CONSTRUCTION_MATERIAL_PICKUP", pendingAllocations.map((allocation) => allocation.id).join(","), { allocationIds: pendingAllocations.map((allocation) => allocation.id) });
       });
     }
     return this.getOrderMaterials(user, orderId);
@@ -726,6 +466,7 @@ export class ConstructionService {
           note: dto.note ?? "施工现场损耗"
         }
       });
+      await this.invalidateOrderLifecycleFact(tx, orderId, "CONSTRUCTION_MATERIAL_LOSS", dto.batchId, { batchId: dto.batchId, quantity: dto.quantity });
     });
     return this.getOrderMaterials(user, orderId);
   }
@@ -790,7 +531,7 @@ export class ConstructionService {
     return [...profiledWorkers, ...profilelessMembers];
   }
 
-  async createLeave(user: AuthenticatedConstructionUser, dto: LeaveRequestDto) {
+  async createLeave(user: AuthenticatedConstructionUser, dto: LeaveRequestDto, rawClientOperationId?: string) {
     const actor = await this.withStoreMember(user);
     if (actor.id !== dto.workerId) {
       throw new ForbiddenException("无权限");
@@ -813,8 +554,25 @@ export class ConstructionService {
       select: { code: true }
     });
     if (!leaveType) throw new BadRequestException("请假类型无效或已停用，请从当前有效类型中选择");
+    const clientOperationId = (rawClientOperationId ?? dto.clientOperationId)?.trim() || undefined;
+    if (clientOperationId) {
+      const existing = await this.prisma.leaveRequest.findUnique({ where: { clientOperationId } });
+      if (existing) {
+        const startDate = normalizeDate(dto.startDate);
+        const endDate = normalizeDate(dto.endDate);
+        const sameInput = existing.storeId === dto.storeId
+          && existing.workerId === dto.workerId
+          && existing.startDate.getTime() === startDate.getTime()
+          && existing.endDate.getTime() === endDate.getTime()
+          && existing.leaveType === leaveType.code
+          && (existing.reason ?? "") === (dto.reason?.trim() ?? "");
+        if (!sameInput) throw new ConflictException({ code: "COMMAND_ID_CONFLICT", message: "请假命令标识已用于不同输入" });
+        return existing;
+      }
+    }
     const leave = await this.prisma.leaveRequest.create({
       data: {
+        clientOperationId,
         storeId: dto.storeId,
         workerId: dto.workerId,
         startDate: normalizeDate(dto.startDate),
@@ -940,51 +698,82 @@ export class ConstructionService {
   }
 
   async syncOfflineOperations(user: AuthenticatedConstructionUser, dto: OfflineSyncDto) {
-    const items = [];
+    const items: Array<{
+      clientOperationId: string;
+      status: "APPLIED" | "REPLAYED" | "CONFLICT" | "RETRYABLE_FAILURE" | "REJECTED";
+      code?: string;
+      message?: string;
+      result?: unknown;
+    }> = [];
     for (const operation of dto.operations) {
       try {
-        const result = await this.applyOfflineOperation(user, operation);
-        items.push({ clientOperationId: operation.clientOperationId, status: "SYNCED" as const, result });
-      } catch (error) {
+        const outcome = await this.applyOfflineOperation(user, operation);
         items.push({
           clientOperationId: operation.clientOperationId,
-          status: "FAILED" as const,
-          message: error instanceof Error ? error.message : "同步失败"
+          status: outcome.replayed ? "REPLAYED" : "APPLIED",
+          result: outcome.result
+        });
+      } catch (error) {
+        const failure = classifyOfflineFailure(error);
+        items.push({
+          clientOperationId: operation.clientOperationId,
+          status: failure.status,
+          code: failure.code,
+          message: failure.message
         });
       }
     }
     return { items };
   }
 
-  private async applyOfflineOperation(user: AuthenticatedConstructionUser, operation: OfflineSyncOperationDto) {
+  private async applyOfflineOperation(user: AuthenticatedConstructionUser, operation: OfflineSyncOperationDto): Promise<{ result: unknown; replayed: boolean }> {
     if (operation.type === "PHOTO_UPLOAD") {
       const payload = operation.payload as OfflinePhotoPayloadDto;
-      return this.uploadPhoto(user, payload.recordId, {
+      const existing = await this.prisma.constructionPhoto.findUnique({ where: { clientOperationId: operation.clientOperationId } });
+      const result = await this.uploadPhoto(user, payload.recordId, {
         stage: payload.stage,
         url: payload.url,
         takenAt: payload.takenAt
-      });
+      }, undefined, operation.clientOperationId);
+      return { result, replayed: Boolean(existing) };
     }
     if (operation.type === "TASK_STATUS") {
       const payload = operation.payload as OfflineTaskStatusPayloadDto;
+      const order = await this.prisma.order.findUnique({ where: { id: payload.orderId }, select: { storeId: true } });
+      const existing = order
+        ? await this.prisma.orderLifecycleCommandRecord.findUnique({
+          where: { storeId_commandId: { storeId: order.storeId, commandId: operation.clientOperationId } },
+          select: { status: true }
+        })
+        : null;
       if (payload.status === ConstructionTaskStatus.IN_CONSTRUCTION) {
-        return this.startOrder(user, payload.orderId, { startedAt: payload.startedAt });
+        const result = await this.startOrder(user, payload.orderId, { startedAt: payload.startedAt }, {
+          commandId: operation.clientOperationId,
+          expectedVersion: payload.expectedVersion
+        });
+        return { result, replayed: Boolean(existing) };
       }
       if (payload.status === ConstructionTaskStatus.COMPLETED) {
-        return this.completeOrderForOrder(user, payload.orderId, { completedAt: payload.completedAt });
+        const result = await this.completeOrderForOrder(user, payload.orderId, { completedAt: payload.completedAt }, {
+          commandId: operation.clientOperationId,
+          expectedVersion: payload.expectedVersion
+        });
+        return { result, replayed: Boolean(existing) };
       }
       throw new BadRequestException("不支持的离线施工状态");
     }
     if (operation.type === "LEAVE_REQUEST") {
       const payload = operation.payload as OfflineLeavePayloadDto;
-      return this.createLeave(user, {
+      const existing = await this.prisma.leaveRequest.findUnique({ where: { clientOperationId: operation.clientOperationId } });
+      const result = await this.createLeave(user, {
         storeId: payload.storeId,
         workerId: payload.workerId ?? user.id,
         startDate: payload.startDate,
         endDate: payload.endDate,
         leaveType: payload.leaveType,
         reason: payload.reason
-      });
+      }, operation.clientOperationId);
+      return { result, replayed: Boolean(existing) };
     }
     throw new BadRequestException("不支持的离线操作类型");
   }
@@ -1037,30 +826,29 @@ export class ConstructionService {
     }
   }
 
-  private async createCommissionSnapshots(createdById: string, record: ConstructionRecordWithRelations) {
-    const existing = await this.prisma.workerCommissionSnapshot.findFirst({
-      where: { recordId: record.id }
+  private async invalidateOrderLifecycleFact(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    sourceType: string,
+    sourceKey: string,
+    sourceRefs: Prisma.InputJsonObject
+  ) {
+    const order = await tx.order.findUnique({ where: { id: orderId }, select: { lifecycleVersion: true } });
+    if (!order) throw new NotFoundException("订单不存在");
+    const updated = await tx.order.updateMany({
+      where: { id: orderId, lifecycleVersion: order.lifecycleVersion },
+      data: { lifecycleVersion: { increment: 1 } }
     });
-    if (existing) {
-      return;
-    }
-    const workerIds = record.assignments.map((assignment) => assignment.workerUserId);
-    const actualCommissions = workerIds.length && typeof this.prisma.workerCommission?.findMany === "function"
-      ? await this.prisma.workerCommission.findMany({
-        where: { orderId: record.orderId, workerUserId: { in: workerIds } },
-        select: { workerUserId: true, finalAmountCents: true, calculationNote: true }
-      })
-      : [];
-    const commissionByWorker = new Map(actualCommissions.map((item) => [item.workerUserId, item]));
-    await this.prisma.workerCommissionSnapshot.createMany({
-      data: record.assignments.map((assignment) => ({
-        recordId: record.id,
-        orderId: record.orderId,
-        workerUserId: assignment.workerUserId,
-        amountCents: commissionByWorker.get(assignment.workerUserId)?.finalAmountCents ?? 0,
-        calculationNote: commissionByWorker.get(assignment.workerUserId)?.calculationNote ?? "完工时尚无个人提成，成本确认时以财务维护的实际提成为准",
-        createdById
-      }))
+    if (updated.count !== 1) throw new BadRequestException("订单履约事实已被其他操作更新，请刷新后重试");
+    await tx.orderLifecycleVersionChange.create({
+      data: {
+        orderId,
+        beforeVersion: order.lifecycleVersion,
+        afterVersion: order.lifecycleVersion + 1,
+        sourceType,
+        sourceKey,
+        sourceRefs
+      }
     });
   }
 
@@ -1106,8 +894,51 @@ const constructionRecordInclude = {
     }
   },
   assignments: true,
-  photos: true
+  // Keep command identity/fingerprint internal to the evidence implementation;
+  // transport adapters only expose business-safe photo fields.
+  photos: { select: { id: true, stage: true, url: true, uploadedById: true, takenAt: true, status: true } }
 } satisfies Prisma.ConstructionRecordInclude;
+
+function buildConstructionEvidenceFingerprint(
+  recordId: string,
+  actorId: string,
+  dto: UploadConstructionPhotoDto,
+  file?: MulterFile
+) {
+  const content = file?.buffer ?? Buffer.from(dto.url?.trim() ?? "", "utf8");
+  return createHash("sha256")
+    .update(JSON.stringify({
+      recordId,
+      actorId,
+      stage: dto.stage,
+      takenAt: dto.takenAt ? new Date(dto.takenAt).toISOString() : null,
+      contentSha256: createHash("sha256").update(content).digest("hex")
+    }))
+    .digest("hex");
+}
+
+function assertConstructionEvidenceReplay(
+  existing: {
+    recordId: string;
+    uploadedById?: string;
+    stage?: ConstructionPhotoStage;
+    requestFingerprint?: string;
+    status?: ConstructionEvidenceStatus;
+  },
+  expected: { actorId: string; recordId: string; stage: ConstructionPhotoStage; requestFingerprint: string }
+) {
+  if (existing.status === ConstructionEvidenceStatus.REVOKED) {
+    throw new ConflictException({ code: "EVIDENCE_REVOKED", message: "该施工证据已撤销，不能重放" });
+  }
+  if (
+    existing.recordId !== expected.recordId ||
+    (existing.uploadedById && existing.uploadedById !== expected.actorId) ||
+    (existing.stage && existing.stage !== expected.stage) ||
+    (existing.requestFingerprint && existing.requestFingerprint !== expected.requestFingerprint)
+  ) {
+    throw new ConflictException({ code: "COMMAND_ID_CONFLICT", message: "照片命令标识已绑定不同施工证据输入" });
+  }
+}
 
 type ConstructionRecordWithRelations = Prisma.ConstructionRecordGetPayload<{
   include: typeof constructionRecordInclude;
@@ -1126,6 +957,60 @@ function buildDateRange(from?: string, to?: string) {
     gte: from ? normalizeDate(from) : undefined,
     lte: to ? normalizeDate(to) : undefined
   };
+}
+
+function classifyOfflineFailure(error: unknown): {
+  status: "CONFLICT" | "RETRYABLE_FAILURE" | "REJECTED";
+  code?: string;
+  message: string;
+} {
+  const response = error instanceof HttpException ? error.getResponse() : undefined;
+  const statusCode = error instanceof HttpException ? error.getStatus() : 500;
+  const responseObject = response && typeof response === "object" ? response as { code?: unknown; message?: unknown } : undefined;
+  const code = typeof responseObject?.code === "string" ? responseObject.code : undefined;
+  const message = typeof responseObject?.message === "string"
+    ? responseObject.message
+    : typeof response === "string"
+      ? response
+      : error instanceof Error
+        ? error.message
+        : "同步失败";
+
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    return { status: "CONFLICT", code: "COMMAND_ID_CONFLICT", message: "该离线命令标识已被其他请求占用，请使用原输入重试" };
+  }
+  if (code === "COMMAND_ID_CONFLICT" || code === "LIFECYCLE_VERSION_CONFLICT") {
+    return { status: "CONFLICT", code, message };
+  }
+  if (statusCode >= 500) return { status: "RETRYABLE_FAILURE", code, message };
+  return { status: "REJECTED", code, message };
+}
+
+function toConstructionPhotoResponse(photo: {
+  id: string;
+  recordId?: string | null;
+  stage?: ConstructionPhotoStage | null;
+  url?: string | null;
+  uploadedById?: string | null;
+  takenAt?: Date | null;
+  status?: ConstructionEvidenceStatus | null;
+}) {
+  const response: {
+    id: string;
+    recordId?: string | null;
+    stage?: ConstructionPhotoStage | null;
+    url?: string | null;
+    uploadedById?: string | null;
+    takenAt?: Date | null;
+    status?: ConstructionEvidenceStatus | null;
+  } = { id: photo.id };
+  if ("recordId" in photo) response.recordId = photo.recordId;
+  if ("stage" in photo) response.stage = photo.stage;
+  if ("url" in photo) response.url = photo.url;
+  if ("uploadedById" in photo) response.uploadedById = photo.uploadedById;
+  if ("takenAt" in photo) response.takenAt = photo.takenAt;
+  if ("status" in photo) response.status = photo.status;
+  return response;
 }
 
 function decimalToNumber(value: Prisma.Decimal | number | string) {

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   ConstructionCostSettlementStatus,
   InventoryMovementType,
@@ -8,6 +8,7 @@ import {
   PurchaseOrderStatus,
   StorePosition
 } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import type { UserWithStoreMember } from "../permissions/domain/access-types";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
@@ -1045,6 +1046,7 @@ export class InventoryService {
         });
         locked.push({ batchId: batch.id, orderItemId: orderItem.id, quantity: lockBaseQuantity });
       }
+      if (locked.length) await this.invalidateOrderLifecycleWithin(tx, orderId, "INVENTORY_ALLOCATION", `ALLOCATE:${orderId}:${locked.map((item) => item.batchId).join(",")}`, { locked });
       return { locked };
     });
   }
@@ -1087,6 +1089,7 @@ export class InventoryService {
           }
         });
       }
+      if (allocations.length) await this.invalidateOrderLifecycleWithin(tx, orderId, "INVENTORY_RELEASE", `RELEASE:${orderId}`, { allocationIds: allocations.map((allocation) => allocation.id) });
       return { released: allocations.length };
     });
   }
@@ -1792,6 +1795,7 @@ export class InventoryService {
         })
         : undefined;
 
+      if (locked.length || purchaseRequirement) await this.invalidateOrderLifecycleWithin(tx, orderId, "INVENTORY_ALLOCATION", `LOCK:${orderId}:${locked.map((item) => item.batchId).join(",")}`, { locked, missing: missing.length });
       return { locked, missing, purchaseRequirement };
     });
   }
@@ -1876,6 +1880,7 @@ export class InventoryService {
           }
         });
       }
+      if (outboundLines.length) await this.invalidateOrderLifecycleWithin(tx, orderId, "INVENTORY_OUTBOUND", `OUTBOUND:${orderId}:${outboundLines.map((line) => line.allocationId).join(",")}`, { allocationIds: outboundLines.map((line) => line.allocationId) });
       return { outbound: outboundLines.length };
     });
   }
@@ -2129,6 +2134,32 @@ export class InventoryService {
       throw new BadRequestException("采购员必须是本店店长或采购人员");
     }
     return purchaserId;
+  }
+
+  private async invalidateOrderLifecycleWithin(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    sourceType: string,
+    sourceKey: string,
+    sourceRefs: Prisma.InputJsonObject
+  ) {
+    const order = await tx.order.findUnique({ where: { id: orderId }, select: { lifecycleVersion: true } });
+    if (!order) throw new NotFoundException("订单不存在");
+    const updated = await tx.order.updateMany({
+      where: { id: orderId, lifecycleVersion: order.lifecycleVersion },
+      data: { lifecycleVersion: { increment: 1 } }
+    });
+    if (updated.count !== 1) throw new ConflictException({ code: "LIFECYCLE_VERSION_CONFLICT", message: "订单履约事实已被其他操作更新，请刷新后重试" });
+    await tx.orderLifecycleVersionChange.create({
+      data: {
+        orderId,
+        beforeVersion: order.lifecycleVersion,
+        afterVersion: order.lifecycleVersion + 1,
+        sourceType,
+        sourceKey,
+        sourceRefs
+      }
+    });
   }
 
   private async withStoreMember(user: AuthenticatedInventoryUser): Promise<UserWithStoreMember> {

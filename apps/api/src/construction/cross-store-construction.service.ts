@@ -1,32 +1,16 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
-  BadRequestException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-  Optional
-} from "@nestjs/common";
-import {
-  CrossStoreTaskStatus,
   DictionaryStatus,
-  NotificationType,
-  OrderStatus,
   Prisma,
-  ProductUnit,
-  StorePosition
+  ProductUnit
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AccessContext } from "../permissions/domain/access-context";
-import { NotificationsService } from "../notifications/notifications.service";
-import { NotificationDispatcher } from "../notifications/notification-dispatcher";
 import type { AuthenticatedConstructionUser } from "./construction.service";
 import {
-  CancelCrossStoreTaskDto,
-  CompleteCrossStoreAcceptanceDto,
   CrossStoreTaskScope,
   ListCrossStoreTasksDto,
-  RejectCrossStoreTaskDto,
   UpsertCrossStoreProductMappingDto
 } from "./dto/cross-store-construction.dto";
 
@@ -34,9 +18,7 @@ import {
 export class CrossStoreConstructionService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Optional() private readonly notifications?: NotificationsService,
-    @Optional() private readonly notificationDispatcher?: NotificationDispatcher,
-    @Optional() private readonly accessContext?: AccessContext
+    private readonly accessContext: AccessContext
   ) {}
 
   async list(user: AuthenticatedConstructionUser, query: ListCrossStoreTasksDto) {
@@ -67,140 +49,6 @@ export class CrossStoreConstructionService {
     const task = await this.loadTask(id);
     await this.assertTaskViewer(user, task.sourceStoreId, task.executionStoreId);
     return task;
-  }
-
-  async accept(user: AuthenticatedConstructionUser, id: string) {
-    const task = await this.loadTask(id);
-    await this.assertExecutionOperator(user, task.executionStoreId);
-    if (task.status !== CrossStoreTaskStatus.PENDING_ACCEPTANCE) {
-      throw new BadRequestException("仅待接单的跨门店任务可以接受");
-    }
-    const updated = await this.prisma.crossStoreConstructionTask.update({
-      where: { id },
-      data: {
-        status: CrossStoreTaskStatus.READY_TO_DISPATCH,
-        acceptedById: user.id,
-        acceptedAt: new Date(),
-        rejectionReason: null,
-        version: { increment: 1 }
-      }
-    });
-    await this.notifyStore(task.sourceStoreId, NotificationType.CROSS_STORE_TASK_ACCEPTED, {
-      taskId: task.id,
-      orderId: task.orderId,
-      executionStoreId: task.executionStoreId
-    });
-    return updated;
-  }
-
-  async reject(user: AuthenticatedConstructionUser, id: string, dto: RejectCrossStoreTaskDto) {
-    const task = await this.loadTask(id);
-    await this.assertExecutionOperator(user, task.executionStoreId);
-    if (task.status !== CrossStoreTaskStatus.PENDING_ACCEPTANCE) {
-      throw new BadRequestException("仅待接单的跨门店任务可以拒绝");
-    }
-    const reason = dto.reason.trim();
-    const updated = await this.prisma.crossStoreConstructionTask.update({
-      where: { id },
-      data: {
-        status: CrossStoreTaskStatus.REJECTED,
-        rejectionReason: reason,
-        version: { increment: 1 }
-      }
-    });
-    await this.notifyStore(task.sourceStoreId, NotificationType.CROSS_STORE_TASK_REJECTED, {
-      taskId: task.id,
-      orderId: task.orderId,
-      reason
-    });
-    return updated;
-  }
-
-  async cancel(user: AuthenticatedConstructionUser, id: string, dto: CancelCrossStoreTaskDto) {
-    const task = await this.loadTask(id);
-    await this.assertSourceManager(user, task.sourceStoreId);
-    if (
-      task.status === CrossStoreTaskStatus.IN_CONSTRUCTION ||
-      task.status === CrossStoreTaskStatus.PENDING_SOURCE_ACCEPTANCE ||
-      task.status === CrossStoreTaskStatus.COMPLETED ||
-      task.status === CrossStoreTaskStatus.CANCELLED
-    ) {
-      throw new BadRequestException("任务已开工或已结束，不能直接取消");
-    }
-    const reason = dto.reason.trim();
-    const updated = await this.prisma.crossStoreConstructionTask.update({
-      where: { id },
-      data: {
-        status: CrossStoreTaskStatus.CANCELLED,
-        cancellationReason: reason,
-        cancelledById: user.id,
-        cancelledAt: new Date(),
-        version: { increment: 1 }
-      }
-    });
-    await this.notifyStore(task.executionStoreId, NotificationType.CROSS_STORE_TASK_CANCELLED, {
-      taskId: task.id,
-      orderId: task.orderId,
-      reason
-    });
-    return updated;
-  }
-
-  async submitForSourceAcceptance(
-    user: AuthenticatedConstructionUser,
-    id: string,
-    dto: CompleteCrossStoreAcceptanceDto
-  ) {
-    const task = await this.loadTask(id);
-    await this.assertExecutionOperator(user, task.executionStoreId);
-    if (
-      task.status !== CrossStoreTaskStatus.DISPATCHED &&
-      task.status !== CrossStoreTaskStatus.IN_CONSTRUCTION
-    ) {
-      throw new BadRequestException("仅已派工或施工中的任务可以提交来源门店验收");
-    }
-    const updated = await this.prisma.crossStoreConstructionTask.update({
-      where: { id },
-      data: {
-        status: CrossStoreTaskStatus.PENDING_SOURCE_ACCEPTANCE,
-        submittedForAcceptanceAt: new Date(),
-        requirementsSnapshot: mergeSnapshotRemark(task.requirementsSnapshot, dto.remark),
-        version: { increment: 1 }
-      }
-    });
-    await this.notifyStore(task.sourceStoreId, NotificationType.CROSS_STORE_TASK_SUBMITTED, {
-      taskId: task.id,
-      orderId: task.orderId,
-      remark: dto.remark.trim()
-    });
-    return updated;
-  }
-
-  async completeSourceAcceptance(user: AuthenticatedConstructionUser, id: string) {
-    const task = await this.loadTask(id);
-    await this.assertSourceManager(user, task.sourceStoreId);
-    if (task.status !== CrossStoreTaskStatus.PENDING_SOURCE_ACCEPTANCE) {
-      throw new BadRequestException("仅待来源门店验收的任务可以完成");
-    }
-    const completedAt = new Date();
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const completedTask = await tx.crossStoreConstructionTask.update({
-        where: { id },
-        data: {
-          status: CrossStoreTaskStatus.COMPLETED,
-          sourceAcceptedById: user.id,
-          completedAt,
-          version: { increment: 1 }
-        }
-      });
-
-      return completedTask;
-    });
-    await this.notifyStore(task.executionStoreId, NotificationType.CROSS_STORE_TASK_COMPLETED, {
-      taskId: task.id,
-      orderId: task.orderId
-    });
-    return updated;
   }
 
   async listProductMappings(
@@ -345,14 +193,6 @@ export class CrossStoreConstructionService {
     if (!canSource && !canExecution) throw new ForbiddenException("无权限");
   }
 
-  private async assertExecutionOperator(user: AuthenticatedConstructionUser, storeId: string) {
-    if (!await this.can(user, "construction", "write", storeId)) throw new ForbiddenException("仅执行门店店长或施工主管可操作");
-  }
-
-  private async assertSourceManager(user: AuthenticatedConstructionUser, storeId: string) {
-    if (!await this.can(user, "construction", "write", storeId)) throw new ForbiddenException("仅来源门店店长可操作");
-  }
-
   private async assertEitherStoreManager(user: AuthenticatedConstructionUser, sourceStoreId: string, executionStoreId: string) {
     const canSource = await this.can(user, "construction", "write", sourceStoreId);
     const canExecution = await this.can(user, "construction", "write", executionStoreId);
@@ -360,32 +200,6 @@ export class CrossStoreConstructionService {
   }
 
   private can(user: AuthenticatedConstructionUser, capability: string, action: string, storeId: string) {
-    if (!this.accessContext) throw new Error("CrossStoreConstructionService access context is not configured");
     return this.accessContext.can(user.id, capability, action, { storeId });
   }
-  private async notifyStore(storeId: string, type: NotificationType, payload: object) {
-    const recipients = await this.prisma.storeMember.findMany({
-      where: {
-        storeId,
-        position: { in: [StorePosition.MANAGER, StorePosition.SCHEDULER] }
-      },
-      select: { userId: true }
-    });
-    await Promise.all(
-      recipients.map(({ userId }) =>
-        this.notificationDispatcher?.dispatch({ userId, type, payload })
-          ?? this.notifications?.send(userId, type, payload)
-      )
-    );
-  }
-}
-
-function mergeSnapshotRemark(snapshot: Prisma.JsonValue, remark: string): Prisma.InputJsonValue {
-  const base = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
-    ? snapshot as Prisma.JsonObject
-    : {};
-  return {
-    ...base,
-    executionAcceptanceRemark: remark.trim()
-  };
 }

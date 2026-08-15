@@ -23,36 +23,47 @@ export class CapacityReservationService {
     expiresAt: Date;
   }) {
     if (!input.appointmentDate) return null;
-    const date = normalizeDate(input.appointmentDate);
-    const reservation = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.capacityReservation.findUnique({ where: { quoteId: input.quoteId } });
-      if (existing && isActiveStatus(existing.status)) {
-        return existing;
-      }
-      const capacity = await tx.dailyCapacity.findUnique({ where: { storeId_date: { storeId: input.storeId, date } } });
-      if (!capacity) throw new BadRequestException("请先设置施工容量");
-      const increments = getCapacityIncrements(capacity, input.constructionLocation, input.constructionType);
-      const updated = await tx.dailyCapacity.updateMany({
-        where: { id: capacity.id, ...getCapacityAvailabilityWhere(capacity, input.constructionLocation, input.constructionType) },
-        data: increments
-      });
-      if (updated.count !== 1) throw new BadRequestException("施工容量已满，请刷新后重试");
-      return tx.capacityReservation.create({
-        data: {
-          storeId: input.storeId,
-          dailyCapacityId: capacity.id,
-          date,
-          constructionLocation: input.constructionLocation,
-          constructionType: input.constructionType,
-          sourceType: CapacityReservationSourceType.QUOTE,
-          quoteId: input.quoteId,
-          status: CapacityReservationStatus.HELD,
-          expiresAt: input.expiresAt
-        }
-      });
-    });
+    const reservation = await this.prisma.$transaction((tx) => this.holdQuoteWithin(tx, input));
     if (reservation) await this.recordAudit({ action: "capacity_quote_held", targetType: "CapacityReservation", targetId: reservation.id, metadata: { quoteId: input.quoteId, storeId: input.storeId, expiresAt: reservation.expiresAt?.toISOString() } });
     return reservation;
+  }
+
+  async holdQuoteWithin(
+    tx: Prisma.TransactionClient,
+    input: {
+      storeId: string;
+      quoteId: string;
+      appointmentDate?: string;
+      constructionLocation: ConstructionLocation;
+      constructionType: ConstructionType;
+      expiresAt: Date;
+    }
+  ) {
+    if (!input.appointmentDate) return null;
+    const date = normalizeDate(input.appointmentDate);
+    const existing = await tx.capacityReservation.findUnique({ where: { quoteId: input.quoteId } });
+    if (existing && isActiveStatus(existing.status)) return existing;
+    const capacity = await tx.dailyCapacity.findUnique({ where: { storeId_date: { storeId: input.storeId, date } } });
+    if (!capacity) throw new BadRequestException("请先设置施工容量");
+    const increments = getCapacityIncrements(capacity, input.constructionLocation, input.constructionType);
+    const updated = await tx.dailyCapacity.updateMany({
+      where: { id: capacity.id, ...getCapacityAvailabilityWhere(capacity, input.constructionLocation, input.constructionType) },
+      data: increments
+    });
+    if (updated.count !== 1) throw new BadRequestException("施工容量已满，请刷新后重试");
+    return tx.capacityReservation.create({
+      data: {
+        storeId: input.storeId,
+        dailyCapacityId: capacity.id,
+        date,
+        constructionLocation: input.constructionLocation,
+        constructionType: input.constructionType,
+        sourceType: CapacityReservationSourceType.QUOTE,
+        quoteId: input.quoteId,
+        status: CapacityReservationStatus.HELD,
+        expiresAt: input.expiresAt
+      }
+    });
   }
 
   async confirmQuote(quoteId: string) {

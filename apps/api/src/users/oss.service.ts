@@ -65,6 +65,26 @@ export class OssService {
     await fs.writeFile(targetPath, buffer);
   }
 
+  private extractConfiguredObjectKey(url: string) {
+    try {
+      const parsed = new URL(url);
+      if (this.isLocalProvider()) {
+        const basePath = new URL(process.env.OSS_PUBLIC_BASE_URL ?? "http://localhost:4001/local-oss").pathname.replace(/\/$/, "") + "/";
+        if (!parsed.pathname.startsWith(basePath)) return undefined;
+        return parsed.pathname.slice(basePath.length).split("/").map((part) => decodeURIComponent(part)).join("/");
+      }
+
+      const bucket = process.env.OSS_BUCKET;
+      const region = process.env.OSS_REGION;
+      const cdnHost = process.env.OSS_CDN_HOST;
+      const expectedHost = cdnHost || (bucket && region ? `${bucket}.${region}.aliyuncs.com` : undefined);
+      if (!expectedHost || parsed.hostname !== expectedHost) return undefined;
+      return parsed.pathname.replace(/^\/+/, "").split("/").map((part) => decodeURIComponent(part)).join("/");
+    } catch {
+      return undefined;
+    }
+  }
+
   async uploadAvatar(userId: string, file: MulterFile): Promise<string> {
     return this.traceUpload(
       { component: "oss", target: "avatar", userId, bytes: file.buffer.length },
@@ -116,12 +136,13 @@ export class OssService {
     );
   }
 
-  async uploadConstructionPhoto(storeId: string, orderId: string, file: MulterFile): Promise<string> {
+  async uploadConstructionPhoto(storeId: string, orderId: string, file: MulterFile, clientOperationId?: string): Promise<string> {
     return this.traceUpload(
       { component: "oss", target: "construction_photo", storeId, orderId, bytes: file.buffer.length },
       async () => {
         const ext = path.extname(file.originalname) || ".jpg";
-        const key = `construction/${storeId}/${orderId}/${crypto.randomUUID()}${ext}`;
+        const stableToken = clientOperationId?.trim().replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 128);
+        const key = `construction/${storeId}/${orderId}/${stableToken || crypto.randomUUID()}${ext}`;
         if (this.isLocalProvider()) {
           await this.putLocalObject(key, file.buffer);
           return this.buildLocalUrl(key);
@@ -165,6 +186,23 @@ export class OssService {
         return this.buildUrl(key, bucket, region);
       }
     );
+  }
+
+  /** Remove only a construction object belonging to the configured provider. */
+  async removeConstructionPhoto(url: string): Promise<void> {
+    const key = this.extractConfiguredObjectKey(url);
+    if (!key || !key.startsWith("construction/")) return;
+
+    if (this.isLocalProvider()) {
+      const root = path.resolve(this.getLocalRoot());
+      const target = path.resolve(root, ...key.split("/"));
+      if (target !== root && !target.startsWith(`${root}${path.sep}`)) return;
+      await fs.rm(target, { force: true });
+      return;
+    }
+
+    const { client } = this.getClient();
+    await client.delete(key);
   }
 
   private traceUpload(fields: Record<string, unknown>, callback: () => Promise<string>) {

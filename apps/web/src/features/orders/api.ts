@@ -55,6 +55,17 @@ export type ReturnOrderPayload = {
   reason: string;
 };
 
+export type LifecycleCommandOptions = {
+  commandId: string;
+  expectedVersion: number;
+};
+
+export type OrderLifecycleClientEventPayload = {
+  event: "RESULT_UNKNOWN" | "ORIGINAL_COMMAND_RETRY_RECOVERED" | "VIEW_LATEST_VERSION" | "CREATE_NEW_INTENT";
+  surface: "ORDER_CREATE" | "ORDER_LIST" | "CONSTRUCTION_OFFLINE";
+  commandType?: "CREATE_ORDER" | "DISPATCH" | "START_CONSTRUCTION" | "COMPLETE_CONSTRUCTION" | "QUALITY_CHECK" | "FINAL_DELIVERY" | "CANCEL" | "RETURN_TO_PENDING" | "OFFLINE_SYNC";
+};
+
 export type OrderAmendmentRequestPayload = { reason: string };
 export type ReviewOrderAmendmentRequestPayload = { action: "APPROVE" | "REJECT"; reviewNote: string };
 
@@ -170,10 +181,47 @@ export type OrderAuditEvent = {
   createdAt: string;
 };
 
+export type LifecycleActionCapability = {
+  visible: boolean;
+  enabled: boolean;
+  blockingReasonCodes: string[];
+};
+
+export type AuthoritativeLifecycleResult = {
+  orderId: string;
+  lifecycleVersion: number;
+  currentStage: string;
+  blockingReasonCodes: string[];
+  capabilities: Record<string, LifecycleActionCapability>;
+  actionImpactSummaries: Record<string, string>;
+  generatedAt: string;
+};
+
+export type HistoricalVerificationOrder = {
+  id: string;
+  orderNo: string;
+  status: string;
+  storeId: string;
+  lifecycleVersion: number;
+  historicalWarning?: string | null;
+  verified: boolean;
+  customer?: { name?: string | null; companyName?: string | null } | null;
+  vehicle?: { carPlate?: string | null; carModel?: string | null } | null;
+  constructionRecord?: { id: string; qualityResult?: string | null } | null;
+  verification?: { id: string; issueCodes: string[]; status: string; detectedAt: string; resolutionSummary?: unknown } | null;
+};
+
 export const orderApi = {
-  create: (payload: CreateOrderPayload) =>
+  recordLifecycleClientEvent: (payload: OrderLifecycleClientEventPayload) =>
+    request<{ accepted: true }>("/orders/lifecycle/client-events", {
+      method: "POST",
+      body: JSON.stringify({ ...payload, source: "WEB" })
+    }).catch(() => ({ accepted: true as const })),
+
+  create: (payload: CreateOrderPayload, commandId: string) =>
     request<{ id: string; orderNo: string }>("/orders", {
       method: "POST",
+      headers: { "Idempotency-Key": commandId },
       body: JSON.stringify(payload)
     }),
 
@@ -186,6 +234,23 @@ export const orderApi = {
     request<SalesOrderExportDetail[]>(`/orders/export-details${toQueryString(query)}`),
 
   detail: (id: string) => request<unknown>(`/orders/${id}`),
+
+  lifecycle: (id: string) => request<AuthoritativeLifecycleResult>(`/orders/${id}/lifecycle`),
+
+  lifecycleBatch: (orderIds: string[]) =>
+    request<Record<string, { ok: true; value: AuthoritativeLifecycleResult } | { ok: false; error: { code: string } }>>(
+      `/orders/lifecycle/batch${toQueryString({ orderIds: orderIds.join(",") })}`
+    ),
+
+  historicalVerification: (storeId: string, q?: string) =>
+    request<HistoricalVerificationOrder[]>(`/orders/historical-verification${toQueryString({ storeId, ...(q ? { q } : {}) })}`),
+
+  resolveHistoricalVerification: (id: string, payload: { summary: string; factRefs: string[] }, command: LifecycleCommandOptions) =>
+    request<{ orderId: string; verificationCaseId: string; status: string }>(`/orders/${id}/historical-verification`, {
+      method: "POST",
+      headers: lifecycleCommandHeaders(command),
+      body: JSON.stringify(payload)
+    }),
 
   copyToDraft: (id: string, payload: CopyOrderToDraftPayload) =>
     request<CopyOrderToDraftResponse>(`/orders/${id}/copy`, {
@@ -201,10 +266,24 @@ export const orderApi = {
       body: JSON.stringify(payload)
     }),
 
-  returnToPendingDispatch: (id: string, payload: ReturnOrderPayload) =>
+  cancel: (id: string, payload: ReturnOrderPayload, command: LifecycleCommandOptions) =>
+    request<{ id: string; status: OrderStatus }>(`/orders/${id}/cancel`, {
+      method: "POST",
+      headers: lifecycleCommandHeaders(command),
+      body: JSON.stringify(payload)
+    }),
+
+  returnToPendingDispatch: (id: string, payload: ReturnOrderPayload, command: LifecycleCommandOptions) =>
     request<{ id: string; status: OrderStatus }>(`/orders/${id}/return-to-pending`, {
       method: "POST",
+      headers: lifecycleCommandHeaders(command),
       body: JSON.stringify(payload)
+    }),
+
+  finalizeDelivery: (id: string, command: LifecycleCommandOptions) =>
+    request<{ orderId: string; warrantyId: string; status: string }>(`/orders/${id}/final-delivery`, {
+      method: "POST",
+      headers: lifecycleCommandHeaders(command)
     }),
 
   createAmendmentRequest: (id: string, payload: OrderAmendmentRequestPayload) =>
@@ -248,6 +327,13 @@ export const orderApi = {
   removePaymentAccount: (id: string) =>
     request<unknown>(`/payment-accounts/${id}`, { method: "DELETE" })
 };
+
+function lifecycleCommandHeaders(command: LifecycleCommandOptions) {
+  return {
+    "Idempotency-Key": command.commandId,
+    "X-Lifecycle-Version": String(command.expectedVersion)
+  };
+}
 
 function toQueryString(query: Record<string, string | number | boolean | undefined>) {
   const params = new URLSearchParams();

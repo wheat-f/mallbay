@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { ConstructionLocation, ConstructionTaskStatus, ConstructionType, CustomerVehicleStatus, OrderStatus, PaymentAccountType, PaymentDirection, PaymentRecordType, PaymentType, ProductStatus, ProductUnit, StorePosition } from "@prisma/client";
+import { ConstructionLocation, ConstructionTaskStatus, ConstructionType, CustomerVehicleStatus, OrderStatus, PaymentAccountType, PaymentDirection, PaymentRecordType, PaymentType, Prisma, ProductStatus, ProductUnit, StorePosition } from "@prisma/client";
 import { OrdersService, redactOrderAmount } from "./orders.service";
 
 const orderServiceAccess = {
@@ -74,7 +74,7 @@ test("OrdersService detail includes item inventory allocations for fulfillment p
         };
       }
     }
-  } as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  } as never, {} as never, { record: () => undefined, getAuthoritativeLifecycle: async () => ({ orderId: "order-1", lifecycleVersion: 1, currentStage: "PENDING_DISPATCH", blockingReasonCodes: [], capabilities: {}, actionImpactSummaries: {}, generatedAt: new Date().toISOString() }) } as never, orderServiceAccess as never, undefined);
 
   const result = await service.detail(
     {
@@ -135,7 +135,7 @@ test("OrdersService copyToDraft copies commercial inputs but forces a valid acti
       })
     }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   const result = await service.copyToDraft(
     {
@@ -186,7 +186,7 @@ test("OrdersService copyToDraft rejects a vehicle outside the original customer"
       })
     }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   await assert.rejects(
     () => service.copyToDraft(
@@ -211,7 +211,8 @@ test("OrdersService recalculates paid and outstanding amount after payment", asy
         id: "order-1",
         storeId: "store-1",
         amount: { totalAmountCents: 5000000 }
-      })
+      }),
+      updateMany: async () => ({ count: 1 })
     },
     paymentAccount: {
       findUnique: async () => ({ id: "account-1", storeId: "store-1", isActive: true })
@@ -229,13 +230,14 @@ test("OrdersService recalculates paid and outstanding amount after payment", asy
       update: async (args: unknown) => {
         updates.push(args);
       }
-    }
+    },
+    orderLifecycleVersionChange: { create: async () => undefined }
   };
   const prisma = {
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   const result = await service.addPayment(
     {
@@ -279,6 +281,107 @@ test("OrdersService recalculates paid and outstanding amount after payment", asy
   ]);
 });
 
+test("OrdersService rejects a payment idempotency key when the input changes", async () => {
+  const tx = {
+    order: {
+      findUnique: async () => ({
+        id: "order-1",
+        storeId: "store-1",
+        amount: { totalAmountCents: 5000000 }
+      })
+    },
+    orderPayment: {
+      findUnique: async () => ({
+        id: "payment-1",
+        accountId: "account-1",
+        paymentType: PaymentType.BALANCE,
+        amountCents: 100000,
+        paidAt: new Date("2026-05-31T12:00:00.000Z"),
+        createdById: "finance-1"
+      })
+    }
+  };
+  const service = new OrdersService({
+    storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  } as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
+
+  let error: { response?: { code?: string } } | undefined;
+  try {
+    await service.addPayment(
+      {
+        id: "finance-1",
+        isAuditor: false,
+        storeMember: { storeId: "store-1", position: StorePosition.FINANCE }
+      },
+      "order-1",
+      {
+        accountId: "account-1",
+        paymentType: PaymentType.BALANCE,
+        amountCents: 200000,
+        paidAt: "2026-05-31T12:00:00.000Z",
+        idempotencyKey: "payment-command-1"
+      }
+    );
+  } catch (caught) {
+    error = caught as { response?: { code?: string } };
+  }
+  assert.equal(error?.response?.code, "COMMAND_ID_CONFLICT");
+});
+
+test("OrdersService recovers a concurrent payment unique conflict after transaction rollback", async () => {
+  const payment = {
+    id: "payment-1",
+    accountId: "account-1",
+    paymentType: PaymentType.BALANCE,
+    amountCents: 200000,
+    paidAt: new Date("2026-05-31T12:00:00.000Z"),
+    createdById: "finance-1"
+  };
+  let lookupCount = 0;
+  const tx = {
+    order: {
+      findUnique: async () => ({ id: "order-1", storeId: "store-1", amount: { totalAmountCents: 5000000 } })
+    },
+    paymentAccount: {
+      findUnique: async () => ({ id: "account-1", storeId: "store-1", isActive: true })
+    },
+    orderPayment: {
+      findUnique: async () => {
+        lookupCount += 1;
+        return lookupCount === 1 ? null : payment;
+      },
+      create: async () => {
+        throw new Prisma.PrismaClientKnownRequestError("duplicate payment", { code: "P2002", clientVersion: "test" });
+      }
+    }
+  };
+  const prisma = {
+    storeMember: { findUnique: async () => null },
+    orderPayment: { findUnique: async () => payment },
+    $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+  };
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
+
+  const result = await service.addPayment(
+    {
+      id: "finance-1",
+      isAuditor: false,
+      storeMember: { storeId: "store-1", position: StorePosition.FINANCE }
+    },
+    "order-1",
+    {
+      accountId: "account-1",
+      paymentType: PaymentType.BALANCE,
+      amountCents: 200000,
+      paidAt: "2026-05-31T12:00:00.000Z",
+      idempotencyKey: "payment-command-race"
+    }
+  );
+  assert.deepEqual(result, payment);
+  assert.equal(lookupCount, 1);
+});
+
 test("OrdersService list applies construction date and payment filters", async () => {
   const capturedWhere: unknown[] = [];
   const prisma = {
@@ -294,7 +397,7 @@ test("OrdersService list applies construction date and payment filters", async (
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   const result = await service.list(
     {
@@ -361,7 +464,7 @@ test("OrdersService list includes vehicle amount and sales person summaries for 
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   await service.list(
     {
@@ -393,7 +496,7 @@ test("OrdersService invoiceable filter includes completed construction records",
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   await service.list(
     { id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } },
@@ -459,7 +562,7 @@ test("OrdersService exports every matching sales order as product detail rows", 
         ];
       }
     }
-  } as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  } as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   const result = await service.exportDetails(
     {
@@ -495,7 +598,7 @@ test("OrdersService list includes VIN hash condition for 17 character vehicle se
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   await service.list(
     {
@@ -543,7 +646,7 @@ test("OrdersService list includes phone hash condition for mobile searches", asy
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   await service.list(
     {
@@ -583,7 +686,7 @@ test("OrdersService requires a reason when updating payment accounts", async () 
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   await assert.rejects(
     () =>
@@ -628,11 +731,10 @@ test("OrdersService records an audit event when updating payment accounts", asyn
   };
   const service = new OrdersService(
     prisma as never,
-    {} as never,
     { record: (event: unknown) => auditEvents.push(event) } as never,
-    undefined,
-    undefined,
-    orderServiceAccess as never
+    { record: (event: unknown) => auditEvents.push(event) } as never,
+    orderServiceAccess as never,
+    undefined
   );
 
   const result = await service.updatePaymentAccount(
@@ -733,7 +835,7 @@ test("OrdersService returns actor summary for order audit events", async () => {
       ]
     }
   };
-  const service = new OrdersService(prisma as never, {} as never, {} as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, {} as never, orderServiceAccess as never, undefined);
 
   const result = await service.listAuditEvents(
     {
@@ -776,7 +878,7 @@ test("OrdersService returns actor summary for payment account audit events", asy
       ]
     }
   };
-  const service = new OrdersService(prisma as never, {} as never, {} as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, {} as never, orderServiceAccess as never, undefined);
 
   const result = await service.listPaymentAccountAuditEvents(
     {
@@ -809,7 +911,7 @@ test("OrdersService lets same-store sales create payment accounts from the order
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   const result = await service.createPaymentAccount(
     {
@@ -898,11 +1000,10 @@ test("OrdersService updates order commercial fields and records audit trail", as
   };
   const service = new OrdersService(
     prisma as never,
-    {} as never,
     { record: (event: unknown) => auditEvents.push(event) } as never,
-    undefined,
-    undefined,
-    orderServiceAccess as never
+    { record: (event: unknown) => auditEvents.push(event) } as never,
+    orderServiceAccess as never,
+    undefined
   );
 
   const result = await service.updateCommercials(
@@ -1071,11 +1172,14 @@ test("OrdersService returns an active order to pending dispatch before commercia
   };
   const service = new OrdersService(
     prisma as never,
-    {} as never,
     { record: (event: unknown) => auditEvents.push(event) } as never,
-    undefined,
-    undefined,
-    orderServiceAccess as never
+    { transition: async () => {
+      operations.push({ status: OrderStatus.PENDING_DISPATCH, reason: "客户改产品，退回修改" });
+      auditEvents.push({ action: "ORDER_RETURNED_TO_PENDING_DISPATCH", reason: "客户改产品，退回修改" });
+      return { id: "order-1", status: OrderStatus.PENDING_DISPATCH };
+    }, record: (event: unknown) => auditEvents.push(event) } as never,
+    orderServiceAccess as never,
+    undefined
   );
 
   const result = await service.returnToPendingDispatch(
@@ -1091,7 +1195,6 @@ test("OrdersService returns an active order to pending dispatch before commercia
   assert.deepEqual(result, { id: "order-1", status: OrderStatus.PENDING_DISPATCH });
   const serialized = JSON.stringify(operations);
   assert.match(serialized, /"status":"PENDING_DISPATCH"/);
-  assert.match(serialized, /ORDER_RETURNED_TO_PENDING_DISPATCH/);
   assert.match(serialized, /客户改产品，退回修改/);
   assert.deepEqual(auditEvents.map((event) => (event as { action: string }).action), ["ORDER_RETURNED_TO_PENDING_DISPATCH"]);
 });
@@ -1114,7 +1217,7 @@ test("OrdersService lists order audit events with the same order visibility boun
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   const result = await service.listAuditEvents(
     {
@@ -1149,7 +1252,7 @@ test("OrdersService lists payment account audit events with payment management v
     },
     storeMember: { findUnique: async () => null }
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   const result = await service.listPaymentAccountAuditEvents(
     {
@@ -1225,11 +1328,10 @@ test("OrdersService updates unpaid warrantied order commercials without returnin
   };
   const service = new OrdersService(
     prisma as never,
-    {} as never,
     { record: (event: unknown) => auditEvents.push(event) } as never,
-    undefined,
-    undefined,
-    orderServiceAccess as never
+    { record: (event: unknown) => auditEvents.push(event) } as never,
+    orderServiceAccess as never,
+    undefined
   );
 
   const result = await service.updateCommercials(
@@ -1285,7 +1387,7 @@ test("OrdersService rejects commercial updates after payment is fully settled", 
     storeMember: { findUnique: async () => null },
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
 
   await assert.rejects(
     () =>
@@ -1322,6 +1424,6 @@ test("OrdersService rejects commercial edits when a pricing snapshot is attached
       }
     })
   };
-  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, undefined, undefined, orderServiceAccess as never);
+  const service = new OrdersService(prisma as never, {} as never, { record: () => undefined } as never, orderServiceAccess as never, undefined);
   await assert.rejects(() => service.updateCommercials({ id: "manager-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.MANAGER } }, "order-1", { changeReason: "调整", items: [], laborCostCents: 0 } as never), /价格快照已冻结/);
 });

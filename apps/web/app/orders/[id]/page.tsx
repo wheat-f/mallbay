@@ -24,13 +24,12 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 import { orderApi, productApi } from "../../../src/lib/api";
-import type { OrderAuditEvent } from "../../../src/features/orders/api";
+import type { AuthoritativeLifecycleResult, OrderAuditEvent } from "../../../src/features/orders/api";
 import { centsToYuan, getOrderProductLabel, yuanToCents } from "../../../src/features/orders/create-order-form";
 import { getFulfillmentInventoryStatus, getFulfillmentInventorySummary } from "../../../src/features/orders/fulfillment";
 import {
   getConstructionLocationLabel,
   getConstructionTypeLabel,
-  getOrderStatusLabel,
   getPaymentTypeLabel,
   yuanCurrency
 } from "../../../src/features/orders/order-display";
@@ -39,6 +38,7 @@ import { getProductUnitLabel } from "../../../src/features/products/display";
 import { OrderPaymentDrawer } from "../../../src/features/orders/order-payment-drawer";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { saveCreateOrderDraft } from "../../../src/features/orders/create-order-draft";
+import { clearLifecycleCommandId, getLifecycleCommandId } from "../../../src/features/construction/api";
 
 type OrderDetail = {
   id: string;
@@ -108,7 +108,7 @@ type OrderDetail = {
   } | null;
   payments?: { id: string; paymentType: string; amountCents: number; paidAt: string; account?: { name: string } }[];
   historicalWarning?: string | null;
-  workflow?: { currentStage?: string; capabilities?: { canCollectBalance?: boolean; canGenerateWarranty?: boolean; canStartRework?: boolean; canCompleteOrder?: boolean } };
+  lifecycle?: AuthoritativeLifecycleResult;
   amendmentRequests?: Array<{
     id: string;
     status: "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED" | "CANCELLED";
@@ -168,7 +168,7 @@ const emptyFulfillmentChecklist: FulfillmentChecklist = {
 const commercialEditableStatuses = ["PENDING_DISPATCH", "DISPATCHED", "IN_CONSTRUCTION", "COMPLETED", "WARRANTIED"] as const;
 
 export default function OrderDetailPage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -266,13 +266,6 @@ export default function OrderDetailPage() {
   const canReviewAmendment = Boolean(
     pendingAmendment && (user?.isAuditor || user?.storeMember?.position === "FINANCE")
   );
-  const canOperateFulfillment = Boolean(
-    order && user && (
-      user.storeMember?.position === "MANAGER" ||
-      user.storeMember?.position === "CUSTOMER_SERVICE" ||
-      (user.storeMember?.position === "SALES" && user.id === order.salesPersonId)
-    )
-  );
   const canCopyOrder = Boolean(
     order && user && (
       user.isAuditor ||
@@ -333,9 +326,51 @@ export default function OrderDetailPage() {
       && (hasEditableOutstandingAmount || hasApprovedAmendment)
       && (order.amount?.pricingMode !== "ACTIVE" || hasApprovedAmendment)
   );
-  const canCollectBalance = order?.workflow?.capabilities?.canCollectBalance ?? ((order?.amount?.outstandingCents ?? 0) > 0);
-  const shouldShowFulfillmentConfirmation = order?.status === "PENDING_DISPATCH" && canOperateFulfillment;
-  const orderSteps = getOrderSteps(order?.workflow?.currentStage ?? order?.status);
+  // The detail response carries the authoritative lifecycle snapshot. Keep
+  // actions and progress on that snapshot; never reconstruct them from the
+  // legacy OrderStatus field while it is loading or unavailable.
+  const lifecycle = order?.lifecycle;
+  const canCollectBalance = lifecycle?.capabilities.collectBalance?.enabled ?? false;
+  const lifecycleCapabilities = lifecycle?.capabilities ?? {};
+  const lifecycleActionMutation = useMutation({
+    mutationFn: async (input: { action: "finalDelivery" | "cancel" | "returnToPendingDispatch"; reason?: string }) => {
+      if (!order || !user || !lifecycle) throw new Error("订单履约状态尚未加载");
+      const commandId = getLifecycleCommandId(user.id, order.storeId, order.id, input.action);
+      const command = { commandId, expectedVersion: lifecycle.lifecycleVersion };
+      if (input.action === "finalDelivery") return orderApi.finalizeDelivery(order.id, command);
+      if (input.action === "cancel") return orderApi.cancel(order.id, { reason: input.reason ?? "页面确认取消" }, command);
+      return orderApi.returnToPendingDispatch(order.id, { reason: input.reason ?? "页面确认退回待派单" }, command);
+    },
+    onSuccess: async (_response, input) => {
+      if (order && user) clearLifecycleCommandId(user.id, order.storeId, order.id, input.action);
+      message.success(input.action === "finalDelivery" ? "最终交付已确认" : input.action === "cancel" ? "订单已取消" : "订单已退回待派单");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["order-detail", params.id] }),
+        queryClient.invalidateQueries({ queryKey: ["order-audit-events", params.id] })
+      ]);
+    },
+    onError: (error: Error) => {
+      message.error(error.message || "操作未完成，请刷新后查看最新履约状态");
+      void orderQuery.refetch();
+    }
+  });
+  const confirmLifecycleAction = (action: "finalDelivery" | "cancel" | "returnToPendingDispatch") => {
+    if (!lifecycle || !order) return;
+    const capability = lifecycleCapabilities[action];
+    if (!capability?.visible) return;
+    const labels = { finalDelivery: "最终交付", cancel: "取消订单", returnToPendingDispatch: "退回待派单" };
+    const summary = lifecycle.actionImpactSummaries[action] ?? "该操作将改变订单履约阶段。";
+    modal.confirm({
+      title: `确认${labels[action]}？`,
+      content: capability.enabled ? summary : `当前不可操作：${capability.blockingReasonCodes.join("、") || "不满足前置条件"}`,
+      okText: "确认",
+      cancelText: "返回",
+      okButtonProps: { disabled: !capability.enabled },
+      onOk: capability.enabled ? () => lifecycleActionMutation.mutateAsync({ action }) : undefined
+    });
+  };
+  const shouldShowFulfillmentConfirmation = lifecycle?.capabilities.dispatch?.enabled ?? false;
+  const orderSteps = getOrderSteps(lifecycle?.currentStage);
   const fulfillmentInventorySummary = getFulfillmentInventorySummary(order?.items ?? []);
   const fulfillmentCanEnterConstruction = fulfillmentInventorySummary.canEnterConstruction;
   const fulfillmentPrimaryActionLabel = fulfillmentCanEnterConstruction ? "确认提交，进入施工派工" : "确认提交，进入库房匹配";
@@ -415,7 +450,7 @@ export default function OrderDetailPage() {
                   <span className="order-detail-eyebrow">销售订单详情</span>
                   <h1>
                     订单 {order?.orderNo ?? "-"}
-                    {order ? <Tag>{getWorkflowStageLabel(order.workflow?.currentStage) ?? getOrderStatusLabel(order.status)}</Tag> : null}
+                    {order ? <Tag>{getWorkflowStageLabel(lifecycle?.currentStage) ?? "履约状态加载中"}</Tag> : null}
                   </h1>
                   <p>
                     {[
@@ -427,7 +462,7 @@ export default function OrderDetailPage() {
                   </p>
                 </div>
               </div>
-              {order?.historicalWarning ? <Alert type="warning" showIcon title={order.historicalWarning} description="系统不会自动补造质检记录；请由店长或管理员进入历史核验列表处理。" className="mb-4" /> : null}
+              {order?.historicalWarning ? <Alert type="warning" showIcon title={order.historicalWarning} description={<span>系统不会自动补造质检记录；请由店长或管理员进入 <Button type="link" size="small" onClick={() => router.push("/orders/historical-verification")}>历史核验</Button> 处理。</span>} className="mb-4" /> : null}
               <div className="order-detail-actions">
                 {canCopyOrder ? (
                   <Button icon={<CopyOutlined />} onClick={() => {
@@ -450,6 +485,33 @@ export default function OrderDetailPage() {
                 {shouldShowFulfillmentConfirmation ? (
                   <Button type="primary" icon={<CheckCircleOutlined />} onClick={openFulfillmentDrawer}>
                     确认派工流转
+                  </Button>
+                ) : null}
+                {lifecycleCapabilities.finalDelivery?.visible ? (
+                  <Button
+                    type="primary"
+                    icon={<SafetyCertificateOutlined />}
+                    disabled={!lifecycleCapabilities.finalDelivery.enabled || lifecycleActionMutation.isPending}
+                    onClick={() => confirmLifecycleAction("finalDelivery")}
+                  >
+                    最终交付
+                  </Button>
+                ) : null}
+                {lifecycleCapabilities.cancel?.visible ? (
+                  <Button
+                    danger
+                    disabled={!lifecycleCapabilities.cancel.enabled || lifecycleActionMutation.isPending}
+                    onClick={() => confirmLifecycleAction("cancel")}
+                  >
+                    取消订单
+                  </Button>
+                ) : null}
+                {lifecycleCapabilities.returnToPendingDispatch?.visible ? (
+                  <Button
+                    disabled={!lifecycleCapabilities.returnToPendingDispatch.enabled || lifecycleActionMutation.isPending}
+                    onClick={() => confirmLifecycleAction("returnToPendingDispatch")}
+                  >
+                    退回待派单
                   </Button>
                 ) : null}
                 <Button icon={<CreditCardOutlined />} onClick={openOrderPaymentEntry} disabled={!canCollectBalance}>
@@ -1184,7 +1246,7 @@ function getWorkflowStageLabel(stage?: string) {
     IN_CONSTRUCTION: "施工中",
     PENDING_QUALITY: "待质检",
     REWORKING: "返工中",
-    PENDING_WARRANTY: "待生成质保",
+    PENDING_WARRANTY: "待最终交付（历史质保待核对）",
     PENDING_BALANCE: "待收尾款",
     PENDING_DELIVERY: "待最终交付",
     COMPLETED: "已完成",
@@ -1194,8 +1256,8 @@ function getWorkflowStageLabel(stage?: string) {
   return stage ? labels[stage] : undefined;
 }
 
-function getOrderSteps(status?: string) {
-  const currentIndex = getOrderWorkflowIndex(status);
+function getOrderSteps(stage?: string) {
+  const currentIndex = getOrderWorkflowIndex(stage);
   const steps = ["订单确认", "库房匹配", "施工派工", "施工交付", "质保售后"];
 
   return steps.map((label, index) => ({
@@ -1205,18 +1267,28 @@ function getOrderSteps(status?: string) {
   }));
 }
 
-function getOrderWorkflowIndex(status?: string) {
+function getOrderWorkflowIndex(stage?: string) {
   const workflowIndexByStatus: Record<string, number> = {
     DRAFT: 0,
     PENDING_PAYMENT: 0,
-    PENDING_DISPATCH: 1,
+    PENDING_INVENTORY_CONFIRM: 0,
+    PENDING_OUTBOUND: 1,
+    PENDING_DISPATCH: 2,
+    PENDING_MATERIAL_PICKUP: 2,
+    READY_TO_START: 2,
     DISPATCHED: 2,
     IN_CONSTRUCTION: 3,
+    REWORKING: 3,
+    PENDING_QUALITY: 3,
+    PENDING_BALANCE: 3,
+    PENDING_WARRANTY: 4,
+    PENDING_DELIVERY: 4,
     COMPLETED: 4,
     WARRANTIED: 4,
-    CANCELLED: 0
+    CANCELLED: 0,
+    HISTORICAL_VERIFICATION: 0
   };
-  return workflowIndexByStatus[status ?? "PENDING_DISPATCH"] ?? 0;
+  return stage ? workflowIndexByStatus[stage] ?? 0 : 0;
 }
 
 function getOrderAuditSummary(action: string, metadata?: Record<string, unknown>) {

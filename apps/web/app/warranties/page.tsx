@@ -84,7 +84,7 @@ export default function WarrantiesPage() {
     () => (completedOrdersQuery.data?.items ?? []).filter((order) => (order as OrderWorkRow).constructionRecord?.qualityResult === "PASS") as OrderWorkRow[],
     [completedOrdersQuery.data?.items]
   );
-  const pendingGenerationRows = useMemo(
+  const pendingDeliveryRows = useMemo(
     () => completedOrderRows.filter((order) => !warrantyByOrderId.has(order.id)),
     [completedOrderRows, warrantyByOrderId]
   );
@@ -142,19 +142,19 @@ export default function WarrantiesPage() {
     <div className="management-page">
       <StorePageHeader
         title="质保管理"
-        description="管理电子质保卡、到期状态和售后追溯，已完工未生成的工单从待生成区进入。"
+        description="查看最终交付后形成的电子质保卡、到期状态和售后追溯；未交付工单请从订单履约页完成最终交付。"
       />
 
       <section className="warranty-command-bar">
         <div className="warranty-command-copy">
           <span>质保工作台</span>
-          <strong>主列表展示电子质保卡，完工工单只作为生成入口</strong>
+          <strong>主列表展示已由最终交付形成的电子质保卡</strong>
         </div>
         <div className="warranty-command-actions">
           <Button icon={<PrinterOutlined />}>批量打印</Button>
           <Button icon={<DownloadOutlined />} onClick={() => void exportWarrantyRecords()}>导出记录</Button>
-          <Button type="primary" icon={<FileProtectOutlined />} onClick={() => router.push("/warranties/create")}>
-            生成电子质保
+          <Button type="primary" icon={<SearchOutlined />} onClick={() => router.push("/orders")}>
+            查看订单履约
           </Button>
         </div>
       </section>
@@ -164,7 +164,7 @@ export default function WarrantiesPage() {
           ["质保卡总数", warrantyRows.length, "当前门店电子质保卡"],
           ["有效质保", activeWarranties, "可用于售后追溯"],
           ["即将到期", expiringWarranties, "30 天内需要提醒"],
-          ["待生成", pendingGenerationRows.length, "已完工未生成质保"]
+          ["待最终交付", pendingDeliveryRows.length, "质检通过且待由最终交付形成质保"]
         ].map(([label, value, description]) => (
           <Card key={label} className="management-kpi-card">
             <div className="management-kpi-label">{label}</div>
@@ -252,15 +252,15 @@ export default function WarrantiesPage() {
         <aside className="warranty-side-column warranty-support-grid">
           <Card
             className="warranty-preview-panel"
-            title="待生成质保工单"
-            extra={<span className="warranty-table-count">{pendingGenerationRows.length} 条</span>}
+            title="待最终交付工单"
+            extra={<span className="warranty-table-count">{pendingDeliveryRows.length} 条</span>}
           >
-            {pendingGenerationRows.length > 0 ? (
+            {pendingDeliveryRows.length > 0 ? (
               <div className="warranty-pending-list">
-                {pendingGenerationRows.map((row) => renderPendingWarrantyOrder(row, router))}
+                {pendingDeliveryRows.map((row) => renderPendingWarrantyOrder(row, router))}
               </div>
             ) : (
-              <div className="warranty-mobile-empty">暂无待生成质保的完工工单</div>
+              <div className="warranty-mobile-empty">暂无待最终交付的质检通过工单</div>
             )}
           </Card>
           <Card className="warranty-preview-panel" title="电子质保说明">
@@ -268,8 +268,8 @@ export default function WarrantiesPage() {
               <article className="warranty-launch-card">
                 <span><SafetyCertificateOutlined /></span>
                 <div>
-                  <h3>生成条件</h3>
-                  <p>只有已完工且尚未生成质保的工单，才进入待生成区域。</p>
+                  <h3>形成条件</h3>
+                  <p>质保只在最终交付事务中形成或激活，质检通过不提供独立生成入口。</p>
                 </div>
               </article>
               <article className="warranty-audit-guide">
@@ -303,7 +303,7 @@ function renderPendingWarrantyOrder(row: OrderWorkRow, router: ReturnType<typeof
           <strong>{row.orderNo ?? "未编号订单"}</strong>
           <span>{getOrderCustomerName(row)} / {getOrderVehicleLabel(row)}</span>
         </div>
-        <Tag color="processing">待生成</Tag>
+        <Tag color="processing">待最终交付</Tag>
       </div>
       <dl className="warranty-mobile-fields">
         <div>
@@ -315,8 +315,8 @@ function renderPendingWarrantyOrder(row: OrderWorkRow, router: ReturnType<typeof
           <dd>{getOrderStatusLabel(row.status)}</dd>
         </div>
       </dl>
-      <Button size="small" type="primary" onClick={() => router.push(`/warranties/create?orderId=${row.id}`)}>
-        生成电子质保
+      <Button size="small" type="primary" onClick={() => router.push(`/orders/${row.id}`)}>
+        前往订单详情
       </Button>
     </article>
   );

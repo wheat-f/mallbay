@@ -3,7 +3,7 @@ name: Build & Deploy
 # ── 触发规则 ────────────────────────────────────────────────────
 # PR 创建/更新（新 commit）→ 构建 api + web(test) → 部署测试环境
 # push codex/**            → 构建 api + web(test) → 部署测试环境
-# push main（PR 合并）     → 构建 api + web(prod) → 部署生产环境
+# push main（PR 合并）     → 构建 api + web(test/prod) → 部署测试候选、预发 gate、再部署生产
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -61,10 +61,130 @@ jobs:
         working-directory: apps/web
 
       - name: Run type checks
-        run: pnpm typecheck
+        run: |
+          pnpm --filter @mallbay/api typecheck
+          pnpm --filter @mallbay/web typecheck
+          pnpm --filter @mallbay/shared typecheck
 
       - name: Run production build
         run: pnpm build
+
+  # ----------------------------------------------------------------
+  # Job 0b: 真实 PostgreSQL 履约并发/回滚门禁
+  # ----------------------------------------------------------------
+  # This job deliberately uses an empty database. The opt-in fixture owns
+  # its minimal Store/Customer/User/PricingCalculation bootstrap so a green
+  # result cannot be caused by skipped tests or a developer's local volume.
+  real-db-stage-gate:
+    name: Real PostgreSQL Order Lifecycle Gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mallbay
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mallbay"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mallbay?schema=public
+      MALLBAY_RUN_REAL_DB_TESTS: "1"
+      CI: "true"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate --schema prisma/schema.prisma
+        working-directory: apps/api
+
+      - name: Apply migrations to empty PostgreSQL
+        run: pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+        working-directory: apps/api
+
+      - name: Run database invariant preflight
+        run: pnpm exec tsx --tsconfig tsconfig.app.json src/prisma/preflight-db-invariants.ts
+        working-directory: apps/api
+
+      - name: Run historical lifecycle data gate
+        run: pnpm exec tsx --tsconfig tsconfig.app.json src/prisma/historical-lifecycle-gate.ts
+        working-directory: apps/api
+
+      - name: Run order lifecycle concurrency and rollback fixtures
+        run: pnpm exec tsx --tsconfig tsconfig.app.json --test src/prisma/order-lifecycle-concurrency.test.ts
+        working-directory: apps/api
+
+      - name: Rehearse backup and restore on a temporary database
+        shell: bash
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: mallbay
+        run: |
+          set -euo pipefail
+          backup_file="${RUNNER_TEMP}/mallbay-order-lifecycle.dump"
+          restore_db="mallbay_restore_rehearsal"
+          # ubuntu-latest currently ships PostgreSQL 16 client tools while the
+          # fixture runs PostgreSQL 17. Use the matching official client image
+          # so pg_dump/pg_restore never reject the service by version.
+          pg17() {
+            docker run --rm --network host \
+              --env PGHOST --env PGPORT --env PGUSER --env PGPASSWORD --env PGDATABASE \
+              --volume "${RUNNER_TEMP}:${RUNNER_TEMP}" \
+              postgres:17-alpine "$@"
+          }
+          cleanup() {
+            pg17 dropdb --if-exists --maintenance-db=postgres "${restore_db}" >/dev/null 2>&1 || true
+            rm -f "${backup_file}"
+          }
+          trap cleanup EXIT
+
+          pg17 pg_dump --format=custom --no-owner --file="${backup_file}" "${PGDATABASE}"
+          pg17 dropdb --if-exists --maintenance-db=postgres "${restore_db}"
+          pg17 createdb --maintenance-db=postgres "${restore_db}"
+          pg17 pg_restore --exit-on-error --no-owner --dbname="${restore_db}" "${backup_file}"
+
+          restored_migrations="$(pg17 psql --tuples-only --no-align --dbname="${restore_db}" -c 'SELECT count(*) FROM "_prisma_migrations" WHERE "finished_at" IS NOT NULL AND "rolled_back_at" IS NULL;')"
+          source_migrations="$(find apps/api/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+          test "${restored_migrations}" = "${source_migrations}"
+          docker run --rm --network host \
+            --env PGHOST --env PGPORT --env PGUSER --env PGPASSWORD --env PGDATABASE \
+            postgres:17-alpine psql --set ON_ERROR_STOP=1 --dbname="${restore_db}" <<'SQL'
+          DO $$
+          BEGIN
+            IF to_regclass('public."OrderLifecycleCommandRecord"') IS NULL
+              OR to_regclass('public."ConstructionPhoto"') IS NULL
+              OR to_regtype('public."ConstructionEvidenceStatus"') IS NULL
+            THEN
+              RAISE EXCEPTION 'restored lifecycle tables are missing';
+            END IF;
+          END $$;
+          SELECT 1 FROM "Order" LIMIT 1;
+          SQL
 
   # ──────────────────────────────────────────────────────────────
   # Job 1: 构建 API 镜像（PR 和 main push 都会执行，无环境变量差异）
@@ -72,7 +192,7 @@ jobs:
   build-api:
     name: Build & Push API
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [verify, real-db-stage-gate]
 
     steps:
       - name: Checkout code
@@ -105,16 +225,18 @@ jobs:
             ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/mallbay-api:${{ steps.tag.outputs.branch }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
+          provenance: false
+          sbom: false
 
   # ──────────────────────────────────────────────────────────────
-  # Job 2: 构建 Web 镜像（测试环境）
+  # Job 2: 构建 Web 镜像（测试环境；main 也构建用于生产前候选部署）
   # NEXT_PUBLIC_API_URL 编译进镜像，需从 test environment secrets 读取
   # ──────────────────────────────────────────────────────────────
   build-web-test:
     name: Build & Push Web (Test)
     runs-on: ubuntu-latest
-    needs: verify
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name != 'main') || (github.event_name == 'workflow_dispatch' && github.ref_name != 'main')
+    needs: [verify, real-db-stage-gate]
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     environment: test
 
     steps:
@@ -151,6 +273,8 @@ jobs:
             NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
+          provenance: false
+          sbom: false
 
   # ──────────────────────────────────────────────────────────────
   # Job 3: 构建 Web 镜像（生产环境）
@@ -159,7 +283,7 @@ jobs:
   build-web-prod:
     name: Build & Push Web (Production)
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [verify, real-db-stage-gate]
     if: github.event_name == 'push' && github.ref_name == 'main' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
     environment: production
 
@@ -197,15 +321,17 @@ jobs:
             NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.NEXT_PUBLIC_AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
+          provenance: false
+          sbom: false
 
   # ──────────────────────────────────────────────────────────────
-  # Job 4: 部署到测试环境（仅 PR 事件触发）
+  # Job 4: 部署到测试环境（PR/分支用于联调，main 用于生产前候选部署）
   # ──────────────────────────────────────────────────────────────
   deploy-test:
     name: Deploy → Test
     runs-on: ubuntu-latest
     needs: [build-api, build-web-test]
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name != 'main') || (github.event_name == 'workflow_dispatch' && github.ref_name != 'main')
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     environment: test
 
     steps:
@@ -223,18 +349,28 @@ jobs:
 
       - name: Deploy to Test via SSH
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
         with:
           host:     ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key:      ${{ secrets.ECS_SSH_KEY }}
+          envs:     METRICS_TOKEN
           script: |
             set -e
             cd /opt/mallbay
+
+            test -n "$METRICS_TOKEN" || {
+              echo "METRICS_TOKEN must be configured in the test environment before deployment" >&2
+              exit 1
+            }
 
             sed -i '/^IMAGE_TAG=/d' .env
             echo "IMAGE_TAG=${{ github.sha }}" >> .env
             sed -i '/^AUTH_CREDENTIAL_ENCRYPTION_ENABLED=/d' .env
             echo "AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}" >> .env
+            sed -i '/^METRICS_TOKEN=/d' .env
+            printf 'METRICS_TOKEN=%s\n' "$METRICS_TOKEN" >> .env
 
             # Free unreferenced image layers before pulling the next release.
             # This does not remove images used by running containers or any volumes.
@@ -247,13 +383,141 @@ jobs:
 
             echo "✅ Test deployed — ${{ github.sha }}"
 
+  # ----------------------------------------------------------------
+  # Job 5: 可选测试环境浏览器 E2E
+  # ----------------------------------------------------------------
+  # Enable with the test-environment variable only after the deployed Web
+  # URL and a database connection restricted to the E2E fixture are ready.
+  browser-e2e-test:
+    name: Browser Order Lifecycle E2E
+    runs-on: ubuntu-latest
+    needs: deploy-test
+    if: (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name != 'main') || (github.event_name == 'workflow_dispatch' && github.ref_name != 'main')) && vars.MALLBAY_BROWSER_E2E_ENABLED == 'true'
+    environment: test
+
+    env:
+      CI: "true"
+      MALLBAY_RUN_REAL_DB_TESTS: "1"
+      MALLBAY_WEB_URL: ${{ secrets.MALLBAY_E2E_WEB_URL }}
+      DATABASE_URL: ${{ secrets.MALLBAY_E2E_DATABASE_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client for the deployed schema
+        run: pnpm exec prisma generate --schema prisma/schema.prisma
+        working-directory: apps/api
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run pre-production order lifecycle concurrency and fault gate
+        run: pnpm exec tsx --tsconfig tsconfig.app.json --test src/prisma/order-lifecycle-concurrency.test.ts
+        working-directory: apps/api
+
+      - name: Run order lifecycle browser E2E
+        run: pnpm test:e2e:order-lifecycle
+
+  # ----------------------------------------------------------------
+  # Job 5b: main 发布前的真实预发履约门禁
+  # ----------------------------------------------------------------
+  # Production must not bypass the user-facing pre-production gate. The
+  # test environment owns a restricted fixture database connection; the
+  # job is intentionally fail-closed when the gate is not enabled or a
+  # required secret is missing.
+  production-preprod-browser-gate:
+    name: Pre-production Order Lifecycle Release Gate
+    runs-on: ubuntu-latest
+    needs: [deploy-test]
+    if: github.event_name == 'push' && github.ref_name == 'main' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
+    environment: test
+
+    env:
+      CI: "true"
+      MALLBAY_RUN_REAL_DB_TESTS: "1"
+      MALLBAY_WEB_URL: ${{ secrets.MALLBAY_E2E_WEB_URL }}
+      DATABASE_URL: ${{ secrets.MALLBAY_E2E_DATABASE_URL }}
+
+    steps:
+      - name: Require pre-production gate configuration
+        shell: bash
+        env:
+          BROWSER_GATE_ENABLED: ${{ vars.MALLBAY_BROWSER_E2E_ENABLED }}
+          E2E_WEB_URL: ${{ secrets.MALLBAY_E2E_WEB_URL }}
+          E2E_DATABASE_URL: ${{ secrets.MALLBAY_E2E_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          test "$BROWSER_GATE_ENABLED" = "true" || {
+            echo "MALLBAY_BROWSER_E2E_ENABLED must be true before a main release" >&2
+            exit 1
+          }
+          test -n "$E2E_WEB_URL" || {
+            echo "MALLBAY_E2E_WEB_URL is required for the pre-production release gate" >&2
+            exit 1
+          }
+          test -n "$E2E_DATABASE_URL" || {
+            echo "MALLBAY_E2E_DATABASE_URL is required for the pre-production release gate" >&2
+            exit 1
+          }
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client for the deployed schema
+        run: pnpm exec prisma generate --schema prisma/schema.prisma
+        working-directory: apps/api
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run pre-production database invariant preflight
+        run: pnpm --filter @mallbay/api exec tsx --tsconfig tsconfig.app.json src/prisma/preflight-db-invariants.ts
+
+      - name: Run pre-production historical lifecycle gate
+        run: pnpm --filter @mallbay/api exec tsx --tsconfig tsconfig.app.json src/prisma/historical-lifecycle-gate.ts
+
+      - name: Run pre-production order lifecycle concurrency and fault gate
+        run: pnpm --filter @mallbay/api exec tsx --tsconfig tsconfig.app.json --test src/prisma/order-lifecycle-concurrency.test.ts
+
+      - name: Run pre-production order lifecycle browser E2E
+        run: pnpm test:e2e:order-lifecycle
+
   # ──────────────────────────────────────────────────────────────
-  # Job 5: 部署到生产环境（仅 push main 触发，即 PR 合并后）
+  # Job 6: 部署到生产环境（仅 push main 触发，即 PR 合并后）
   # ──────────────────────────────────────────────────────────────
   deploy-production:
     name: Deploy → Production
     runs-on: ubuntu-latest
-    needs: [build-api, build-web-prod]
+    needs: [build-api, build-web-prod, production-preprod-browser-gate]
     if: github.event_name == 'push' && github.ref_name == 'main' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
     environment: production
 

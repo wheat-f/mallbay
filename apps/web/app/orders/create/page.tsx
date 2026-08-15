@@ -29,10 +29,11 @@ import {
 } from "../../../src/features/orders/create-order-form";
 import type { PaymentAccountOption, PaymentAccountPayload } from "../../../src/features/orders/api";
 import type { PricingCalculationResponse } from "../../../src/features/pricing/api";
-import { salesQuoteApi } from "../../../src/features/sales-quotes/api";
+import { clearQuoteCreationCommandId, getQuoteCreationCommandId, salesQuoteApi } from "../../../src/features/sales-quotes/api";
 import { dictionaryApi } from "../../../src/features/settings/api";
 import { storeApi } from "../../../src/features/stores/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { ApiError } from "../../../src/lib/api-error";
 import { getStoreWorkbenchHref } from "../../../src/features/workbench/navigation";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import {
@@ -42,7 +43,13 @@ import {
 import { getProductUnitLabel } from "../../../src/features/products/display";
 import {
   loadCreateOrderDraft,
+  acquireCreateOrderDraftLease,
+  createCreateOrderDraftId,
+  createCreateOrderLeaseOwnerId,
+  createCreateOrderLeaseKey,
   removeCreateOrderDraft,
+  releaseCreateOrderDraftLease,
+  renewCreateOrderDraftLease,
   saveCreateOrderDraft,
   type CreateOrderDraft
 } from "../../../src/features/orders/create-order-draft";
@@ -99,11 +106,17 @@ function CreateOrderContent() {
   const [serverPricing, setServerPricing] = useState<PricingCalculationResponse | null>(null);
   const [draftPricingChoiceOpen, setDraftPricingChoiceOpen] = useState(false);
   const [copySource, setCopySource] = useState<CreateOrderDraft["copySource"] | null>(null);
+  const [submissionState, setSubmissionState] = useState<CreateOrderDraft["submissionState"]>("EDITING");
+  const retryingUnknownResultRef = useRef(false);
+  const [draftLeaseLost, setDraftLeaseLost] = useState(false);
   const [newOrderCustomerType, setNewOrderCustomerType] = useState("PERSONAL");
   const constructionChargeTouchedRef = useRef(false);
   const draftRestoredRef = useRef(false);
   const draftPricingPendingRef = useRef(false);
   const [form] = Form.useForm<CreateOrderFormValues>();
+  const createCommandIdRef = useRef<string | undefined>(undefined);
+  const draftIdRef = useRef<string | undefined>(undefined);
+  const leaseOwnerIdRef = useRef<string>(createCreateOrderLeaseOwnerId());
   const [newCustomerForm] = Form.useForm<NewOrderCustomerFormValues>();
   const [newPaymentAccountForm] = Form.useForm<NewPaymentAccountFormValues>();
   const initialCustomerId = params.get("customerId") ?? undefined;
@@ -120,6 +133,36 @@ function CreateOrderContent() {
   const selectedConstructionChargeMode = Form.useWatch("constructionChargeMode", form) ?? "MANUAL";
   const selectedDeposit = Form.useWatch("deposit", form);
   const shouldRecordDeposit = Form.useWatch("shouldRecordDeposit", form);
+
+  useEffect(() => {
+    if (!storeId || !user?.id) return;
+    const existing = loadCreateOrderDraft(localStorage, storeId, user.id);
+    const draftId = existing?.draftId ?? draftIdRef.current ?? createCreateOrderDraftId();
+    draftIdRef.current = draftId;
+    if (existing?.commandId) createCommandIdRef.current = existing.commandId;
+    const ownerId = leaseOwnerIdRef.current;
+    const acquired = acquireCreateOrderDraftLease(localStorage, storeId, draftId, ownerId, Date.now(), 15_000, user.id);
+    setDraftLeaseLost(!acquired);
+    const leaseKey = createCreateOrderLeaseKey(storeId, draftId, user.id);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== leaseKey || !event.newValue) return;
+      try {
+        const lease = JSON.parse(event.newValue) as { ownerId?: string; expiresAt?: number };
+        if (lease.ownerId !== ownerId && (lease.expiresAt ?? 0) > Date.now()) setDraftLeaseLost(true);
+      } catch {
+        setDraftLeaseLost(true);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    const timer = window.setInterval(() => {
+      if (!renewCreateOrderDraftLease(localStorage, storeId, draftId, ownerId, Date.now(), 15_000, user.id)) setDraftLeaseLost(true);
+    }, 5_000);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("storage", onStorage);
+      releaseCreateOrderDraftLease(localStorage, storeId, draftId, ownerId, user.id);
+    };
+  }, [storeId, user?.id]);
   const selectedAppointmentDateValue = formatOrderDateValue(selectedAppointmentDate);
 
   const customersQuery = useQuery({
@@ -366,6 +409,18 @@ function CreateOrderContent() {
   const createQuoteMutation = useMutation({
     mutationFn: (values: CreateOrderFormValues) => {
       if (!storeId || !values.pricingCalculationId) throw new Error("缺少价格试算快照，请先重新试算");
+      const draft = loadCreateOrderDraft(localStorage, storeId, user?.id) ?? saveCreateOrderDraft(localStorage, {
+        storeId,
+        actorId: user?.id,
+        draftId: draftIdRef.current,
+        savedAt: new Date().toISOString(),
+        values,
+        summary: {
+          customerName: selectedCustomer?.companyName ?? selectedCustomer?.name ?? "客户待选择",
+          productCount: values.items?.filter((item) => item?.productId).length ?? 0,
+          totalAmountYuan: getOrderAmountSummary(values).totalAmountYuan
+        }
+      });
       return salesQuoteApi.create({
         storeId,
         executionStoreId: values.executionStoreId ?? storeId,
@@ -383,26 +438,70 @@ function CreateOrderContent() {
         temporaryCostReason: trimOptional(values.temporaryCostReason),
         adjustmentReasonCode: "SALES_ADJUSTMENT",
         adjustmentReasonText: trimOptional(values.pricingAdjustmentReason) ?? trimOptional(values.constructionChargeAdjustmentReason ?? values.laborCostAdjustmentReason) ?? "本单成交价偏离建议价，提交审批"
-      });
+      }, getQuoteCreationCommandId(draft.draftId));
     },
-    onSuccess: () => { message.success("已提交报价审批，批准后可转正式订单"); router.push("/orders/quotes"); },
+    onSuccess: () => {
+      const draft = loadCreateOrderDraft(localStorage, storeId!, user?.id);
+      if (draft) clearQuoteCreationCommandId(draft.draftId);
+      removeCreateOrderDraft(localStorage);
+      message.success("已提交报价审批，批准后可转正式订单");
+      router.push("/orders/quotes");
+    },
     onError: (error: Error) => message.error(`报价提交失败：${error.message}`)
   });
   const createMutation = useMutation({
     mutationFn: (values: CreateOrderFormValues) => {
       if (!storeId) throw new Error("当前账号尚未加入门店");
-      return orderApi.create(toCreateOrderPayload(values, storeId));
+      const existingDraft = loadCreateOrderDraft(localStorage, storeId, user?.id);
+      createCommandIdRef.current ??= existingDraft?.commandId ?? createOrderCommandId();
+      saveCreateOrderDraft(localStorage, {
+        storeId,
+        actorId: user?.id,
+        draftId: existingDraft?.draftId ?? draftIdRef.current,
+        commandId: createCommandIdRef.current,
+        draftRevision: (existingDraft?.draftRevision ?? 0) + 1,
+        submissionState: "SUBMITTING",
+        savedAt: new Date().toISOString(),
+        values,
+        pricingSnapshot: serverPricing ?? undefined,
+        copySource: copySource ?? undefined,
+        summary: {
+          customerName: selectedCustomer?.companyName ?? selectedCustomer?.name ?? "客户待选择",
+          productCount: values.items?.filter((item) => item?.productId).length ?? 0,
+          totalAmountYuan: getOrderAmountSummary(values).totalAmountYuan
+        }
+      });
+      setSubmissionState("SUBMITTING");
+      return orderApi.create(toCreateOrderPayload(values, storeId), createCommandIdRef.current);
     },
     onSuccess: (order) => {
+      if (retryingUnknownResultRef.current) {
+        void orderApi.recordLifecycleClientEvent({ event: "ORIGINAL_COMMAND_RETRY_RECOVERED", surface: "ORDER_CREATE", commandType: "CREATE_ORDER" });
+        retryingUnknownResultRef.current = false;
+      }
+      setSubmissionState("EDITING");
       removeCreateOrderDraft(localStorage);
       message.success("订单已创建");
       router.push(`/orders/${order.id}`);
     },
     onError: (error: Error) => {
-      if (error.message.includes("需要先提交报价审批")) {
+      if (error instanceof ApiError && error.code === "QUOTE_APPROVAL_REQUIRED") {
         message.info("当前成交价需要审批，正在创建报价单");
         createQuoteMutation.mutate(form.getFieldsValue(true) as CreateOrderFormValues);
         return;
+      }
+      if (storeId) {
+        const draft = loadCreateOrderDraft(localStorage, storeId, user?.id);
+        const nextState = error instanceof ApiError && error.status < 500 ? "REJECTED" : "RESULT_UNKNOWN";
+        if (draft) saveCreateOrderDraft(localStorage, {
+          ...draft,
+          savedAt: new Date().toISOString(),
+          submissionState: nextState
+        });
+        setSubmissionState(nextState);
+        if (nextState === "RESULT_UNKNOWN") {
+          void orderApi.recordLifecycleClientEvent({ event: "RESULT_UNKNOWN", surface: "ORDER_CREATE", commandType: "CREATE_ORDER" });
+        }
       }
       message.error(error.message);
     }
@@ -428,6 +527,8 @@ function CreateOrderContent() {
       if (storeId) {
         saveCreateOrderDraft(localStorage, {
           storeId,
+          actorId: user?.id,
+          draftId: draftIdRef.current,
           savedAt: new Date().toISOString(),
           values,
           pricingSnapshot: serverPricing ?? undefined,
@@ -471,9 +572,15 @@ function CreateOrderContent() {
       message.error("当前账号尚未加入门店，无法保存草稿");
       return;
     }
+    if (draftLeaseLost) {
+      message.error("当前草稿正在其他标签页编辑，请先关闭或刷新另一标签页");
+      return;
+    }
     const values = form.getFieldsValue(true) as CreateOrderFormValues;
     saveCreateOrderDraft(localStorage, {
       storeId,
+      actorId: user?.id,
+      draftId: draftIdRef.current,
       savedAt: new Date().toISOString(),
       values,
       pricingSnapshot: serverPricing ?? undefined,
@@ -506,11 +613,13 @@ function CreateOrderContent() {
   useEffect(() => {
     if (!storeId || params.get("draft") !== "local" || draftRestoredRef.current) return;
     draftRestoredRef.current = true;
-    const draft = loadCreateOrderDraft(localStorage, storeId);
+    const draft = loadCreateOrderDraft(localStorage, storeId, user?.id);
     if (!draft) {
       message.warning("未找到可恢复的订单草稿");
       return;
     }
+    createCommandIdRef.current = draft.commandId;
+    setSubmissionState(draft.submissionState);
     form.setFieldsValue({
       ...draft.values,
       suggestedConstructionChargeYuan: draft.values.suggestedConstructionChargeYuan ?? draft.values.suggestedLaborCostYuan,
@@ -595,17 +704,27 @@ function CreateOrderContent() {
             className="mb-4"
           />
         ) : null}
+        {submissionState === "RESULT_UNKNOWN" ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="订单提交结果待确认"
+            description="网络中断后服务端结果尚未确认。为避免重复建单，当前草稿已锁定；请使用原提交重试，或返回订单列表确认结果。"
+            action={<Button onClick={() => { retryingUnknownResultRef.current = true; void form.submit(); }} loading={createMutation.isPending}>使用原提交重试</Button>}
+            className="mb-4"
+          />
+        ) : null}
           <StorePageHeader title="新建订单" description="选择客户、产品、施工方式并录入费用">
             <Space className="create-order-header-actions" wrap>
               <Button disabled={!storeId} onClick={() => storeId && router.push(getStoreWorkbenchHref(storeId))}>
                 取消
               </Button>
-              <Button onClick={saveDraft}>
+              <Button disabled={submissionState === "RESULT_UNKNOWN" || draftLeaseLost} onClick={saveDraft}>
                 保存草稿
               </Button>
               <Button
                 loading={pricingCalculationMutation.isPending}
-                disabled={!pricingInput}
+                disabled={!pricingInput || submissionState === "RESULT_UNKNOWN" || draftLeaseLost}
                 onClick={() => pricingCalculationMutation.mutate()}
               >
                 重新试算建议价
@@ -613,7 +732,7 @@ function CreateOrderContent() {
               <Button
                 type="primary"
                 loading={createMutation.isPending}
-                disabled={Boolean(selectedAppointmentDate && (capacitiesQuery.isLoading || isCapacityBlocking))}
+                disabled={Boolean(selectedAppointmentDate && (capacitiesQuery.isLoading || isCapacityBlocking)) || submissionState === "SUBMITTING" || submissionState === "RESULT_UNKNOWN" || draftLeaseLost}
                 onClick={() => form.submit()}
               >
                 提交订单
@@ -624,6 +743,7 @@ function CreateOrderContent() {
           <Form
             form={form}
             layout="vertical"
+            disabled={submissionState === "RESULT_UNKNOWN" || draftLeaseLost}
           initialValues={{
             customerId: initialCustomerId,
             salesPersonId: user?.id,
@@ -635,7 +755,13 @@ function CreateOrderContent() {
             shouldRecordDeposit: false,
             items: defaultItems
           }}
-          onFinish={(values) => createMutation.mutate(values)}
+          onFinish={(values) => {
+            if (draftLeaseLost) {
+              message.error("当前草稿正在其他标签页编辑，请先关闭或刷新另一标签页");
+              return;
+            }
+            createMutation.mutate(values);
+          }}
         >
           <div className="create-order-layout">
             <div className="create-order-main">
@@ -1273,6 +1399,13 @@ function OrderStepTitle({ step, title }: { step: number; title: string }) {
       <span>{title}</span>
     </div>
   );
+}
+
+function createOrderCommandId() {
+  const value = typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  return `order_${value}`;
 }
 
 function resolveProductSalesUnit(product: ProductOption): ProductUnit {

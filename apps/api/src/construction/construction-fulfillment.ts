@@ -1,14 +1,13 @@
-import { ForbiddenException, Injectable, Optional } from "@nestjs/common";
+import { ForbiddenException, Injectable } from "@nestjs/common";
 import { ConstructionService, type AuthenticatedConstructionUser } from "./construction.service";
 import { CrossStoreConstructionService } from "./cross-store-construction.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AccessContext } from "../permissions/domain/access-context";
 import { OrderLifecycle } from "../orders/domain/order-lifecycle";
-import { deriveOrderWorkflow, type OrderWorkflow } from "../orders/domain/order-workflow";
+import { type OrderWorkflow } from "../orders/domain/order-workflow";
 import type {
-  AssignOrderDto, CompleteConstructionDto, ListConstructionDto, OfflineSyncDto,
-  QualityCheckDto, StartConstructionDto, UploadConstructionPhotoDto,
-  VerifyMaterialBatchDto, PickupConstructionMaterialDto, RecordMaterialLossDto
+  AssignOrderDto, CompleteConstructionDto, ListConstructionDto,
+  QualityCheckDto, StartConstructionDto
 } from "./dto/construction.dto";
 import type {
   CancelCrossStoreTaskDto,
@@ -16,7 +15,6 @@ import type {
   ListCrossStoreTasksDto,
   RejectCrossStoreTaskDto
 } from "./dto/cross-store-construction.dto";
-import type { MulterFile } from "../users/multer-file.type";
 
 export type FulfillmentView = {
   order: {
@@ -25,6 +23,7 @@ export type FulfillmentView = {
     storeId: string;
     executionStoreId: string;
     status: string;
+    lifecycleVersion: number;
     appointmentDate: string | null;
     appointmentTimeSlot: string | null;
     constructionLocation: string | null;
@@ -47,6 +46,14 @@ export type FulfillmentView = {
     assignments: Array<{ workerUserId: string }>;
   } | null;
   workflow: OrderWorkflow;
+  lifecycle: {
+    orderId: string;
+    lifecycleVersion: number;
+    currentStage: string;
+    blockingReasonCodes: string[];
+    capabilities: Record<string, { visible: boolean; enabled: boolean; blockingReasonCodes: string[] }>;
+    [key: string]: unknown;
+  };
   generatedAt: string;
 };
 
@@ -63,6 +70,7 @@ export type FulfillmentListItem = {
   storeId: string;
   executionStoreId: string;
   status: string;
+  lifecycleVersion: number;
   constructionStatus: string;
   appointmentDate: string | null;
   appointmentTimeSlot: string | null;
@@ -72,6 +80,8 @@ export type FulfillmentListItem = {
   assignments: Array<{ workerUserId: string }>;
   photoCount: number;
   workflow: OrderWorkflow;
+  lifecycle?: FulfillmentView["lifecycle"];
+  lifecycleError?: { code: string };
 };
 
 export type FulfillmentList = {
@@ -85,13 +95,12 @@ export class ConstructionFulfillment {
   constructor(
     private readonly construction: ConstructionService,
     private readonly crossStore: CrossStoreConstructionService,
-    @Optional() private readonly prisma?: PrismaService,
-    @Optional() private readonly orderLifecycle?: OrderLifecycle,
-    @Optional() private readonly accessContext?: AccessContext
+    private readonly orderLifecycle: OrderLifecycle,
+    private readonly prisma: PrismaService,
+    private readonly accessContext: AccessContext
   ) {}
 
   async getFulfillmentView(user: AuthenticatedConstructionUser, orderId: string): Promise<FulfillmentView> {
-    if (!this.prisma) throw new Error("ConstructionFulfillment read implementation is not configured");
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       select: {
@@ -100,10 +109,11 @@ export class ConstructionFulfillment {
         storeId: true,
         executionStoreId: true,
         status: true,
+        lifecycleVersion: true,
         appointmentDate: true,
         appointmentTimeSlot: true,
         constructionLocation: true,
-        outsideAddress: true,
+        constructionAddress: true,
         constructionType: true,
         customer: { select: { name: true, companyName: true, contactPerson: true } },
         vehicle: { select: { carPlate: true, carModel: true, carColor: true } },
@@ -129,7 +139,6 @@ export class ConstructionFulfillment {
     });
     if (!order) throw new ForbiddenException("订单不存在或无权访问");
     const executionStoreId = order.executionStoreId ?? order.storeId;
-    if (!this.accessContext) throw new Error("ConstructionFulfillment access implementation is not configured");
     const allowed = await this.accessContext.can(user.id, "construction", "read", { storeId: executionStoreId }) ||
       await this.accessContext.can(user.id, "construction", "read", { storeId: order.storeId });
     if (!allowed) throw new ForbiddenException("无权限");
@@ -141,7 +150,8 @@ export class ConstructionFulfillment {
       warranty: order.warranty,
       historicalQualityMissing: (["COMPLETED", "WARRANTIED"] as string[]).includes(order.status) && !order.constructionRecord?.qualityResult
     };
-    const workflow = this.orderLifecycle?.getLifecycle(input) ?? deriveOrderWorkflow(input);
+    const workflow = this.orderLifecycle.getLifecycle(input);
+    const lifecycle = await this.orderLifecycle.getAuthoritativeLifecycle(user, orderId);
     return {
       order: {
         id: order.id,
@@ -149,10 +159,11 @@ export class ConstructionFulfillment {
         storeId: order.storeId,
         executionStoreId,
         status: order.status,
+        lifecycleVersion: order.lifecycleVersion,
         appointmentDate: order.appointmentDate?.toISOString() ?? null,
         appointmentTimeSlot: order.appointmentTimeSlot,
         constructionLocation: order.constructionLocation,
-        outsideAddress: order.outsideAddress,
+        outsideAddress: order.constructionAddress,
         constructionType: order.constructionType,
         customer: order.customer,
         vehicle: order.vehicle
@@ -166,13 +177,14 @@ export class ConstructionFulfillment {
         }
         : null,
       workflow,
+      lifecycle,
       generatedAt: new Date().toISOString()
     };
   }
 
   async getCapabilities(user: AuthenticatedConstructionUser, orderId: string) {
     const view = await this.getFulfillmentView(user, orderId);
-    return { orderId, ...view.workflow.capabilities, currentStage: view.workflow.currentStage, blockingReasons: view.workflow.blockingReasons, generatedAt: view.generatedAt };
+    return { orderId, ...view.lifecycle.capabilities, currentStage: view.lifecycle.currentStage, blockingReasonCodes: view.lifecycle.blockingReasonCodes, generatedAt: view.generatedAt };
   }
 
   async listFulfillments(user: AuthenticatedConstructionUser, query: ListConstructionDto): Promise<FulfillmentList> {
@@ -186,10 +198,11 @@ export class ConstructionFulfillment {
           storeId: true,
           executionStoreId: true,
           status: true,
+          lifecycleVersion: true,
           appointmentDate: true,
           appointmentTimeSlot: true,
           constructionLocation: true,
-          outsideAddress: true,
+          constructionAddress: true,
           customer: { select: { name: true, companyName: true } },
           vehicle: { select: { carPlate: true, carModel: true, carColor: true } },
           amount: { select: { paidAmountCents: true, outstandingCents: true } },
@@ -199,6 +212,7 @@ export class ConstructionFulfillment {
       })
       : [];
     const orderFactById = new Map(orderFacts.map((order) => [order.id, order]));
+    const lifecycleByOrder = await this.orderLifecycle.listAuthoritativeLifecycle(user, records.map((record) => record.orderId));
     const items = records.map((record) => {
       const orderFact = orderFactById.get(record.orderId);
       const order = orderFact ?? record.order;
@@ -208,13 +222,15 @@ export class ConstructionFulfillment {
       const executionStoreId = order.executionStoreId ?? record.storeId;
       const workflowInput = {
         status: order.status,
+        lifecycleVersion: order.lifecycleVersion,
         amount,
         constructionRecord: record,
         inventoryAllocations,
         warranty,
         historicalQualityMissing: (["COMPLETED", "WARRANTIED"] as string[]).includes(order.status) && !record.qualityResult
       };
-      const workflow = this.orderLifecycle?.getLifecycle(workflowInput) ?? deriveOrderWorkflow(workflowInput);
+      const workflow = this.orderLifecycle.getLifecycle(workflowInput);
+      const lifecycleEntry = lifecycleByOrder[record.orderId];
       return {
         id: record.id,
         orderId: record.orderId,
@@ -222,6 +238,7 @@ export class ConstructionFulfillment {
         storeId: order.storeId,
         executionStoreId,
         status: order.status,
+        lifecycleVersion: order.lifecycleVersion,
         constructionStatus: record.status,
         appointmentDate: order.appointmentDate?.toISOString() ?? null,
         appointmentTimeSlot: order.appointmentTimeSlot,
@@ -230,42 +247,58 @@ export class ConstructionFulfillment {
         vehicle: order.vehicle ? { carPlate: order.vehicle.carPlate, carModel: order.vehicle.carModel, carColor: order.vehicle.carColor } : null,
         assignments: record.assignments.map((assignment) => ({ workerUserId: assignment.workerUserId })),
         photoCount: record.photos.length,
-        workflow
+        workflow,
+        ...(lifecycleEntry?.ok
+          ? { lifecycle: lifecycleEntry.value }
+          : { lifecycleError: lifecycleEntry?.error ?? { code: "LIFECYCLE_UNAVAILABLE" } })
       };
     });
     return { items, generatedAt: new Date().toISOString() };
   }
 
-  executeStep(user: AuthenticatedConstructionUser, orderId: string, command: FulfillmentStepCommand) {
-    if (command.type === "DISPATCH") return this.assign(user, orderId, command.input);
-    if (command.type === "START_CONSTRUCTION") return this.start(user, orderId, command.input);
-    if (command.type === "COMPLETE_CONSTRUCTION") return this.complete(user, orderId, command.input);
-    return this.qualityCheck(user, command.recordId, command.input);
-  }
+  assign(user: AuthenticatedConstructionUser, orderId: string, input: AssignOrderDto, context: { commandId: string; expectedVersion: number }) { return this.construction.assignOrder(user, orderId, input, context); }
+  start(user: AuthenticatedConstructionUser, orderId: string, input: StartConstructionDto, context: { commandId: string; expectedVersion: number }) { return this.construction.startOrder(user, orderId, input, context); }
+  complete(user: AuthenticatedConstructionUser, orderId: string, input: CompleteConstructionDto, context: { commandId: string; expectedVersion: number }) { return this.construction.completeOrderForOrder(user, orderId, input, context); }
+  qualityCheck(user: AuthenticatedConstructionUser, recordId: string, input: QualityCheckDto, context: { commandId: string; expectedVersion: number }) { return this.construction.qualityCheck(user, recordId, input, context); }
 
-  listAssignments(user: AuthenticatedConstructionUser, query: ListConstructionDto) { return this.construction.listAssignments(user, query); }
-  assign(user: AuthenticatedConstructionUser, orderId: string, input: AssignOrderDto) { return this.construction.assignOrder(user, orderId, input); }
-  start(user: AuthenticatedConstructionUser, orderId: string, input: StartConstructionDto) { return this.construction.startOrder(user, orderId, input); }
-  complete(user: AuthenticatedConstructionUser, orderId: string, input: CompleteConstructionDto) { return this.construction.completeOrderForOrder(user, orderId, input); }
-  uploadEvidence(user: AuthenticatedConstructionUser, recordId: string, input: UploadConstructionPhotoDto, file?: MulterFile) {
-    return this.construction.uploadPhoto(user, recordId, input, file);
+  async listCrossStoreTasks(user: AuthenticatedConstructionUser, query: ListCrossStoreTasksDto) {
+    const tasks = await this.crossStore.list(user, query);
+    const lifecycleByOrder = await this.orderLifecycle.listAuthoritativeLifecycle(user, tasks.map((task) => task.orderId));
+    return Promise.all(tasks.map(async (task) => {
+      const [canExecute, canSource] = await Promise.all([
+        this.accessContext.can(user.id, "construction", "write", { storeId: task.executionStoreId }),
+        this.accessContext.can(user.id, "orders.lifecycle", "cross_store_source_manage", { storeId: task.sourceStoreId })
+      ]);
+      const base = lifecycleByOrder[task.orderId]?.ok ? lifecycleByOrder[task.orderId].value : undefined;
+      const capability = (visible: boolean, enabled: boolean, blockingReasonCodes: string[] = []) => ({ visible, enabled: visible && enabled, blockingReasonCodes: visible && enabled ? [] : blockingReasonCodes });
+      const executionState = {
+        acceptCrossStore: capability(canExecute && query.scope === "EXECUTION", task.status === "PENDING_ACCEPTANCE", ["TASK_NOT_PENDING_ACCEPTANCE"]),
+        rejectCrossStore: capability(canExecute && query.scope === "EXECUTION", task.status === "PENDING_ACCEPTANCE", ["TASK_NOT_PENDING_ACCEPTANCE"]),
+        submitCrossStoreAcceptance: capability(canExecute && query.scope === "EXECUTION", ["DISPATCHED", "IN_CONSTRUCTION"].includes(task.status), ["TASK_NOT_READY_FOR_ACCEPTANCE"]),
+        cancelCrossStore: capability(canSource && query.scope === "SOURCE", !["COMPLETED", "CANCELLED", "IN_CONSTRUCTION", "PENDING_SOURCE_ACCEPTANCE"].includes(task.status), ["TASK_NOT_CANCELLABLE"]),
+        acceptCrossStoreBySource: capability(canSource && query.scope === "SOURCE", task.status === "PENDING_SOURCE_ACCEPTANCE", ["TASK_NOT_PENDING_SOURCE_ACCEPTANCE"])
+      };
+      return { ...task, lifecycle: base ? { ...base, capabilities: { ...base.capabilities, ...executionState } } : { capabilities: executionState } };
+    }));
   }
-  recordEvidence(user: AuthenticatedConstructionUser, recordId: string, input: UploadConstructionPhotoDto, file?: MulterFile) {
-    return this.uploadEvidence(user, recordId, input, file);
+  async acceptCrossStoreTask(user: AuthenticatedConstructionUser, id: string, context: { commandId: string; expectedVersion: number; taskVersion: number }) {
+    const task = await this.crossStore.get(user, id);
+    return this.orderLifecycle.transition(user, task.orderId, { type: "ACCEPT_CROSS_STORE_TASK", taskId: id, taskVersion: context.taskVersion }, { ...context, source: "CONSTRUCTION_WEB" });
   }
-  qualityCheck(user: AuthenticatedConstructionUser, recordId: string, input: QualityCheckDto) { return this.construction.qualityCheck(user, recordId, input); }
-  qualityHistory(user: AuthenticatedConstructionUser, recordId: string) { return this.construction.listQualityHistory(user, recordId); }
-  getMaterials(user: AuthenticatedConstructionUser, orderId: string) { return this.construction.getOrderMaterials(user, orderId); }
-  verifyMaterialBatch(user: AuthenticatedConstructionUser, orderId: string, input: VerifyMaterialBatchDto) { return this.construction.verifyMaterialBatch(user, orderId, input); }
-  pickupMaterials(user: AuthenticatedConstructionUser, orderId: string, input: PickupConstructionMaterialDto) { return this.construction.pickupMaterials(user, orderId, input); }
-  recordMaterialLoss(user: AuthenticatedConstructionUser, orderId: string, input: RecordMaterialLossDto) { return this.construction.recordMaterialLoss(user, orderId, input); }
-  syncOfflineOperations(user: AuthenticatedConstructionUser, input: OfflineSyncDto) { return this.construction.syncOfflineOperations(user, input); }
-  syncOffline(user: AuthenticatedConstructionUser, input: OfflineSyncDto) { return this.syncOfflineOperations(user, input); }
-
-  listCrossStoreTasks(user: AuthenticatedConstructionUser, query: ListCrossStoreTasksDto) { return this.crossStore.list(user, query); }
-  acceptCrossStoreTask(user: AuthenticatedConstructionUser, id: string) { return this.crossStore.accept(user, id); }
-  rejectCrossStoreTask(user: AuthenticatedConstructionUser, id: string, input: RejectCrossStoreTaskDto) { return this.crossStore.reject(user, id, input); }
-  cancelCrossStoreTask(user: AuthenticatedConstructionUser, id: string, input: CancelCrossStoreTaskDto) { return this.crossStore.cancel(user, id, input); }
-  submitCrossStoreAcceptance(user: AuthenticatedConstructionUser, id: string, input: CompleteCrossStoreAcceptanceDto) { return this.crossStore.submitForSourceAcceptance(user, id, input); }
-  acceptCrossStoreBySource(user: AuthenticatedConstructionUser, id: string) { return this.crossStore.completeSourceAcceptance(user, id); }
+  async rejectCrossStoreTask(user: AuthenticatedConstructionUser, id: string, input: RejectCrossStoreTaskDto, context: { commandId: string; expectedVersion: number; taskVersion: number }) {
+    const task = await this.crossStore.get(user, id);
+    return this.orderLifecycle.transition(user, task.orderId, { type: "REJECT_CROSS_STORE_TASK", taskId: id, taskVersion: context.taskVersion, input }, { ...context, source: "CONSTRUCTION_WEB" });
+  }
+  async cancelCrossStoreTask(user: AuthenticatedConstructionUser, id: string, input: CancelCrossStoreTaskDto, context: { commandId: string; expectedVersion: number; taskVersion: number }) {
+    const task = await this.crossStore.get(user, id);
+    return this.orderLifecycle.transition(user, task.orderId, { type: "CANCEL_CROSS_STORE_TASK", taskId: id, taskVersion: context.taskVersion, input }, { ...context, source: "CONSTRUCTION_WEB" });
+  }
+  async submitCrossStoreAcceptance(user: AuthenticatedConstructionUser, id: string, input: CompleteCrossStoreAcceptanceDto, context: { commandId: string; expectedVersion: number; taskVersion: number }) {
+    const task = await this.crossStore.get(user, id);
+    return this.orderLifecycle.transition(user, task.orderId, { type: "SUBMIT_CROSS_STORE_ACCEPTANCE", taskId: id, taskVersion: context.taskVersion, input }, { ...context, source: "CONSTRUCTION_WEB" });
+  }
+  async acceptCrossStoreBySource(user: AuthenticatedConstructionUser, id: string, context: { commandId: string; expectedVersion: number; taskVersion: number }) {
+    const task = await this.crossStore.get(user, id);
+    return this.orderLifecycle.transition(user, task.orderId, { type: "ACCEPT_CROSS_STORE_BY_SOURCE", taskId: id, taskVersion: context.taskVersion }, { ...context, source: "CONSTRUCTION_WEB" });
+  }
 }

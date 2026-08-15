@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -82,40 +84,49 @@ export class ConstructionController {
   }
 
   @Post("cross-store/tasks/:id/accept")
-  acceptCrossStoreTask(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.fulfillment.acceptCrossStoreTask(req.user, id);
+  acceptCrossStoreTask(@Req() req: AuthRequest, @Param("id") id: string, @Headers("idempotency-key") commandId?: string, @Headers("x-lifecycle-version") expectedVersion?: string, @Headers("x-task-version") taskVersion?: string) {
+    return this.fulfillment.acceptCrossStoreTask(req.user, id, crossStoreLifecycleContext(commandId, expectedVersion, taskVersion));
   }
 
   @Post("cross-store/tasks/:id/reject")
   rejectCrossStoreTask(
     @Req() req: AuthRequest,
     @Param("id") id: string,
-    @Body() dto: RejectCrossStoreTaskDto
+    @Body() dto: RejectCrossStoreTaskDto,
+    @Headers("idempotency-key") commandId?: string,
+    @Headers("x-lifecycle-version") expectedVersion?: string,
+    @Headers("x-task-version") taskVersion?: string
   ) {
-    return this.fulfillment.rejectCrossStoreTask(req.user, id, dto);
+    return this.fulfillment.rejectCrossStoreTask(req.user, id, dto, crossStoreLifecycleContext(commandId, expectedVersion, taskVersion));
   }
 
   @Post("cross-store/tasks/:id/cancel")
   cancelCrossStoreTask(
     @Req() req: AuthRequest,
     @Param("id") id: string,
-    @Body() dto: CancelCrossStoreTaskDto
+    @Body() dto: CancelCrossStoreTaskDto,
+    @Headers("idempotency-key") commandId?: string,
+    @Headers("x-lifecycle-version") expectedVersion?: string,
+    @Headers("x-task-version") taskVersion?: string
   ) {
-    return this.fulfillment.cancelCrossStoreTask(req.user, id, dto);
+    return this.fulfillment.cancelCrossStoreTask(req.user, id, dto, crossStoreLifecycleContext(commandId, expectedVersion, taskVersion));
   }
 
   @Post("cross-store/tasks/:id/submit-acceptance")
   submitCrossStoreTaskForAcceptance(
     @Req() req: AuthRequest,
     @Param("id") id: string,
-    @Body() dto: CompleteCrossStoreAcceptanceDto
+    @Body() dto: CompleteCrossStoreAcceptanceDto,
+    @Headers("idempotency-key") commandId?: string,
+    @Headers("x-lifecycle-version") expectedVersion?: string,
+    @Headers("x-task-version") taskVersion?: string
   ) {
-    return this.fulfillment.submitCrossStoreAcceptance(req.user, id, dto);
+    return this.fulfillment.submitCrossStoreAcceptance(req.user, id, dto, crossStoreLifecycleContext(commandId, expectedVersion, taskVersion));
   }
 
   @Post("cross-store/tasks/:id/source-accept")
-  acceptCrossStoreTaskBySource(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.fulfillment.acceptCrossStoreBySource(req.user, id);
+  acceptCrossStoreTaskBySource(@Req() req: AuthRequest, @Param("id") id: string, @Headers("idempotency-key") commandId?: string, @Headers("x-lifecycle-version") expectedVersion?: string, @Headers("x-task-version") taskVersion?: string) {
+    return this.fulfillment.acceptCrossStoreBySource(req.user, id, crossStoreLifecycleContext(commandId, expectedVersion, taskVersion));
   }
 
   @Get("cross-store/product-mappings")
@@ -218,7 +229,7 @@ export class ConstructionController {
 
   @Get("assignments")
   listAssignments(@Req() req: AuthRequest, @Query() query: ListConstructionDto) {
-    return this.fulfillment.listAssignments(req.user, query);
+    return this.construction.listAssignments(req.user, query);
   }
 
   @Get("fulfillments")
@@ -227,8 +238,14 @@ export class ConstructionController {
   }
 
   @Post("orders/:orderId/assign")
-  assignOrder(@Req() req: AuthRequest, @Param("orderId") orderId: string, @Body() dto: AssignOrderDto) {
-    return this.fulfillment.assign(req.user, orderId, dto);
+  assignOrder(
+    @Req() req: AuthRequest,
+    @Param("orderId") orderId: string,
+    @Body() dto: AssignOrderDto,
+    @Headers("idempotency-key") commandId?: string,
+    @Headers("x-lifecycle-version") expectedVersion?: string
+  ) {
+    return this.fulfillment.assign(req.user, orderId, dto, lifecycleContext(commandId, expectedVersion));
   }
 
   @Get("orders/:orderId/fulfillment")
@@ -237,17 +254,25 @@ export class ConstructionController {
   }
 
   @Post("orders/:orderId/start")
-  startOrder(@Req() req: AuthRequest, @Param("orderId") orderId: string, @Body() dto: StartConstructionDto) {
-    return this.fulfillment.start(req.user, orderId, dto);
+  startOrder(
+    @Req() req: AuthRequest,
+    @Param("orderId") orderId: string,
+    @Body() dto: StartConstructionDto,
+    @Headers("idempotency-key") commandId?: string,
+    @Headers("x-lifecycle-version") expectedVersion?: string
+  ) {
+    return this.fulfillment.start(req.user, orderId, dto, lifecycleContext(commandId, expectedVersion));
   }
 
   @Post("orders/:orderId/complete")
   completeOrder(
     @Req() req: AuthRequest,
     @Param("orderId") orderId: string,
-    @Body() dto: CompleteConstructionDto
+    @Body() dto: CompleteConstructionDto,
+    @Headers("idempotency-key") commandId?: string,
+    @Headers("x-lifecycle-version") expectedVersion?: string
   ) {
-    return this.fulfillment.complete(req.user, orderId, dto);
+    return this.fulfillment.complete(req.user, orderId, dto, lifecycleContext(commandId, expectedVersion));
   }
 
   @Post("records/:recordId/photos")
@@ -258,22 +283,28 @@ export class ConstructionController {
     @Body() dto: UploadConstructionPhotoDto,
     @UploadedFile() file?: MulterFile
   ) {
-    return this.fulfillment.recordEvidence(req.user, recordId, dto, file);
+    return this.construction.uploadPhoto(req.user, recordId, dto, file, dto.clientOperationId);
   }
 
   @Post("records/:recordId/quality-check")
-  qualityCheck(@Req() req: AuthRequest, @Param("recordId") recordId: string, @Body() dto: QualityCheckDto) {
-    return this.fulfillment.qualityCheck(req.user, recordId, dto);
+  qualityCheck(
+    @Req() req: AuthRequest,
+    @Param("recordId") recordId: string,
+    @Body() dto: QualityCheckDto,
+    @Headers("idempotency-key") commandId?: string,
+    @Headers("x-lifecycle-version") expectedVersion?: string
+  ) {
+    return this.fulfillment.qualityCheck(req.user, recordId, dto, lifecycleContext(commandId, expectedVersion));
   }
 
   @Get("records/:recordId/quality-history")
   qualityHistory(@Req() req: AuthRequest, @Param("recordId") recordId: string) {
-    return this.fulfillment.qualityHistory(req.user, recordId);
+    return this.construction.listQualityHistory(req.user, recordId);
   }
 
   @Get("orders/:orderId/materials")
   getOrderMaterials(@Req() req: AuthRequest, @Param("orderId") orderId: string) {
-    return this.fulfillment.getMaterials(req.user, orderId);
+    return this.construction.getOrderMaterials(req.user, orderId);
   }
 
   @Post("orders/:orderId/materials/verify-batch")
@@ -282,7 +313,7 @@ export class ConstructionController {
     @Param("orderId") orderId: string,
     @Body() dto: VerifyMaterialBatchDto
   ) {
-    return this.fulfillment.verifyMaterialBatch(req.user, orderId, dto);
+    return this.construction.verifyMaterialBatch(req.user, orderId, dto);
   }
 
   @Post("orders/:orderId/materials/pickup")
@@ -291,7 +322,7 @@ export class ConstructionController {
     @Param("orderId") orderId: string,
     @Body() dto: PickupConstructionMaterialDto
   ) {
-    return this.fulfillment.pickupMaterials(req.user, orderId, dto);
+    return this.construction.pickupMaterials(req.user, orderId, dto);
   }
 
   @Post("orders/:orderId/materials/losses")
@@ -300,7 +331,7 @@ export class ConstructionController {
     @Param("orderId") orderId: string,
     @Body() dto: RecordMaterialLossDto
   ) {
-    return this.fulfillment.recordMaterialLoss(req.user, orderId, dto);
+    return this.construction.recordMaterialLoss(req.user, orderId, dto);
   }
 
   @Get("workers")
@@ -324,8 +355,8 @@ export class ConstructionController {
   }
 
   @Post("leaves")
-  createLeave(@Req() req: AuthRequest, @Body() dto: LeaveRequestDto) {
-    return this.construction.createLeave(req.user, dto);
+  createLeave(@Req() req: AuthRequest, @Body() dto: LeaveRequestDto, @Headers("idempotency-key") clientOperationId?: string) {
+    return this.construction.createLeave(req.user, dto, clientOperationId);
   }
 
   @Patch("leaves/:id")
@@ -345,6 +376,26 @@ export class ConstructionController {
 
   @Post("offline-sync")
   syncOfflineOperations(@Req() req: AuthRequest, @Body() dto: OfflineSyncDto) {
-    return this.fulfillment.syncOffline(req.user, dto);
+    return this.construction.syncOfflineOperations(req.user, dto);
   }
+}
+
+function lifecycleContext(commandId?: string, rawVersion?: string) {
+  if (!commandId?.trim()) {
+    throw new BadRequestException({ code: "COMMAND_ID_REQUIRED", message: "缺少履约命令标识" });
+  }
+  const expectedVersion = Number(rawVersion);
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+    throw new BadRequestException({ code: "LIFECYCLE_VERSION_REQUIRED", message: "缺少有效的履约版本" });
+  }
+  return { commandId: commandId.trim(), expectedVersion };
+}
+
+function crossStoreLifecycleContext(commandId?: string, rawVersion?: string, rawTaskVersion?: string) {
+  const context = lifecycleContext(commandId, rawVersion);
+  const taskVersion = Number(rawTaskVersion);
+  if (!Number.isInteger(taskVersion) || taskVersion < 1) {
+    throw new BadRequestException({ code: "TASK_VERSION_REQUIRED", message: "缺少有效的跨店任务版本" });
+  }
+  return { ...context, taskVersion };
 }

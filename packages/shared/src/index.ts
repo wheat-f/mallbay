@@ -78,9 +78,17 @@ export type OfflineSyncOperation = {
   payload: Record<string, unknown>;
 };
 
+export type OfflineSyncStatus =
+  | "APPLIED"
+  | "REPLAYED"
+  | "CONFLICT"
+  | "RETRYABLE_FAILURE"
+  | "REJECTED";
+
 export type OfflineSyncItemResult = {
   clientOperationId: string;
-  status: "SYNCED" | "FAILED";
+  status: OfflineSyncStatus;
+  code?: string;
   message?: string;
   result?: unknown;
 };

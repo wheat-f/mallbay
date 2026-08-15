@@ -1,8 +1,8 @@
 # MallBay 业务事实与流程模块深化 PRD
 
 > 文档类型：架构深化产品需求文档（PRD）
-> 文档版本：V3.1
-> 当前状态：已完成；核心契约、主要调用方迁移和登录态真实数据页面验收均已完成
+> 文档版本：V3.2
+> 当前状态：核心契约、主要调用方迁移和登录态真实数据页面验收已完成；订单履约唯一写入 seam、离线结果、证据 transport、调用来源、命令级可观测性、Web 页面匿名操作事件和运行期历史一致性对账的最新边界以《订单履约闭环唯一写入 seam PRD》V1.46 为准，小程序范围按主 PRD 4.3 延期，真实 CI/预发发布门禁仍待执行
 > 创建日期：2026-08-07
 > 适用范围：MallBay Web 管理端及 API 模块化单体
 
@@ -367,10 +367,10 @@ InventoryLedger┘          │                    │
 - 已将设置访问和门店能力检查迁移到 `AccessContext`，成员、设置和门店不再必须直接调用 `PermissionsService`。
 - 已将用户管理、基础字典和设置审计的权限判断迁移到 `AccessContext`，保留旧权限服务作为兼容回退。
 - 已将总部字典模板权限判断也迁移到 `AccessContext`；剩余 `PermissionsService` 调用仅作为兼容回退或底层契约 implementation。
-- 已将施工派工、开工、完工和质检通过 `OrderLifecycle` 注册的施工 transition handler 收拢；请假、跨店协作通知，以及产能和施工成本审计继续迁移到平台契约。
+- 已将施工派工、开工、完工和质检收拢到 `OrderLifecycle` 的内部 `ConstructionLifecycleImplementation`；`ConstructionService` 只负责应用/transport adapter，不再通过 runtime handler 注册第二条写入路径。请假、跨店协作通知，以及产能和施工成本审计继续迁移到平台契约。
 - 已将定价规则、成本配置、价格发布、模板和报价服务的审计调用迁移到 `AuditEventWriter`。
 - 审计事件新增可选幂等键及唯一约束；通知 dispatcher/服务新增可选去重键并映射到现有 `Notification.todoKey`，旧调用保持兼容。
-- `OrderLifecycle` 已提供 `createOrder`、`getLifecycle`、`getCapabilities`、`listCapabilities`、最终交付、取消和反审核退回 command；订单创建、详情、最终交付、取消和退回已消费正式生命周期契约；施工派工/开工/完工/质检仍待从 `ConstructionService` 提取，`derive` 仅保留兼容别名。
+- `OrderLifecycle` 已提供 `createOrder`、`getLifecycle`、`getCapabilities`、`listCapabilities`、最终交付、取消、反审核退回及施工阶段 command；订单、施工、跨店入口均消费正式生命周期契约，施工状态写入由内部 `ConstructionLifecycleImplementation` 承担，不向调用方暴露 implementation。
 - `AuditEventWriter.writeTransactional` 已支持“先持久化、再输出日志”；订单、施工、定价和报价的已有审计 helper 已迁移，避免事务失败后留下已提交日志假象。
 - `NotificationDispatcher` 的去重键重试会返回原通知；并发唯一键冲突也会回读原通知，不向业务层泄露数据库冲突。
 - 客户企业结算的对账单、收款和红冲审计，以及产品建议价、材料成本和单位建议价审计，已迁移到 `AuditEventWriter.writeTransactional`；未注入 writer 时保留原 `persistAuditEvent` 回退。
@@ -383,8 +383,8 @@ InventoryLedger┘          │                    │
 |---|---|---|---|
 | ORD-001 | `OrderLifecycle` 生命周期、能力查询和创建入口 | 已完成 | `order-lifecycle.ts`、订单详情/创建调用方、生命周期 contract tests |
 | ORD-002 | 最终交付事务、质保激活、余额待办和审计幂等 | 已完成 | `OrderLifecycle.transition(FINAL_DELIVERY)`、订单生命周期测试、全量回归 |
-| ORD-003 | 取消、反审核退回和允许的状态 transition 收拢到 `OrderLifecycle.transition` | 已完成 | `OrderLifecycle.transition` 覆盖最终交付、取消、反审核退回及施工 transition，拥有统一 command 入口；订单服务仅保留无 seam 时的兼容回退 |
-| ORD-004 | 将派工、开工、完工、质检纳入订单履约 transition | 已完成 | `ConstructionService` 注册施工 transition handler，公共施工 command 通过 `OrderLifecycle` 路由，既有物料/照片/提成/跨店规则保留在 implementation |
+| ORD-003 | 取消、反审核退回和允许的状态 transition 收拢到 `OrderLifecycle.transition` | 已完成 | `OrderLifecycle.transition` 覆盖最终交付、取消、反审核退回及施工 transition，拥有统一 command 入口；订单服务不再提供 lifecycle fallback |
+| ORD-004 | 将派工、开工、完工、质检纳入订单履约 transition | 已完成 | `ConstructionLifecycleImplementation` 在 `OrderLifecycle` 内部执行施工 command，`ConstructionService` 仅保留应用/transport adapter，既有物料/照片/提成/跨店规则仍由内部 implementation 管理 |
 | INV-001 | 预留、释放、出库、收货、调整和追溯接入 `InventoryLedger` | 已完成 | `inventory-ledger.ts`、库存幂等测试、流水唯一约束迁移 |
 | INV-002 | 采购流程只通过 ledger 写入收货事实 | 已完成 | 采购收货调用方与库存服务回归 |
 | PRICE-001 | 定价决策、订单价格校验和价格/成本审计接入 `PricingDecision` | 已完成 | 定价/订单/报价调用方与审计 writer |
@@ -442,3 +442,4 @@ InventoryLedger┘          │                    │
 | V2.9 | 2026-08-07 | 补充已登录 Chrome 空数据态验收证据，并明确有业务数据详情页仍待验收 | 校准 QA-001 完成边界，避免将空数据误报为真实详情数据验收 |
 | V3.0 | 2026-08-08 | 修正测试门店数据态记录，补充真实订单、施工记录和客户详情验收路径 | 通过本地测试数据库核验确认店长门店存在真实业务数据，避免将之前的空数据记录继续作为验收依据 |
 | V3.1 | 2026-08-08 | 完成店长登录态真实业务数据的工作台、订单、施工和客户详情页 1440/1024/390 浏览器验收 | 关闭 QA-001，证明核心履约详情与客户消费/人工标签入口在三种视口下可访问且无横向溢出 |
+| V3.2 | 2026-08-15 | 同步订单履约唯一写入 seam 的最新实现状态：施工 transition 改为内部 implementation，删除 runtime handler/fallback 叙述，并链接主 PRD V1.35 的离线、证据 transport 与 OSS 对象生命周期边界；小程序范围按主 PRD 4.3 延期 | 防止关联 PRD 继续指导研发使用已删除的第二条写入路径；真实 CI/预发门禁状态保持如实记录 |

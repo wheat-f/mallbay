@@ -375,7 +375,10 @@ export class PricingService {
       options.temporaryCost.reason.trim()
     );
     if (output.costEstimate && output.costEstimate.costCompleteness !== "COMPLETE" && !canUseTemporaryCost) {
-      throw new BadRequestException("预计成本尚未完整，不能直接生成正式订单；请补齐成本标准或先走临时成本报价审批");
+      throw new BadRequestException({
+        code: "QUOTE_APPROVAL_REQUIRED",
+        message: "预计成本尚未完整，不能直接生成正式订单；请补齐成本标准或先走临时成本报价审批"
+      });
     }
     const costEstimate = canUseTemporaryCost
       ? {
@@ -398,13 +401,15 @@ export class PricingService {
       },
       output.protectionPolicy
     );
-    if (guard.decision === "BLOCKED") throw new BadRequestException("成交价低于保护范围，不能直接生成正式订单");
+    if (guard.decision === "BLOCKED") {
+      throw new BadRequestException({ code: "PRICING_BLOCKED", message: "成交价低于保护范围，不能直接生成正式订单" });
+    }
     // An approved quote has already passed the required approval workflow. We
     // still evaluate the immutable snapshot (and continue to reject BLOCKED
     // prices), but must not send the approved quote back into the approval
     // queue during conversion to a formal order.
     if (guard.decision === "APPROVAL_REQUIRED" && !options.approvedQuote) {
-      throw new BadRequestException("当前成交价需要先提交报价审批");
+      throw new BadRequestException({ code: "QUOTE_APPROVAL_REQUIRED", message: "当前成交价需要先提交报价审批" });
     }
     return {
       pricingCalculationId: snapshot.id,

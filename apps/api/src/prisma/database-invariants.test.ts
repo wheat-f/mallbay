@@ -159,6 +159,9 @@ test("phase two schema exposes construction capacity assignment and record model
   assert.ok(schema.includes("@@unique([orderId, workerUserId])"), "assignment must prevent duplicate workers");
   assert.match(schema, /orderId\s+String\s+@unique/, "ConstructionRecord must be unique per order");
   assert.ok(schema.includes("isRevoked"), "quality history must preserve revoked evidence state");
+  assert.match(schema, /clientOperationId\s+String\?\s+@unique/, "construction evidence must have a unique replay key");
+  assert.match(schema, /requestFingerprint\s+String/, "construction evidence must persist its input fingerprint");
+  assert.ok(schema.includes("enum ConstructionEvidenceStatus"), "construction evidence must persist lifecycle status");
   assert.ok(schema.includes("@@index([recordId, checkedAt])"), "quality history must be chronologically queryable");
 });
 

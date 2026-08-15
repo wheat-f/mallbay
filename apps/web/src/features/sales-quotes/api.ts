@@ -90,8 +90,12 @@ export type CreateSalesQuotePayload = RecalculateSalesQuotePayload & {
 };
 
 export const salesQuoteApi = {
-  create: (payload: CreateSalesQuotePayload) =>
-    request<SalesQuoteRow>("/sales-quotes", { method: "POST", body: JSON.stringify(payload) }),
+  create: (payload: CreateSalesQuotePayload, commandId: string) =>
+    request<SalesQuoteRow>("/sales-quotes", {
+      method: "POST",
+      headers: { "Idempotency-Key": commandId },
+      body: JSON.stringify(payload)
+    }),
   list: (storeId: string) => request<SalesQuoteRow[]>(`/sales-quotes?storeId=${encodeURIComponent(storeId)}`),
   exportDetails: (storeId: string, exportDimension: SalesQuoteExportDimension = "date") =>
     request<SalesQuoteExportDetail[]>(`/sales-quotes/export-details?storeId=${encodeURIComponent(storeId)}&exportDimension=${exportDimension}`),
@@ -105,7 +109,41 @@ export const salesQuoteApi = {
     request<SalesQuoteRow>(`/sales-quotes/${id}/withdraw`, { method: "POST", body: JSON.stringify({ storeId, reason }) }),
   recalculate: (id: string, payload: RecalculateSalesQuotePayload) =>
     request<{ previousQuoteId: string; quote: SalesQuoteRow }>(`/sales-quotes/${id}/recalculate`, { method: "POST", body: JSON.stringify(payload) }),
-  convertToOrder: (id: string) =>
-    request<{ quoteId: string; orderId: string }>(`/sales-quotes/${id}/convert-to-order`, { method: "POST" })
+  convertToOrder: (id: string, commandId: string) =>
+    request<{ quoteId: string; orderId: string }>(`/sales-quotes/${id}/convert-to-order`, {
+      method: "POST",
+      headers: { "Idempotency-Key": commandId }
+    })
 };
+
+export function getQuoteConversionCommandId(quoteId: string, actorId = "anonymous", storeId = "global") {
+  const key = `mallbay-quote-conversion-command:v2:${actorId}:${storeId}:${quoteId}`;
+  if (typeof localStorage !== "undefined") {
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+  }
+  const value = typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const commandId = `quote_convert_${value}`;
+  if (typeof localStorage !== "undefined") localStorage.setItem(key, commandId);
+  return commandId;
+}
+
+export function getQuoteCreationCommandId(draftId: string) {
+  const key = `mallbay-quote-creation-command:${draftId}`;
+  const existing = typeof window === "undefined" ? null : window.localStorage.getItem(key);
+  if (existing) return existing;
+  const commandId = globalThis.crypto?.randomUUID?.() ?? `quote-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  if (typeof window !== "undefined") window.localStorage.setItem(key, commandId);
+  return commandId;
+}
+
+export function clearQuoteCreationCommandId(draftId: string) {
+  if (typeof window !== "undefined") window.localStorage.removeItem(`mallbay-quote-creation-command:${draftId}`);
+}
+
+export function clearQuoteConversionCommandId(quoteId: string, actorId = "anonymous", storeId = "global") {
+  if (typeof localStorage !== "undefined") localStorage.removeItem(`mallbay-quote-conversion-command:v2:${actorId}:${storeId}:${quoteId}`);
+}
 

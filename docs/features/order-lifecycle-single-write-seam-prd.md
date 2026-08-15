@@ -5,8 +5,8 @@
 | 项目 | 内容 |
 |---|---|
 | 需求名称 | 订单履约闭环唯一写入 seam |
-| 文档版本 | V1.47 |
-| 当前状态 | 需求评审与实施评审通过；Docker 订单并发、迁移预检、备份恢复、Chrome smoke、本地 1440/1024/390 响应式矩阵、完整生命周期浏览器 E2E、本地生命周期故障注入、历史数据门禁、运行期历史一致性对账及 API 全量真实数据库测试已通过；本轮补齐运行期发现矛盾后幂等创建 OPEN 核验单的 reconciler，并复跑 API 439/439、Web 621/621、API/Web/Shared TypeScript；CI 真实 PostgreSQL/Verify Store Flow 门禁和镜像构建已通过，ACR 因不接受 OCI SBOM 空 manifest，三个构建 job 显式关闭 provenance/SBOM；Test ECS 仍需补齐 `METRICS_TOKEN` secret 后才能完成预发部署与浏览器门禁 |
+| 文档版本 | V1.48 |
+| 当前状态 | 需求评审与实施评审通过；Docker 订单并发、迁移预检、备份恢复、Chrome smoke、本地 1440/1024/390 响应式矩阵、完整生命周期浏览器 E2E、本地生命周期故障注入、历史数据门禁、运行期历史一致性对账及 API 全量真实数据库测试已通过；本轮补齐运行期发现矛盾后幂等创建 OPEN 核验单的 reconciler，并复跑 API 439/439、Web 621/621、API/Web/Shared TypeScript；CI 真实 PostgreSQL/Verify Store Flow 门禁和镜像构建已通过，ACR 因不接受 OCI SBOM 空 manifest，三个构建 job 显式关闭 provenance/SBOM；Test ECS 部署改为直接校验服务器 `/opt/mallbay/.env` 中的 `METRICS_TOKEN`，不再要求 GitHub secret |
 | 产品负责人 | 待指定 |
 | 创建日期 | 2026-08-13 |
 | 适用范围 | MallBay API、Web 管理端、施工 Web、小程序 |
@@ -1292,3 +1292,4 @@ Then：仍可在本次同步摘要查看业务类型、订单/工单和结果；
 | V1.45 | 2026-08-15 | 补齐 Web 页面匿名操作事件契约与页面 adapter：结果待确认、原 ID 重试恢复、查看最新版本、人工创建新意图；事件白名单、登录保护且不携带业务表单内容 | 页面事件专项 2/2、API 全量真实数据库测试 437/437/0/0、Web 全量 621/621、API/Web/Shared TypeScript 通过；小程序继续按 4.3 延期，真实 CI/预发仍待执行 | Codex |
 | V1.46 | 2026-08-15 | 补齐运行期历史一致性 reconciler：固定 invariant 映射、事务 advisory lock、OPEN 核验单幂等创建/issue code 合并、失败指标与结构化日志；接入 OrdersModule scheduler | 对账专项 2/2、API 全量真实数据库测试 439/439/0/0、API/Web/Shared TypeScript 通过；API Docker 重建健康启动，历史 gate 与 scheduler 首次扫描通过；小程序继续按 4.3 延期，真实 CI/预发仍待执行 | Codex |
 | V1.47 | 2026-08-15 | 修复 GitHub runner PostgreSQL 16 客户端与 PostgreSQL 17 服务的备份恢复版本不匹配；按 ACR 实际拒绝 OCI SBOM empty manifest 的证据，将三个构建 job 的 provenance/SBOM 显式关闭并记录后续恢复条件；修复字典治理跨来源分页的 locale 非确定性排序；部署脚本安全注入并校验 `METRICS_TOKEN` | GitHub CI 真实 PostgreSQL/Verify Store Flow/镜像构建门禁通过；Test ECS 因缺少外部 `METRICS_TOKEN` secret 未部署，待配置后复跑预发；小程序继续按 4.3 延期 | Codex |
+| V1.48 | 2026-08-15 | Test 部署不再从 GitHub secret 注入 `METRICS_TOKEN`，改为在 SSH 远端校验并复用 `/opt/mallbay/.env`，与生产部署的服务器环境配置方式保持一致 | workflow YAML 通过静态校验；部署仍 fail-closed：Test ECS 缺少或为空的 `METRICS_TOKEN` 时在拉取镜像前退出；GitHub 不再需要配置该 secret | Codex |

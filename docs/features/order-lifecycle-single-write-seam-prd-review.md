@@ -4,7 +4,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 被评审文档 | `docs/features/order-lifecycle-single-write-seam-prd.md` V1.47 |
+| 被评审文档 | `docs/features/order-lifecycle-single-write-seam-prd.md` V1.48 |
 | 评审日期 | 2026-08-15 |
 | 评审范围 | 目标、范围、流程、状态、权限、数据、原子性、幂等、并发、页面操作、异常恢复、迁移、可观测性、验收与追溯 |
 | 评审方法 | `requirement-review` 全量评审 + 页面交互专项复评；发现阻断项即回写 PRD，再重新评审 |
@@ -263,6 +263,10 @@ AC-18 的页面门禁现在明确只要求 Web 1440/1024/390 响应式矩阵和 
 
 真实 PostgreSQL 与 Verify Store Flow 门禁已通过；备份恢复改用 PostgreSQL 17 client container，修复 runner 工具版本漂移。ACR 构建失败证据为 `unknown manifest class for application/vnd.oci.empty.v1+json`，因此发布 workflow 暂时关闭 provenance/SBOM，且 PRD 记录恢复条件；业务测试、数据库门禁和镜像构建本身不因此跳过。Test ECS 部署随后明确暴露缺少 `METRICS_TOKEN` secret，workflow 已改为安全注入并 fail-closed；在补齐该外部 secret 前预发发布不能通过。评审保持通过，生产发布仍未通过。
 
+### 2.26 V1.48 Test 环境变量来源复评
+
+Test 部署不再要求 GitHub `test` environment 配置 `METRICS_TOKEN`。SSH 脚本在 `/opt/mallbay` 先检查 `.env` 存在且含非空 `METRICS_TOKEN`，随后让 Docker Compose 直接读取该服务器环境文件；不再通过 `appleboy/ssh-action` 的 `envs` 传递或覆盖 token。这样与生产部署的服务器环境配置方式一致，同时保留缺失配置即退出的 fail-closed 行为。workflow YAML 静态校验通过，评审保持通过。
+
 ## 4. 最终完整性检查
 
 | 维度 | 结论 | 通过证据 |
@@ -295,4 +299,4 @@ AC-18 的页面门禁现在明确只要求 Web 1440/1024/390 响应式矩阵和 
 
 **代码实施评审通过，可进入预发验证；生产发布尚未通过。**
 
-进入预发验证的基线是 PRD V1.47。后续若改变以下任一规则，必须重新进行需求评审并更新版本：命令集合、事实所有权、事务边界、幂等键范围、版本递增口径、不可逆事实门禁、角色权限、页面能力结构、未知结果恢复、跨店来源/执行门店职责、历史修复策略、发布切换方式、可观测性字段/指标口径、Web 页面事件白名单、运行期核验单幂等规则或小程序延期范围。
+进入预发验证的基线是 PRD V1.48。后续若改变以下任一规则，必须重新进行需求评审并更新版本：命令集合、事实所有权、事务边界、幂等键范围、版本递增口径、不可逆事实门禁、角色权限、页面能力结构、未知结果恢复、跨店来源/执行门店职责、历史修复策略、发布切换方式、可观测性字段/指标口径、Web 页面事件白名单、运行期核验单幂等规则、Test/Production 环境变量来源或小程序延期范围。

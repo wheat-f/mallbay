@@ -349,19 +349,20 @@ jobs:
 
       - name: Deploy to Test via SSH
         uses: appleboy/ssh-action@v1.2.0
-        env:
-          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
         with:
           host:     ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key:      ${{ secrets.ECS_SSH_KEY }}
-          envs:     METRICS_TOKEN
           script: |
             set -e
             cd /opt/mallbay
 
-            test -n "$METRICS_TOKEN" || {
-              echo "METRICS_TOKEN must be configured in the test environment before deployment" >&2
+            test -f .env || {
+              echo "Test ECS /opt/mallbay/.env is required before deployment" >&2
+              exit 1
+            }
+            awk -F= '$1 == "METRICS_TOKEN" && length($2) > 0 { found=1 } END { exit found ? 0 : 1 }' .env || {
+              echo "METRICS_TOKEN must be configured in Test ECS /opt/mallbay/.env before deployment" >&2
               exit 1
             }
 
@@ -369,8 +370,6 @@ jobs:
             echo "IMAGE_TAG=${{ github.sha }}" >> .env
             sed -i '/^AUTH_CREDENTIAL_ENCRYPTION_ENABLED=/d' .env
             echo "AUTH_CREDENTIAL_ENCRYPTION_ENABLED=${{ vars.AUTH_CREDENTIAL_ENCRYPTION_ENABLED || 'true' }}" >> .env
-            sed -i '/^METRICS_TOKEN=/d' .env
-            printf 'METRICS_TOKEN=%s\n' "$METRICS_TOKEN" >> .env
 
             # Free unreferenced image layers before pulling the next release.
             # This does not remove images used by running containers or any volumes.

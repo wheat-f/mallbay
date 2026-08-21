@@ -5,8 +5,8 @@ import { ConstructionCostSettlementService, assertConfirmLines, assertManualCons
 import { InventoryMovementType } from "@prisma/client";
 
 const costAccess = {
-  can: async (actor: string, capability: string) => capability === "finance" ? actor.includes("finance") || actor.includes("admin") : true,
-  resolve: async (actor: string) => ({ roles: [{ roleCode: actor.includes("finance") || actor.includes("admin") ? "FINANCE" : "MANAGER" }] })
+  can: async (actor: { userId: string }, capability: string) => ["finance", "finance.cost"].includes(capability) ? actor.userId.includes("finance") || actor.userId.includes("admin") : true,
+  resolve: async (actor: { userId: string }) => ({ roles: [{ roleCode: actor.userId.includes("finance") || actor.userId.includes("admin") ? "FINANCE" : "MANAGER" }] })
 };
 
 test("成本异常由申报偏差或预计材料成本缺失触发，不能进入批量确认", () => {

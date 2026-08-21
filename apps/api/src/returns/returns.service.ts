@@ -1,27 +1,28 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import type { Prisma } from "@prisma/client";
-import { canConfirmSupplierSettlement, canOperatePurchaseReturn, canOperateSalesReturn } from "./return-domain";
+import { AccessContext } from "../permissions/domain/access-context";
 import { ApproveSalesReturnDto, CancelReturnDto, CostVerificationConfirmDto, CostVerificationResubmitDto, CostVerificationSubmitDto, CreatePurchaseReturnDto, CreateSalesReturnDto, InspectionApproveDto, InspectionConvertDto, ReceiveSalesReturnDto, RefundSalesReturnDto, ReturnActionDto, SettlePurchaseReturnDto } from "./dto/returns.dto";
 
-export type ReturnUser = { id: string; isAdmin?: boolean; storeMember?: { storeId: string; position: string } };
+export type ReturnUser = { id: string; username?: string };
 
 @Injectable()
 export class ReturnsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
 
-  private role(user: ReturnUser) { return user.storeMember?.position ?? ""; }
-
-  private requireRole(user: ReturnUser, allowed: string[]) {
-    if (!user.isAdmin && !allowed.includes(this.role(user))) throw new ForbiddenException("RETURN_FORBIDDEN");
+  private requireAction(user: ReturnUser, action: "create" | "approve" | "manage") {
+    return this.accessContext.require({ userId: user.id }, "returns", action);
   }
   private requireStore(user: ReturnUser, storeId: string, kind: "SALES" | "PURCHASE", finance = false) {
-    if (user.isAdmin) return;
-    if (user.storeMember?.storeId !== storeId) throw new ForbiddenException("无权访问该门店退货");
-    const role = user.storeMember.position;
-    if (finance ? !canConfirmSupplierSettlement(role as never) : kind === "SALES" ? !canOperateSalesReturn(role) : !canOperatePurchaseReturn(role)) {
-      throw new ForbiddenException("无权执行该退货操作");
-    }
+    const action = finance ? "finance" : "write";
+    return this.accessContext.require({ userId: user.id }, "returns", action, { storeId }).catch((error: unknown) => {
+      if (!(error instanceof ForbiddenException)) throw error;
+      const response = error.getResponse();
+      const code = typeof response === "object" && response && "code" in response
+        ? String((response as { code?: unknown }).code ?? "ACCESS_DENIED")
+        : "ACCESS_DENIED";
+      throw new ForbiddenException({ code, message: `无权访问该门店${kind === "SALES" ? "销售" : "采购"}退货` });
+    });
   }
 
   private async existingAction(returnType: "SALES" | "PURCHASE", returnId: string, actionType: string, idempotencyKey: string) {
@@ -50,8 +51,8 @@ export class ReturnsService {
     throw error
   }
   async createSales(user: ReturnUser, dto: CreateSalesReturnDto) {
-    this.requireStore(user, dto.storeId, "SALES");
-    this.requireRole(user, ["MANAGER", "SALES", "CUSTOMER_SERVICE"]);
+    await this.requireStore(user, dto.storeId, "SALES");
+    await this.requireAction(user, "create");
     if (!dto.idempotencyKey?.trim()) throw new BadRequestException("RETURN_INVALID_ARGUMENT: idempotencyKey 必填");
     if (!dto.details?.length) throw new BadRequestException("RETURN_INVALID_ARGUMENT: 退货明细不能为空");
     const priorSales = await this.prisma.returnAction.findFirst({ where: { returnType: "SALES", actionType: "CREATE", idempotencyKey: dto.idempotencyKey } });
@@ -95,8 +96,8 @@ export class ReturnsService {
       return this.failAction(action.id, error);
     }
   }  async createPurchase(user: ReturnUser, dto: CreatePurchaseReturnDto) {
-    this.requireStore(user, dto.storeId, "PURCHASE");
-    this.requireRole(user, ["MANAGER", "PURCHASING"]);
+    await this.requireStore(user, dto.storeId, "PURCHASE");
+    await this.requireAction(user, "create");
     if (!dto.idempotencyKey?.trim()) throw new BadRequestException("RETURN_INVALID_ARGUMENT: idempotencyKey 必填");
     if (!dto.details?.length) throw new BadRequestException("RETURN_INVALID_ARGUMENT: 退货明细不能为空");
     const priorPurchase = await this.prisma.returnAction.findFirst({ where: { returnType: "PURCHASE", actionType: "CREATE", idempotencyKey: dto.idempotencyKey } });
@@ -143,14 +144,14 @@ export class ReturnsService {
       await this.prisma.purchaseReturn.update({ where: { id: created.id }, data: { status: "CANCELLED", cancelReason: "创建明细失败" } }).catch(() => undefined);
       return this.failAction(action.id, error);
     }
-  }  listSales(user: ReturnUser, storeId: string) { this.requireStore(user, storeId, "SALES"); return this.prisma.salesReturn.findMany({ where: { storeId }, orderBy: { createdAt: "desc" } }); }
-  listPurchase(user: ReturnUser, storeId: string) { this.requireStore(user, storeId, "PURCHASE"); return this.prisma.purchaseReturn.findMany({ where: { storeId }, orderBy: { createdAt: "desc" } }); }
+  }  async listSales(user: ReturnUser, storeId: string) { await this.requireStore(user, storeId, "SALES"); return this.prisma.salesReturn.findMany({ where: { storeId }, orderBy: { createdAt: "desc" } }); }
+  async listPurchase(user: ReturnUser, storeId: string) { await this.requireStore(user, storeId, "PURCHASE"); return this.prisma.purchaseReturn.findMany({ where: { storeId }, orderBy: { createdAt: "desc" } }); }
 
   async submitSales(user: ReturnUser, id: string, dto: ReturnActionDto) {
     const parent = await this.prisma.salesReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("销售退货单不存在");
-    this.requireStore(user, parent.storeId, "SALES");
-    this.requireRole(user, ["MANAGER", "SALES", "CUSTOMER_SERVICE"]);
+    await this.requireStore(user, parent.storeId, "SALES");
+    await this.requireAction(user, "create");
     if (parent.status !== "DRAFT") throw new BadRequestException("RETURN_INVALID_STATUS");
     const claim = await this.beginAction("SALES", id, "SALES_SUBMIT", dto.idempotencyKey, user.id, { reason: dto.reason });
     if (claim.replay) return parent;
@@ -165,8 +166,8 @@ export class ReturnsService {
   async approveSales(user: ReturnUser, id: string, dto: ApproveSalesReturnDto) {
     const parent = await this.prisma.salesReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("销售退货单不存在");
-    this.requireStore(user, parent.storeId, "SALES");
-    this.requireRole(user, ["MANAGER"]);
+    await this.requireStore(user, parent.storeId, "SALES");
+    await this.requireAction(user, "approve");
     if (parent.status !== "SUBMITTED") throw new BadRequestException("RETURN_INVALID_STATUS");
     const amount = dto.approvedRefundAmountCents ?? parent.requestedRefundCents;
     if (amount < 0 || amount > parent.requestedRefundCents) throw new BadRequestException("RETURN_INVALID_ARGUMENT");
@@ -184,7 +185,8 @@ export class ReturnsService {
   async cancelSales(user: ReturnUser, id: string, dto: CancelReturnDto) {
     const parent = await this.prisma.salesReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("销售退货单不存在");
-    if (!user.isAdmin && this.role(user) !== "MANAGER") throw new ForbiddenException("RETURN_FORBIDDEN");
+    await this.requireStore(user, parent.storeId, "SALES");
+    await this.requireAction(user, "manage");
     if (!["DRAFT", "SUBMITTED", "PARTIAL_RECEIVED", "PARTIAL_REFUND"].includes(parent.status)) throw new BadRequestException("RETURN_INVALID_STATUS");
     const claim = await this.beginAction("SALES", id, "SALES_CANCEL", dto.idempotencyKey, user.id, { reason: dto.reason });
     if (claim.replay) return parent;
@@ -200,8 +202,8 @@ export class ReturnsService {
     const parent = await this.prisma.salesReturn.findUnique({ where: { id } });
     const detail = await this.prisma.salesReturnDetail.findUnique({ where: { id: dto.detailId } });
     if (!parent || !detail || detail.returnId !== id) throw new NotFoundException("销售退货明细不存在");
-    this.requireStore(user, parent.executionStoreId, "PURCHASE");
-    this.requireRole(user, ["MANAGER", "PURCHASING"]);
+    await this.requireStore(user, parent.executionStoreId, "PURCHASE");
+    await this.requireAction(user, "manage");
     if (!["WAITING_RECEIPT", "PARTIAL_RECEIVED"].includes(parent.status)) throw new BadRequestException("RETURN_INVALID_STATUS");
     const remaining = Number(detail.approvedQuantity ?? detail.quantity) - Number(detail.receivedQuantity);
     if (dto.quantity <= 0 || dto.quantity > remaining) throw new BadRequestException("RETURN_INVALID_ARGUMENT: 接收数量超过批准数量");
@@ -229,7 +231,7 @@ export class ReturnsService {
   async refundSales(user: ReturnUser, id: string, dto: RefundSalesReturnDto) {
     const parent = await this.prisma.salesReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("销售退货单不存在");
-    this.requireStore(user, parent.storeId, "SALES", true);
+    await this.requireStore(user, parent.storeId, "SALES", true);
     if (!["WAITING_REFUND", "PARTIAL_REFUND"].includes(parent.status)) throw new BadRequestException("RETURN_INVALID_STATUS");
     if (!dto.voucherId || !dto.refundMethod) throw new BadRequestException("RETURN_INVALID_ARGUMENT: 退款凭证和方式必填");
     const amount = dto.actualRefundCents;
@@ -259,7 +261,8 @@ export class ReturnsService {
     const parent = await this.prisma.salesReturn.findUnique({ where: { id } });
     const detail = await this.prisma.salesReturnDetail.findUnique({ where: { id: dto.returnDetailId } });
     if (!parent || !detail || detail.returnId !== id || detail.inspectionStatus !== "INSPECTION") throw new BadRequestException("RETURN_INVALID_ARGUMENT");
-    if (!user.isAdmin && !["MANAGER", "PURCHASING"].includes(this.role(user))) throw new ForbiddenException("RETURN_FORBIDDEN");
+    await this.requireStore(user, parent.executionStoreId, "PURCHASE");
+    await this.requireAction(user, "manage");
     if (dto.approvedQuantity <= 0 || dto.approvedQuantity > Number(detail.receivedQuantity)) throw new BadRequestException("RETURN_INVALID_ARGUMENT");
     const claim = await this.beginAction("SALES", id, "INSPECTION_APPROVE", dto.idempotencyKey, user.id, { returnDetailId: dto.returnDetailId, targetStatus: dto.targetStatus, approvedQuantity: dto.approvedQuantity });
     if (claim.replay) return claim.action;
@@ -276,8 +279,8 @@ export class ReturnsService {
     const detail = await this.prisma.salesReturnDetail.findUnique({ where: { id: dto.returnDetailId } });
     const approval = await this.prisma.returnAction.findUnique({ where: { id: dto.approvedActionId } });
     if (!parent || !detail || detail.returnId !== id || !detail.inventoryBatchId || !approval || approval.actionType !== "INSPECTION_APPROVE") throw new BadRequestException("RETURN_INVALID_ARGUMENT");
-    this.requireStore(user, parent.executionStoreId, "PURCHASE");
-    this.requireRole(user, ["MANAGER", "PURCHASING"]);
+    await this.requireStore(user, parent.executionStoreId, "PURCHASE");
+    await this.requireAction(user, "manage");
     if (dto.quantity <= 0 || dto.quantity > Number(detail.inspectionApprovedQuantity ?? 0)) throw new BadRequestException("RETURN_INVALID_ARGUMENT");
     const claim = await this.beginAction("SALES", id, "INSPECTION_CONVERT", dto.idempotencyKey, user.id, { returnDetailId: dto.returnDetailId, quantity: dto.quantity, targetStatus: dto.targetStatus });
     if (claim.replay) return claim.action;
@@ -299,8 +302,8 @@ export class ReturnsService {
     const parent = await this.prisma.salesReturn.findUnique({ where: { id } });
     const detail = await this.prisma.salesReturnDetail.findUnique({ where: { id: dto.returnDetailId } });
     if (!parent || !detail || detail.returnId !== id || !["PENDING_VERIFICATION", "REJECTED"].includes(String(detail.costStatus))) throw new BadRequestException("RETURN_INVALID_STATUS");
-    this.requireStore(user, parent.storeId, "PURCHASE");
-    this.requireRole(user, ["MANAGER", "PURCHASING"]);
+    await this.requireStore(user, parent.storeId, "PURCHASE");
+    await this.requireAction(user, "manage");
     const claim = await this.beginAction("SALES", id, "COST_VERIFICATION_SUBMIT", dto.idempotencyKey, user.id, { returnDetailId: dto.returnDetailId, batchId: dto.batchId, reason: dto.reason });
     if (claim.replay) return claim.action;
     const actionId = claim.action.id;
@@ -316,7 +319,7 @@ export class ReturnsService {
     const parent = await this.prisma.salesReturn.findUnique({ where: { id } });
     const detail = await this.prisma.salesReturnDetail.findUnique({ where: { id: dto.returnDetailId } });
     if (!parent || !detail || detail.returnId !== id || dto.verifiedUnitCostCents < 0) throw new BadRequestException("RETURN_INVALID_ARGUMENT");
-    this.requireStore(user, parent.storeId, "SALES", true);
+    await this.requireStore(user, parent.storeId, "SALES", true);
     const claim = await this.beginAction("SALES", id, "COST_VERIFICATION_CONFIRM", dto.idempotencyKey, user.id, { returnDetailId: dto.returnDetailId, batchId: dto.batchId, verifiedUnitCostCents: dto.verifiedUnitCostCents });
     if (claim.replay) return claim.action;
     const actionId = claim.action.id;
@@ -334,8 +337,8 @@ export class ReturnsService {
     const parent = await this.prisma.salesReturn.findUnique({ where: { id } });
     const detail = await this.prisma.salesReturnDetail.findUnique({ where: { id: dto.returnDetailId } });
     if (!parent || !detail || detail.returnId !== id || detail.costStatus !== "REJECTED" || !dto.supplementNote.trim()) throw new BadRequestException("RETURN_INVALID_ARGUMENT");
-    this.requireStore(user, parent.storeId, "PURCHASE");
-    this.requireRole(user, ["MANAGER", "PURCHASING"]);
+    await this.requireStore(user, parent.storeId, "PURCHASE");
+    await this.requireAction(user, "manage");
     const claim = await this.beginAction("SALES", id, "COST_VERIFICATION_RESUBMIT", dto.idempotencyKey, user.id, { returnDetailId: dto.returnDetailId, supplementNote: dto.supplementNote });
     if (claim.replay) return claim.action;
     const actionId = claim.action.id;
@@ -349,8 +352,8 @@ export class ReturnsService {
   async submitPurchase(user: ReturnUser, id: string, dto: ReturnActionDto) {
     const parent = await this.prisma.purchaseReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("采购退货单不存在");
-    this.requireStore(user, parent.storeId, "PURCHASE");
-    this.requireRole(user, ["MANAGER", "PURCHASING"]);
+    await this.requireStore(user, parent.storeId, "PURCHASE");
+    await this.requireAction(user, "create");
     if (parent.status !== "DRAFT") throw new BadRequestException("RETURN_INVALID_STATUS");
     const claim = await this.beginAction("PURCHASE", id, "PURCHASE_SUBMIT", dto.idempotencyKey, user.id, { reason: dto.reason });
     if (claim.replay) return parent;
@@ -367,8 +370,8 @@ export class ReturnsService {
     const parent = await this.prisma.purchaseReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("采购退货单不存在");
     const financial = dto.approvalType === "FINANCIAL";
-    if (financial) this.requireStore(user, parent.storeId, "PURCHASE", true); else this.requireStore(user, parent.storeId, "PURCHASE");
-    if (!financial) this.requireRole(user, ["MANAGER", "PURCHASING"]);
+    if (financial) await this.requireStore(user, parent.storeId, "PURCHASE", true); else await this.requireStore(user, parent.storeId, "PURCHASE");
+    if (!financial) await this.requireAction(user, "approve");
     if (parent.status !== "SUBMITTED") throw new BadRequestException("RETURN_INVALID_STATUS");
     const data = financial ? { financialApprovedById: user.id, confirmedAmountCents: dto.confirmedAmountCents ?? parent.requestedAmountCents } : { businessApprovedById: user.id };
     const both = financial ? Boolean(parent.businessApprovedById) : Boolean(parent.financialApprovedById);
@@ -386,7 +389,7 @@ export class ReturnsService {
   async settlePurchase(user: ReturnUser, id: string, dto: SettlePurchaseReturnDto) {
     const parent = await this.prisma.purchaseReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("采购退货单不存在");
-    this.requireStore(user, parent.storeId, "PURCHASE", true);
+    await this.requireStore(user, parent.storeId, "PURCHASE", true);
     if (!["WAITING_SETTLEMENT", "PARTIAL_SETTLEMENT"].includes(parent.status)) throw new BadRequestException("RETURN_INVALID_STATUS");
     const refund = dto.refundAmountCents ?? 0;
     const offset = dto.payableOffsetAmountCents ?? 0;
@@ -419,8 +422,8 @@ export class ReturnsService {
     const parent = await this.prisma.purchaseReturn.findUnique({ where: { id } });
     const detail = await this.prisma.purchaseReturnDetail.findUnique({ where: { id: detailId } });
     if (!parent || !detail || detail.returnId !== id) throw new NotFoundException("采购退货明细不存在");
-    this.requireStore(user, parent.storeId, "PURCHASE");
-    this.requireRole(user, ["MANAGER", "PURCHASING"]);
+    await this.requireStore(user, parent.storeId, "PURCHASE");
+    await this.requireAction(user, "manage");
     if (!["WAITING_OUTBOUND", "PARTIAL_OUTBOUND"].includes(parent.status)) throw new BadRequestException("RETURN_INVALID_STATUS");
     if (quantity <= 0 || Number(detail.approvedQuantity ?? detail.quantity) - Number(detail.outboundQuantity) < quantity) throw new BadRequestException("RETURN_INVALID_ARGUMENT: 出库数量超过可退数量");
     const claim = await this.beginAction("PURCHASE", id, "PURCHASE_OUTBOUND", dto.idempotencyKey, user.id, { detailId, quantity });
@@ -444,7 +447,7 @@ export class ReturnsService {
   async reverseSettlement(user: ReturnUser, id: string, adjustmentId: string, dto: ReturnActionDto) {
     const parent = await this.prisma.purchaseReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("采购退货单不存在");
-    this.requireStore(user, parent.storeId, "PURCHASE", true);
+    await this.requireStore(user, parent.storeId, "PURCHASE", true);
     const adjustment = await this.prisma.supplierReturnSettlementAdjustment.findUnique({ where: { id: adjustmentId } });
     if (!adjustment || adjustment.purchaseReturnId !== id || adjustment.status !== "CONFIRMED") throw new BadRequestException("RETURN_ALREADY_REVERSED");
     const claim = await this.beginAction("PURCHASE", id, "SETTLEMENT_REVERSE", dto.idempotencyKey, user.id, { adjustmentId, reason: dto.reason });
@@ -470,22 +473,22 @@ export class ReturnsService {
   async detailSales(user: ReturnUser, id: string) {
     const parent = await this.prisma.salesReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("销售退货单不存在");
-    this.requireStore(user, parent.storeId, "SALES");
+    await this.requireStore(user, parent.storeId, "SALES");
     return { ...parent, details: await this.prisma.salesReturnDetail.findMany({ where: { returnId: id } }), actions: await this.prisma.returnAction.findMany({ where: { returnType: "SALES", returnId: id }, orderBy: { createdAt: "asc" } }) };
   }
 
   async detailPurchase(user: ReturnUser, id: string) {
     const parent = await this.prisma.purchaseReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("采购退货单不存在");
-    this.requireStore(user, parent.storeId, "PURCHASE");
+    await this.requireStore(user, parent.storeId, "PURCHASE");
     return { ...parent, details: await this.prisma.purchaseReturnDetail.findMany({ where: { returnId: id } }), settlements: await this.prisma.supplierReturnSettlementAdjustment.findMany({ where: { purchaseReturnId: id }, orderBy: { sequenceNo: "asc" } }), actions: await this.prisma.returnAction.findMany({ where: { returnType: "PURCHASE", returnId: id }, orderBy: { createdAt: "asc" } }) };
   }
 
   async cancelPurchase(user: ReturnUser, id: string, dto: CancelReturnDto) {
     const parent = await this.prisma.purchaseReturn.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException("采购退货单不存在");
-    this.requireStore(user, parent.storeId, "PURCHASE");
-    this.requireRole(user, ["MANAGER", "PURCHASING"]);
+    await this.requireStore(user, parent.storeId, "PURCHASE");
+    await this.requireAction(user, "manage");
     if (!["DRAFT", "SUBMITTED", "PARTIAL_OUTBOUND", "PARTIAL_SETTLEMENT"].includes(parent.status)) throw new BadRequestException("RETURN_INVALID_STATUS");
     const claim = await this.beginAction("PURCHASE", id, "PURCHASE_CANCEL", dto.idempotencyKey, user.id, { reason: dto.reason });
     if (claim.replay) return parent;
@@ -500,12 +503,12 @@ export class ReturnsService {
   private async transitionSales(user: ReturnUser, id: string, status: "SUBMITTED" | "APPROVED" | "CANCELLED", approvedById?: string) {
     const item = await this.prisma.salesReturn.findUnique({ where: { id } });
     if (!item) throw new NotFoundException("销售退货单不存在");
-    this.requireStore(user, item.storeId, "SALES");
+    await this.requireStore(user, item.storeId, "SALES");
     return this.prisma.salesReturn.update({ where: { id }, data: { status, approvedById } });
   }
   private async transitionPurchase(user: ReturnUser, id: string, status: "SUBMITTED" | "APPROVED", approvedById?: string) {
     const item = await this.prisma.purchaseReturn.findUnique({ where: { id } });
     if (!item) throw new NotFoundException("采购退货单不存在");
-    this.requireStore(user, item.storeId, "PURCHASE");
+    await this.requireStore(user, item.storeId, "PURCHASE");
     return this.prisma.purchaseReturn.update({ where: { id }, data: { status, approvedById } });
   }}

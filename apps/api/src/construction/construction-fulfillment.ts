@@ -139,8 +139,8 @@ export class ConstructionFulfillment {
     });
     if (!order) throw new ForbiddenException("订单不存在或无权访问");
     const executionStoreId = order.executionStoreId ?? order.storeId;
-    const allowed = await this.accessContext.can(user.id, "construction", "read", { storeId: executionStoreId }) ||
-      await this.accessContext.can(user.id, "construction", "read", { storeId: order.storeId });
+    const allowed = await this.accessContext.can({ userId: user.id }, "construction", "read", { storeId: executionStoreId }) ||
+      await this.accessContext.can({ userId: user.id }, "construction", "read", { storeId: order.storeId });
     if (!allowed) throw new ForbiddenException("无权限");
     const input = {
       status: order.status,
@@ -266,8 +266,8 @@ export class ConstructionFulfillment {
     const lifecycleByOrder = await this.orderLifecycle.listAuthoritativeLifecycle(user, tasks.map((task) => task.orderId));
     return Promise.all(tasks.map(async (task) => {
       const [canExecute, canSource] = await Promise.all([
-        this.accessContext.can(user.id, "construction", "write", { storeId: task.executionStoreId }),
-        this.accessContext.can(user.id, "orders.lifecycle", "cross_store_source_manage", { storeId: task.sourceStoreId })
+        this.accessContext.can({ userId: user.id }, "construction", "write", { storeId: task.executionStoreId }),
+        this.accessContext.can({ userId: user.id }, "orders.lifecycle", "cross_store_source_manage", { storeId: task.sourceStoreId })
       ]);
       const base = lifecycleByOrder[task.orderId]?.ok ? lifecycleByOrder[task.orderId].value : undefined;
       const capability = (visible: boolean, enabled: boolean, blockingReasonCodes: string[] = []) => ({ visible, enabled: visible && enabled, blockingReasonCodes: visible && enabled ? [] : blockingReasonCodes });

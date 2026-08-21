@@ -94,13 +94,13 @@ export class OrdersService {
 
   async list(user: AuthenticatedOrderUser, dto: ListOrdersDto) {
     const actor = await this.withStoreMember(user);
-    if (!await this.accessContext.can(actor.id, "store", "read", { storeId: dto.storeId })) {
+    if (!await this.accessContext.can({ userId: actor.id }, "store", "read", { storeId: dto.storeId })) {
       throw new ForbiddenException("无权限");
     }
 
     const { page, pageSize, skip } = normalizePagination(dto.page, dto.pageSize);
     const where = await this.buildOrderWhere(actor, dto);
-    const canViewCosts = await this.accessContext.can(actor.id, "finance", "write", { storeId: dto.storeId });
+    const canViewCosts = await this.accessContext.can({ userId: actor.id }, "finance", "write", { storeId: dto.storeId });
     const [total, items] = await Promise.all([
       this.prisma.order.count({ where }),
       this.prisma.order.findMany({
@@ -137,10 +137,10 @@ export class OrdersService {
 
   async exportDetails(user: AuthenticatedOrderUser, dto: ExportOrderDetailsDto) {
     const actor = await this.withStoreMember(user);
-    if (!await this.accessContext.can(actor.id, "store", "read", { storeId: dto.storeId })) {
+    if (!await this.accessContext.can({ userId: actor.id }, "store", "read", { storeId: dto.storeId })) {
       throw new ForbiddenException("无权限");
     }
-    const canViewCosts = await this.accessContext.can(actor.id, "finance", "write", { storeId: dto.storeId });
+    const canViewCosts = await this.accessContext.can({ userId: actor.id }, "finance", "write", { storeId: dto.storeId });
 
     const orders = await this.prisma.order.findMany({
       where: await this.buildOrderWhere(actor, dto),
@@ -239,7 +239,7 @@ export class OrdersService {
       throw new NotFoundException("订单不存在");
     }
     await this.assertCanViewOrder(actor, order.storeId, order.salesPersonId);
-    const canViewCosts = await this.accessContext.can(actor.id, "finance", "write", { storeId: order.storeId });
+    const canViewCosts = await this.accessContext.can({ userId: actor.id }, "finance", "write", { storeId: order.storeId });
     const lifecycle = await this.orderLifecycle.getAuthoritativeLifecycle(actor, id);
     return {
       ...order,
@@ -264,7 +264,7 @@ export class OrdersService {
     });
     if (!source?.amount) throw new NotFoundException("订单不存在");
     await this.assertCanViewOrder(actor, source.storeId, source.salesPersonId);
-    if (!await this.accessContext.can(actor.id, "orders", "write", { storeId: source.storeId, ownerId: actor.id })) {
+    if (!await this.accessContext.can({ userId: actor.id }, "orders", "write", { storeId: source.storeId, ownerId: actor.id })) {
       throw new ForbiddenException("无权限复制订单");
     }
 
@@ -375,7 +375,7 @@ export class OrdersService {
       if (!order?.amount) {
         throw new NotFoundException("订单不存在");
       }
-      if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: order.storeId })) {
+      if (!await this.accessContext.can({ userId: actor.id }, "finance", "write", { storeId: order.storeId })) {
         throw new ForbiddenException("无权限");
       }
       if (!Number.isInteger(dto.amountCents) || dto.amountCents <= 0) {
@@ -701,7 +701,7 @@ export class OrdersService {
     });
     if (!request?.order.amount) throw new NotFoundException("改单申请不存在");
     const canApproveAmendment = await this.isFinanceActor(actor, request.storeId);
-    if (!await this.accessContext.can(actor.id, "store", "read", { storeId: request.storeId }) || !canApproveAmendment) {
+    if (!await this.accessContext.can({ userId: actor.id }, "store", "read", { storeId: request.storeId }) || !canApproveAmendment) {
       throw new ForbiddenException("仅财务可审批改单申请");
     }
     if (request.requestedById === actor.id) throw new ForbiddenException("申请人不能审批自己的改单申请");
@@ -747,7 +747,7 @@ export class OrdersService {
 
   async listHistoricalVerification(user: AuthenticatedOrderUser, storeId: string, q?: string) {
     const actor = await this.withStoreMember(user);
-    if (!await this.accessContext.can(actor.id, "orders.lifecycle", "verification_view", { storeId })) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can({ userId: actor.id }, "orders.lifecycle", "verification_view", { storeId })) throw new ForbiddenException("无权限");
     const keyword = q?.trim();
     const orders = await this.prisma.order.findMany({
       where: {
@@ -810,8 +810,8 @@ export class OrdersService {
 
   async createPaymentAccount(user: AuthenticatedOrderUser, dto: CreatePaymentAccountDto) {
     const actor = await this.withStoreMember(user);
-    if (!await this.accessContext.can(actor.id, "orders", "write", { storeId: dto.storeId, ownerId: actor.id }) &&
-      !await this.accessContext.can(actor.id, "finance", "write", { storeId: dto.storeId })) {
+    if (!await this.accessContext.can({ userId: actor.id }, "orders", "write", { storeId: dto.storeId, ownerId: actor.id }) &&
+      !await this.accessContext.can({ userId: actor.id }, "finance", "write", { storeId: dto.storeId })) {
       throw new ForbiddenException("无权限");
     }
 
@@ -830,7 +830,7 @@ export class OrdersService {
 
   async listPaymentAccounts(user: AuthenticatedOrderUser, storeId: string) {
     const actor = await this.withStoreMember(user);
-    if (!await this.accessContext.can(actor.id, "store", "read", { storeId })) {
+    if (!await this.accessContext.can({ userId: actor.id }, "store", "read", { storeId })) {
       throw new ForbiddenException("无权限");
     }
 
@@ -849,7 +849,7 @@ export class OrdersService {
     if (!account) {
       throw new NotFoundException("收款账户不存在");
     }
-    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: account.storeId })) {
+    if (!await this.accessContext.can({ userId: actor.id }, "finance", "write", { storeId: account.storeId })) {
       throw new ForbiddenException("无权限");
     }
 
@@ -871,7 +871,7 @@ export class OrdersService {
     if (!account) {
       throw new NotFoundException("收款账户不存在");
     }
-    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: account.storeId })) {
+    if (!await this.accessContext.can({ userId: actor.id }, "finance", "write", { storeId: account.storeId })) {
       throw new ForbiddenException("无权限");
     }
 
@@ -925,7 +925,7 @@ export class OrdersService {
     if (paymentFilter) {
       where.amount = { is: paymentFilter };
     }
-    if (!await this.accessContext.can(user.id, "orders", "read", { storeId: dto.storeId, ownerId: user.id })) {
+    if (!await this.accessContext.can({ userId: user.id }, "orders", "read", { storeId: dto.storeId, ownerId: user.id })) {
       throw new ForbiddenException("无权限");
     }
     if (await this.isSalesActor(user, dto.storeId)) {
@@ -994,7 +994,7 @@ export class OrdersService {
   }
 
   private async assertCanViewOrder(user: UserWithStoreMember, storeId: string, salesPersonId: string) {
-    if (!await this.accessContext.can(user.id, "orders", "read", { storeId, ownerId: salesPersonId })) {
+    if (!await this.accessContext.can({ userId: user.id }, "orders", "read", { storeId, ownerId: salesPersonId })) {
       throw new ForbiddenException("无权限");
     }
     if (await this.isSalesActor(user, storeId) && user.id !== salesPersonId) {
@@ -1003,37 +1003,24 @@ export class OrdersService {
   }
 
   private async canManageOrderCommercials(user: UserWithStoreMember, storeId: string, salesPersonId: string) {
-    return this.accessContext.can(user.id, "orders", "write", { storeId, ownerId: salesPersonId });
+    return this.accessContext.can({ userId: user.id }, "orders", "write", { storeId, ownerId: salesPersonId });
   }
 
   private async isSalesActor(user: UserWithStoreMember, storeId: string) {
-    const resolution = await this.accessContext.resolve(user.id, { storeId });
-    return resolution.roles.some((role) => role.roleCode === "SALES" &&
-      (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
+    const scope = await this.accessContext.scope({ userId: user.id }, "orders", "read", { storeId, ownerId: user.id });
+    return scope.allowed && !scope.global && scope.ownerId === user.id;
   }
 
   private async isFinanceActor(user: UserWithStoreMember, storeId: string) {
-    if (!await this.accessContext.can(user.id, "finance", "write", { storeId })) return false;
-    const resolution = await this.accessContext.resolve(user.id, { storeId });
-    return resolution.roles.some((role) => ["HQ_ADMIN", "FINANCE"].includes(role.roleCode) &&
-      (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
+    const scope = await this.accessContext.scope({ userId: user.id }, "finance", "write", { storeId });
+    return scope.allowed;
   }
 
   private async withStoreMember(user: AuthenticatedOrderUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) {
-      return user;
-    }
-
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-
-    return {
-      id: user.id,
-      isAuditor: user.isAuditor,
-      storeMember: member
-    };
+    // Compatibility adapter for the lifecycle boundary. Permission meaning is
+    // resolved exclusively by AccessContext; this method must not enrich the
+    // authenticated subject from membership or role data.
+    return user;
   }
 
   private async withAuditActors<T extends { actorId?: string | null }>(events: T[]) {

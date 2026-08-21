@@ -68,7 +68,7 @@ test("auth refresh rotates cookie and logout invalidates the refresh session ove
     })
   );
   app.useGlobalFilters(new ApiExceptionFilter());
-  await app.listen(0);
+  await app.listen(0, "127.0.0.1");
   openApps.push(app);
   const url = await app.getUrl();
 
@@ -152,7 +152,7 @@ test("auth accepts encrypted credentials over HTTP", async () => {
     })
   );
   app.useGlobalFilters(new ApiExceptionFilter());
-  await app.listen(0);
+  await app.listen(0, "127.0.0.1");
   openApps.push(app);
   const url = await app.getUrl();
 
@@ -190,7 +190,8 @@ function createPrismaStub(users: Map<string, TestUser>) {
     user: {
       findUnique: async ({ where }: { where: { id?: string; username?: string } }) => {
         if (where.id) {
-          return users.get(where.id) ?? null;
+          const user = users.get(where.id);
+          return user ? { ...user, storeMembers: [] } : null;
         }
         if (where.username) {
           return Array.from(users.values()).find((user) => user.username === where.username) ?? null;
@@ -256,6 +257,13 @@ function createPrismaStub(users: Map<string, TestUser>) {
       }
     },
     settingsConfigVersion: {
+      findFirst: async () => null
+    },
+    permissionRoleBinding: {
+      findMany: async () => [],
+      findFirst: async () => null
+    },
+    permissionPolicyVersion: {
       findFirst: async () => null
     },
     authSession: {

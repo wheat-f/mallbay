@@ -1,8 +1,7 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
 import { FinanceQueryService } from "../finance-query.service";
 import { PrismaService } from "../../prisma/prisma.service";
-import type { UserWithStoreMember } from "../../permissions/domain/access-types";
-import { AccessContext } from "../../permissions/domain/access-context";
+import { AccessContext, type AccessSubject } from "../../permissions/domain/access-context";
 import type { ListFinanceApplicationsDto } from "../dto/finance.dto";
 import { ListInvoicesDto } from "../../invoices/dto/invoice.dto";
 import { ListRebatesDto } from "../../rebates/dto/rebate.dto";
@@ -11,7 +10,7 @@ import { buildInvoiceListScope } from "../../invoices/invoices.service";
 import { buildRebateListScope } from "../../rebates/rebates.service";
 
 export type FinancialDocumentKind = "expense" | "reimbursement";
-type FinanceActor = UserWithStoreMember & { username?: string };
+type FinanceActor = { id: string; username?: string };
 type FinanceListQuery = ListFinanceApplicationsDto;
 
 export type FinancialDocumentQueryInput = {
@@ -37,8 +36,8 @@ export class FinancialDocumentQuery {
     private readonly accessContext: AccessContext
   ) {}
 
-  private canAccess(actor: UserWithStoreMember, capability: string, action: string, storeId: string) {
-    return this.accessContext.can(actor.id, capability, action, { storeId });
+  private canAccess(actor: AccessSubject, capability: string, action: string, storeId: string) {
+    return this.accessContext.can(actor, capability, action, { storeId });
   }
 
   listExpenses(user: FinanceActor, query: FinanceListQuery) { return this.implementation.listExpenses(user, query); }
@@ -46,13 +45,13 @@ export class FinancialDocumentQuery {
   getOverview(user: FinanceActor, storeId: string) { return this.implementation.getOverview(user, storeId); }
   listCashFacts(user: FinanceActor, query: FinanceListQuery) { return this.implementation.listPaymentRecords(user, query); }
 
-  async listInvoices(user: UserWithStoreMember, query: ListInvoicesDto) {
-    const actor = await this.withStoreMember(user);
+  async listInvoices(user: FinanceActor, query: ListInvoicesDto) {
+    const actor = { userId: user.id } satisfies AccessSubject;
     if (!await this.canAccess(actor, "store", "read", query.storeId)) throw new ForbiddenException("无权限");
     return this.prisma.invoice.findMany({
       where: buildInvoiceListScope(
         query.storeId,
-        (await this.isSalesActor(actor, query.storeId)) ? actor.id : undefined
+        (await this.isSalesActor(actor, query.storeId)) ? actor.userId : undefined
       ),
       orderBy: { createdAt: "desc" },
       include: {
@@ -84,13 +83,13 @@ export class FinancialDocumentQuery {
     });
   }
 
-  async listRebates(user: UserWithStoreMember, query: ListRebatesDto) {
-    const actor = await this.withStoreMember(user);
+  async listRebates(user: FinanceActor, query: ListRebatesDto) {
+    const actor = { userId: user.id } satisfies AccessSubject;
     if (!await this.canAccess(actor, "store", "read", query.storeId)) throw new ForbiddenException("无权限");
     return this.prisma.customerRebate.findMany({
       where: buildRebateListScope(
         query.storeId,
-        (await this.isSalesActor(actor, query.storeId)) ? actor.id : undefined
+        (await this.isSalesActor(actor, query.storeId)) ? actor.userId : undefined
       ),
       orderBy: { createdAt: "desc" },
       include: {
@@ -106,8 +105,8 @@ export class FinancialDocumentQuery {
     });
   }
 
-  async listCommissionRules(user: UserWithStoreMember, query: ListCommissionRulesDto) {
-    const actor = await this.withStoreMember(user);
+  async listCommissionRules(user: FinanceActor, query: ListCommissionRulesDto) {
+    const actor = { userId: user.id } satisfies AccessSubject;
     if (!await this.canAccess(actor, "commissions", "write", query.storeId)) throw new ForbiddenException("无权限");
     return this.prisma.salesCommissionRule.findMany({ where: { storeId: query.storeId }, orderBy: { createdAt: "desc" } });
   }
@@ -211,14 +210,8 @@ export class FinancialDocumentQuery {
     };
   }
 
-  private async withStoreMember(user: UserWithStoreMember): Promise<UserWithStoreMember> {
-    const member = await this.prisma.storeMember.findUnique({ where: { userId: user.id }, select: { storeId: true, position: true } });
-    return { ...user, storeMember: member };
-  }
-
-  private async isSalesActor(actor: UserWithStoreMember, storeId: string) {
-    if (actor.isAuditor) return false;
-    const access = await this.accessContext.resolve(actor.id, { storeId });
-    return access.roles.some((role) => role.roleCode === "SALES" && (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
+  private async isSalesActor(actor: AccessSubject, storeId: string) {
+    const scope = await this.accessContext.scope(actor, "finance.document", "read", { storeId, ownerId: actor.userId });
+    return scope.ownerId === actor.userId;
   }
 }

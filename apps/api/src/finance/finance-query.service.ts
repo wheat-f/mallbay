@@ -1,12 +1,11 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { FinanceApprovalStatus, Prisma } from "@prisma/client";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { ListFinanceApplicationsDto } from "./dto/finance.dto";
 import { FINANCE_CAPABILITIES } from "./domain/finance-capabilities";
 
-type FinanceActor = UserWithStoreMember & { username?: string };
+type FinanceActor = { id: string; username?: string };
 type FinanceAllowedAction =
   | "REVIEW_EXPENSE"
   | "WITHDRAW"
@@ -21,11 +20,10 @@ export class FinanceQueryService {
   constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
 
   private canAccess(actor: FinanceActor, capability: string, action: string, storeId: string, ownerId?: string) {
-    return this.accessContext.can(actor.id, capability, action, { storeId, ownerId });
+    return this.accessContext.can({ userId: actor.id }, capability, action, { storeId, ownerId });
   }
 
   async listExpenses(actor: FinanceActor, query: ListFinanceApplicationsDto) {
-    actor = await this.withStoreMember(actor);
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
     const where: Prisma.ExpenseApplicationWhereInput = { storeId: query.storeId };
@@ -59,7 +57,6 @@ export class FinanceQueryService {
   }
 
   async listReimbursements(actor: FinanceActor, query: ListFinanceApplicationsDto) {
-    actor = await this.withStoreMember(actor);
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
     const where: Prisma.ReimbursementApplicationWhereInput = { storeId: query.storeId };
@@ -93,7 +90,6 @@ export class FinanceQueryService {
   }
 
   async getExpenseDetail(actor: FinanceActor, id: string) {
-    actor = await this.withStoreMember(actor);
     const item = await this.prisma.expenseApplication.findUnique({
       where: { id },
       include: { applicant: true, reimbursements: true }
@@ -111,7 +107,6 @@ export class FinanceQueryService {
   }
 
   async getReimbursementDetail(actor: FinanceActor, id: string) {
-    actor = await this.withStoreMember(actor);
     const item = await this.prisma.reimbursementApplication.findUnique({
       where: { id },
       include: { applicant: true, expense: true, paymentAccount: true, paymentRecord: true }
@@ -129,7 +124,6 @@ export class FinanceQueryService {
   }
 
   async getOverview(actor: FinanceActor, storeId: string) {
-    actor = await this.withStoreMember(actor);
     if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, storeId)) throw new ForbiddenException("无权限");
     const [expenseCount, reimbursementCount, pendingExpenseCount, pendingReimbursementCount, paymentCount] = await Promise.all([
       this.prisma.expenseApplication.count({ where: { storeId } }),
@@ -142,7 +136,6 @@ export class FinanceQueryService {
   }
 
   async listPaymentRecords(actor: FinanceActor, query: ListFinanceApplicationsDto) {
-    actor = await this.withStoreMember(actor);
     if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, query.storeId)) throw new ForbiddenException("无权限");
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
@@ -187,14 +180,4 @@ export class FinanceQueryService {
     return actions;
   }
 
-  private async withStoreMember(actor: FinanceActor): Promise<FinanceActor> {
-    // JWT 只携带用户标识；财务权限必须以数据库中的当前门店岗位为准。
-    // 即使调用方意外传入了旧的 storeMember，也不能继续使用缓存角色，
-    // 否则岗位调整或重新登录后仍可能被错误判定为“无权限”。
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: actor.id },
-      select: { storeId: true, position: true }
-    });
-    return { ...actor, storeMember: member };
-  }
 }

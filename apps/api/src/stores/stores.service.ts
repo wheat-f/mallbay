@@ -24,7 +24,6 @@ import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submissio
 import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
 import { DictionariesService } from "../settings/dictionaries.service";
-import { PermissionsService } from "../permissions/permissions.service";
 import { AccessContext } from "../permissions/domain/access-context";
 
 @Injectable()
@@ -36,15 +35,13 @@ export class StoresService {
     @Inject(ChangeStoreManagerUseCase) private readonly changeStoreManager: ChangeStoreManagerUseCase,
     @Inject(SetStoreFrozenUseCase) private readonly setStoreFrozen: SetStoreFrozenUseCase,
     @Inject(DictionariesService) private readonly dictionaries: DictionariesService,
-    @Optional() @Inject(PermissionsService) private readonly permissions?: PermissionsService,
     @Optional() @Inject(AccessContext) private readonly accessContext?: AccessContext
   ) {}
 
   // ─── 管理员：创建门店并指派店长 ────────────────────────────────────────────
 
-  async createStore(auditorId: string, isAuditor: boolean, dto: CreateStoreDto) {
-    if (this.permissions) await this.assertPermission(auditorId, "store", "write");
-    else if (!isAuditor) throw new ForbiddenException("无权限");
+  async createStore(auditorId: string, dto: CreateStoreDto) {
+    await this.assertGlobalPermission(auditorId, "store", "write");
 
     const manager = await this.prisma.user.findUnique({ where: { id: dto.managerId } });
     if (!manager) throw new NotFoundException("指定的用户不存在");
@@ -102,73 +99,26 @@ export class StoresService {
 
   // ─── 管理员：审核门店提交 ──────────────────────────────────────────────────
 
-  async reviewSubmission(
-    auditorId: string,
-    isAuditor: boolean,
-    submissionId: string,
-    dto: ReviewStoreDto
-  ) {
-    return this.reviewStoreSubmission.execute(auditorId, isAuditor, submissionId, dto);
+  async reviewSubmission(auditorId: string, submissionId: string, dto: ReviewStoreDto) {
+    await this.assertGlobalPermission(auditorId, "store", "write");
+    return this.reviewStoreSubmission.execute(auditorId, submissionId, dto);
   }
 
   private async assertPermission(actorId: string, permission: string, action: string, storeId?: string) {
-    if (this.accessContext || this.permissions) {
-      const allowed = this.accessContext
-        ? await this.accessContext.can(actorId, permission, action, storeId ? { storeId } : {})
-        : await this.permissions!.authorize(actorId, permission, action, storeId ? { storeId } : {});
-      if (!allowed) throw new ForbiddenException("无权限");
-      return;
-    }
+    if (!this.accessContext) throw new ForbiddenException({ code: "ACCESS_DENIED", message: "权限上下文未配置" });
+    const scope = await this.accessContext.scope({ userId: actorId }, permission, action, storeId ? { storeId } : {});
+    if (!scope.allowed) throw new ForbiddenException({ code: scope.reason ?? "ACCESS_DENIED", message: "无权限" });
   }
 
-  async listEligibleExecutionStoresForUser(actorId: string, sourceStoreId: string) {
+  private async assertGlobalPermission(actorId: string, permission: string, action: string) {
+    if (!this.accessContext) throw new ForbiddenException({ code: "ACCESS_DENIED", message: "权限上下文未配置" });
+    const scope = await this.accessContext.scope({ userId: actorId }, permission, action);
+    if (!scope.allowed || !scope.global) throw new ForbiddenException({ code: scope.reason ?? "ACCESS_DENIED", message: "无权限" });
+  }
+
+  async listEligibleExecutionStores(actorId: string, sourceStoreId: string) {
     await this.assertPermission(actorId, "store", "read", sourceStoreId);
-    return this.listEligibleExecutionStores(actorId, true, sourceStoreId);
-  }
-
-  async listFinancialEntitiesForUser(actorId: string) {
-    await this.assertPermission(actorId, "store", "write");
-    return this.listFinancialEntities(true);
-  }
-
-  async createFinancialEntityForUser(actorId: string, dto: CreateFinancialEntityDto) {
-    await this.assertPermission(actorId, "store", "write");
-    return this.createFinancialEntity(true, dto);
-  }
-
-  async updateCrossStoreConfigForUser(actorId: string, storeId: string, dto: UpdateStoreCrossStoreConfigDto) {
-    await this.assertPermission(actorId, "store", "write", storeId);
-    return this.updateCrossStoreConfig(true, storeId, dto);
-  }
-
-  async listAllStoresForUser(actorId: string, dto: ListStoresDto) {
-    await this.assertPermission(actorId, "store", "write");
-    return this.listAllStores(true, dto);
-  }
-
-  async listPendingSubmissionsForUser(actorId: string) {
-    await this.assertPermission(actorId, "store", "write");
-    return this.listPendingSubmissions(true);
-  }
-
-  async getAdminStoreDetailForUser(actorId: string, storeId: string) {
-    await this.assertPermission(actorId, "store", "write");
-    return this.getAdminStoreDetail(true, storeId);
-  }
-
-  async reviewSubmissionForUser(actorId: string, submissionId: string, dto: ReviewStoreDto) {
-    await this.assertPermission(actorId, "store", "write");
-    return this.reviewSubmission(actorId, true, submissionId, dto);
-  }
-
-  async setFrozenForUser(actorId: string, storeId: string, frozen: boolean) {
-    await this.assertPermission(actorId, "store", "write", storeId);
-    return this.setFrozen(true, storeId, frozen);
-  }
-
-  async changeManagerForUser(actorId: string, storeId: string, dto: ChangeManagerDto) {
-    await this.assertPermission(actorId, "store", "write", storeId);
-    return this.changeManager(true, storeId, dto);
+    return this.listEligibleExecutionStoresInternal(actorId, sourceStoreId);
   }
   // ─── 公开门店列表 ──────────────────────────────────────────────────────────
 
@@ -216,8 +166,8 @@ export class StoresService {
 
   // ─── 管理员：全量门店列表（含所有状态）────────────────────────────────────
 
-  async listAllStores(isAuditor: boolean, dto: ListStoresDto) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
+  async listAllStores(actorId: string, dto: ListStoresDto) {
+    await this.assertGlobalPermission(actorId, "store", "read");
 
     const { page, pageSize, skip } = normalizePagination(dto.page, dto.pageSize);
 
@@ -263,16 +213,12 @@ export class StoresService {
     };
   }
 
-  async listEligibleExecutionStores(userId: string, isAuditor: boolean, sourceStoreId: string) {
-    const [sourceStore, member] = await Promise.all([
-      this.prisma.store.findUnique({
-        where: { id: sourceStoreId },
-        select: { financialEntityId: true, crossStoreConstructionEnabled: true }
-      }),
-      this.prisma.storeMember.findUnique({ where: { userId } })
-    ]);
+  private async listEligibleExecutionStoresInternal(userId: string, sourceStoreId: string) {
+    const sourceStore = await this.prisma.store.findUnique({
+      where: { id: sourceStoreId },
+      select: { financialEntityId: true, crossStoreConstructionEnabled: true }
+    });
     if (!sourceStore) throw new NotFoundException("来源门店不存在");
-    if (!isAuditor && member?.storeId !== sourceStoreId) throw new ForbiddenException("无权限");
     if (!sourceStore.crossStoreConstructionEnabled) return [];
 
     return this.prisma.store.findMany({
@@ -287,8 +233,8 @@ export class StoresService {
     });
   }
 
-  async listFinancialEntities(isAuditor: boolean) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
+  async listFinancialEntities(actorId: string) {
+    await this.assertGlobalPermission(actorId, "store", "read");
     return this.prisma.financialEntity.findMany({
       orderBy: [{ status: "asc" }, { name: "asc" }],
       include: {
@@ -305,8 +251,8 @@ export class StoresService {
     });
   }
 
-  async createFinancialEntity(isAuditor: boolean, dto: CreateFinancialEntityDto) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
+  async createFinancialEntity(actorId: string, dto: CreateFinancialEntityDto) {
+    await this.assertGlobalPermission(actorId, "store", "write");
     const code = dto.code.trim().toUpperCase();
     const name = dto.name.trim();
     if (!code || !name) throw new BadRequestException("财务主体编码和名称不能为空");
@@ -316,11 +262,11 @@ export class StoresService {
   }
 
   async updateCrossStoreConfig(
-    isAuditor: boolean,
+    actorId: string,
     storeId: string,
     dto: UpdateStoreCrossStoreConfigDto
   ) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
+    await this.assertGlobalPermission(actorId, "store", "write");
     const [store, financialEntity] = await Promise.all([
       this.prisma.store.findUnique({ where: { id: storeId }, select: { id: true } }),
       this.prisma.financialEntity.findUnique({ where: { id: dto.financialEntityId } })
@@ -345,8 +291,8 @@ export class StoresService {
   }
   // ─── 管理员：待审核提交列表 ────────────────────────────────────────────────
 
-  async listPendingSubmissions(isAuditor: boolean) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
+  async listPendingSubmissions(actorId: string) {
+    await this.assertGlobalPermission(actorId, "store", "read");
 
     return this.prisma.storeAuditSubmission.findMany({
       where: { status: SubmissionStatus.PENDING },
@@ -414,8 +360,8 @@ export class StoresService {
 
   // ─── 管理员：门店详情（含待审核提交）────────────────────────────────────────
 
-  async getAdminStoreDetail(isAuditor: boolean, storeId: string) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
+  async getAdminStoreDetail(actorId: string, storeId: string) {
+    await this.assertGlobalPermission(actorId, "store", "read");
 
     const store = await this.prisma.store.findUnique({
       where: { id: storeId },
@@ -456,14 +402,16 @@ export class StoresService {
 
   // ─── 管理员：冻结 / 解冻门店 ──────────────────────────────────────────────
 
-  async setFrozen(isAuditor: boolean, storeId: string, frozen: boolean) {
-    return this.setStoreFrozen.execute(isAuditor, storeId, frozen);
+  async setFrozen(actorId: string, storeId: string, frozen: boolean) {
+    await this.assertGlobalPermission(actorId, "store", "write");
+    return this.setStoreFrozen.execute(actorId, storeId, frozen);
   }
 
   // ─── 管理员：变更店长 ──────────────────────────────────────────────────────
 
-  async changeManager(isAuditor: boolean, storeId: string, dto: ChangeManagerDto) {
-    return this.changeStoreManager.execute(isAuditor, storeId, dto);
+  async changeManager(actorId: string, storeId: string, dto: ChangeManagerDto) {
+    await this.assertGlobalPermission(actorId, "store", "write");
+    return this.changeStoreManager.execute(actorId, storeId, dto);
   }
 
   // ─── 工具：断言当前用户是指定门店的店长 ───────────────────────────────────

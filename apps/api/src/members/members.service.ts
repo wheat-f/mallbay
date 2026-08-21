@@ -7,7 +7,6 @@ import {
 } from "@nestjs/common";
 import { InvitationStatus, StorePosition, StoreStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { PermissionsService } from "../permissions/permissions.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationDispatcher } from "../notifications/notification-dispatcher";
 import { AccessContext } from "../permissions/domain/access-context";
@@ -18,7 +17,6 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    @Optional() private readonly permissions?: PermissionsService,
     @Optional() private readonly accessContext?: AccessContext,
     @Optional() private readonly notificationDispatcher?: NotificationDispatcher
   ) {}
@@ -233,12 +231,11 @@ export class MembersService {
   // ─── 工具：断言当前用户是指定门店的店长 ───────────────────────────────────
 
   private async assertManager(userId: string, storeId: string) {
-    if (this.accessContext || this.permissions) {
-      const allowed = this.accessContext
-        ? await this.accessContext.can(userId, "settings", "write", { storeId })
-        : await this.permissions!.authorize(userId, "settings", "write", { storeId });
-      if (allowed) return { userId, storeId, position: StorePosition.MANAGER };
+    if (this.accessContext) {
+      const scope = await this.accessContext.scope({ userId }, "settings", "write", { storeId });
+      if (scope.allowed) return { userId, storeId, position: StorePosition.MANAGER };
     }
+    // Test adapters without the production seam retain the resource-level invariant.
     const member = await this.prisma.storeMember.findUnique({ where: { userId } });
     if (!member || member.storeId !== storeId || member.position !== StorePosition.MANAGER) {
       throw new ForbiddenException("仅店长可执行此操作");

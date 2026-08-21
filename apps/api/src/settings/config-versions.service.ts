@@ -43,16 +43,19 @@ export class ConfigVersionsService {
     await this.expireStaleDrafts();
     const page = Math.max(1, requestedPage);
     const pageSize = Math.min(100, Math.max(1, requestedPageSize));
-    const actor = await this.access.resolveUser(user);
-    const visible = await this.access.getCapabilities(actor);
+    const actor = user;
+    const visible = await this.access.getCapabilities(user);
     const codes = visible.map((item) => item.code).filter((code) => !capabilityCode || code === capabilityCode);
     if (capabilityCode && !codes.includes(capabilityCode)) throw new ForbiddenException("当前角色无权访问该设置");
-    if (capabilityCode) await this.access.assert(actor, capabilityCode, "view", scopeId);
-    const effectiveScope = scopeId ?? (actor.isAuditor ? undefined : actor.storeMember?.storeId ?? actor.id);
-    const cacheKey = JSON.stringify([actor.id, Boolean(actor.isAuditor), capabilityCode ?? null, effectiveScope ?? null, page, pageSize]);
+    if (capabilityCode) await this.access.assert(user, capabilityCode, "view", scopeId);
+    const scopes = await Promise.all(codes.map((code) => this.access.getScope(user, code, "view", scopeId)));
+    const global = scopes.some((scope) => scope.global);
+    const accessibleScopeIds = [...new Set(scopes.flatMap((scope) => [...scope.storeIds, ...(scope.ownerId ? [scope.ownerId] : [])]))];
+    const effectiveScope = scopeId ?? (global ? undefined : accessibleScopeIds.length ? accessibleScopeIds : ["__NO_SCOPE__"]);
+    const cacheKey = JSON.stringify([actor.id, capabilityCode ?? null, effectiveScope ?? null, page, pageSize]);
     const cached = this.listCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.value;
-    const where = { capabilityCode: { in: codes }, ...(effectiveScope ? { scopeId: effectiveScope } : {}) };
+    const where = { capabilityCode: { in: codes }, ...(effectiveScope ? { scopeId: Array.isArray(effectiveScope) ? { in: effectiveScope } : effectiveScope } : {}) };
     const [rows, total] = await Promise.all([
       this.prisma.settingsConfigVersion.findMany({ where, orderBy: [{ updatedAt: "desc" }], skip: (page - 1) * pageSize, take: pageSize }),
       this.prisma.settingsConfigVersion.count({ where })

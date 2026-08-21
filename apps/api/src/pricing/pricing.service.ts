@@ -1,6 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
 import { Prisma, PricingRolloutMode, ProductUnit } from "@prisma/client";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -20,7 +19,14 @@ import { CostEstimatorService } from "./cost-estimator.service";
 import { estimateConstructionCost } from "./domain/construction-cost";
 import { VEHICLE_TYPE_CODES } from "../settings/dictionaries.service";
 
-export type PricingAuthenticatedUser = UserWithStoreMember & { username?: string };
+export type PricingAuthenticatedUser = {
+  id: string;
+  username?: string;
+  /** @deprecated compatibility for staged test/request adapters only. */
+  isAuditor?: boolean;
+  /** @deprecated compatibility for staged test/request adapters only. */
+  storeMember?: { storeId: string; position: string } | null;
+};
 
 type CostEstimateSnapshot = {
   lines: unknown[];
@@ -48,7 +54,7 @@ export class PricingService {
   ) {}
 
   async calculate(user: PricingAuthenticatedUser, dto: CalculatePricingDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     if (!await this.canReadPricing(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
@@ -330,7 +336,7 @@ export class PricingService {
       temporaryCost?: { cents: number; reason: string };
     } = {}
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     if (!await this.canReadPricing(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
@@ -420,23 +426,14 @@ export class PricingService {
     };
   }
 
-  private async withStoreMember(user: PricingAuthenticatedUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) return user;
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
+  private async canReadPricing(actor: PricingAuthenticatedUser, storeId: string) {
+    if (!this.accessContext) throw new Error("PricingService access context is not configured");
+    return this.accessContext.can({ userId: actor.id }, "products", "read", { storeId });
   }
 
-  private async canReadPricing(actor: UserWithStoreMember, storeId: string) {
+  private async canViewCosts(actor: PricingAuthenticatedUser, storeId: string) {
     if (!this.accessContext) throw new Error("PricingService access context is not configured");
-    return this.accessContext.can(actor.id, "products", "read", { storeId });
-  }
-
-  private async canViewCosts(actor: UserWithStoreMember, storeId: string) {
-    if (!this.accessContext) throw new Error("PricingService access context is not configured");
-    return this.accessContext.can(actor.id, "finance", "write", { storeId });
+    return this.accessContext.can({ userId: actor.id }, "finance", "write", { storeId });
   }
 }
 

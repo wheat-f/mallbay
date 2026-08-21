@@ -4,12 +4,13 @@ import { calculatePricing } from "./domain/pricing-engine";
 import { PricingService } from "./pricing.service";
 
 const pricingAccess = {
-  can: async (actor: string, capability: string, action: string) => {
-    if (capability === "finance") return actor.includes("finance") || actor.includes("admin");
-    if (capability === "store") return actor.includes("manager") || actor.includes("admin");
-    return action === "read" || actor.includes("manager") || actor.includes("admin");
+  can: async (actor: { userId: string }, capability: string, action: string) => {
+    const actorId = actor.userId;
+    if (capability === "finance") return actorId.includes("finance") || actorId.includes("admin");
+    if (capability === "store") return actorId.includes("manager") || actorId.includes("admin");
+    return action === "read" || actorId.includes("manager") || actorId.includes("admin");
   },
-  resolve: async (actor: string) => ({ roles: [{ roleCode: actor.includes("admin") ? "HQ_ADMIN" : actor.includes("finance") ? "FINANCE" : "MANAGER" }] })
+  resolve: async (actor: { userId: string }) => ({ roles: [{ roleCode: actor.userId.includes("admin") ? "HQ_ADMIN" : actor.userId.includes("finance") ? "FINANCE" : "MANAGER" }] })
 };
 
 const user = {

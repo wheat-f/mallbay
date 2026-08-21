@@ -27,6 +27,6 @@ test("store-scoped dictionary reads repair missing fixed defaults", () => {
   const listStart = service.indexOf("  async list(user:");
   const listEnd = service.indexOf("  async initializeDefaultsForStore", listStart);
   assert.ok(listStart >= 0 && listEnd > listStart);
-  assert.match(service.slice(listStart, listEnd), /ensureFixedDefaultsIfMissing\(targetStoreId, actor\.id\)/);
+  assert.match(service.slice(listStart, listEnd), /ensureFixedDefaultsIfMissing\(id, user\.id\)/);
   assert.match(service, /settings\.dictionary\.defaults\.auto_backfilled/);
 });

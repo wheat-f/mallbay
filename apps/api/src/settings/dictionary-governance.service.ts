@@ -69,9 +69,10 @@ export class DictionaryGovernanceService {
       this.collectCatalog((sourcePage) => this.dictionaries.catalog(user, { ...query, page: sourcePage, pageSize: 100 }, storeId) as Promise<CatalogPage>),
       this.collectCatalog((sourcePage) => this.templates.catalog(user, { ...query, page: sourcePage, pageSize: 100 }) as Promise<CatalogPage>),
     ]);
+    const canEditTemplates = await this.templates.canEdit(user);
     const items = [
       ...storeRows.map((item) => ({ ...item, kind: "dictionary" as const, readOnly: false, inherited: false })),
-      ...templateRows.map((item) => ({ ...item, kind: "template" as const, readOnly: !user.isAuditor, inherited: !user.isAuditor })),
+      ...templateRows.map((item) => ({ ...item, kind: "template" as const, readOnly: !canEditTemplates, inherited: !canEditTemplates })),
     ].sort((left, right) => {
       // Sort by the stable business key first so page boundaries do not move
       // when HQ and store adapters use different display names for one code.

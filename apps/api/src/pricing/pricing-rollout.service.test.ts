@@ -4,7 +4,7 @@ import { PricingRolloutMode, StorePosition } from "@prisma/client";
 import { PricingRolloutService } from "./pricing-rollout.service";
 
 const pricingAccess = {
-  can: async (actor: string, capability: string) => capability === "finance" ? actor.includes("finance") : true,
+  can: async (actor: { userId: string }, capability: string) => capability === "finance" ? actor.userId.includes("finance") : true,
   resolve: async () => ({ roles: [{ roleCode: "MANAGER" }] })
 };
 

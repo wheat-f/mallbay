@@ -217,7 +217,7 @@ test("reviewSubmission approval publishes store, replaces photos, and notifies m
     record: (event: unknown) => auditEvents.push(event)
   });
 
-  const result = await service.reviewSubmission("auditor-1", true, "submission-1", {
+  const result = await service.reviewSubmission("auditor-1", "submission-1", {
     action: ReviewAction.APPROVE
   });
 
@@ -297,7 +297,7 @@ test("reviewSubmission rejection restores prior public store and notifies manage
     record: (event: unknown) => auditEvents.push(event)
   });
 
-  const result = await service.reviewSubmission("auditor-2", true, "submission-2", {
+  const result = await service.reviewSubmission("auditor-2", "submission-2", {
     action: ReviewAction.REJECT,
     reviewNote: "资料不完整"
   });
@@ -334,6 +334,8 @@ function createStoresService(prisma: unknown, notifications: unknown, auditLog: 
     new ReviewStoreSubmissionUseCase(storeRepository, notifications as never, auditLog as never),
     new SubmitStoreForReviewUseCase(storeRepository),
     new ChangeStoreManagerUseCase(storeRepository, notifications as never, auditLog as never),
-    new SetStoreFrozenUseCase(storeRepository, notifications as never, auditLog as never)
+    new SetStoreFrozenUseCase(storeRepository, notifications as never, auditLog as never),
+    {} as never,
+    { scope: async () => ({ allowed: true, global: true, storeIds: [] }) } as never
   );
 }

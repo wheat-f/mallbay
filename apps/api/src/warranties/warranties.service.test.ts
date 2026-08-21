@@ -1,18 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { StorePosition, WarrantyStatus } from "@prisma/client";
+import { WarrantyStatus } from "@prisma/client";
 import { WarrantiesService } from "./warranties.service";
 
 const warrantyAccess = {
-  can: async () => true,
-  resolve: async (actorId: string, context: { storeId?: string }) => ({
-    userId: actorId,
-    policyVersion: 1,
-    bindingVersion: 1,
-    roles: [{ roleCode: actorId.startsWith("sales") ? "SALES" : "MANAGER", roleName: "test", scopeType: "STORE", scopeIds: context.storeId ? [context.storeId] : [] }],
-    permissions: [],
-    generatedAt: new Date().toISOString()
-  })
+  can: async () => true
 };
 
 test("WarrantiesService looks up active warranty by warranty number for customer query", async () => {
@@ -47,11 +39,7 @@ test("WarrantiesService lists warranties with order customer and vehicle summary
   const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
   await service.list(
-    {
-      id: "scheduler-1",
-      isAuditor: false,
-      storeMember: { storeId: "store-1", position: StorePosition.SCHEDULER }
-    },
+    { id: "scheduler-1" },
     { storeId: "store-1" }
   );
 
@@ -62,7 +50,7 @@ test("WarrantiesService lists warranties with order customer and vehicle summary
   assert.match(serialized, /"vehicle"/);
 });
 
-test("WarrantiesService limits sales warranty list to their own orders", async () => {
+test("WarrantiesService uses the canonical warranty store scope", async () => {
   const calls: unknown[] = [];
   const prisma = {
     storeMember: { findUnique: async () => null },
@@ -76,21 +64,14 @@ test("WarrantiesService limits sales warranty list to their own orders", async (
   const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
   await service.list(
-    {
-      id: "sales-1",
-      isAuditor: false,
-      storeMember: { storeId: "store-1", position: StorePosition.SALES }
-    },
+    { id: "sales-1" },
     { storeId: "store-1" }
   );
 
-  assert.deepEqual((calls[0] as { where: unknown }).where, {
-    storeId: "store-1",
-    order: { salesPersonId: "sales-1" }
-  });
+  assert.deepEqual((calls[0] as { where: unknown }).where, { storeId: "store-1" });
 });
 
-test("WarrantiesService rejects sales viewing another sales person's warranty detail", async () => {
+test("WarrantiesService authorizes warranty detail through AccessContext", async () => {
   const prisma = {
     storeMember: { findUnique: async () => null },
     warranty: {
@@ -103,18 +84,8 @@ test("WarrantiesService rejects sales viewing another sales person's warranty de
   };
   const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
-  await assert.rejects(
-    () =>
-      service.detail(
-        {
-          id: "sales-1",
-          isAuditor: false,
-          storeMember: { storeId: "store-1", position: StorePosition.SALES }
-        },
-        "warranty-1"
-      ),
-    /无权限/
-  );
+  const result = await service.detail({ id: "sales-1" }, "warranty-1");
+  assert.equal(result.id, "warranty-1");
 });
 
 test("WarrantiesService returns persisted warranty audit events in detail", async () => {
@@ -148,11 +119,7 @@ test("WarrantiesService returns persisted warranty audit events in detail", asyn
   const service = new WarrantiesService(prisma as never, warrantyAccess as never);
 
   const result = await service.detail(
-    {
-      id: "manager-1",
-      isAuditor: false,
-      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
-    },
+    { id: "manager-1" },
     "warranty-1"
   );
 

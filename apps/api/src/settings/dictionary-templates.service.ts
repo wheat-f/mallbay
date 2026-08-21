@@ -18,27 +18,22 @@ export class DictionaryTemplatesService {
 
   private authorize(userId: string, capability: string, action: string, context: { storeId?: string } = {}) {
     return this.accessContext
-      ? this.accessContext.can(userId, capability, action, context)
+      ? this.accessContext.can({ userId }, capability, action, context)
       : this.permissions.authorize(userId, capability, action, context);
   }
 
   private async assertHq(user: AuthenticatedSettingsUser) {
-    if (this.permissions) {
-      if (!(await this.authorize(user.id, "settings", "write"))) throw new ForbiddenException("仅总部管理员可维护总部字典模板");
-    } else if (!user.isAuditor) {
-      throw new ForbiddenException("仅总部管理员可维护总部字典模板");
-    }
+    if (!(await this.authorize(user.id, "settings", "write"))) throw new ForbiddenException("仅总部管理员可维护总部字典模板");
     return user;
   }
 
   private async assertReader(user: AuthenticatedSettingsUser) {
-    if (await this.authorize(user.id, "settings", "read", { storeId: user.storeMember?.storeId })) return;
-    if (!this.permissions && (user.isAuditor || user.storeMember)) return;
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { id: true, storeId: true },
-    });
-    if (!member) throw new ForbiddenException("无权读取总部字典模板");
+    if (await this.authorize(user.id, "settings", "read")) return;
+    throw new ForbiddenException("无权读取总部字典模板");
+  }
+
+  async canEdit(user: AuthenticatedSettingsUser) {
+    return this.authorize(user.id, "settings", "write");
   }
 
   private serialize(template: Prisma.DictionaryTemplateGetPayload<{ include: { templateItems: true } }>) {

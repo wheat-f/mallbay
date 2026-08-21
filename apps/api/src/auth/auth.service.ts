@@ -19,6 +19,7 @@ import { RegisterDto } from "./dto/register.dto";
 import { WechatLoginDto } from "./dto/wechat-login.dto";
 import { TokenPayload } from "./token-payload";
 import { WechatMiniProgramService } from "./wechat-mini-program.service";
+import { AccessContext } from "../permissions/domain/access-context";
 type DeviceContext = { userAgent?: string; ipAddress?: string; sessionIdToReplace?: string };
 
 @Injectable()
@@ -29,7 +30,8 @@ export class AuthService {
     @Inject(ConfigService) private readonly config: ConfigService,
     @Optional() @Inject(MetricsService) private readonly metrics?: MetricsService,
     @Optional() @Inject(AuthCryptoService) private readonly authCrypto?: AuthCryptoService,
-    @Optional() @Inject(WechatMiniProgramService) private readonly wechatMiniProgram?: WechatMiniProgramService
+    @Optional() @Inject(WechatMiniProgramService) private readonly wechatMiniProgram?: WechatMiniProgramService,
+    @Optional() @Inject(AccessContext) private readonly accessContext?: AccessContext
   ) {}
 
   async register(dto: RegisterDto, context: DeviceContext = {}) {
@@ -332,15 +334,9 @@ export class AuthService {
   }
 
   private async isEffectiveHeadquartersAdmin(userId: string) {
-    const roleRepository = this.prisma.permissionRole as { findUnique?: Function } | undefined;
-    const bindingRepository = this.prisma.permissionRoleBinding as { findFirst?: Function } | undefined;
-    if (!roleRepository?.findUnique || !bindingRepository?.findFirst) return false;
-    const now = new Date();
-    const [role, binding] = await Promise.all([
-      roleRepository.findUnique({ where: { code: "HQ_ADMIN" }, select: { id: true, status: true } }),
-      bindingRepository.findFirst({ where: { userId, scopeType: "HQ", status: "ACTIVE", effectiveAt: { lte: now }, OR: [{ expiredAt: null }, { expiredAt: { gt: now } }] }, select: { roleId: true } })
-    ]);
-    return Boolean(role?.status === "ACTIVE" && binding?.roleId === role.id);
+    if (!this.accessContext) return false;
+    const scope = await this.accessContext.scope({ userId }, "settings", "write");
+    return scope.allowed && scope.global;
   }
 }
 

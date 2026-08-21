@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
   Optional
@@ -24,9 +23,7 @@ export class ReviewStoreSubmissionUseCase {
     @Optional() private readonly auditWriter?: AuditEventWriter
   ) {}
 
-  async execute(auditorId: string, isAuditor: boolean, submissionId: string, dto: ReviewStoreDto) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
-
+  async execute(auditorId: string, submissionId: string, dto: ReviewStoreDto) {
     StorePolicy.assertReviewInput(dto.action, dto.reviewNote);
 
     const submission = await this.stores.findSubmissionWithStore(submissionId);

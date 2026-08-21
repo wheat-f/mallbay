@@ -279,11 +279,11 @@ export class VehiclePricingService {
   }
 
   private async assertCanView(user: UserWithStoreMember, storeId: string) {
-    if (!this.accessContext || !await this.accessContext.can(user.id, "products", "read", { storeId })) throw new ForbiddenException("无权限");
+    if (!this.accessContext || !await this.accessContext.can({ userId: user.id }, "products", "read", { storeId })) throw new ForbiddenException("无权限");
   }
 
   private async assertCanManage(user: UserWithStoreMember, storeId: string) {
-    if (!this.accessContext || !await this.accessContext.can(user.id, "products", "write", { storeId })) throw new ForbiddenException("无权限");
+    if (!this.accessContext || !await this.accessContext.can({ userId: user.id }, "products", "write", { storeId })) throw new ForbiddenException("无权限");
   }
 
   private async withStoreMember(user: PricingAuthenticatedUser): Promise<UserWithStoreMember> {

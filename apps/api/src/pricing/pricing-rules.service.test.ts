@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { PricingRulesService, assertNoConstructionGroupConflict, validateRuleConflicts, validateRuleDefinitions } from "./pricing-rules.service";
 
 const pricingAccess = {
-  can: async (_actor: string, _capability: string, _action: string) => true,
+  can: async (_actor: { userId: string }, _capability: string, _action: string) => true,
   resolve: async () => ({ roles: [{ roleCode: "MANAGER" }] })
 };
 

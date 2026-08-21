@@ -184,7 +184,7 @@ export class CrossStoreConstructionService {
   }
 
   private async assertStoreViewer(user: AuthenticatedConstructionUser, storeId: string) {
-    if (!this.accessContext || !await this.accessContext.can(user.id, "construction", "read", { storeId })) throw new ForbiddenException("无权限");
+    if (!this.accessContext || !await this.accessContext.can({ userId: user.id }, "construction", "read", { storeId })) throw new ForbiddenException("无权限");
   }
 
   private async assertTaskViewer(user: AuthenticatedConstructionUser, sourceStoreId: string, executionStoreId: string) {
@@ -200,6 +200,6 @@ export class CrossStoreConstructionService {
   }
 
   private can(user: AuthenticatedConstructionUser, capability: string, action: string, storeId: string) {
-    return this.accessContext.can(user.id, capability, action, { storeId });
+    return this.accessContext.can({ userId: user.id }, capability, action, { storeId });
   }
 }

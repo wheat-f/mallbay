@@ -287,3 +287,53 @@ test("does not combine grant and binding scopes across roles", async () => {
   assert.equal(await service.authorize("u1", "inventory.read", "read", { storeId: "s2" }), false);
   assert.equal(await service.authorize("u1", "finance.read", "read", { storeId: "s2" }), true);
 });
+
+test("buildScopeFacts returns canonical store and owner facts without a query shape", async () => {
+  const service = buildService();
+  const facts = await service.buildScopeFacts("u1", "orders.read", "read", { storeId: "s1", ownerId: "u1" });
+
+  assert.deepEqual(facts, {
+    allowed: true,
+    global: false,
+    storeIds: ["s1"],
+    ownerId: "u1"
+  });
+  assert.equal("where" in facts, false);
+  assert.equal("scopes" in facts, false);
+});
+
+test("buildScopeFacts distinguishes explicit store and owner failures", async () => {
+  const service = buildService();
+
+  assert.deepEqual(await service.buildScopeFacts("u1", "orders.read", "read", { storeId: "s2", ownerId: "u1" }), {
+    allowed: false,
+    global: false,
+    storeIds: ["s1"],
+    ownerId: "u1",
+    reason: "STORE_OUT_OF_SCOPE"
+  });
+  assert.deepEqual(await service.buildScopeFacts("u1", "orders.read", "read", { storeId: "s1", ownerId: "u2" }), {
+    allowed: false,
+    global: false,
+    storeIds: ["s1"],
+    ownerId: "u1",
+    reason: "OWNER_OUT_OF_SCOPE"
+  });
+});
+
+test("HQ GLOBAL facts are global and do not depend on a requested store", async () => {
+  const service = buildService({
+    permissionRoleBinding: {
+      findMany: async () => [{ id: "hq-binding", roleId: "hq-role", scopeType: "HQ", storeId: null }],
+      findFirst: async () => ({ updatedAt: new Date("2026-01-01T00:00:00Z") })
+    },
+    permissionRole: { findMany: async () => [{ id: "hq-role", code: "HQ_ADMIN", name: "总部管理员" }] },
+    permissionRoleGrant: { findMany: async () => [{ roleId: "hq-role", permissionCode: "settings", action: "read", scope: "GLOBAL" }] }
+  });
+
+  assert.deepEqual(await service.buildScopeFacts("u1", "settings", "read", { storeId: "s99" }), {
+    allowed: true,
+    global: true,
+    storeIds: []
+  });
+});

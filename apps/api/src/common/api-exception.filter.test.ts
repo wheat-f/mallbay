@@ -61,3 +61,22 @@ test("ApiExceptionFilter preserves module business error codes", () => {
   assert.equal(payload.code, "ACCESS_DENIED");
 });
 
+test("ApiExceptionFilter maps legacy generic 403 responses to ACCESS_DENIED", () => {
+  const payload: Record<string, unknown> = {};
+  const response = {
+    statusCode: 0,
+    status(statusCode: number) { this.statusCode = statusCode; return this; },
+    json(body: Record<string, unknown>) { Object.assign(payload, body); return this; }
+  };
+  const host = {
+    switchToHttp: () => ({
+      getRequest: () => ({ method: "GET", url: "/orders", requestId: "req_legacy_forbidden" }),
+      getResponse: () => response
+    })
+  };
+
+  new ApiExceptionFilter().catch(new ForbiddenException("无权限"), host as never);
+
+  assert.equal(payload.code, "ACCESS_DENIED");
+});
+

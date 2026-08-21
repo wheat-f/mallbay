@@ -16,8 +16,7 @@ import {
   Prisma,
   StorePosition
 } from "@prisma/client";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
-import { AccessContext } from "../permissions/domain/access-context";
+import { AccessContext, type AccessSubject } from "../permissions/domain/access-context";
 import { AuditEventWriter } from "../observability/audit-event-writer";
 import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
@@ -39,8 +38,13 @@ import {
   type ReceiptAllocationCandidate
 } from "./domain/receipt-allocation";
 
-export type AuthenticatedSettlementUser = UserWithStoreMember & {
+export type AuthenticatedSettlementUser = {
+  id: string;
   username?: string;
+  /** @deprecated Adapter compatibility only; permission decisions ignore these fields. */
+  isAuditor?: boolean;
+  /** @deprecated Adapter compatibility only; permission decisions ignore these fields. */
+  storeMember?: { storeId: string; position: string } | null;
 };
 
 const SETTLED_ORDER_STATUSES = [OrderStatus.COMPLETED, OrderStatus.WARRANTIED];
@@ -54,15 +58,15 @@ export class CustomerSettlementsService {
     @Optional() private readonly finance?: FinanceService
   ) {}
 
-  private canAccess(actor: UserWithStoreMember, capability: string, action: string, storeId: string, ownerId?: string) {
-    return this.accessContext.can(actor.id, capability, action, { storeId, ownerId });
+  private canAccess(actor: AccessSubject, capability: string, action: string, storeId: string, ownerId?: string) {
+    return this.accessContext.can(actor, capability, action, { storeId, ownerId });
   }
 
   async listStatementCandidates(
     user: AuthenticatedSettlementUser,
     query: ListStatementCandidatesDto
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     await this.assertCanViewCustomer(actor, query.storeId, query.customerId);
     return this.loadCandidateOrders(
       query.storeId,
@@ -76,7 +80,7 @@ export class CustomerSettlementsService {
     user: AuthenticatedSettlementUser,
     query: ListCustomerStatementsDto
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     if (!await this.canAccess(actor, "finance", "write", query.storeId)) {
       if (!query.customerId) throw new ForbiddenException("请选择有权限查看的客户");
       await this.assertCanViewCustomer(actor, query.storeId, query.customerId);
@@ -94,7 +98,7 @@ export class CustomerSettlementsService {
   }
 
   async getStatement(user: AuthenticatedSettlementUser, id: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const statement = await this.prisma.customerStatement.findUnique({
       where: { id },
       include: statementInclude
@@ -108,7 +112,7 @@ export class CustomerSettlementsService {
     user: AuthenticatedSettlementUser,
     dto: CreateCustomerStatementDto
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const customer = await this.assertCanViewCustomer(actor, dto.storeId, dto.customerId);
     this.assertCompanyCustomer(customer.customerType);
 
@@ -165,7 +169,7 @@ export class CustomerSettlementsService {
       });
       await this.recordAudit(tx, {
         action: "CUSTOMER_STATEMENT_CREATED",
-        actorId: actor.id,
+        actorId: actor.userId,
         targetType: "customerStatement",
         targetId: created.id,
         metadata: {
@@ -185,7 +189,7 @@ export class CustomerSettlementsService {
     user: AuthenticatedSettlementUser,
     id: string
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const statement = await this.prisma.customerStatement.findUnique({ where: { id } });
     if (!statement) throw new NotFoundException("对账单不存在");
     await this.assertCanViewCustomer(actor, statement.storeId, statement.customerId);
@@ -198,14 +202,14 @@ export class CustomerSettlementsService {
         where: { id },
         data: {
           status: CustomerStatementStatus.CONFIRMED,
-          confirmedById: actor.id,
+          confirmedById: actor.userId,
           confirmedAt: new Date()
         },
         include: statementInclude
       });
       await this.recordAudit(tx, {
         action: "CUSTOMER_STATEMENT_CONFIRMED",
-        actorId: actor.id,
+          actorId: actor.userId,
         targetType: "customerStatement",
         targetId: id,
         metadata: { storeId: statement.storeId, customerId: statement.customerId }
@@ -219,7 +223,7 @@ export class CustomerSettlementsService {
     id: string,
     dto: StatementActionDto
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const statement = await this.prisma.customerStatement.findUnique({ where: { id } });
     if (!statement) throw new NotFoundException("对账单不存在");
     if (!await this.canAccess(actor, "finance", "write", statement.storeId)) {
@@ -239,7 +243,7 @@ export class CustomerSettlementsService {
       });
       await this.recordAudit(tx, {
         action: "CUSTOMER_STATEMENT_VOIDED",
-        actorId: actor.id,
+        actorId: actor.userId,
         targetType: "customerStatement",
         targetId: id,
         metadata: { storeId: statement.storeId, reason }
@@ -252,7 +256,7 @@ export class CustomerSettlementsService {
     user: AuthenticatedSettlementUser,
     dto: PreviewCustomerReceiptDto
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     await this.assertCanManageReceipts(actor, dto.storeId);
     const customer = await this.requireCustomer(dto.storeId, dto.customerId);
     this.assertCompanyCustomer(customer.customerType);
@@ -274,7 +278,7 @@ export class CustomerSettlementsService {
     user: AuthenticatedSettlementUser,
     query: ListCustomerReceiptsDto
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     await this.assertCanManageReceipts(actor, query.storeId);
     const receipts = await this.prisma.customerReceipt.findMany({
       where: {
@@ -289,7 +293,7 @@ export class CustomerSettlementsService {
   }
 
   async getReceipt(user: AuthenticatedSettlementUser, id: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const receipt = await this.prisma.customerReceipt.findUnique({
       where: { id },
       include: receiptInclude
@@ -303,7 +307,7 @@ export class CustomerSettlementsService {
     user: AuthenticatedSettlementUser,
     dto: CreateCustomerReceiptDto
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     await this.assertCanManageReceipts(actor, dto.storeId);
     const customer = await this.requireCustomer(dto.storeId, dto.customerId);
     this.assertCompanyCustomer(customer.customerType);
@@ -348,8 +352,8 @@ export class CustomerSettlementsService {
           note: dto.note?.trim() || undefined,
           status: CustomerReceiptStatus.POSTED,
           idempotencyKey: dto.idempotencyKey.trim(),
-          createdById: actor.id,
-          postedById: actor.id,
+          createdById: actor.userId,
+          postedById: actor.userId,
           postedAt: new Date()
         }
       });
@@ -365,7 +369,7 @@ export class CustomerSettlementsService {
               : PaymentType.BALANCE,
             amountCents: allocation.amountCents,
             paidAt: new Date(dto.receivedAt),
-            createdById: actor.id,
+            createdById: actor.userId,
             customerReceiptId: receipt.id,
             idempotencyKey: `CUSTOMER_RECEIPT:${receipt.id}`
           }
@@ -392,7 +396,7 @@ export class CustomerSettlementsService {
           amountCents: dto.amountCents,
           sourceId: receipt.id,
           note: dto.note?.trim() || `企业统一收款 ${receipt.receiptNo}`,
-          createdById: actor.id,
+          createdById: actor.userId,
           occurredAt: new Date(dto.receivedAt),
           idempotencyKey: dto.idempotencyKey.trim()
         });
@@ -401,7 +405,7 @@ export class CustomerSettlementsService {
       }
       await this.recordAudit(tx, {
         action: "CUSTOMER_RECEIPT_POSTED",
-        actorId: actor.id,
+        actorId: actor.userId,
         targetType: "customerReceipt",
         targetId: receipt.id,
         metadata: {
@@ -423,7 +427,7 @@ export class CustomerSettlementsService {
     id: string,
     dto: ReverseCustomerReceiptDto
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const receipt = await this.prisma.customerReceipt.findUnique({
       where: { id },
       include: receiptInclude
@@ -475,7 +479,7 @@ export class CustomerSettlementsService {
           receiptId: receipt.id,
           amountCents: dto.amountCents,
           reason,
-          createdById: actor.id,
+          createdById: actor.userId,
           idempotencyKey: dto.idempotencyKey.trim(),
           allocations: {
             create: allocations.map((allocation) => ({
@@ -511,7 +515,7 @@ export class CustomerSettlementsService {
           amountCents: dto.amountCents,
           sourceId: reversal.id,
           note: `企业收款红冲：${reason}`,
-          createdById: actor.id,
+          createdById: actor.userId,
           idempotencyKey: dto.idempotencyKey.trim()
         });
       } else {
@@ -523,7 +527,7 @@ export class CustomerSettlementsService {
           where: { id: receipt.id },
           data: {
             status: CustomerReceiptStatus.REVERSED,
-            reversedById: actor.id,
+          reversedById: actor.userId,
             reversedAt: new Date(),
             reversedReason: reason
           }
@@ -534,7 +538,7 @@ export class CustomerSettlementsService {
         action: fullyReversed
           ? "CUSTOMER_RECEIPT_FULLY_REVERSED"
           : "CUSTOMER_RECEIPT_PARTIALLY_REVERSED",
-        actorId: actor.id,
+        actorId: actor.userId,
         targetType: "customerReceipt",
         targetId: receipt.id,
         metadata: {
@@ -687,7 +691,7 @@ export class CustomerSettlementsService {
   }
 
   private async assertCanViewCustomer(
-    actor: UserWithStoreMember,
+    actor: AccessSubject,
     storeId: string,
     customerId: string
   ) {
@@ -713,27 +717,16 @@ export class CustomerSettlementsService {
     }
   }
 
-  private async assertCanManageReceipts(actor: UserWithStoreMember, storeId: string) {
+  private async assertCanManageReceipts(actor: AccessSubject, storeId: string) {
     if (!await this.canAccess(actor, "finance", "write", storeId)) {
       throw new ForbiddenException("仅店长或财务可以管理企业统一收款");
     }
   }
 
-  private async assertCanReverseReceipt(actor: UserWithStoreMember, storeId: string) {
+  private async assertCanReverseReceipt(actor: AccessSubject, storeId: string) {
     if (!await this.canAccess(actor, "finance", "write", storeId)) {
       throw new ForbiddenException("仅财务可以执行收款红冲");
     }
-  }
-
-  private async withStoreMember(
-    user: AuthenticatedSettlementUser
-  ): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) return user;
-    const storeMember = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember };
   }
 
   private async recordAudit(

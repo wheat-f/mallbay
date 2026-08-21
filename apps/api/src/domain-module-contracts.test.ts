@@ -32,7 +32,7 @@ test("platform and access seams delegate through stable contracts", async () => 
   const access = new AccessContext({
     getForUser: async (userId: string) => ({ userId }),
     authorize: async () => true,
-    buildScopeFilter: async () => ({})
+    buildScopeFacts: async () => ({ allowed: true, global: false, storeIds: ["store-1"] })
   } as never);
   assert.deepEqual(await access.resolve("user-1"), { userId: "user-1" });
   assert.deepEqual(await access.resolve({ userId: "user-1" }), { userId: "user-1" });
@@ -42,6 +42,23 @@ test("platform and access seams delegate through stable contracts", async () => 
     userId: "user-1",
     capability: "orders",
     action: "read",
-    context: { storeId: "store-1" }
+    context: { storeId: "store-1" },
+    scope: { allowed: true, global: false, storeIds: ["store-1"] }
   });
+});
+
+test("AccessContext.require preserves the stable scope denial reason", async () => {
+  const access = new AccessContext({
+    buildScopeFacts: async () => ({ allowed: false, global: false, storeIds: ["store-a"], reason: "STORE_OUT_OF_SCOPE" }),
+    authorize: async () => false,
+    getForUser: async () => ({})
+  } as never);
+
+  await assert.rejects(
+    () => access.require({ userId: "user-1" }, "orders", "read", { storeId: "store-b" }),
+    (error: unknown) => {
+      const response = (error as { getResponse?: () => { code?: string } }).getResponse?.();
+      return response?.code === "STORE_OUT_OF_SCOPE";
+    }
+  );
 });

@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
   Optional
@@ -22,9 +21,7 @@ export class ChangeStoreManagerUseCase {
     @Optional() private readonly auditWriter?: AuditEventWriter
   ) {}
 
-  async execute(isAuditor: boolean, storeId: string, dto: ChangeManagerDto) {
-    if (!isAuditor) throw new ForbiddenException("无权限");
-
+  async execute(actorId: string, storeId: string, dto: ChangeManagerDto) {
     const store = await this.stores.findStore(storeId);
     if (!store) throw new NotFoundException("门店不存在");
 

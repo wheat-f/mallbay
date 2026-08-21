@@ -1,13 +1,12 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { FinanceApprovalAction, FinanceApprovalNode, FinanceApprovalStatus, FinanceApplicationType, Prisma } from "@prisma/client";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateExpenseDto, ResubmitExpenseDto, ReviewExpenseDto } from "./dto/finance.dto";
 import { FINANCE_CAPABILITIES } from "./domain/finance-capabilities";
 
-type FinanceActor = UserWithStoreMember & { username?: string };
+type FinanceActor = { id: string; username?: string };
 
 export function buildFinanceApplicationNo(type: "EXPENSE" | "REIMBURSEMENT", now = new Date()) {
   const date = now.toISOString().slice(0, 10).replaceAll("-", "");
@@ -19,8 +18,7 @@ export class ExpenseWorkflowService {
   constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
 
   async create(actor: FinanceActor, dto: CreateExpenseDto) {
-    actor = await this.withStoreMember(actor);
-    if (!await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.application.capability, FINANCE_CAPABILITIES.application.submit, { storeId: dto.storeId, ownerId: actor.id })) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can({ userId: actor.id }, FINANCE_CAPABILITIES.application.capability, FINANCE_CAPABILITIES.application.submit, { storeId: dto.storeId, ownerId: actor.id })) throw new ForbiddenException("无权限");
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
       const expense = await tx.expenseApplication.create({
@@ -51,11 +49,10 @@ export class ExpenseWorkflowService {
   }
 
   async review(actor: FinanceActor, id: string, dto: ReviewExpenseDto) {
-    actor = await this.withStoreMember(actor);
     if (dto.decision !== "APPROVE" && dto.decision !== "REJECT") throw new ConflictException("只支持通过或驳回");
     const expense = await this.prisma.expenseApplication.findUnique({ where: { id } });
     if (!expense) throw new NotFoundException("费用申请不存在");
-    if (!await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.expense.capability, FINANCE_CAPABILITIES.expense.review, { storeId: expense.storeId })) throw new ForbiddenException("无权限审批费用申请");
+    if (!await this.accessContext.can({ userId: actor.id }, FINANCE_CAPABILITIES.expense.capability, FINANCE_CAPABILITIES.expense.review, { storeId: expense.storeId })) throw new ForbiddenException("无权限审批费用申请");
     if (expense.status !== FinanceApprovalStatus.PENDING) throw new ConflictException("只有待审批费用可以处理");
     const status = dto.decision === "APPROVE" ? FinanceApprovalStatus.APPROVED : FinanceApprovalStatus.REJECTED;
     return this.prisma.$transaction(async (tx) => {
@@ -79,10 +76,9 @@ export class ExpenseWorkflowService {
   }
 
   async withdraw(actor: FinanceActor, id: string, note?: string) {
-    actor = await this.withStoreMember(actor);
     const expense = await this.prisma.expenseApplication.findUnique({ where: { id } });
     if (!expense) throw new NotFoundException("费用申请不存在");
-    if (!await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, { storeId: expense.storeId, ownerId: expense.applicantId })) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can({ userId: actor.id }, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, { storeId: expense.storeId, ownerId: expense.applicantId })) throw new ForbiddenException("无权限");
     if (expense.status !== FinanceApprovalStatus.PENDING) throw new ConflictException("只有待审批费用可以撤回");
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.expenseApplication.update({ where: { id }, data: { status: FinanceApprovalStatus.CANCELLED, currentNode: null, reviewNote: note } });
@@ -94,10 +90,9 @@ export class ExpenseWorkflowService {
   }
 
   async resubmit(actor: FinanceActor, id: string, dto: ResubmitExpenseDto) {
-    actor = await this.withStoreMember(actor);
     const expense = await this.prisma.expenseApplication.findUnique({ where: { id } });
     if (!expense) throw new NotFoundException("费用申请不存在");
-    if (!await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, { storeId: expense.storeId, ownerId: expense.applicantId })) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can({ userId: actor.id }, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, { storeId: expense.storeId, ownerId: expense.applicantId })) throw new ForbiddenException("无权限");
     if (expense.status !== FinanceApprovalStatus.REJECTED) throw new ConflictException("只有已驳回费用可以重新提交");
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
@@ -112,12 +107,4 @@ export class ExpenseWorkflowService {
     });
   }
 
-  private async withStoreMember(actor: FinanceActor): Promise<FinanceActor> {
-    if (actor.storeMember !== undefined) return actor;
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: actor.id },
-      select: { storeId: true, position: true }
-    });
-    return { ...actor, storeMember: member };
-  }
 }

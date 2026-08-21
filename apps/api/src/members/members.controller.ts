@@ -4,7 +4,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { InviteMemberDto } from "./dto/invite-member.dto";
 import { MembersService } from "./members.service";
 
-type AuthRequest = Request & { user: { id: string; isAuditor: boolean } };
+type AuthRequest = Request & { user: { id: string } };
 
 @UseGuards(JwtAuthGuard)
 @Controller()

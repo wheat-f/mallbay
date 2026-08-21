@@ -4,7 +4,8 @@ import { InventoryMovementType, ProductUnit, StorePosition } from "@prisma/clien
 import { InventoryService } from "./inventory.service";
 
 const inventoryAccess = {
-  can: async (actorId: string, capability: string, action: string) => {
+  can: async (actor: { userId: string }, capability: string, action: string) => {
+    const actorId = actor.userId;
     const position = actorId.includes("manager") ? StorePosition.MANAGER
       : actorId.includes("purchasing") ? StorePosition.PURCHASING
         : actorId.includes("finance") ? StorePosition.FINANCE
@@ -41,7 +42,7 @@ test("InventoryService authorizes inventory facts through AccessContext when ava
     { storeId: "store-1" } as never
   );
 
-  assert.deepEqual(decisions, [["purchasing-1", "inventory", "read", { storeId: "store-1" }]]);
+  assert.deepEqual(decisions, [[{ userId: "purchasing-1" }, "inventory", "read", { storeId: "store-1" }]]);
 });
 
 test("InventoryService creates a batch and purchase-in movement", async () => {

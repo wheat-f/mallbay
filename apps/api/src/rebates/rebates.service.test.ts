@@ -4,14 +4,18 @@ import { OrderStatus, RebateStatus, StorePosition } from "@prisma/client";
 import { RebatesService } from "./rebates.service";
 
 const rebateAccess = {
-  can: async () => true,
-  resolve: async (actorId: string) => ({
-    roles: [{
-      roleCode: actorId.startsWith("sales") ? "SALES" : actorId.startsWith("finance") ? "FINANCE" : actorId.startsWith("cs") ? "CUSTOMER_SERVICE" : "MANAGER",
-      roleName: "测试角色",
-      scopeType: "STORE",
-      scopeIds: ["store-1"]
-    }]
+  can: async (actor: { userId: string }, capability: string, action: string, context: { ownerId?: string } = {}) => {
+    if (capability === "rebates" && action === "apply") return actor.userId.startsWith("manager") || actor.userId.startsWith("cs") || context.ownerId === actor.userId;
+    if (capability === "rebates" && action === "review") return actor.userId.startsWith("manager");
+    if (capability === "rebates" && action === "pay") return actor.userId.startsWith("finance");
+    if (capability === "finance" && action === "write") return actor.userId.startsWith("manager") || actor.userId.startsWith("finance") || context.ownerId === actor.userId;
+    return true;
+  },
+  scope: async (actor: { userId: string }) => ({
+    allowed: true,
+    global: false,
+    storeIds: ["store-1"],
+    ...(actor.userId.startsWith("sales") ? { ownerId: actor.userId } : {})
   })
 };
 

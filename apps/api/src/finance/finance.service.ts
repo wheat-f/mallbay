@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { ConflictException, ForbiddenException, forwardRef, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { FinanceApprovalStatus, PaymentDirection, PaymentRecordType, Prisma } from "@prisma/client";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateExpenseDto, CreateReimbursementDto, ListFinanceDto, ReviewFinanceDto } from "./dto/finance.dto";
@@ -9,7 +8,14 @@ import { ExpenseWorkflowService } from "./expense-workflow.service";
 import { ReimbursementWorkflowService } from "./reimbursement-workflow.service";
 import { FINANCE_CAPABILITIES } from "./domain/finance-capabilities";
 
-export type AuthenticatedFinanceUser = UserWithStoreMember & { username?: string };
+export type AuthenticatedFinanceUser = {
+  id: string;
+  username?: string;
+  /** @deprecated request identity no longer uses actor shape fields. */
+  isAuditor?: boolean;
+  /** @deprecated request identity no longer uses actor shape fields. */
+  storeMember?: { storeId: string; position: string } | null;
+};
 
 @Injectable()
 export class FinanceService {
@@ -21,7 +27,7 @@ export class FinanceService {
   ) {}
 
   private canAccess(actor: AuthenticatedFinanceUser, capability: string, action: string, storeId: string, ownerId?: string) {
-    if (this.accessContext) return this.accessContext.can(actor.id, capability, action, { storeId, ownerId });
+    if (this.accessContext) return this.accessContext.can({ userId: actor.id }, capability, action, { storeId, ownerId });
     throw new Error("FinanceService access context is not configured");
   }
 
@@ -145,7 +151,7 @@ export class FinanceService {
   }
 
   async createExpense(user: AuthenticatedFinanceUser, dto: CreateExpenseDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     if (this.expenseWorkflow) return this.expenseWorkflow.create(actor, dto);
     if (!await this.canAccess(actor, FINANCE_CAPABILITIES.application.capability, FINANCE_CAPABILITIES.application.submit, dto.storeId, actor.id)) throw new ForbiddenException("无权限");
     return this.prisma.expenseApplication.create({
@@ -162,13 +168,13 @@ export class FinanceService {
   }
 
   async listExpenses(user: AuthenticatedFinanceUser, query: ListFinanceDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, query.storeId)) throw new ForbiddenException("无权限");
     return this.prisma.expenseApplication.findMany({ where: { storeId: query.storeId }, orderBy: { createdAt: "desc" } });
   }
 
   async createReimbursement(user: AuthenticatedFinanceUser, dto: CreateReimbursementDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     if (this.reimbursementWorkflow) return this.reimbursementWorkflow.create(actor, dto);
     if (!await this.canAccess(actor, FINANCE_CAPABILITIES.application.capability, FINANCE_CAPABILITIES.application.submit, dto.storeId, actor.id)) throw new ForbiddenException("无权限");
     return this.prisma.reimbursementApplication.create({
@@ -186,13 +192,13 @@ export class FinanceService {
   }
 
   async listReimbursements(user: AuthenticatedFinanceUser, query: ListFinanceDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, query.storeId)) throw new ForbiddenException("无权限");
     return this.prisma.reimbursementApplication.findMany({ where: { storeId: query.storeId }, orderBy: { createdAt: "desc" } });
   }
 
   async approveReimbursement(user: AuthenticatedFinanceUser, id: string, dto: ReviewFinanceDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     if (!this.reimbursementWorkflow) {
       throw new Error("FinanceService reimbursement workflow is not configured");
     }
@@ -209,13 +215,13 @@ export class FinanceService {
   }
 
   async listPaymentRecords(user: AuthenticatedFinanceUser, query: ListFinanceDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, query.storeId)) throw new ForbiddenException("无权限");
     return this.prisma.paymentRecord.findMany({ where: { storeId: query.storeId }, orderBy: { createdAt: "desc" } });
   }
 
   async getExpenseDetail(user: AuthenticatedFinanceUser, id: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     const expense = await this.prisma.expenseApplication.findUnique({ where: { id } });
     if (!expense) throw new NotFoundException("费用申请不存在");
     if (!await this.canAccess(actor, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, expense.storeId, expense.applicantId) &&
@@ -223,12 +229,4 @@ export class FinanceService {
     return this.prisma.expenseApplication.findUnique({ where: { id }, include: { applicant: true, reimbursements: true } });
   }
 
-  private async withStoreMember(user: AuthenticatedFinanceUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) return user;
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
-  }
 }

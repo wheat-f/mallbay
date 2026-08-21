@@ -1,7 +1,8 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { PermissionBindingStatus, PermissionPolicyVersionStatus, PermissionRoleStatus, Prisma, PermissionScopeType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { RuntimeAccessSnapshotStore } from "./domain/runtime-access-snapshot.store";
+import type { AccessDenialReason, AccessScopeFacts } from "./domain/access-context";
 
 export type PermissionContext = {
   storeId?: string;
@@ -36,18 +37,20 @@ const legacyPermissionMap: Record<string, Array<[string, string, string]>> = {
     ["warranties", "read", "STORE"], ["warranties", "write", "STORE"],
     ["construction", "read", "STORE"], ["construction", "write", "STORE"],
     ["inventory", "read", "STORE"], ["inventory", "write", "STORE"],
-    ["products", "read", "STORE"], ["products", "write", "STORE"],
+    ["products", "read", "STORE"], ["products", "write", "STORE"], ["products", "suggested-price-write", "STORE"],
     ["purchase", "read", "STORE"], ["purchase", "write", "STORE"],
     ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"],
     ["reports", "read", "STORE"],
     ["finance", "read", "STORE"], ["finance", "write", "STORE"],
     ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"],
-    ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.expense", "review", "STORE"]
+    ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.expense", "review", "STORE"],
+    ["rebates", "read", "STORE"], ["rebates", "review", "STORE"], ["commissions", "write", "STORE"],
+    ["returns", "write", "STORE"], ["returns", "create", "STORE"], ["returns", "manage", "STORE"], ["returns", "approve", "STORE"], ["returns", "finance", "STORE"]
   ],
-  SALES: [["customers", "read", "OWN"], ["customers", "write", "OWN"], ["orders", "read", "OWN"], ["orders", "write", "OWN"], ["warranties", "read", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
-  CUSTOMER_SERVICE: [["customers", "read", "STORE"], ["customers", "write", "STORE"], ["orders", "read", "STORE"], ["orders", "write", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
-  PURCHASING: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["inventory", "read", "STORE"], ["inventory", "write", "STORE"], ["products", "read", "STORE"], ["products", "write", "STORE"], ["purchase", "read", "STORE"], ["purchase", "write", "STORE"], ["after-sales", "read", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
-  FINANCE: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["finance", "read", "STORE"], ["finance", "write", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"], ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.reimbursement", "review", "STORE"], ["finance.reimbursement", "pay", "STORE"]],
+  SALES: [["customers", "read", "OWN"], ["customers", "write", "OWN"], ["orders", "read", "OWN"], ["orders", "write", "OWN"], ["warranties", "read", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"], ["rebates", "read", "OWN"], ["rebates", "apply", "OWN"]],
+  CUSTOMER_SERVICE: [["customers", "read", "STORE"], ["customers", "write", "STORE"], ["orders", "read", "STORE"], ["orders", "write", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"], ["rebates", "read", "STORE"], ["rebates", "apply", "STORE"]],
+  PURCHASING: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["inventory", "read", "STORE"], ["inventory", "write", "STORE"], ["products", "read", "STORE"], ["purchase", "read", "STORE"], ["purchase", "write", "STORE"], ["after-sales", "read", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
+  FINANCE: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["finance", "read", "STORE"], ["finance", "write", "STORE"], ["finance.cost", "read", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"], ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.reimbursement", "review", "STORE"], ["finance.reimbursement", "pay", "STORE"], ["rebates", "read", "STORE"], ["rebates", "pay", "STORE"], ["commissions", "write", "STORE"]],
   SCHEDULER: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"], ["construction", "read", "STORE"], ["construction", "write", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
   CONSTRUCTION: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["construction", "read", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
   APPRENTICE: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["construction", "read", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]]
@@ -57,7 +60,10 @@ const legacyPermissionMap: Record<string, Array<[string, string, string]>> = {
 export class PermissionsService {
   private readonly resultCache = new Map<string, { expiresAt: number; result: PermissionResult }>();
   private readonly cacheTtlMs = 30_000;
-  constructor(private readonly prisma: PrismaService, private readonly snapshotStore: RuntimeAccessSnapshotStore) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(RuntimeAccessSnapshotStore) private readonly snapshotStore: RuntimeAccessSnapshotStore
+  ) {}
 
   async getForUser(userId: string, context: PermissionContext = {}): Promise<PermissionResult> {
     const cacheKey = userId + ":" + (context.storeId ?? "*");
@@ -192,24 +198,9 @@ export class PermissionsService {
   }
 
   async authorize(userId: string, permissionCode: string, action: string, context: PermissionContext = {}): Promise<boolean> {
-    const result = await this.getForUser(userId, context);
-    const resource = permissionCode.split(".")[0];
-    const requestedOwner = context.ownerId;
-    let allowed = false;
-    for (const permission of result.permissions) {
-      if (permission.code !== permissionCode && permission.code !== resource) continue;
-      if (!permission.actions.includes(action)) continue;
-      for (const binding of permission.bindingScopes ?? []) {
-        const coversStore = binding.scopeType === PermissionScopeType.HQ ||
-          Boolean(context.storeId && binding.scopeIds.includes(context.storeId));
-        if (!coversStore) continue;
-        if (permission.scopes.includes("GLOBAL") && binding.scopeType === PermissionScopeType.HQ) allowed = true;
-        if (permission.scopes.includes("STORE") && context.storeId) allowed = true;
-        if (permission.scopes.includes("OWN") && requestedOwner === userId && context.storeId) allowed = true;
-        if (allowed) break;
-      }
-      if (allowed) break;
-    }
+    const result = await this.getForUser(userId);
+    const scope = await this.buildScopeFacts(userId, permissionCode, action, context, result);
+    const allowed = scope.allowed;
     if (!allowed && this.prisma.auditEvent?.create) {
       try {
         await this.prisma.auditEvent.create({
@@ -229,25 +220,58 @@ export class PermissionsService {
     return allowed;
   }
 
-  async buildScopeFilter(userId: string, permissionCode: string, action: string, context: PermissionContext = {}) {
-    const result = await this.getForUser(userId, context);
-    const permission = result.permissions.find((item) =>
-      (item.code === permissionCode || item.code === permissionCode.split(".")[0]) && item.actions.includes(action)
+  async buildScopeFacts(
+    userId: string,
+    permissionCode: string,
+    action: string,
+    context: PermissionContext = {},
+    resolved?: PermissionResult
+  ): Promise<AccessScopeFacts> {
+    const result = resolved ?? await this.getForUser(userId);
+    const resource = permissionCode.split(".")[0];
+    const permissions = result.permissions.filter((item) =>
+      (item.code === permissionCode || item.code === resource) && item.actions.includes(action)
     );
-    const scopes = permission?.scopes ?? [];
-    const bindingScopes = permission?.bindingScopes ?? [];
-    const coversStore = bindingScopes.some((binding) =>
-      binding.scopeType === PermissionScopeType.HQ ||
-      Boolean(context.storeId && binding.scopeIds.includes(context.storeId))
-    );
-    const global = scopes.includes("GLOBAL") && bindingScopes.some((binding) => binding.scopeType === PermissionScopeType.HQ);
-    const store = Boolean(context.storeId && coversStore && scopes.includes("STORE"));
-    const own = Boolean(context.storeId && context.ownerId === userId && coversStore && scopes.includes("OWN"));
+    if (permissions.length === 0) return { allowed: false, global: false, storeIds: [], reason: "ACCESS_DENIED" };
+
+    const storeIds = new Set<string>();
+    let global = false;
+    let hasStoreGrant = false;
+    let hasOwnGrant = false;
+    for (const permission of permissions) {
+      for (const binding of permission.bindingScopes ?? []) {
+        if (permission.scopes.includes("GLOBAL") && binding.scopeType === PermissionScopeType.HQ) global = true;
+        if (permission.scopes.includes("STORE")) {
+          hasStoreGrant = true;
+          for (const storeId of binding.scopeIds) storeIds.add(storeId);
+        }
+        if (permission.scopes.includes("OWN")) {
+          hasOwnGrant = true;
+          for (const storeId of binding.scopeIds) storeIds.add(storeId);
+        }
+      }
+    }
+
+    const requestedStoreIsKnown = context.storeId === undefined || global || storeIds.has(context.storeId);
+    const storeAllowed = global || (context.storeId === undefined ? storeIds.size > 0 : storeIds.has(context.storeId));
+    const ownOnlyRequest = hasOwnGrant && !hasStoreGrant;
+    // An OWN-only capability cannot authorize an unspecified target. Callers
+    // must provide the resource owner so list/detail mappings cannot silently
+    // widen a personal scope into a store-wide query.
+    const ownerAllowed = !ownOnlyRequest || context.ownerId === userId;
+    const allowed = requestedStoreIsKnown && storeAllowed && (!ownOnlyRequest || ownerAllowed);
+    let reason: AccessDenialReason | undefined;
+    if (!allowed) {
+      if (context.ownerId && ownOnlyRequest && !ownerAllowed) reason = "OWNER_OUT_OF_SCOPE";
+      else if (context.storeId && !requestedStoreIsKnown) reason = "STORE_OUT_OF_SCOPE";
+      else reason = "SCOPE_UNRESOLVED";
+    }
     return {
-      allowed: global || store || own,
-      scopes,
-      // Consumers can merge this filter into their resource-specific query.
-      where: global ? {} : own ? { storeId: context.storeId, ownerId: userId } : store ? { storeId: context.storeId } : { id: "__permission_denied__" }
+      allowed,
+      global,
+      storeIds: [...storeIds].sort(),
+      ...(!global && hasOwnGrant && !hasStoreGrant ? { ownerId: userId } : {}),
+      ...(reason ? { reason } : {})
     };
   }
   private async applyPolicyPayload(tx: Prisma.TransactionClient, payload: Prisma.JsonValue) {
@@ -551,7 +575,15 @@ export class PermissionsService {
   ) {
     for (const member of members) {
       if (context.storeId && context.storeId !== member.storeId) continue;
-      for (const [resource, action, scope] of legacyPermissionMap[member.position] ?? []) grants.push({ code: resource, action, scope, bindingScope: { scopeType: PermissionScopeType.STORE, scopeIds: [member.storeId] } });
+      const mapped = legacyPermissionMap[member.position] ?? [];
+      const returns = member.position === "MANAGER"
+        ? [["write", "STORE"], ["create", "STORE"], ["manage", "STORE"], ["approve", "STORE"], ["finance", "STORE"]]
+        : member.position === "SALES" || member.position === "CUSTOMER_SERVICE"
+          ? [["write", "STORE"], ["create", "STORE"]]
+          : member.position === "PURCHASING"
+            ? [["write", "STORE"], ["manage", "STORE"]]
+            : member.position === "FINANCE" ? [["write", "STORE"], ["finance", "STORE"]] : [];
+      for (const [resource, action, scope] of [...mapped, ...returns.map(([action, scope]) => ["returns", action, scope] as [string, string, string])]) grants.push({ code: resource, action, scope, bindingScope: { scopeType: PermissionScopeType.STORE, scopeIds: [member.storeId] } });
     }
   }
 }

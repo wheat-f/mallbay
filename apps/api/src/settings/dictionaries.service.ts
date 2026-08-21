@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { DictionaryMode, DictionaryStatus, Prisma } from "@prisma/client";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { PermissionsService } from "../permissions/permissions.service";
 import { AccessContext } from "../permissions/domain/access-context";
@@ -57,7 +56,7 @@ const FIXED_DICTIONARY_CODES = new Set([
   "VEHICLE_TYPE"
 ]);
 
-export type AuthenticatedSettingsUser = UserWithStoreMember & { username?: string };
+export type AuthenticatedSettingsUser = { id: string; username?: string };
 
 @Injectable()
 export class DictionariesService {
@@ -71,32 +70,23 @@ export class DictionariesService {
 
   private authorize(userId: string, capability: string, action: string, context: { storeId?: string } = {}) {
     return this.accessContext
-      ? this.accessContext.can(userId, capability, action, context)
+      ? this.accessContext.can({ userId }, capability, action, context)
       : this.permissions.authorize(userId, capability, action, context);
   }
 
-  private async actor(user: AuthenticatedSettingsUser) {
-    if (user.storeMember !== undefined) return user;
-    const member = await this.prisma.storeMember.findUnique({ where: { userId: user.id } });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
-  }
-
   private async assertManager(user: AuthenticatedSettingsUser, storeId: string) {
-    const actor = await this.actor(user);
     // Legacy position !== "MANAGER" guard is now represented by the published settings.write permission.
-    if (!(await this.authorize(actor.id, "settings", "write", { storeId }))) {
+    if (!(await this.authorize(user.id, "settings", "write", { storeId }))) {
       throw new ForbiddenException("仅当前门店店长可维护门店基础字典");
     }
-    return actor;
+    return user;
   }
 
   private async assertStoreReader(user: AuthenticatedSettingsUser, storeId: string) {
-    const actor = await this.actor(user);
-    if (await this.authorize(actor.id, "settings", "read", { storeId })) return actor;
-    if (!actor.storeMember || actor.storeMember.storeId !== storeId) {
+    if (await this.authorize(user.id, "settings", "read", { storeId })) return user;
+    {
       throw new ForbiddenException("无权读取其他门店的基础字典");
     }
-    return actor;
   }
   private async recordAudit(actorId: string, action: string, targetId: string, storeId: string, metadata: Record<string, unknown> = {}) {
     await this.prisma.auditEvent.create({ data: { action, actorId, storeId, targetType: "Dictionary", targetId, metadata: metadata as Prisma.InputJsonValue } });
@@ -142,23 +132,25 @@ export class DictionariesService {
   }
 
   async list(user: AuthenticatedSettingsUser, storeId?: string) {
-    const actor = await this.actor(user);
-    if (await this.authorize(actor.id, "settings", "read") && !storeId) {
+    const scope = this.accessContext
+      ? await this.accessContext.scope({ userId: user.id }, "settings", "read")
+      : await this.permissions.buildScopeFacts(user.id, "settings", "read");
+    if (scope.global && !storeId) {
       const [rows, templates] = await Promise.all([
         this.prisma.dictionary.findMany({ orderBy: { createdAt: "asc" }, include: { dictionaryItems: true } }),
         this.prisma.dictionaryTemplate.findMany({ orderBy: { createdAt: "asc" }, include: { templateItems: true } })
       ]);
       return [...templates.map((row) => this.serializeTemplate(row, false)), ...rows.map((row) => this.serialize(row))];
     }
-    const targetStoreId = storeId ?? actor.storeMember?.storeId;
-    if (!targetStoreId) throw new ForbiddenException("未绑定门店");
-    await this.assertStoreReader(actor, targetStoreId);
-    await this.ensureFixedDefaultsIfMissing(targetStoreId, actor.id);
-    const cacheKey = `${actor.id}:${targetStoreId}`;
+    const targetStoreIds = storeId ? [storeId] : scope.storeIds;
+    if (!targetStoreIds.length) throw new ForbiddenException({ code: scope.reason ?? "SCOPE_UNRESOLVED", message: "未解析到可访问门店" });
+    await Promise.all(targetStoreIds.map((id) => this.assertStoreReader(user, id)));
+    await Promise.all(targetStoreIds.map((id) => this.ensureFixedDefaultsIfMissing(id, user.id)));
+    const cacheKey = `${user.id}:${targetStoreIds.join(",")}`;
     const cached = this.listCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.value;
     const [rows, templates] = await Promise.all([
-      this.prisma.dictionary.findMany({ where: { storeId: targetStoreId }, orderBy: { createdAt: "asc" }, include: { dictionaryItems: true } }),
+      this.prisma.dictionary.findMany({ where: { storeId: { in: targetStoreIds } }, orderBy: { createdAt: "asc" }, include: { dictionaryItems: true } }),
       this.prisma.dictionaryTemplate.findMany({ where: { status: DictionaryStatus.ACTIVE }, orderBy: { createdAt: "asc" }, include: { templateItems: true } })
     ]);
     const value = [...templates.map((row) => this.serializeTemplate(row, true)), ...rows.map((row) => this.serialize(row))];
@@ -176,7 +168,7 @@ export class DictionariesService {
   }
 
   async previewDefaultBackfill(user: AuthenticatedSettingsUser, storeId: string) {
-    if (!(await this.authorize(user.id, "settings", "write"))) throw new ForbiddenException("仅总部管理员可补齐默认字典");
+    if (!(await this.authorize(user.id, "settings", "write", { storeId }))) throw new ForbiddenException("仅总部管理员可补齐默认字典");
     const missing: Array<{ code: string; name: string; itemCount: number; missingItems?: string[] }> = [];
     for (const definition of DEFAULT_DICTIONARIES) {
       const dictionary = await this.prisma.dictionary.findUnique({ where: { storeId_code: { storeId, code: definition.code } }, include: { dictionaryItems: { select: { code: true, name: true } } } });
@@ -192,25 +184,26 @@ export class DictionariesService {
   }
 
   async backfillDefaults(user: AuthenticatedSettingsUser, storeId: string) {
-    const actor = await this.actor(user);
-    if (!(await this.authorize(actor.id, "settings", "write"))) throw new ForbiddenException("仅总部管理员可补齐默认字典");
+    if (!(await this.authorize(user.id, "settings", "write", { storeId }))) throw new ForbiddenException("仅总部管理员可补齐默认字典");
     const preview = await this.previewDefaultBackfill(user, storeId);
-    const result = await this.initializeDefaultsForStore(storeId, actor.id);
+    const result = await this.initializeDefaultsForStore(storeId, user.id);
     return { ...result, missingBefore: preview.missingCount, missingItemCountBefore: preview.missingItemCount };
   }
 
   async catalog(user: AuthenticatedSettingsUser, query: DictionaryCatalogQueryDto, storeId?: string) {
-    const actor = await this.actor(user);
-    const targetStoreId = storeId ?? actor.storeMember?.storeId;
-    if (!targetStoreId && !(await this.authorize(actor.id, "settings", "read"))) throw new ForbiddenException("未绑定门店");
-    if (targetStoreId) {
-      await this.assertStoreReader(actor, targetStoreId);
-      await this.ensureFixedDefaultsIfMissing(targetStoreId, actor.id);
+    const scope = this.accessContext
+      ? await this.accessContext.scope({ userId: user.id }, "settings", "read")
+      : await this.permissions.buildScopeFacts(user.id, "settings", "read");
+    const targetStoreIds = storeId ? [storeId] : scope.global ? [] : scope.storeIds;
+    if (!scope.global && !targetStoreIds.length) throw new ForbiddenException({ code: scope.reason ?? "SCOPE_UNRESOLVED", message: "未解析到可访问门店" });
+    if (targetStoreIds.length) {
+      await Promise.all(targetStoreIds.map((id) => this.assertStoreReader(user, id)));
+      await Promise.all(targetStoreIds.map((id) => this.ensureFixedDefaultsIfMissing(id, user.id)));
     }
     const { page, pageSize, skip } = normalizePagination(query.page, query.pageSize);
     const keyword = query.keyword?.trim();
     const where = {
-      ...(targetStoreId ? { storeId: targetStoreId } : {}),
+      ...(targetStoreIds.length ? { storeId: { in: targetStoreIds } } : {}),
       ...(keyword ? { OR: [{ name: { contains: keyword, mode: "insensitive" as const } }, { code: { contains: keyword, mode: "insensitive" as const } }] } : {})
     };
     const [total, rows] = await Promise.all([
@@ -242,7 +235,7 @@ export class DictionariesService {
       }
     });
     const dictionaryItems = await this.syncItems(row.id, dto.items);
-    await this.recordAudit((await this.actor(user)).id, "settings.dictionary.created", row.id, row.storeId, { code: row.code, name: row.name });
+    await this.recordAudit(user.id, "settings.dictionary.created", row.id, row.storeId, { code: row.code, name: row.name });
     this.listCache.clear();
     return this.serialize({ ...row, dictionaryItems });
   }
@@ -269,7 +262,7 @@ export class DictionariesService {
         ...(dto.allowDisableItems === undefined ? {} : { allowDisableItems: dto.allowDisableItems }),
         ...(dto.allowHierarchy === undefined ? {} : { allowHierarchy: dto.allowHierarchy }),
         version: { increment: 1 },
-        updatedById: (await this.actor(user)).id
+        updatedById: user.id
       }
     });
     const dictionaryItems = dto.items === undefined
@@ -280,7 +273,7 @@ export class DictionariesService {
         FIXED_DICTIONARY_CODES.has(row.code),
         DEFAULT_DICTIONARIES.find((item) => item.code === row.code)?.itemCodes
       );
-    await this.recordAudit((await this.actor(user)).id, "settings.dictionary.updated", row.id, row.storeId, { code: row.code, status: row.status });
+    await this.recordAudit(user.id, "settings.dictionary.updated", row.id, row.storeId, { code: row.code, status: row.status });
     this.listCache.clear();
     return this.serialize({ ...row, dictionaryItems });
   }

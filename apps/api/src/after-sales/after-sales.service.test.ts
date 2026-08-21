@@ -4,7 +4,8 @@ import { AfterSaleCostCategory, AfterSaleCostDirection, AfterSaleCostStatus, Aft
 import { AfterSalesService } from "./after-sales.service";
 
 const afterSalesAccess = {
-  can: async (actorId: string, capability: string, action: string, context: { ownerId?: string } = {}) => {
+  can: async (actor: { userId: string }, capability: string, action: string, context: { ownerId?: string } = {}) => {
+    const actorId = actor.userId;
     const role = actorId.startsWith("sales") ? "SALES"
       : actorId.startsWith("construction") ? "CONSTRUCTION"
         : actorId.startsWith("apprentice") ? "APPRENTICE"
@@ -18,21 +19,17 @@ const afterSalesAccess = {
       return ["CONSTRUCTION", "APPRENTICE"].includes(role) && context.ownerId === actorId;
     }
     if (capability === "finance" && action === "write") return role === "FINANCE" || role === "MANAGER";
+    if (capability === "finance.cost" && action === "read") return role === "FINANCE";
     if (capability === "store" && action === "write") return role === "MANAGER";
     return false;
   },
-  resolve: async (actorId: string, context: { storeId?: string }) => ({
-    userId: actorId,
-    policyVersion: 1,
-    bindingVersion: 1,
-    roles: [{
-      roleCode: actorId.startsWith("sales") ? "SALES" : actorId.startsWith("construction") ? "CONSTRUCTION" : actorId.startsWith("apprentice") || actorId.startsWith("worker") ? "APPRENTICE" : actorId.startsWith("finance") ? "FINANCE" : "MANAGER",
-      roleName: "test",
-      scopeType: "STORE",
-      scopeIds: context.storeId ? [context.storeId] : []
-    }],
-    permissions: [],
-    generatedAt: new Date().toISOString()
+  scope: async (actor: { userId: string }, capability: string, action: string, _context: { ownerId?: string }) => ({
+    allowed: true,
+    global: false,
+    storeIds: ["store-1"],
+    ...((capability === "orders" && action === "read" && actor.userId.startsWith("sales")) ||
+      (capability === "after-sales" && action === "write" && (actor.userId.startsWith("construction") || actor.userId.startsWith("apprentice") || actor.userId.startsWith("worker")))
+      ? { ownerId: actor.userId } : {})
   })
 };
 
@@ -153,9 +150,14 @@ test("AfterSalesService lets assigned workers submit after-sale evidence only", 
   const writes: unknown[] = [];
   const prisma = {
     afterSale: {
-      findFirst: async (args: { where: { assignments?: { some?: { workerUserId?: string } } } }) => {
-        if (args.where.assignments?.some?.workerUserId === "worker-1") {
-          return { id: "after-sale-1", storeId: "store-1", status: AfterSaleStatus.ASSIGNED };
+      findFirst: async (args: { where: { id?: string } }) => {
+        if (args.where.id === "after-sale-1") {
+          return {
+            id: "after-sale-1",
+            storeId: "store-1",
+            status: AfterSaleStatus.ASSIGNED,
+            assignments: [{ workerUserId: "worker-1" }]
+          };
         }
         return null;
       }
@@ -198,7 +200,7 @@ test("AfterSalesService lets assigned workers submit after-sale evidence only", 
         "after-sale-1",
         { constructionPhotos: [{ url: "data:image/png;base64,other" }] }
       ),
-    /售后单不存在/
+    /无权限/
   );
 });
 
@@ -259,7 +261,7 @@ test("AfterSalesService returns after-sale detail with assigned workers and pena
     "after-sale-1"
   );
 
-  assert.deepEqual((calls[0] as { where: unknown }).where, { id: "after-sale-1", storeId: "store-1" });
+  assert.deepEqual((calls[0] as { where: unknown }).where, { id: "after-sale-1" });
   const serialized = JSON.stringify(calls[0]);
   assert.match(serialized, /"assignments"/);
   assert.match(serialized, /"worker"/);

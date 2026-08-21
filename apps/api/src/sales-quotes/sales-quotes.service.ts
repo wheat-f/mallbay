@@ -546,22 +546,22 @@ export class SalesQuotesService {
 
   private async canOrdersRead(actor: UserWithStoreMember, storeId: string) {
     if (!this.accessContext) throw new Error("SalesQuotesService access context is not configured");
-    return this.accessContext.can(actor.id, "orders", "read", { storeId });
+    return this.accessContext.can({ userId: actor.id }, "orders", "read", { storeId });
   }
 
   private async canOrdersWrite(actor: UserWithStoreMember, storeId: string, ownerId?: string) {
     if (!this.accessContext) throw new Error("SalesQuotesService access context is not configured");
-    return this.accessContext.can(actor.id, "orders", "write", { storeId, ownerId });
+    return this.accessContext.can({ userId: actor.id }, "orders", "write", { storeId, ownerId });
   }
 
   private async canStoreWrite(actor: UserWithStoreMember, storeId: string) {
     if (!this.accessContext) throw new Error("SalesQuotesService access context is not configured");
-    return this.accessContext.can(actor.id, "store", "write", { storeId });
+    return this.accessContext.can({ userId: actor.id }, "store", "write", { storeId });
   }
 
   private async canFinanceWrite(actor: UserWithStoreMember, storeId: string) {
     if (!this.accessContext) throw new Error("SalesQuotesService access context is not configured");
-    return this.accessContext.can(actor.id, "finance", "write", { storeId });
+    return this.accessContext.can({ userId: actor.id }, "finance", "write", { storeId });
   }
 
   private async canQuoteActor(actor: UserWithStoreMember, storeId: string, salesPersonId: string) {

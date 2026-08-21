@@ -24,7 +24,7 @@ function makeService(allowed: (actorId: string, context: { storeId?: string; own
   const service = new FinanceAttachmentService(
     prisma as never,
     { uploadFinanceAttachment: async () => "https://files.test/receipt.pdf" } as never,
-    { can: async (actorId: string, _capability: string, _action: string, context: { storeId?: string; ownerId?: string }) => allowed(actorId, context) } as never
+    { can: async (actor: { userId: string }, _capability: string, _action: string, context: { storeId?: string; ownerId?: string }) => allowed(actor.userId, context) } as never
   );
   return { service, created };
 }

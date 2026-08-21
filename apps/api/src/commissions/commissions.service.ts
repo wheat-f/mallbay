@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { CommissionRuleType } from "@prisma/client";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
-import { AccessContext } from "../permissions/domain/access-context";
+import { AccessContext, type AccessSubject } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CreateSalesCommissionRuleDto,
@@ -10,20 +9,25 @@ import {
   ListCommissionRulesDto
 } from "./dto/commissions.dto";
 
-export type AuthenticatedCommissionUser = UserWithStoreMember & {
+export type AuthenticatedCommissionUser = {
+  id: string;
   username?: string;
+  /** @deprecated Adapter compatibility only; permission decisions ignore these fields. */
+  isAuditor?: boolean;
+  /** @deprecated Adapter compatibility only; permission decisions ignore these fields. */
+  storeMember?: { storeId: string; position: string } | null;
 };
 
 @Injectable()
 export class CommissionsService {
   constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
 
-  private canAccess(actor: AuthenticatedCommissionUser, storeId: string) {
-    return this.accessContext.can(actor.id, "commissions", "write", { storeId });
+  private canAccess(actor: AccessSubject, storeId: string) {
+    return this.accessContext.can(actor, "commissions", "write", { storeId });
   }
 
   async createSalesRule(user: AuthenticatedCommissionUser, dto: CreateSalesCommissionRuleDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     if (!await this.canAccess(actor, dto.storeId)) {
       throw new ForbiddenException("无权限");
     }
@@ -36,13 +40,13 @@ export class CommissionsService {
         fixedAmountCents: dto.fixedAmountCents,
         constructionType: dto.constructionType,
         isActive: dto.isActive ?? true,
-        createdById: actor.id
+        createdById: actor.userId
       }
     });
   }
 
   async listSalesRules(user: AuthenticatedCommissionUser, query: ListCommissionRulesDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     if (!await this.canAccess(actor, query.storeId)) {
       throw new ForbiddenException("无权限");
     }
@@ -53,7 +57,7 @@ export class CommissionsService {
   }
 
   async generateSalesCommission(user: AuthenticatedCommissionUser, orderId: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { amount: true }
@@ -75,12 +79,12 @@ export class CommissionsService {
         salesUserId: order.salesPersonId,
         amountCents,
         calculationNote: rule ? `按规则 ${rule.name} 生成` : "无有效规则，提成为 0",
-        createdById: actor.id
+        createdById: actor.userId
       },
       update: {
         amountCents,
         calculationNote: rule ? `按规则 ${rule.name} 重新生成` : "无有效规则，提成为 0",
-        createdById: actor.id
+        createdById: actor.userId
       }
     });
   }
@@ -90,7 +94,7 @@ export class CommissionsService {
     recordId: string,
     dto: GenerateWorkerCommissionsDto
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const record = await this.prisma.constructionRecord.findUnique({
       where: { id: recordId },
       include: { assignments: true }
@@ -115,28 +119,20 @@ export class CommissionsService {
           adjustmentCents,
           finalAmountCents,
           calculationNote: "Phase 4 基础师傅提成，可人工调整",
-          createdById: actor.id
+          createdById: actor.userId
         },
         update: {
           amountCents: dto.baseAmountCents,
           adjustmentCents,
           finalAmountCents,
           calculationNote: "Phase 4 基础师傅提成，可人工调整",
-          createdById: actor.id
+          createdById: actor.userId
         }
       }));
     }
     return results;
   }
 
-  private async withStoreMember(user: AuthenticatedCommissionUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) return user;
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
-  }
 }
 
 function calculateSalesCommission(totalAmountCents: number, rule: { ruleType: CommissionRuleType; rateBasisPoints: number | null; fixedAmountCents: number | null } | null) {

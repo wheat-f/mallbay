@@ -1,4 +1,4 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from "@nestjs/common";
+import { CallHandler, ExecutionContext, Inject, Injectable, NestInterceptor, Optional } from "@nestjs/common";
 import { Observable, from } from "rxjs";
 import { switchMap } from "rxjs/operators";
 import { PermissionsService } from "./permissions.service";
@@ -7,8 +7,8 @@ import { AccessContext } from "./domain/access-context";
 @Injectable()
 export class PermissionsInterceptor implements NestInterceptor {
   constructor(
-    private readonly permissions: PermissionsService,
-    private readonly accessContext?: AccessContext
+    @Inject(PermissionsService) private readonly permissions: PermissionsService,
+    @Optional() @Inject(AccessContext) private readonly accessContext?: AccessContext
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -16,10 +16,10 @@ export class PermissionsInterceptor implements NestInterceptor {
     if (!request.user?.id) return next.handle();
     const storeId = request.query?.storeId ?? request.body?.storeId ?? request.params?.storeId;
     const resolved = this.accessContext
-      ? this.accessContext.resolve(request.user.id, { storeId })
-      : this.permissions.getForUser(request.user.id, { storeId });
+      ? this.accessContext.scope({ userId: request.user.id }, "settings", "write", { storeId })
+      : this.permissions.buildScopeFacts(request.user.id, "settings", "write", { storeId });
     return from(resolved).pipe(switchMap((result) => {
-      request.user!.isAuditor = result.roles.some((role) => role.roleCode === "HQ_ADMIN" && role.scopeType === "HQ");
+      request.user!.isAuditor = result.allowed && result.global;
       return next.handle();
     }));
   }

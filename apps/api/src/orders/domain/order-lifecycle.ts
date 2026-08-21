@@ -71,7 +71,7 @@ export class OrderLifecycle {
       ? await this.prisma.salesQuote.findUnique({ where: { id: input.quoteId }, select: { id: true, storeId: true, executionStoreId: true, salesPersonId: true } })
       : null;
     if (input.source === "APPROVED_QUOTE" && !quoteHeader) throw new NotFoundException("报价单不存在");
-    if (quoteHeader && !await this.accessContext.can(user.id, "orders", "write", { storeId: quoteHeader.storeId, ownerId: quoteHeader.salesPersonId })) {
+    if (quoteHeader && !await this.accessContext.can({ userId: user.id }, "orders", "write", { storeId: quoteHeader.storeId, ownerId: quoteHeader.salesPersonId })) {
       throw new ForbiddenException("只有报价销售或店长可以转订单");
     }
     const storeId = input.source === "DIRECT" ? input.order.storeId : quoteHeader!.storeId;
@@ -282,8 +282,8 @@ export class OrderLifecycle {
       }
     }), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     if (!order) throw new NotFoundException("订单不存在");
-    const canRead = await this.accessContext.can(user.id, "orders", "read", { storeId: order.storeId, ownerId: order.salesPersonId }) ||
-      await this.accessContext.can(user.id, "construction", "read", { storeId: order.executionStoreId ?? order.storeId });
+    const canRead = await this.accessContext.can({ userId: user.id }, "orders", "read", { storeId: order.storeId, ownerId: order.salesPersonId }) ||
+      await this.accessContext.can({ userId: user.id }, "construction", "read", { storeId: order.executionStoreId ?? order.storeId });
     if (!canRead) throw new ForbiddenException("无权限");
     const latestVerification = order.lifecycleVerificationCases[0];
     const hasOpenVerification = latestVerification?.status === "OPEN";
@@ -299,12 +299,12 @@ export class OrderLifecycle {
     });
     const executionStoreId = order.executionStoreId ?? order.storeId;
     const [canConstructionWrite, canFinalize, canCancel, canOrderWrite, canVerificationView, canVerificationResolve] = await Promise.all([
-      this.accessContext.can(user.id, "construction", "write", { storeId: executionStoreId }),
-      this.accessContext.can(user.id, "orders.lifecycle", "finalize", { storeId: order.storeId }),
-      this.accessContext.can(user.id, "orders.lifecycle", "cancel", { storeId: order.storeId }),
-      this.accessContext.can(user.id, "orders", "write", { storeId: order.storeId, ownerId: order.salesPersonId }),
-      this.accessContext.can(user.id, "orders.lifecycle", "verification_view", { storeId: order.storeId }),
-      this.accessContext.can(user.id, "orders.lifecycle", "verification_resolve", { storeId: order.storeId })
+      this.accessContext.can({ userId: user.id }, "construction", "write", { storeId: executionStoreId }),
+      this.accessContext.can({ userId: user.id }, "orders.lifecycle", "finalize", { storeId: order.storeId }),
+      this.accessContext.can({ userId: user.id }, "orders.lifecycle", "cancel", { storeId: order.storeId }),
+      this.accessContext.can({ userId: user.id }, "orders", "write", { storeId: order.storeId, ownerId: order.salesPersonId }),
+      this.accessContext.can({ userId: user.id }, "orders.lifecycle", "verification_view", { storeId: order.storeId }),
+      this.accessContext.can({ userId: user.id }, "orders.lifecycle", "verification_resolve", { storeId: order.storeId })
     ]);
     const assigned = order.constructionRecord?.assignments.some((item) => item.workerUserId === user.id) ?? false;
     const globalBlock = hasOpenVerification ? ["HISTORICAL_VERIFICATION_REQUIRED"] : [];
@@ -388,14 +388,14 @@ export class OrderLifecycle {
       if (!task || task.orderId !== orderId) throw new NotFoundException("跨门店施工任务不存在");
       const sourceAction = command.type === "CANCEL_CROSS_STORE_TASK" || command.type === "ACCEPT_CROSS_STORE_BY_SOURCE";
       const allowed = sourceAction
-        ? await accessContext.can(user.id, "orders.lifecycle", "cross_store_source_manage", { storeId: task.sourceStoreId })
-        : await accessContext.can(user.id, "construction", "write", { storeId: task.executionStoreId });
+        ? await accessContext.can({ userId: user.id }, "orders.lifecycle", "cross_store_source_manage", { storeId: task.sourceStoreId })
+        : await accessContext.can({ userId: user.id }, "construction", "write", { storeId: task.executionStoreId });
       if (!allowed) throw new ForbiddenException("无权限");
     } else {
       const capability = command.type === "FINAL_DELIVERY" ? "finalize" : command.type === "CANCEL" ? "cancel" : command.type === "RESOLVE_HISTORICAL_VERIFICATION" ? "verification_resolve" : null;
       const allowed = capability
-        ? await accessContext.can(user.id, "orders.lifecycle", capability, { storeId: header.storeId })
-        : await accessContext.can(user.id, "orders", "write", { storeId: header.storeId, ownerId: header.salesPersonId });
+        ? await accessContext.can({ userId: user.id }, "orders.lifecycle", capability, { storeId: header.storeId })
+        : await accessContext.can({ userId: user.id }, "orders", "write", { storeId: header.storeId, ownerId: header.salesPersonId });
       if (!allowed) throw new ForbiddenException("无权限");
     }
     const openVerification = await this.prisma.orderLifecycleVerificationCase.findFirst({

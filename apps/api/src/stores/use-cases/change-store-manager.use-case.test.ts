@@ -64,7 +64,7 @@ test("ChangeStoreManagerUseCase replaces current manager and notifies removed ma
     { record: (event: unknown) => auditEvents.push(event) } as never
   );
 
-  const result = await useCase.execute(true, "store-1", { newManagerId: "manager-new" });
+  const result = await useCase.execute("admin-1", "store-1", { newManagerId: "manager-new" });
 
   assert.deepEqual(result, { success: true });
   assert.deepEqual(transactionCalls, ["member.delete", "member.create"]);

@@ -1,6 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { ConstructionCostAdjustmentStatus, ConstructionCostSettlementStatus, InventoryMovementType, Prisma } from "@prisma/client";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
 import { AccessContext } from "../permissions/domain/access-context";
 import { AuditLogService, type AuditEvent } from "../observability/audit-log.service";
 import { AuditEventWriter } from "../observability/audit-event-writer";
@@ -18,6 +17,7 @@ const settlementInclude = Prisma.validator<Prisma.ConstructionCostSettlementIncl
   adjustments: { orderBy: { createdAt: "asc" } },
   exceptions: { orderBy: { createdAt: "asc" } }
 });
+type ConstructionActor = { id: string; username?: string };
 
 @Injectable()
 export class ConstructionCostSettlementService {
@@ -85,7 +85,7 @@ export class ConstructionCostSettlementService {
   }
 
   async list(user: AuthenticatedConstructionUser, dto: ListCostSettlementsDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     await this.assertCanViewCosts(actor, dto.storeId);
     const settlements = await this.prisma.constructionCostSettlement.findMany({
       where: { storeId: dto.storeId, ...(dto.status ? { status: dto.status as ConstructionCostSettlementStatus } : {}) },
@@ -96,14 +96,14 @@ export class ConstructionCostSettlementService {
   }
 
   async get(user: AuthenticatedConstructionUser, id: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     const settlement = await this.find(id);
     await this.assertCanViewCosts(actor, settlement.storeId);
     return this.presentSettlement(actor, settlement);
   }
 
   async declare(user: AuthenticatedConstructionUser, id: string, dto: WorkCostDeclarationDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     const settlement = await this.find(id);
     if (settlement.status !== ConstructionCostSettlementStatus.PENDING_CONFIRMATION) throw new BadRequestException("成本已确认，不能直接修改工时申报");
     const workerLine = settlement.workerLines.find((line) => line.workerUserId === actor.id);
@@ -127,7 +127,7 @@ export class ConstructionCostSettlementService {
   }
 
   async getOwnDeclaration(user: AuthenticatedConstructionUser, recordId: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     const settlement = await this.prisma.constructionCostSettlement.findUnique({
       where: { constructionRecordId: recordId },
       include: {
@@ -150,7 +150,7 @@ export class ConstructionCostSettlementService {
   }
 
   async confirm(user: AuthenticatedConstructionUser, id: string, dto: ConfirmCostSettlementDto, options: { allowAbnormal?: boolean } = {}) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     const settlement = await this.find(id);
     await this.assertCanConfirm(actor, settlement.storeId);
     if (settlement.status !== ConstructionCostSettlementStatus.PENDING_CONFIRMATION) throw new BadRequestException("只有待确认成本可以直接确认");
@@ -250,7 +250,7 @@ export class ConstructionCostSettlementService {
   }
 
   async batchConfirm(user: AuthenticatedConstructionUser, dto: BatchConfirmCostSettlementDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     const ids = [...new Set(dto.settlementIds)];
     const settlements = await this.prisma.constructionCostSettlement.findMany({ where: { id: { in: ids } }, include: settlementInclude });
     if (settlements.length !== ids.length) throw new NotFoundException("存在不存在的成本确认记录");
@@ -270,7 +270,7 @@ export class ConstructionCostSettlementService {
   }
 
   async createAdjustment(user: AuthenticatedConstructionUser, id: string, dto: CreateCostAdjustmentDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     const settlement = await this.find(id);
     // 店长和财务都可以在确认后发起调整；审批与财务结算仍由财务/管理员控制。
     await this.assertCanViewCosts(actor, settlement.storeId);
@@ -307,7 +307,7 @@ export class ConstructionCostSettlementService {
   }
 
   async approveAdjustment(user: AuthenticatedConstructionUser, id: string, dto: ApproveCostAdjustmentDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     const adjustment = await this.prisma.constructionCostAdjustment.findUnique({ where: { id }, include: { settlement: true } });
     if (!adjustment) throw new NotFoundException("成本调整单不存在");
     if (!await this.isFinanceOrAdmin(actor, adjustment.settlement.storeId)) throw new ForbiddenException("只有财务可以审批成本调整单");
@@ -354,7 +354,7 @@ export class ConstructionCostSettlementService {
   }
 
   async settle(user: AuthenticatedConstructionUser, id: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     const settlement = await this.find(id);
     if (!await this.isFinanceOrAdmin(actor, settlement.storeId)) throw new ForbiddenException("只有财务可以结算成本");
     if (settlement.status !== ConstructionCostSettlementStatus.CONFIRMED) throw new BadRequestException("只有已确认成本可以财务结算");
@@ -391,7 +391,7 @@ export class ConstructionCostSettlementService {
   }
 
   async compareOrder(user: AuthenticatedConstructionUser, orderId: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     const settlement = await this.prisma.constructionCostSettlement.findUnique({ where: { orderId }, include: settlementInclude });
     if (!settlement) throw new NotFoundException("订单尚未生成施工成本结算记录");
     await this.assertCanViewCosts(actor, settlement.storeId);
@@ -399,7 +399,7 @@ export class ConstructionCostSettlementService {
   }
 
   async exportDetails(user: AuthenticatedConstructionUser, storeId: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = user;
     await this.assertCanViewCosts(actor, storeId);
     const settlements = await this.prisma.constructionCostSettlement.findMany({ where: { storeId }, include: settlementInclude, orderBy: { updatedAt: "desc" } });
     const canViewDetailedLaborCosts = await this.canViewDetailedLaborCosts(actor, storeId);
@@ -439,23 +439,21 @@ export class ConstructionCostSettlementService {
     return settlement;
   }
 
-  private async assertCanViewCosts(user: UserWithStoreMember, storeId: string) {
-    if (!this.accessContext || !await this.accessContext.can(user.id, "finance", "write", { storeId })) throw new ForbiddenException("无权限查看内部成本");
+  private async assertCanViewCosts(user: ConstructionActor, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can({ userId: user.id }, "finance", "write", { storeId })) throw new ForbiddenException("无权限查看内部成本");
   }
 
-  private async assertCanConfirm(user: UserWithStoreMember, storeId: string) {
-    if (!this.accessContext || !await this.accessContext.can(user.id, "store", "write", { storeId })) throw new ForbiddenException("只有店长可以确认施工成本");
+  private async assertCanConfirm(user: ConstructionActor, storeId: string) {
+    if (!this.accessContext || !await this.accessContext.can({ userId: user.id }, "store", "write", { storeId })) throw new ForbiddenException("只有店长可以确认施工成本");
   }
 
-  private async isFinanceOrAdmin(user: UserWithStoreMember, storeId: string) {
+  private async isFinanceOrAdmin(user: ConstructionActor, storeId: string) {
     if (!this.accessContext) throw new Error("ConstructionCostSettlementService access context is not configured");
-    if (!await this.accessContext.can(user.id, "finance", "write", { storeId })) return false;
-    const resolution = await this.accessContext.resolve(user.id, { storeId });
-    return resolution.roles.some((role) => role.roleCode === "FINANCE" || role.roleCode === "HQ_ADMIN" || role.roleCode === "AUDITOR");
+    return this.accessContext.can({ userId: user.id }, "finance.cost", "read", { storeId });
   }
 
   /** 店长确认工时只需人员和工时；个人岗位成本、提成及补贴仅财务/管理员可见。 */
-  private async presentSettlement<T extends { storeId: string; workerLines: Array<Record<string, unknown>> }>(user: UserWithStoreMember, settlement: T) {
+  private async presentSettlement<T extends { storeId: string; workerLines: Array<Record<string, unknown>> }>(user: ConstructionActor, settlement: T) {
     if (await this.canViewDetailedLaborCosts(user, settlement.storeId)) return settlement;
     return {
       ...settlement,
@@ -463,14 +461,8 @@ export class ConstructionCostSettlementService {
     };
   }
 
-  private canViewDetailedLaborCosts(user: UserWithStoreMember, storeId: string) {
+  private canViewDetailedLaborCosts(user: ConstructionActor, storeId: string) {
     return this.isFinanceOrAdmin(user, storeId);
-  }
-
-  private async withStoreMember(user: AuthenticatedConstructionUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) return user;
-    const member = await this.prisma.storeMember.findUnique({ where: { userId: user.id }, select: { storeId: true, position: true } });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
   }
 
   private async recordAudit(event: AuditEvent) {

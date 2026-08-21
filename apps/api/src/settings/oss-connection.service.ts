@@ -8,9 +8,9 @@ import { TestOssConnectionDto } from "./dto/oss.dto";
 export class OssConnectionService {
   constructor(private readonly prisma: PrismaService, private readonly access: SettingsAccessService) {}
 
-  async test(user: SettingsUser, scopeId: string, dto: TestOssConnectionDto) {
+  async test(user: SettingsUser, scopeId: string | undefined, dto: TestOssConnectionDto) {
     const { actor, scopeId: resolvedScope } = await this.access.assert(user, "store.notifications", "edit", scopeId);
-    if (!resolvedScope || resolvedScope !== scopeId) throw new BadRequestException("只能测试当前门店的 OSS 连接");
+    if (!resolvedScope || (scopeId && resolvedScope !== scopeId)) throw new BadRequestException({ code: "SCOPE_UNRESOLVED", message: "必须明确一个可访问门店才能测试 OSS 连接" });
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {

@@ -32,7 +32,7 @@ import {
 import { StoresService } from "./stores.service";
 
 type AuthRequest = Request & {
-  user: { id: string; username: string; isAuditor: boolean };
+  user: { id: string; username: string };
 };
 
 @UseGuards(JwtAuthGuard)
@@ -47,7 +47,7 @@ export class StoresController {
   // 管理员：创建门店并指派店长
   @Post()
   createStore(@Req() req: AuthRequest, @Body() dto: CreateStoreDto) {
-    return this.storesService.createStore(req.user.id, req.user.isAuditor, dto);
+    return this.storesService.createStore(req.user.id, dto);
   }
 
   // 公开门店列表（无需登录也可访问）
@@ -65,17 +65,17 @@ export class StoresController {
 
   @Get(":id/eligible-execution-stores")
   listEligibleExecutionStores(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.storesService.listEligibleExecutionStoresForUser(req.user.id, id);
+    return this.storesService.listEligibleExecutionStores(req.user.id, id);
   }
 
   @Get("admin/financial-entities")
   listFinancialEntities(@Req() req: AuthRequest) {
-    return this.storesService.listFinancialEntitiesForUser(req.user.id);
+    return this.storesService.listFinancialEntities(req.user.id);
   }
 
   @Post("admin/financial-entities")
   createFinancialEntity(@Req() req: AuthRequest, @Body() dto: CreateFinancialEntityDto) {
-    return this.storesService.createFinancialEntityForUser(req.user.id, dto);
+    return this.storesService.createFinancialEntity(req.user.id, dto);
   }
 
   @Patch("admin/:id/cross-store-config")
@@ -84,24 +84,24 @@ export class StoresController {
     @Param("id") id: string,
     @Body() dto: UpdateStoreCrossStoreConfigDto
   ) {
-    return this.storesService.updateCrossStoreConfigForUser(req.user.id, id, dto);
+    return this.storesService.updateCrossStoreConfig(req.user.id, id, dto);
   }
   // 管理员：全量门店列表（含所有状态）
   @Get("admin/all")
   listAllStores(@Req() req: AuthRequest, @Query() query: ListStoresDto) {
-    return this.storesService.listAllStoresForUser(req.user.id, query);
+    return this.storesService.listAllStores(req.user.id, query);
   }
 
   // 管理员：待审核提交列表
   @Get("admin/pending-submissions")
   listPendingSubmissions(@Req() req: AuthRequest) {
-    return this.storesService.listPendingSubmissionsForUser(req.user.id);
+    return this.storesService.listPendingSubmissions(req.user.id);
   }
 
   // 管理员：门店详情（含待审核提交）
   @Get("admin/:id")
   getAdminStore(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.storesService.getAdminStoreDetailForUser(req.user.id, id);
+    return this.storesService.getAdminStoreDetail(req.user.id, id);
   }
 
   // 门店详情（公开，无需登录）
@@ -154,19 +154,19 @@ export class StoresController {
     @Param("submissionId") submissionId: string,
     @Body() dto: ReviewStoreDto
   ) {
-    return this.storesService.reviewSubmissionForUser(req.user.id, submissionId, dto);
+    return this.storesService.reviewSubmission(req.user.id, submissionId, dto);
   }
 
   // 管理员：冻结门店
   @Patch(":id/freeze")
   freezeStore(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.storesService.setFrozenForUser(req.user.id, id, true);
+    return this.storesService.setFrozen(req.user.id, id, true);
   }
 
   // 管理员：解冻门店
   @Patch(":id/unfreeze")
   unfreezeStore(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.storesService.setFrozenForUser(req.user.id, id, false);
+    return this.storesService.setFrozen(req.user.id, id, false);
   }
 
   // 管理员：变更店长
@@ -176,6 +176,6 @@ export class StoresController {
     @Param("id") id: string,
     @Body() dto: ChangeManagerDto
   ) {
-    return this.storesService.changeManagerForUser(req.user.id, id, dto);
+    return this.storesService.changeManager(req.user.id, id, dto);
   }
 }

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DictionaryGovernanceService } from "./dictionary-governance.service";
 
-const user = { id: "hq-user", isAuditor: true, storeMember: undefined } as any;
+const user = { id: "hq-user" } as any;
 
 test("DictionaryGovernanceService owns stable cross-source catalog pagination", async () => {
   const dictionaries = {
@@ -15,6 +15,7 @@ test("DictionaryGovernanceService owns stable cross-source catalog pagination", 
     },
   };
   const templates = {
+    canEdit: async () => true,
     catalog: async (_user: unknown, query: { page?: number }) => {
       const all = [{ id: "hq-a", name: "A 总部模板", code: "A", activeItemCount: 1, inactiveItemCount: 0 }];
       return { items: query.page === 1 ? all : [], total: all.length, page: query.page ?? 1, pageSize: 100 };
@@ -44,6 +45,7 @@ test("DictionaryGovernanceService routes item commands through the source adapte
     removeItem: async () => { calls.push("store:remove"); return {}; },
   };
   const templates = {
+    canEdit: async () => true,
     listItems: async () => { calls.push("hq:list"); return { items: [], total: 0, page: 1, pageSize: 20, dictionaryVersion: 1, parent: null }; },
     previewImportItems: async () => { calls.push("hq:preview"); return {}; },
     commitImportItems: async () => { calls.push("hq:commit"); return {}; },

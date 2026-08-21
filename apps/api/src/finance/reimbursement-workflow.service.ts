@@ -15,7 +15,6 @@ import {
   FinanceApplicationType,
   PaymentRecordType,
 } from "@prisma/client";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { FinanceService } from "./finance.service";
@@ -28,7 +27,7 @@ import {
 import { buildFinanceApplicationNo } from "./expense-workflow.service";
 import { FINANCE_CAPABILITIES } from "./domain/finance-capabilities";
 
-type FinanceActor = UserWithStoreMember & { username?: string };
+type FinanceActor = { id: string; username?: string };
 
 @Injectable()
 export class ReimbursementWorkflowService {
@@ -39,8 +38,7 @@ export class ReimbursementWorkflowService {
   ) {}
 
   async create(actor: FinanceActor, dto: CreateReimbursementDto) {
-    actor = await this.withStoreMember(actor);
-    if (!await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.application.capability, FINANCE_CAPABILITIES.application.submit, { storeId: dto.storeId, ownerId: actor.id }))
+    if (!await this.accessContext.can({ userId: actor.id }, FINANCE_CAPABILITIES.application.capability, FINANCE_CAPABILITIES.application.submit, { storeId: dto.storeId, ownerId: actor.id }))
       throw new ForbiddenException("无权限");
     if (!dto.expenseId && !dto.exceptionReason?.trim())
       throw new BadRequestException(
@@ -100,12 +98,11 @@ export class ReimbursementWorkflowService {
   }
 
   async review(actor: FinanceActor, id: string, dto: ReviewReimbursementDto) {
-    actor = await this.withStoreMember(actor);
     const reimbursement = await this.prisma.reimbursementApplication.findUnique(
       { where: { id } },
     );
     if (!reimbursement) throw new NotFoundException("报销申请不存在");
-    if (!await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.reimbursement.capability, FINANCE_CAPABILITIES.reimbursement.review, { storeId: reimbursement.storeId }))
+    if (!await this.accessContext.can({ userId: actor.id }, FINANCE_CAPABILITIES.reimbursement.capability, FINANCE_CAPABILITIES.reimbursement.review, { storeId: reimbursement.storeId }))
       throw new ForbiddenException("无权限审批报销申请");
     if (reimbursement.status !== FinanceApprovalStatus.PENDING)
       throw new ConflictException("只有待审批报销可以处理");
@@ -141,13 +138,12 @@ export class ReimbursementWorkflowService {
   }
 
   async withdraw(actor: FinanceActor, id: string, note?: string) {
-    actor = await this.withStoreMember(actor);
     const reimbursement = await this.prisma.reimbursementApplication.findUnique(
       { where: { id } },
     );
     if (!reimbursement) throw new NotFoundException("报销申请不存在");
     if (
-      !await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, { storeId: reimbursement.storeId, ownerId: reimbursement.applicantId })
+      !await this.accessContext.can({ userId: actor.id }, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, { storeId: reimbursement.storeId, ownerId: reimbursement.applicantId })
     )
       throw new ForbiddenException("无权限");
     if (reimbursement.status !== FinanceApprovalStatus.PENDING)
@@ -181,13 +177,12 @@ export class ReimbursementWorkflowService {
     id: string,
     dto: ResubmitReimbursementDto,
   ) {
-    actor = await this.withStoreMember(actor);
     const reimbursement = await this.prisma.reimbursementApplication.findUnique(
       { where: { id } },
     );
     if (!reimbursement) throw new NotFoundException("报销申请不存在");
     if (
-      !await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, { storeId: reimbursement.storeId, ownerId: reimbursement.applicantId })
+      !await this.accessContext.can({ userId: actor.id }, FINANCE_CAPABILITIES.document.capability, FINANCE_CAPABILITIES.document.read, { storeId: reimbursement.storeId, ownerId: reimbursement.applicantId })
     )
       throw new ForbiddenException("无权限");
     if (reimbursement.status !== FinanceApprovalStatus.REJECTED)
@@ -225,12 +220,11 @@ export class ReimbursementWorkflowService {
   }
 
   async pay(actor: FinanceActor, id: string, dto: PayReimbursementDto) {
-    actor = await this.withStoreMember(actor);
     const reimbursement = await this.prisma.reimbursementApplication.findUnique(
       { where: { id } },
     );
     if (!reimbursement) throw new NotFoundException("报销申请不存在");
-    if (!await this.accessContext.can(actor.id, FINANCE_CAPABILITIES.reimbursement.capability, FINANCE_CAPABILITIES.reimbursement.pay, { storeId: reimbursement.storeId }))
+    if (!await this.accessContext.can({ userId: actor.id }, FINANCE_CAPABILITIES.reimbursement.capability, FINANCE_CAPABILITIES.reimbursement.pay, { storeId: reimbursement.storeId }))
       throw new ForbiddenException("无权限支付报销申请");
 
     const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
@@ -325,12 +319,4 @@ export class ReimbursementWorkflowService {
     });
   }
 
-  private async withStoreMember(actor: FinanceActor): Promise<FinanceActor> {
-    if (actor.storeMember !== undefined) return actor;
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: actor.id },
-      select: { storeId: true, position: true }
-    });
-    return { ...actor, storeMember: member };
-  }
 }

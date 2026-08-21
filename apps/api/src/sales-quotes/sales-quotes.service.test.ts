@@ -4,9 +4,10 @@ import { SalesQuotesService } from "./sales-quotes.service";
 import { calculatePricing } from "../pricing/domain/pricing-engine";
 
 const salesAccess = {
-  can: async (actor: string, capability: string) => {
-    if (capability === "finance") return actor.includes("finance") || actor.includes("manager");
-    if (capability === "store") return actor.includes("manager") || actor.includes("admin");
+  can: async (actor: { userId: string }, capability: string) => {
+    const actorId = actor.userId;
+    if (capability === "finance") return actorId.includes("finance") || actorId.includes("manager");
+    if (capability === "store") return actorId.includes("manager") || actorId.includes("admin");
     return true;
   },
   resolve: async () => ({ roles: [{ roleCode: "MANAGER" }] })

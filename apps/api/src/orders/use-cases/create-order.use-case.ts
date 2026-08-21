@@ -58,10 +58,10 @@ export class CreateOrderUseCase {
     dto: CreateOrderDto,
     options: CreateOrderOptions = {}
   ) {
-    if (!await this.accessContext.can(user.id, "orders", "write", { storeId: dto.storeId, ownerId: user.id })) {
+    if (!await this.accessContext.can({ userId: user.id }, "orders", "write", { storeId: dto.storeId, ownerId: user.id })) {
       throw new ForbiddenException("无权限");
     }
-    if (dto.salesPersonId && dto.salesPersonId !== user.id && !await this.accessContext.can(user.id, "store", "write", { storeId: dto.storeId })) {
+    if (dto.salesPersonId && dto.salesPersonId !== user.id && !await this.accessContext.can({ userId: user.id }, "store", "write", { storeId: dto.storeId })) {
       throw new ForbiddenException("无权限指定其他销售人员");
     }
     const salesPersonId = dto.salesPersonId ?? user.id;
@@ -152,7 +152,7 @@ export class CreateOrderUseCase {
       if (!customer || customer.storeId !== dto.storeId) {
         throw new NotFoundException("客户不存在");
       }
-      if (!await this.accessContext.can(user.id, "customers", "read", { storeId: customer.storeId, ownerId: customer.ownerUserId })) {
+      if (!await this.accessContext.can({ userId: user.id }, "customers", "read", { storeId: customer.storeId, ownerId: customer.ownerUserId })) {
         throw new ForbiddenException("无权限");
       }
 

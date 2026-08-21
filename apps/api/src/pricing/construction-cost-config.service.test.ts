@@ -3,8 +3,8 @@ import { test } from "node:test";
 import { ConstructionCostConfigService } from "./construction-cost-config.service";
 
 const pricingAccess = {
-  can: async (actor: string, capability: string) => capability === "finance" ? actor.includes("finance") || actor.includes("manager") : actor.includes("manager"),
-  resolve: async (actor: string) => ({ roles: [{ roleCode: actor.includes("finance") ? "FINANCE" : "MANAGER" }] })
+  can: async (actor: { userId: string }, capability: string) => capability === "finance.cost" ? actor.userId.includes("finance") : capability === "finance" ? actor.userId.includes("finance") || actor.userId.includes("manager") : actor.userId.includes("manager"),
+  resolve: async (actor: { userId: string }) => ({ roles: [{ roleCode: actor.userId.includes("finance") ? "FINANCE" : "MANAGER" }] })
 };
 
 const storeId = "store-1";

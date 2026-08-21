@@ -2,8 +2,7 @@
 import { ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma, ProductStatus, ProductUnit } from "@prisma/client";
 import { normalizePagination } from "../common/pagination";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
-import { AccessContext } from "../permissions/domain/access-context";
+import { AccessContext, type AccessSubject } from "../permissions/domain/access-context";
 import { AuditEventWriter } from "../observability/audit-event-writer";
 import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
@@ -12,7 +11,8 @@ import { CreateProductDto } from "./dto/create-product.dto";
 import { ListProductsDto } from "./dto/list-products.dto";
 import { UpdateProductDto } from "./dto/update-product.dto";
 
-export type AuthenticatedProductUser = UserWithStoreMember & {
+export type AuthenticatedProductUser = {
+  id: string;
   username?: string;
 };
 
@@ -25,10 +25,10 @@ export class ProductsService {
   ) {}
 
   async create(user: AuthenticatedProductUser, dto: CreateProductDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     await this.assertCanManageProducts(actor, dto.storeId);
     await this.assertCanManageSuggestedPrices(actor, dto.storeId);
-    if (dto.standardCostCents !== undefined && !await this.accessContext.can(actor.id, "finance", "write", { storeId: dto.storeId })) {
+    if (dto.standardCostCents !== undefined && !await this.accessContext.can(actor, "finance", "write", { storeId: dto.storeId })) {
       throw new ForbiddenException("仅财务或店长可维护材料成本");
     }
 
@@ -55,7 +55,7 @@ export class ProductsService {
     });
     await this.recordAudit({
       action: "product_created",
-      actorId: actor.id,
+      actorId: actor.userId,
       targetType: "Product",
       targetId: product.id,
       metadata: {
@@ -70,8 +70,8 @@ export class ProductsService {
   }
 
   async list(user: AuthenticatedProductUser, dto: ListProductsDto) {
-    const actor = await this.withStoreMember(user);
-    if (!await this.accessContext.can(actor.id, "products", "read", { storeId: dto.storeId })) {
+    const actor = { userId: user.id } satisfies AccessSubject;
+    if (!await this.accessContext.can(actor, "products", "read", { storeId: dto.storeId })) {
       throw new ForbiddenException("无权限");
     }
 
@@ -102,7 +102,7 @@ export class ProductsService {
       })
     ]);
 
-    const canViewInternalCost = await this.accessContext.can(actor.id, "finance", "write", { storeId: dto.storeId });
+    const canViewInternalCost = await this.accessContext.can(actor, "finance", "write", { storeId: dto.storeId });
     return {
       total,
       page,
@@ -114,7 +114,7 @@ export class ProductsService {
   }
 
   async detail(user: AuthenticatedProductUser, id: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: { unitSuggestedPrices: { orderBy: { salesUnit: "asc" } } }
@@ -122,10 +122,10 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException("产品不存在");
     }
-    if (!await this.accessContext.can(actor.id, "products", "read", { storeId: product.storeId })) {
+    if (!await this.accessContext.can(actor, "products", "read", { storeId: product.storeId })) {
       throw new ForbiddenException("无权限");
     }
-    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: product.storeId })) {
+    if (!await this.accessContext.can(actor, "finance", "write", { storeId: product.storeId })) {
       const { standardCostCents: _standardCostCents, ...safeProduct } = product;
       return safeProduct;
     }
@@ -133,7 +133,7 @@ export class ProductsService {
   }
 
   async update(user: AuthenticatedProductUser, id: string, dto: UpdateProductDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) {
       throw new NotFoundException("产品不存在");
@@ -146,7 +146,7 @@ export class ProductsService {
       (dto.metersPerRoll !== undefined && Number(dto.metersPerRoll) !== Number(product.metersPerRoll ?? 0))
     );
     if (changesSuggestedPriceBasis) await this.assertCanManageSuggestedPrices(actor, product.storeId);
-    if (dto.standardCostCents !== undefined && !await this.accessContext.can(actor.id, "finance", "write", { storeId: product.storeId })) {
+    if (dto.standardCostCents !== undefined && !await this.accessContext.can(actor, "finance", "write", { storeId: product.storeId })) {
       throw new ForbiddenException("仅财务或店长可维护材料成本");
     }
 
@@ -157,7 +157,7 @@ export class ProductsService {
     if (dto.basePriceCents !== undefined && dto.basePriceCents !== product.basePriceCents) {
       await this.recordAudit({
         action: "product_suggested_price_updated",
-        actorId: actor.id,
+        actorId: actor.userId,
         targetType: "Product",
         targetId: product.id,
         metadata: {
@@ -171,7 +171,7 @@ export class ProductsService {
     if (dto.standardCostCents !== undefined && dto.standardCostCents !== product.standardCostCents) {
       await this.recordAudit({
         action: "product_standard_material_cost_updated",
-        actorId: actor.id,
+        actorId: actor.userId,
         targetType: "Product",
         targetId: product.id,
         metadata: {
@@ -190,20 +190,20 @@ export class ProductsService {
    * prevents cost maintenance from changing the customer-facing product data.
    */
   async updateStandardCost(user: AuthenticatedProductUser, id: string, standardCostCents: number) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: { unitSuggestedPrices: { orderBy: { salesUnit: "asc" } } }
     });
     if (!product) throw new NotFoundException("产品不存在");
-    if (!await this.accessContext.can(actor.id, "finance", "write", { storeId: product.storeId })) {
+    if (!await this.accessContext.can(actor, "finance", "write", { storeId: product.storeId })) {
       throw new ForbiddenException("仅财务或店长可维护材料成本");
     }
     const updated = await this.prisma.product.update({ where: { id }, data: { standardCostCents } });
     if (standardCostCents !== product.standardCostCents) {
       await this.recordAudit({
         action: "product_standard_material_cost_updated",
-        actorId: actor.id,
+        actorId: actor.userId,
         targetType: "Product",
         targetId: product.id,
         metadata: {
@@ -226,7 +226,7 @@ export class ProductsService {
     id: string,
     prices: Array<{ salesUnit: ProductUnit; suggestedPriceCents: number; isActive?: boolean }>
   ) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: { unitSuggestedPrices: true }
@@ -270,7 +270,7 @@ export class ProductsService {
       if (previous?.suggestedPriceCents === price.suggestedPriceCents && previous.isActive === nextActive) continue;
       await this.recordAudit({
         action: "product_unit_suggested_price_updated",
-        actorId: actor.id,
+        actorId: actor.userId,
         targetType: "Product",
         targetId: product.id,
         metadata: {
@@ -291,7 +291,7 @@ export class ProductsService {
   }
 
   async remove(user: AuthenticatedProductUser, id: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) {
       throw new NotFoundException("产品不存在");
@@ -304,8 +304,8 @@ export class ProductsService {
     });
   }
 
-  private async assertCanManageProducts(user: UserWithStoreMember, storeId: string) {
-    if (!await this.accessContext.can(user.id, "products", "write", { storeId })) {
+  private async assertCanManageProducts(user: AccessSubject, storeId: string) {
+    if (!await this.accessContext.can(user, "products", "suggested-price-write", { storeId })) {
       throw new ForbiddenException("无权限");
     }
   }
@@ -315,10 +315,8 @@ export class ProductsService {
     return persistAuditEvent(this.prisma, event);
   }
 
-  private async assertCanManageSuggestedPrices(user: UserWithStoreMember, storeId: string) {
-    if (user.isAuditor) return;
-    const access = await this.accessContext.resolve(user.id, { storeId });
-    if (!access.roles.some((role) => role.roleCode === "MANAGER" && (role.scopeType === "HQ" || role.scopeIds.includes(storeId)))) {
+  private async assertCanManageSuggestedPrices(user: AccessSubject, storeId: string) {
+    if (!await this.accessContext.can(user, "products", "write", { storeId })) {
       throw new ForbiddenException("仅店长可维护产品建议价");
     }
   }
@@ -332,20 +330,4 @@ export class ProductsService {
     return units;
   }
 
-  private async withStoreMember(user: AuthenticatedProductUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) {
-      return user;
-    }
-
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-
-    return {
-      id: user.id,
-      isAuditor: user.isAuditor,
-      storeMember: member
-    };
-  }
 }

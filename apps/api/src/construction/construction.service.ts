@@ -65,7 +65,7 @@ export class ConstructionService {
 
   private canAccess(actor: AuthenticatedConstructionUser | UserWithStoreMember, capability: string, action: string, storeId: string, ownerId?: string) {
     if (!this.accessContext) throw new Error("ConstructionService access context is not configured");
-    return this.accessContext.can(actor.id, capability, action, { storeId, ownerId });
+    return this.accessContext.can({ userId: actor.id }, capability, action, { storeId, ownerId });
   }
 
   async listCapacities(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
@@ -126,9 +126,9 @@ export class ConstructionService {
       throw new ForbiddenException("无权限");
     }
     const where: Prisma.ConstructionRecordWhereInput = { storeId: query.storeId };
-    const roles = await this.rolesFor(actor, query.storeId);
-    if (roles.has("SALES")) where.order = { salesPersonId: actor.id };
-    if (roles.has("CONSTRUCTION") || roles.has("APPRENTICE")) where.assignments = { some: { workerUserId: actor.id } };
+    const ownership = await this.getOwnershipFacts(actor, query.storeId);
+    if (ownership.sales) where.order = { salesPersonId: actor.id };
+    if (ownership.worker) where.assignments = { some: { workerUserId: actor.id } };
     return this.prisma.constructionRecord.findMany({
       where,
       orderBy: { dispatchedAt: "desc" },
@@ -661,8 +661,8 @@ export class ConstructionService {
 
   async upsertSchedule(user: AuthenticatedConstructionUser, dto: UpsertScheduleDto) {
     const actor = await this.withStoreMember(user);
-    const roles = await this.rolesFor(actor, dto.storeId);
-    const canUpdateOwnSchedule = Boolean((roles.has("CONSTRUCTION") || roles.has("APPRENTICE")) && actor.id === dto.workerId);
+    const ownership = await this.getOwnershipFacts(actor, dto.storeId);
+    const canUpdateOwnSchedule = Boolean(ownership.worker && actor.id === dto.workerId);
     if (!await this.canAccess(actor, "construction", "write", dto.storeId) && !canUpdateOwnSchedule) {
       throw new ForbiddenException("无权限");
     }
@@ -680,8 +680,8 @@ export class ConstructionService {
       throw new ForbiddenException("无权限");
     }
 
-    const roles = await this.rolesFor(actor, query.storeId);
-    const isWorker = roles.has("CONSTRUCTION") || roles.has("APPRENTICE");
+    const ownership = await this.getOwnershipFacts(actor, query.storeId);
+    const isWorker = ownership.worker;
     if (!isWorker && !await this.canAccess(actor, "construction", "write", query.storeId)) {
       throw new ForbiddenException("无权限");
     }
@@ -690,7 +690,7 @@ export class ConstructionService {
       where: {
         storeId: query.storeId,
         date: buildDateRange(query.from, query.to),
-        workerId: isWorker && !this.isAdministrator(roles) ? actor.id : undefined
+        workerId: isWorker && !ownership.global ? actor.id : undefined
       },
       orderBy: { date: "asc" },
       include: { worker: { select: { username: true, nickname: true } } }
@@ -853,30 +853,21 @@ export class ConstructionService {
   }
 
   private async withStoreMember(user: AuthenticatedConstructionUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) {
-      return user;
-    }
-
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-
-    return {
-      id: user.id,
-      isAuditor: user.isAuditor,
-      storeMember: member
-    };
+    return user;
   }
 
-  private async rolesFor(actor: UserWithStoreMember, storeId: string) {
+  private async getOwnershipFacts(actor: UserWithStoreMember, storeId: string) {
     if (!this.accessContext) throw new Error("ConstructionService access context is not configured");
-    const resolution = await this.accessContext.resolve(actor.id, { storeId });
-    return new Set(resolution.roles.map((role) => role.roleCode));
-  }
-
-  private isAdministrator(roles: Set<string>) {
-    return roles.has("HQ_ADMIN") || roles.has("PLATFORM_ADMIN") || roles.has("AUDITOR");
+    const [construction, sales, worker] = await Promise.all([
+      this.accessContext.scope({ userId: actor.id }, "construction", "read", { storeId }),
+      this.accessContext.scope({ userId: actor.id }, "orders", "read", { storeId, ownerId: actor.id }),
+      this.accessContext.scope({ userId: actor.id }, "after-sales", "write", { storeId, ownerId: actor.id })
+    ]);
+    return {
+      sales: sales.allowed && sales.ownerId === actor.id,
+      worker: worker.allowed && worker.ownerId === actor.id,
+      global: construction.allowed && construction.global
+    };
   }
 
   private dispatchNotification(userId: string, type: keyof typeof NotificationType, payload: object) {

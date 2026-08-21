@@ -2,7 +2,9 @@ import { StorePosition } from "@prisma/client";
 
 export type UserWithStoreMember = {
   id: string;
-  isAuditor: boolean;
+  /** @deprecated Permission meaning is resolved by AccessContext. */
+  isAuditor?: boolean;
+  /** @deprecated Membership is business data, not an authorization input. */
   storeMember?: {
     storeId: string;
     position: StorePosition;

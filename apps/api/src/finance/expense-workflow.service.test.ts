@@ -20,9 +20,9 @@ const finance = {
 };
 
 const accessContext = {
-  can: async (actorId: string, capability: string, action: string) =>
+  can: async (actor: { userId: string }, capability: string, action: string) =>
     capability === "finance.expense" && action === "review"
-      ? actorId === manager.id
+      ? actor.userId === manager.id
       : true,
 };
 

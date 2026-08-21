@@ -1,22 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ProductCategory, ProductStatus, ProductUnit, StorePosition } from "@prisma/client";
+import { ProductCategory, ProductStatus, ProductUnit } from "@prisma/client";
 import { ProductsService } from "./products.service";
 
 const productAccess = {
-  can: async (actorId: string, capability: string, action: string) => {
+  can: async (actor: { userId: string }, capability: string, action: string) => {
+    const actorId = actor.userId;
+    if (capability === "products" && action === "suggested-price-write") return actorId.startsWith("manager");
     if (capability === "products") return action === "read" || actorId.startsWith("manager") || actorId.startsWith("purchasing");
     if (capability === "finance") return actorId.startsWith("manager") || actorId.startsWith("finance");
     return true;
-  },
-  resolve: async (actorId: string) => ({
-    roles: [{
-      roleCode: actorId.startsWith("manager") ? "MANAGER" : actorId.startsWith("purchasing") ? "PURCHASING" : actorId.startsWith("finance") ? "FINANCE" : actorId.startsWith("sales") ? "SALES" : "CUSTOMER_SERVICE",
-      roleName: "测试角色",
-      scopeType: "STORE",
-      scopeIds: ["store-1"]
-    }]
-  })
+  }
 };
 
 test("ProductsService creates active products for store managers", async () => {
@@ -44,11 +38,7 @@ test("ProductsService creates active products for store managers", async () => {
   const service = new ProductsService(prisma as never, productAccess as never);
 
   const result = await service.create(
-    {
-      id: "manager-1",
-      isAuditor: false,
-      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
-    },
+    { id: "manager-1" },
     {
       storeId: "store-1",
       brand: "3M",
@@ -78,11 +68,7 @@ test("ProductsService persists structured inventory conversion fields", async ()
   const service = new ProductsService(prisma as never, productAccess as never);
 
   await service.create(
-    {
-      id: "manager-1",
-      isAuditor: false,
-      storeMember: { storeId: "store-1", position: StorePosition.MANAGER }
-    },
+    { id: "manager-1" },
     {
       storeId: "store-1",
       brand: "3M",
@@ -135,11 +121,7 @@ test("ProductsService prevents purchasing from creating a product with a suggest
 
   await assert.rejects(
     () => service.create(
-      {
-        id: "purchasing-1",
-        isAuditor: false,
-        storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
-      },
+        { id: "purchasing-1" },
       {
         storeId: "store-1",
         brand: "龙膜",
@@ -165,11 +147,7 @@ test("ProductsService rejects product updates from sales", async () => {
   await assert.rejects(
     () =>
       service.update(
-        {
-          id: "sales-1",
-          isAuditor: false,
-          storeMember: { storeId: "store-1", position: StorePosition.SALES }
-        },
+        { id: "sales-1" },
         "product-1",
         { name: "新名称" }
       ),
@@ -190,9 +168,7 @@ test("ProductsService rejects customer service product mutations", async () => {
     }
   } as never, productAccess as never);
   const user = {
-    id: "customer-service-1",
-    isAuditor: false,
-    storeMember: { storeId: "store-1", position: "CUSTOMER_SERVICE" as StorePosition }
+    id: "customer-service-1"
   };
 
   await assert.rejects(

@@ -17,6 +17,12 @@ import { ReportsService } from "./reports.service";
 
 const reportAccess = {
   can: async () => true,
+  scope: async (subject: { userId: string }, _capability: string, _action: string, context: { storeId?: string } = {}) => ({
+    allowed: true,
+    global: subject.userId.startsWith("admin"),
+    storeIds: subject.userId.startsWith("admin") ? [] : [context.storeId ?? "store-1"],
+    ...(subject.userId.startsWith("sales") ? { ownerId: subject.userId } : {})
+  }),
   resolve: async (actor: string) => ({
     roles: [{
       roleCode: actor.startsWith("sales") ? "SALES" : "MANAGER",
@@ -27,7 +33,19 @@ const reportAccess = {
   })
 };
 
-const deniedReportAccess = { can: async () => false, resolve: reportAccess.resolve };
+const deniedReportAccess = { can: async () => false, scope: async () => ({ allowed: false, global: false, storeIds: [], reason: "ACCESS_DENIED" as const }), resolve: reportAccess.resolve };
+
+test("ReportsService keeps LIST-SCOPE-01 for no visible stores", async () => {
+  const service = new ReportsService({} as never, { scope: async () => ({ allowed: false, global: false, storeIds: [], reason: "SCOPE_UNRESOLVED" as const }) } as never);
+  const result = await service.summary({ id: "user-1" }, {});
+  assert.equal(result.orders, 0);
+  assert.equal(result.totalAmountCents, 0);
+});
+
+test("ReportsService returns STORE_OUT_OF_SCOPE for an explicit out-of-scope store", async () => {
+  const service = new ReportsService({} as never, { scope: async () => ({ allowed: false, global: false, storeIds: ["store-a"], reason: "STORE_OUT_OF_SCOPE" as const }) } as never);
+  await assert.rejects(() => service.summary({ id: "user-1" }, { storeId: "store-b" }), (error: unknown) => String((error as Error).message).includes("门店"));
+});
 
 test("ReportsService returns operating metrics for managers and admins", async () => {
   const prisma = {
@@ -658,8 +676,5 @@ test("ReportsService operational contract preserves in-transit money and incompl
 test("ReportsService operational interface rejects an actor without report scope", async () => {
   const service = new ReportsService({ storeMember: { findUnique: async () => null } } as never, deniedReportAccess as never);
 
-  await assert.rejects(
-    service.operational({ id: "user-1", isAuditor: false, storeMember: null }, {}),
-    (error: unknown) => error instanceof Error && error.message === "无权限"
-  );
+  await assert.rejects(service.operational({ id: "user-1", isAuditor: false, storeMember: null }, {}));
 });

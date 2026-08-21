@@ -1,15 +1,19 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { AfterSaleCostCategory, AfterSaleCostDirection, AfterSaleCostStatus, AfterSalePhotoStage, AfterSaleStatus, Prisma, StorePosition } from "@prisma/client";
-import { type UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext, type AccessSubject } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
-import { AccessContext } from "../permissions/domain/access-context";
 import type { MulterFile } from "../users/multer-file.type";
 import { OssService } from "../users/oss.service";
 import { AssignAfterSaleDto, CreateAfterSaleCostDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, ReverseAfterSaleCostDto, SubmitAfterSaleEvidenceDto, UploadAfterSalePhotoDto } from "./dto/after-sales.dto";
 
-export type AuthenticatedAfterSalesUser = UserWithStoreMember & {
+export type AuthenticatedAfterSalesUser = {
+  id: string;
   username?: string;
+  /** @deprecated Adapter compatibility only; permission decisions ignore these fields. */
+  isAuditor?: boolean;
+  /** @deprecated Adapter compatibility only; permission decisions ignore these fields. */
+  storeMember?: { storeId: string; position: string } | null;
 };
 
 @Injectable()
@@ -21,13 +25,13 @@ export class AfterSalesService {
   ) {}
 
   async create(user: AuthenticatedAfterSalesUser, dto: CreateAfterSaleDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const order = await this.prisma.order.findUnique({
       where: { id: dto.orderId },
       include: { warranty: true }
     });
     if (!order) throw new NotFoundException("订单不存在");
-    if (!await this.accessContext.can(actor.id, "after-sales", "write", { storeId: order.storeId })) {
+    if (!await this.accessContext.can(actor, "after-sales", "write", { storeId: order.storeId })) {
       throw new ForbiddenException("无权限");
     }
     const issuePhotos = sanitizePhotoEvidence(dto.issuePhotos, dto.issuePhotoUrls, "问题照片");
@@ -40,16 +44,16 @@ export class AfterSalesService {
         customerId: order.customerId,
         description: dto.description,
         issuePhotoUrls,
-        createdById: actor.id
+        createdById: actor.userId
       }
     });
     await this.createPhotoEvidence(
       afterSale.id,
-      buildAfterSalePhotoRows(AfterSalePhotoStage.ISSUE, issuePhotos, actor.id)
+      buildAfterSalePhotoRows(AfterSalePhotoStage.ISSUE, issuePhotos, actor.userId)
     );
     await this.recordAuditEvent({
       action: "AFTER_SALE_CREATED",
-      actorId: actor.id,
+      actorId: actor.userId,
       storeId: order.storeId,
       targetId: afterSale.id,
       metadata: { orderId: order.id }
@@ -58,8 +62,8 @@ export class AfterSalesService {
   }
 
   async list(user: AuthenticatedAfterSalesUser, query: ListAfterSalesDto) {
-    const actor = await this.withStoreMember(user);
-    if (!await this.accessContext.can(actor.id, "after-sales", "read", { storeId: query.storeId })) {
+    const actor = { userId: user.id } satisfies AccessSubject;
+    if (!await this.accessContext.can(actor, "after-sales", "read", { storeId: query.storeId })) {
       throw new ForbiddenException("无权限");
     }
     const where = buildAfterSalesListScope(actor, query.storeId, await this.isSalesActor(actor, query.storeId), await this.isWorkerActor(actor, query.storeId));
@@ -71,13 +75,13 @@ export class AfterSalesService {
   }
 
   async detail(user: AuthenticatedAfterSalesUser, id: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const afterSale = await this.prisma.afterSale.findFirst({
       where: await this.buildAfterSalesDetailScope(actor, id),
       select: afterSaleSummarySelect
     });
     if (!afterSale) throw new NotFoundException("售后单不存在");
-    if (!await this.accessContext.can(actor.id, "after-sales", "read", { storeId: afterSale.storeId })) {
+    if (!await this.accessContext.can(actor, "after-sales", "read", { storeId: afterSale.storeId })) {
       throw new ForbiddenException("无权限");
     }
     const events = this.prisma.auditEvent
@@ -90,10 +94,10 @@ export class AfterSalesService {
   }
 
   async assign(user: AuthenticatedAfterSalesUser, id: string, dto: AssignAfterSaleDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const afterSale = await this.prisma.afterSale.findUnique({ where: { id } });
     if (!afterSale) throw new NotFoundException("售后单不存在");
-    if (!await this.accessContext.can(actor.id, "after-sales", "write", { storeId: afterSale.storeId })) {
+    if (!await this.accessContext.can(actor, "after-sales", "write", { storeId: afterSale.storeId })) {
       throw new ForbiddenException("无权限");
     }
     if (afterSale.status !== AfterSaleStatus.OPEN && afterSale.status !== AfterSaleStatus.ASSIGNED) {
@@ -114,13 +118,13 @@ export class AfterSalesService {
       data: workerIds.map((workerUserId) => ({
         afterSaleId: id,
         workerUserId,
-        assignedById: actor.id
+        assignedById: actor.userId
       })),
       skipDuplicates: true
     });
     await this.recordAuditEvent({
       action: "AFTER_SALE_ASSIGNED",
-      actorId: actor.id,
+      actorId: actor.userId,
       storeId: afterSale.storeId,
       targetId: id,
       metadata: { workerUserIds: workerIds }
@@ -132,10 +136,10 @@ export class AfterSalesService {
   }
 
   async judgeResponsibility(user: AuthenticatedAfterSalesUser, id: string, dto: JudgeAfterSaleDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const afterSale = await this.prisma.afterSale.findUnique({ where: { id } });
     if (!afterSale) throw new NotFoundException("售后单不存在");
-    if (!await this.accessContext.can(actor.id, "after-sales", "write", { storeId: afterSale.storeId })) {
+    if (!await this.accessContext.can(actor, "after-sales", "write", { storeId: afterSale.storeId })) {
       throw new ForbiddenException("无权限");
     }
     if (afterSale.status !== AfterSaleStatus.ASSIGNED) {
@@ -161,8 +165,8 @@ export class AfterSalesService {
       }
     });
     await this.createPhotoEvidence(afterSale.id, [
-      ...buildAfterSalePhotoRows(AfterSalePhotoStage.CONSTRUCTION_AFTER, constructionPhotos, actor.id),
-      ...buildAfterSalePhotoRows(AfterSalePhotoStage.SUPPLEMENT, supplementPhotos, actor.id)
+      ...buildAfterSalePhotoRows(AfterSalePhotoStage.CONSTRUCTION_AFTER, constructionPhotos, actor.userId),
+      ...buildAfterSalePhotoRows(AfterSalePhotoStage.SUPPLEMENT, supplementPhotos, actor.userId)
     ]);
     if (dto.penaltyWorkerUserId && dto.penaltyAmountCents && dto.penaltyAmountCents > 0) {
       await this.prisma.penalty.create({
@@ -171,13 +175,13 @@ export class AfterSalesService {
           workerUserId: dto.penaltyWorkerUserId,
           amountCents: dto.penaltyAmountCents,
           reason: dto.penaltyReason ?? "售后责任处罚",
-          createdById: actor.id
+          createdById: actor.userId
         }
       });
     }
     await this.recordAuditEvent({
       action: "AFTER_SALE_RESPONSIBILITY_JUDGED",
-      actorId: actor.id,
+      actorId: actor.userId,
       storeId: afterSale.storeId,
       targetId: id,
       metadata: { responsibility: dto.responsibility, constructionIssueCategory: dto.constructionIssueCategory }
@@ -186,14 +190,20 @@ export class AfterSalesService {
   }
 
   async submitEvidence(user: AuthenticatedAfterSalesUser, id: string, dto: SubmitAfterSaleEvidenceDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const afterSale = await this.prisma.afterSale.findFirst({
       where: await this.buildAfterSalesDetailScope(actor, id),
-      select: { id: true, storeId: true, status: true }
+      select: {
+        id: true,
+        storeId: true,
+        status: true,
+        assignments: { select: { workerUserId: true } }
+      }
     });
     if (!afterSale) throw new NotFoundException("售后单不存在");
     const isAssignedWorker = (await this.isWorkerActor(actor, afterSale.storeId)) &&
-      await this.accessContext.can(actor.id, "after-sales", "write", { storeId: afterSale.storeId, ownerId: actor.id });
+      afterSale.assignments.some((assignment) => assignment.workerUserId === actor.userId) &&
+      await this.accessContext.can(actor, "after-sales", "write", { storeId: afterSale.storeId, ownerId: actor.userId });
     if (!isAssignedWorker) {
       throw new ForbiddenException("无权限");
     }
@@ -208,8 +218,8 @@ export class AfterSalesService {
       throw new BadRequestException("请至少提交一张施工后照片");
     }
     await this.createPhotoEvidence(afterSale.id, [
-      ...buildAfterSalePhotoRows(AfterSalePhotoStage.CONSTRUCTION_AFTER, constructionPhotos, actor.id),
-      ...buildAfterSalePhotoRows(AfterSalePhotoStage.SUPPLEMENT, supplementPhotos, actor.id)
+      ...buildAfterSalePhotoRows(AfterSalePhotoStage.CONSTRUCTION_AFTER, constructionPhotos, actor.userId),
+      ...buildAfterSalePhotoRows(AfterSalePhotoStage.SUPPLEMENT, supplementPhotos, actor.userId)
     ]);
     if (this.prisma.afterSale.update) {
       await this.prisma.afterSale.update({
@@ -219,7 +229,7 @@ export class AfterSalesService {
     }
     await this.recordAuditEvent({
       action: "AFTER_SALE_EVIDENCE_SUBMITTED",
-      actorId: actor.id,
+      actorId: actor.userId,
       storeId: afterSale.storeId,
       targetId: id,
       metadata: { constructionPhotoCount: constructionPhotos.length, supplementPhotoCount: supplementPhotos.length, hasNote: Boolean(evidenceNote) }
@@ -239,7 +249,7 @@ export class AfterSalesService {
     if (dto.stage !== AfterSalePhotoStage.CONSTRUCTION_AFTER && dto.stage !== AfterSalePhotoStage.SUPPLEMENT) {
       throw new BadRequestException("售后证据照片阶段无效");
     }
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const afterSale = await this.prisma.afterSale.findFirst({
       where: await this.buildAfterSalesDetailScope(actor, id),
       select: {
@@ -250,7 +260,7 @@ export class AfterSalesService {
       }
     });
     if (!afterSale) throw new NotFoundException("售后单不存在");
-    const isAssignedWorker = afterSale.assignments.some((assignment) => assignment.workerUserId === actor.id);
+    const isAssignedWorker = afterSale.assignments.some((assignment) => assignment.workerUserId === actor.userId);
     if (!isAssignedWorker) throw new ForbiddenException("只有已派单施工人员可以上传售后证据");
     if (afterSale.status !== AfterSaleStatus.ASSIGNED) {
       throw new BadRequestException("当前售后阶段不能上传处理证据");
@@ -263,7 +273,7 @@ export class AfterSalesService {
         stage: dto.stage,
         url,
         note: dto.note?.trim() || undefined,
-        uploadedById: actor.id
+        uploadedById: actor.userId
       }
     });
     if (dto.stage === AfterSalePhotoStage.CONSTRUCTION_AFTER && this.prisma.afterSale.update) {
@@ -274,7 +284,7 @@ export class AfterSalesService {
     }
     await this.recordAuditEvent({
       action: "AFTER_SALE_PHOTO_UPLOADED",
-      actorId: actor.id,
+      actorId: actor.userId,
       storeId: afterSale.storeId,
       targetId: afterSale.id,
       metadata: { stage: dto.stage, url }
@@ -283,10 +293,10 @@ export class AfterSalesService {
   }
 
   async close(user: AuthenticatedAfterSalesUser, id: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const afterSale = await this.prisma.afterSale.findUnique({ where: { id } });
     if (!afterSale) throw new NotFoundException("售后单不存在");
-    if (!await this.accessContext.can(actor.id, "after-sales", "write", { storeId: afterSale.storeId })) {
+    if (!await this.accessContext.can(actor, "after-sales", "write", { storeId: afterSale.storeId })) {
       throw new ForbiddenException("无权限");
     }
     if (afterSale.status === AfterSaleStatus.CLOSED) {
@@ -304,7 +314,7 @@ export class AfterSalesService {
     });
     await this.recordAuditEvent({
       action: "AFTER_SALE_CLOSED",
-      actorId: actor.id,
+      actorId: actor.userId,
       storeId: afterSale.storeId,
       targetId: id,
       metadata: {}
@@ -318,7 +328,7 @@ export class AfterSalesService {
    * immutable and can only be corrected through `reverseCost`.
    */
   async addCost(user: AuthenticatedAfterSalesUser, afterSaleId: string, dto: CreateAfterSaleCostDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const afterSale = await this.prisma.afterSale.findUnique({ where: { id: afterSaleId } });
     if (!afterSale) throw new NotFoundException("售后单不存在");
     await this.assertCanRecordAfterSaleCost(actor, afterSale.storeId, dto.category);
@@ -336,12 +346,12 @@ export class AfterSalesService {
         amountCents: dto.amountCents,
         reason: dto.reason.trim(),
         paymentRecordId: dto.paymentRecordId,
-        recordedById: actor.id
+        recordedById: actor.userId
       }
     });
     await this.recordAuditEvent({
       action: "AFTER_SALE_COST_RECORDED",
-      actorId: actor.id,
+      actorId: actor.userId,
       storeId: afterSale.storeId,
       targetId: afterSaleId,
       metadata: { entryId: entry.id, category: entry.category, direction: entry.direction, amountCents: entry.amountCents, reason: entry.reason }
@@ -350,7 +360,7 @@ export class AfterSalesService {
   }
 
   async reverseCost(user: AuthenticatedAfterSalesUser, afterSaleId: string, costId: string, dto: ReverseAfterSaleCostDto) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const entry = await this.prisma.afterSaleCostEntry.findFirst({ where: { id: costId, afterSaleId } });
     if (!entry) throw new NotFoundException("售后成本记录不存在");
     await this.assertCanRecordAfterSaleCost(actor, entry.storeId, entry.category);
@@ -360,7 +370,7 @@ export class AfterSalesService {
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.afterSaleCostEntry.updateMany({
         where: { id: entry.id, status: AfterSaleCostStatus.CONFIRMED },
-        data: { status: AfterSaleCostStatus.REVERSED, reversedAt: now, reversedById: actor.id, reversalReason: dto.reason.trim() }
+        data: { status: AfterSaleCostStatus.REVERSED, reversedAt: now, reversedById: actor.userId, reversalReason: dto.reason.trim() }
       });
       if (updated.count !== 1) throw new BadRequestException("该售后成本已被其他操作处理，请刷新后重试");
       return tx.afterSaleCostEntry.create({
@@ -372,13 +382,13 @@ export class AfterSalesService {
           amountCents: entry.amountCents,
           reason: `红冲：${dto.reason.trim()}`,
           reversalOfId: entry.id,
-          recordedById: actor.id
+          recordedById: actor.userId
         }
       });
     });
     await this.recordAuditEvent({
       action: "AFTER_SALE_COST_REVERSED",
-      actorId: actor.id,
+      actorId: actor.userId,
       storeId: entry.storeId,
       targetId: afterSaleId,
       metadata: { entryId: entry.id, reversalEntryId: result.id, reason: dto.reason.trim() }
@@ -406,16 +416,7 @@ export class AfterSalesService {
     });
   }
 
-  private async withStoreMember(user: AuthenticatedAfterSalesUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) return user;
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
-  }
-
-  private async assertCanRecordAfterSaleCost(actor: UserWithStoreMember, storeId: string, category: AfterSaleCostCategory) {
+  private async assertCanRecordAfterSaleCost(actor: AccessSubject, storeId: string, category: AfterSaleCostCategory) {
     const financeCategory = category === AfterSaleCostCategory.REFUND_COMPENSATION || category === AfterSaleCostCategory.SUPPLIER_RECOVERY;
     if (financeCategory) {
       if (!await this.isFinanceOrAdmin(actor, storeId)) throw new ForbiddenException("退款/补偿和供应商追偿仅财务可录入或红冲");
@@ -424,49 +425,35 @@ export class AfterSalesService {
     if (!await this.isStoreManagerOrAdmin(actor, storeId)) throw new ForbiddenException("材料、施工人工和外包费用仅店长可录入或红冲");
   }
 
-  private isFinanceOrAdmin(actor: UserWithStoreMember, storeId: string) {
-    return this.accessContext.can(actor.id, "finance", "write", { storeId }).then(async (allowed) => {
-      if (!allowed) return false;
-      const resolution = await this.accessContext.resolve(actor.id, { storeId });
-      return resolution.roles.some((role) => ["HQ_ADMIN", "FINANCE"].includes(role.roleCode) &&
-        (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
-    });
+  private isFinanceOrAdmin(actor: AccessSubject, storeId: string) {
+    return this.accessContext.can(actor, "finance.cost", "read", { storeId });
   }
 
-  private isStoreManagerOrAdmin(actor: UserWithStoreMember, storeId: string) {
-    return this.accessContext.can(actor.id, "store", "write", { storeId });
+  private isStoreManagerOrAdmin(actor: AccessSubject, storeId: string) {
+    return this.accessContext.can(actor, "store", "write", { storeId });
   }
 
-  private async isSalesActor(actor: UserWithStoreMember, storeId: string) {
-    const resolution = await this.accessContext.resolve(actor.id, { storeId });
-    return resolution.roles.some((role) => role.roleCode === "SALES" &&
-      (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
+  private async isSalesActor(actor: AccessSubject, storeId: string) {
+    const scope = await this.accessContext.scope(actor, "orders", "read", { storeId, ownerId: actor.userId });
+    return scope.ownerId === actor.userId;
   }
 
-  private async isWorkerActor(actor: UserWithStoreMember, storeId: string) {
-    const resolution = await this.accessContext.resolve(actor.id, { storeId });
-    return resolution.roles.some((role) =>
-      ["CONSTRUCTION", "APPRENTICE"].includes(role.roleCode) &&
-      (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
+  private async isWorkerActor(actor: AccessSubject, storeId: string) {
+    const scope = await this.accessContext.scope(actor, "after-sales", "write", { storeId, ownerId: actor.userId });
+    return scope.ownerId === actor.userId;
   }
 
-  private async buildAfterSalesDetailScope(actor: UserWithStoreMember, id: string) {
-    const storeId = actor.storeMember?.storeId ?? "";
-    return buildAfterSalesDetailScope(
-      actor,
-      id,
-      await this.isSalesActor(actor, storeId),
-      await this.isWorkerActor(actor, storeId)
-    );
+  private async buildAfterSalesDetailScope(actor: AccessSubject, id: string) {
+    return { id };
   }
 
   private async buildAfterSaleCapabilities(
-    actor: UserWithStoreMember,
+    actor: AccessSubject,
     afterSale: { storeId: string; status: AfterSaleStatus; assignments?: Array<{ workerUserId: string }> }
   ) {
     return buildAfterSaleCapabilities(
-      await this.accessContext.can(actor.id, "after-sales", "write", { storeId: afterSale.storeId }),
-      actor.id,
+      await this.accessContext.can(actor, "after-sales", "write", { storeId: afterSale.storeId }),
+      actor.userId,
       afterSale
     );
   }
@@ -515,40 +502,20 @@ function buildAfterSalePhotoRows(stage: AfterSalePhotoStage, photos: Array<{ url
   return photos.map((photo) => ({ stage, url: photo.url, uploadedById, note: photo.note }));
 }
 
-function buildAfterSalesListScope(actor: UserWithStoreMember, storeId: string, isSales: boolean, isWorker: boolean) {
+function buildAfterSalesListScope(actor: AccessSubject, storeId: string, isSales: boolean, isWorker: boolean) {
   const where: {
     storeId: string;
     assignments?: { some: { workerUserId: string } };
     order?: { salesPersonId: string };
   } = { storeId };
-  if (isSales || (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES)) {
-    where.order = { salesPersonId: actor.id };
+  if (isSales) {
+    where.order = { salesPersonId: actor.userId };
     return where;
   }
   if (
-    !actor.isAuditor &&
-    (actor.storeMember?.position === StorePosition.CONSTRUCTION || actor.storeMember?.position === StorePosition.APPRENTICE)
+    isWorker
   ) {
-    where.assignments = { some: { workerUserId: actor.id } };
-  }
-  return where;
-}
-
-function buildAfterSalesDetailScope(actor: UserWithStoreMember, id: string, isSales: boolean, isWorker: boolean) {
-  const where: {
-    id: string;
-    storeId?: string;
-    assignments?: { some: { workerUserId: string } };
-    order?: { salesPersonId: string };
-  } = { id };
-  if (!actor.isAuditor) {
-    where.storeId = actor.storeMember?.storeId ?? "__no_store__";
-  }
-  if (!actor.isAuditor && (isWorker || actor.storeMember?.position === StorePosition.CONSTRUCTION || actor.storeMember?.position === StorePosition.APPRENTICE)) {
-    where.assignments = { some: { workerUserId: actor.id } };
-  }
-  if (!actor.isAuditor && (isSales || actor.storeMember?.position === StorePosition.SALES)) {
-    where.order = { salesPersonId: actor.id };
+    where.assignments = { some: { workerUserId: actor.userId } };
   }
   return where;
 }

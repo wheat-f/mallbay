@@ -12,7 +12,8 @@ import {
 import { CreateOrderUseCase } from "./create-order.use-case";
 
 const orderAccess = {
-  can: async (actorId: string, capability: string, action: string, context: { ownerId?: string } = {}) => {
+  can: async (actor: { userId: string }, capability: string, action: string, context: { ownerId?: string } = {}) => {
+    const actorId = actor.userId;
     if (capability === "orders" && action === "write") return true;
     if (capability === "customers" && action === "read") return context.ownerId === actorId;
     return capability === "store" && action === "write";

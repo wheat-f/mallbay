@@ -216,7 +216,7 @@ export class ConstructionController {
   }
 
   private async reconcileCapacitiesForActor(user: AuthenticatedConstructionUser, query: ListConstructionDto) {
-    if (!await this.accessContext.can(user.id, "store", "write", { storeId: query.storeId })) {
+    if (!await this.accessContext.can({ userId: user.id }, "store", "write", { storeId: query.storeId })) {
       throw new ForbiddenException("只有店长可以执行容量对账");
     }
     return this.capacities.reconcile(query.storeId, query.from ?? new Date().toISOString(), false);

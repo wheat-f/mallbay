@@ -4,7 +4,13 @@ import { ConstructionPhotoStage, ConstructionTaskStatus, ProductUnit, StorePosit
 import { ConstructionService } from "./construction.service";
 
 const access = {
-  can: async (_actor: string, capability: string, action: string) => capability === "construction" && (action === "read" || action === "write"),
+  can: async (_actor: { userId: string }, capability: string, action: string) => capability === "construction" && (action === "read" || action === "write"),
+  scope: async (actor: { userId: string }, capability: string, action: string) => ({
+    allowed: capability === "construction" || capability === "orders" || capability === "after-sales",
+    global: false,
+    storeIds: ["store-1"],
+    ...((capability === "orders" && action === "read") ? { ownerId: actor.userId } : {})
+  }),
   resolve: async () => ({ roles: [{ roleCode: "CONSTRUCTION" }] })
 };
 
@@ -15,7 +21,7 @@ test("ConstructionService keeps assignment listing as a read adapter", async () 
     constructionRecord: { findMany: async (args: unknown) => { calls.push(args); return []; } }
   } as never, {} as never, undefined, undefined, undefined, undefined, access as never);
   await service.listAssignments({ id: "sales-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.SALES } }, { storeId: "store-1" });
-  assert.deepEqual((calls[0] as { where: unknown }).where, { storeId: "store-1", assignments: { some: { workerUserId: "sales-1" } } });
+  assert.deepEqual((calls[0] as { where: unknown }).where, { storeId: "store-1", order: { salesPersonId: "sales-1" } });
 });
 
 test("ConstructionService keeps evidence upload outside the order state seam", async () => {

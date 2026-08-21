@@ -1,12 +1,11 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { StorePosition } from "@prisma/client";
-import { type UserWithStoreMember } from "../permissions/domain/access-types";
+import { AccessContext, type AccessSubject } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
-import { AccessContext } from "../permissions/domain/access-context";
 import type { ListWarrantiesDto } from "./dto/warranty.dto";
 
-export type AuthenticatedWarrantyUser = UserWithStoreMember & {
+export type AuthenticatedWarrantyUser = {
+  id: string;
   username?: string;
 };
 
@@ -18,20 +17,19 @@ export class WarrantiesService {
   ) {}
 
   async list(user: AuthenticatedWarrantyUser, query: ListWarrantiesDto) {
-    const actor = await this.withStoreMember(user);
-    if (!await this.accessContext.can(actor.id, "warranties", "read", { storeId: query.storeId })) {
+    const actor = { userId: user.id } satisfies AccessSubject;
+    if (!await this.accessContext.can(actor, "warranties", "read", { storeId: query.storeId })) {
       throw new ForbiddenException("无权限");
     }
-    const where = buildWarrantyListScope(actor, query.storeId, await this.isSalesActor(actor, query.storeId));
     return this.prisma.warranty.findMany({
-      where,
+      where: { storeId: query.storeId },
       orderBy: { createdAt: "desc" },
       include: { photos: true, order: warrantyOrderSummaryInclude }
     });
   }
 
   async detail(user: AuthenticatedWarrantyUser, id: string) {
-    const actor = await this.withStoreMember(user);
+    const actor = { userId: user.id } satisfies AccessSubject;
     const warranty = await this.prisma.warranty.findUnique({
       where: { id },
       include: {
@@ -41,10 +39,7 @@ export class WarrantiesService {
       }
     });
     if (!warranty) throw new NotFoundException("质保记录不存在");
-    if (!await this.accessContext.can(actor.id, "warranties", "read", { storeId: warranty.storeId })) {
-      throw new ForbiddenException("无权限");
-    }
-    if (await this.isSalesActor(actor, warranty.storeId) && warranty.order.salesPersonId !== actor.id) {
+    if (!await this.accessContext.can(actor, "warranties", "read", { storeId: warranty.storeId })) {
       throw new ForbiddenException("无权限");
     }
     const afterSaleIds = (warranty.afterSales ?? []).map((afterSale) => afterSale.id);
@@ -70,30 +65,6 @@ export class WarrantiesService {
     });
   }
 
-  private async withStoreMember(user: AuthenticatedWarrantyUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) {
-      return user;
-    }
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
-  }
-
-  private async isSalesActor(actor: UserWithStoreMember, storeId: string) {
-    const resolution = await this.accessContext.resolve(actor.id, { storeId });
-    return resolution.roles.some((role) => role.roleCode === "SALES" &&
-      (role.scopeType === "HQ" || role.scopeIds.includes(storeId)));
-  }
-}
-
-function buildWarrantyListScope(actor: UserWithStoreMember, storeId: string, isSales: boolean) {
-  const where: { storeId: string; order?: { salesPersonId: string } } = { storeId };
-  if (isSales || (!actor.isAuditor && actor.storeMember?.position === StorePosition.SALES)) {
-    where.order = { salesPersonId: actor.id };
-  }
-  return where;
 }
 
 const warrantyOrderSummaryInclude = {

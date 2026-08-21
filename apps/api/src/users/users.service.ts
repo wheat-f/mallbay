@@ -138,15 +138,8 @@ export class UsersService {
   }
 
   // 管理员搜索用户（按用户名模糊匹配）
-  async searchUsers(currentUserId: string, isAuditor: boolean, keyword: string) {
-    if (this.accessContext || this.permissions) {
-      const allowed = this.accessContext
-        ? await this.accessContext.can(currentUserId, "users", "read")
-        : await this.permissions!.authorize(currentUserId, "users", "read");
-      if (!allowed) throw new ForbiddenException("无权限");
-    } else if (!isAuditor) {
-      throw new ForbiddenException("无权限");
-    }
+  async searchUsers(currentUserId: string, keyword: string) {
+    if (!await this.canManageUsers(currentUserId, "read")) throw new ForbiddenException("无权限");
 
     return this.prisma.user.findMany({
       where: {
@@ -164,19 +157,7 @@ export class UsersService {
   }
 
   async resetPasswordForUser(actorId: string, dto: ResetPasswordDto) {
-    if (this.accessContext || this.permissions) {
-      const allowed = this.accessContext
-        ? await this.accessContext.can(actorId, "users", "write")
-        : await this.permissions!.authorize(actorId, "users", "write");
-      if (!allowed) throw new ForbiddenException("无权限");
-    }
-    return this.resetPassword(true, dto);
-  }
-  // 管理员重置用户密码为初始密码
-  async resetPassword(isAuditor: boolean, dto: ResetPasswordDto) {
-    if (!isAuditor) {
-      throw new ForbiddenException("无权限");
-    }
+    if (!await this.canManageUsers(actorId, "write")) throw new ForbiddenException("无权限");
 
     const user = await this.prisma.user.findUnique({
       where: { username: dto.username }
@@ -193,5 +174,11 @@ export class UsersService {
     });
 
     return { success: true, defaultPassword: RESET_PASSWORD_DEFAULT };
+  }
+
+  private canManageUsers(userId: string, action: "read" | "write") {
+    if (this.accessContext) return this.accessContext.can({ userId }, "users", action);
+    if (this.permissions) return this.permissions.authorize(userId, "users", action);
+    return Promise.resolve(false);
   }
 }

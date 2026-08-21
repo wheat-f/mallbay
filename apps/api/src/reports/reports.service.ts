@@ -14,12 +14,18 @@ import {
   StorePosition,
   ConstructionCostSettlementStatus
 } from "@prisma/client";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
-import { AccessContext } from "../permissions/domain/access-context";
+import { AccessContext, type AccessScopeFacts } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { OperationalReportQueryDto, ReportQueryDto } from "./dto/reports.dto";
 
-export type AuthenticatedReportUser = UserWithStoreMember & { username?: string };
+export type AuthenticatedReportUser = {
+  id: string;
+  username?: string;
+  /** @deprecated compatibility for staged test/request adapters only. */
+  isAuditor?: boolean;
+  /** @deprecated compatibility for staged test/request adapters only. */
+  storeMember?: { storeId: string; position: string } | null;
+};
 
 const OPERATIONAL_DETAIL_ROW_LIMIT = 2000;
 
@@ -27,20 +33,10 @@ const OPERATIONAL_DETAIL_ROW_LIMIT = 2000;
 export class ReportsService {
   constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
 
-  private canAccess(actor: AuthenticatedReportUser | UserWithStoreMember, storeId?: string) {
-    return this.accessContext.can(actor.id, "reports", "read", storeId ? { storeId } : {});
-  }
-
   async summary(user: AuthenticatedReportUser, query: ReportQueryDto) {
-    const actor = await this.withStoreMember(user);
-    const storeId = query.storeId ?? actor.storeMember?.storeId;
-    if (!storeId && !await this.canAccess(actor)) {
-      throw new ForbiddenException("无权限");
-    }
-    if (storeId && !await this.canAccess(actor, storeId)) {
-      throw new ForbiddenException("无权限");
-    }
-    const scope = buildReportQueryScope(actor, storeId, await this.isSalesActor(actor, storeId));
+    const access = await this.resolveScope(user, query.storeId);
+    if (access.empty) return emptyReportSummary();
+    const scope = buildReportQueryScope(user.id, access.storeIds, access.scope.ownerId);
     const [
       orders,
       amount,
@@ -208,15 +204,14 @@ export class ReportsService {
    * aggregate query while reports receive real people and order-level rows.
    */
   async operational(user: AuthenticatedReportUser, query: OperationalReportQueryDto) {
-    const actor = await this.withStoreMember(user);
-    const storeId = query.storeId ?? actor.storeMember?.storeId;
-    await this.assertCanViewOperationalReports(actor, storeId);
+    const access = await this.resolveScope(user, query.storeId);
+    if (access.empty) return emptyOperationalReport();
+    const storeId = query.storeId;
 
     const dateRange = reportDateRange(query.dateFrom, query.dateTo);
     assertOperationalDateRange(query.dateFrom, query.dateTo);
-    const isSales = await this.isSalesActor(actor, storeId);
-    const salesPersonId = isSales ? actor.id : query.salesPersonId;
-    const orderWhere = buildOperationalOrderWhere(storeId, query, dateRange, salesPersonId);
+    const salesPersonId = access.scope.ownerId ?? query.salesPersonId;
+    const orderWhere = buildOperationalOrderWhere(storeId, query, dateRange, salesPersonId, access.storeIds);
     const orders = await this.prisma.order.findMany({
       where: orderWhere,
       orderBy: { createdAt: "desc" },
@@ -235,7 +230,7 @@ export class ReportsService {
       }
     });
     const filteredOrders = orders.filter((order) => matchesOperationalOrderFilters(order, query));
-    const paymentOrderWhere = buildOperationalOrderWhere(storeId, { ...query, dateFrom: undefined, dateTo: undefined }, undefined, salesPersonId);
+    const paymentOrderWhere = buildOperationalOrderWhere(storeId, { ...query, dateFrom: undefined, dateTo: undefined }, undefined, salesPersonId, access.storeIds);
     const paymentWhere: Prisma.OrderPaymentWhereInput = {
       paidAt: dateRange,
       order: paymentOrderWhere
@@ -245,7 +240,7 @@ export class ReportsService {
       select: { amountCents: true, paidAt: true, order: { select: { id: true, salesPersonId: true } } }
     });
     const afterSaleWhere: Prisma.AfterSaleWhereInput = {
-      ...(storeId ? { storeId } : {}),
+      ...(storeId ? { storeId } : access.scope.global ? {} : { storeId: { in: access.storeIds } }),
       createdAt: dateRange,
       ...(salesPersonId ? { order: { salesPersonId } } : {}),
       ...(query.workerUserId ? { assignments: { some: { workerUserId: query.workerUserId } } } : {}),
@@ -271,7 +266,7 @@ export class ReportsService {
       truncated: detailRowCount > OPERATIONAL_DETAIL_ROW_LIMIT,
       ...(detailRowCount > OPERATIONAL_DETAIL_ROW_LIMIT ? { errorCode: "DETAILS_TRUNCATED" } : {})
     };
-    report.comparison = await this.operationalComparison(storeId, query, salesPersonId, report.summary);
+    report.comparison = await this.operationalComparison(storeId, query, salesPersonId, report.summary, access.storeIds);
     report.generatedAt = new Date().toISOString();
     return report;
   }
@@ -280,7 +275,8 @@ export class ReportsService {
     storeId: string | undefined,
     query: OperationalReportQueryDto,
     salesPersonId: string | undefined,
-    current: ReturnType<typeof buildOperationalReport>["summary"]
+    current: ReturnType<typeof buildOperationalReport>["summary"],
+    storeIds: string[]
   ): Promise<ReturnType<typeof buildOperationalReport>["comparison"]> {
     const previous = previousPeriod(query.dateFrom, query.dateTo);
     const unavailable: ReturnType<typeof buildOperationalReport>["comparison"] = {
@@ -292,7 +288,7 @@ export class ReportsService {
     if (!previous) return unavailable;
     const previousQuery = { ...query, dateFrom: previous.dateFrom, dateTo: previous.dateTo };
     const previousRange = reportDateRange(previous.dateFrom, previous.dateTo);
-    const previousOrderWhere = buildOperationalOrderWhere(storeId, previousQuery, previousRange, salesPersonId);
+    const previousOrderWhere = buildOperationalOrderWhere(storeId, previousQuery, previousRange, salesPersonId, storeIds);
     const previousOrders = await this.prisma.order.findMany({
       where: previousOrderWhere,
       select: {
@@ -302,7 +298,7 @@ export class ReportsService {
       }
     });
     const previousPayment = await this.prisma.orderPayment.findMany({
-      where: { paidAt: previousRange, order: buildOperationalOrderWhere(storeId, { ...previousQuery, dateFrom: undefined, dateTo: undefined }, undefined, salesPersonId) },
+      where: { paidAt: previousRange, order: buildOperationalOrderWhere(storeId, { ...previousQuery, dateFrom: undefined, dateTo: undefined }, undefined, salesPersonId, storeIds) },
       select: { amountCents: true, orderId: true }
     });
     const previousRows = previousOrders.filter((order) => matchesLeanOperationalOrderFilters(order, query));
@@ -320,18 +316,18 @@ export class ReportsService {
   }
   /** Returns only real active store members and values found in store data. */
   async filterOptions(user: AuthenticatedReportUser, query: ReportQueryDto) {
-    const actor = await this.withStoreMember(user);
-    const storeId = query.storeId ?? actor.storeMember?.storeId;
-    await this.assertCanViewOperationalReports(actor, storeId);
-    if (!storeId) {
+    const access = await this.resolveScope(user, query.storeId);
+    if (access.empty) {
       return { salesPeople: [], constructionPeople: [], constructionTypes: [], productCategories: [], orderStatuses: [], afterSaleStatuses: [], afterSaleResponsibilities: [] };
     }
-    const isSales = await this.isSalesActor(actor, storeId);
+    const storeId = query.storeId ?? (access.storeIds.length === 1 ? access.storeIds[0] : undefined);
+    if (!storeId) return { salesPeople: [], constructionPeople: [], constructionTypes: [], productCategories: [], orderStatuses: [], afterSaleStatuses: [], afterSaleResponsibilities: [] };
+    const isSales = Boolean(access.scope.ownerId);
     const [members, constructionTypes, productCategories, orderStatuses, afterSaleStatuses, afterSaleResponsibilities] = await Promise.all([
       this.prisma.storeMember.findMany({
         where: {
           storeId,
-          ...(isSales ? { userId: actor.id } : {}),
+          ...(isSales ? { userId: user.id } : {}),
           position: { in: [StorePosition.MANAGER, StorePosition.SALES, StorePosition.CONSTRUCTION, StorePosition.APPRENTICE] }
         },
         include: { user: { select: { id: true, nickname: true, username: true } } },
@@ -355,35 +351,56 @@ export class ReportsService {
     };
   }
 
-  private async withStoreMember(user: AuthenticatedReportUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) return user;
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
-  }
-
-  private async assertCanViewOperationalReports(actor: UserWithStoreMember, storeId: string | undefined) {
-    if (!await this.canAccess(actor, storeId)) throw new ForbiddenException("无权限");
-  }
-
-  private async isSalesActor(actor: UserWithStoreMember, storeId: string | undefined) {
-    if (actor.isAuditor) return false;
-    const access = await this.accessContext.resolve(actor.id, storeId ? { storeId } : {});
-    return access.roles.some((role) =>
-      role.roleCode === StorePosition.SALES &&
-      (role.scopeType === "HQ" || !storeId || role.scopeIds.includes(storeId))
-    );
+  private async resolveScope(user: AuthenticatedReportUser, requestedStoreId?: string): Promise<{ scope: AccessScopeFacts; storeIds: string[]; empty: boolean }> {
+    const scope = await this.accessContext.scope({ userId: user.id }, "reports", "read", requestedStoreId ? { storeId: requestedStoreId } : {});
+    if (requestedStoreId && !scope.allowed) {
+      throw new ForbiddenException({ code: scope.reason ?? "STORE_OUT_OF_SCOPE", message: "无权限访问该门店" });
+    }
+    if (!requestedStoreId && !scope.global && scope.reason === "ACCESS_DENIED") {
+      throw new ForbiddenException({ code: "ACCESS_DENIED", message: "当前角色无权访问报表" });
+    }
+    const storeIds = requestedStoreId ? [requestedStoreId] : scope.global ? [] : scope.storeIds;
+    return { scope, storeIds, empty: !scope.global && storeIds.length === 0 };
   }
 }
 
-function buildReportQueryScope(actor: UserWithStoreMember, storeId: string | undefined, isSales: boolean) {
-  const storeWhere = storeId ? { storeId } : {};
-  if (!isSales) {
+function emptyReportSummary() {
+  return {
+    orders: 0,
+    totalAmountCents: 0,
+    paidAmountCents: 0,
+    constructionRecords: 0,
+    afterSales: 0,
+    invoices: 0,
+    rebates: 0,
+    inventoryBatches: 0,
+    inventoryMovements: 0,
+    expenseAmountCents: 0,
+    reimbursementAmountCents: 0,
+    paymentRecordAmountCents: 0,
+    salesCommissionAmountCents: 0,
+    workerCommissionAmountCents: 0,
+    salesTrend: [],
+    constructionTrend: [],
+    afterSaleTrend: [],
+    commissionTrend: [],
+    financeTrend: [],
+    inventoryTrend: [],
+    invoiceTrend: [],
+    rebateTrend: []
+  };
+}
+
+function emptyOperationalReport() {
+  return buildOperationalReport({ orders: [], payments: [], afterSales: [], dateBasis: "DEFAULT" });
+}
+
+function buildReportQueryScope(userId: string, storeIds: string[], ownerId?: string) {
+  const storeWhere = storeIds.length === 0 ? {} : storeIds.length === 1 ? { storeId: storeIds[0] } : { storeId: { in: storeIds } };
+  if (!ownerId) {
     return {
       orderWhere: storeWhere,
-      orderAmountWhere: storeId ? { order: { storeId } } : {},
+      orderAmountWhere: storeIds.length ? { order: storeWhere } : {},
       invoiceWhere: storeWhere,
       rebateWhere: storeWhere,
       salesCommissionWhere: storeWhere,
@@ -392,12 +409,12 @@ function buildReportQueryScope(actor: UserWithStoreMember, storeId: string | und
   }
 
   return {
-    orderWhere: { storeId, salesPersonId: actor.id },
-    orderAmountWhere: { order: { storeId, salesPersonId: actor.id } },
-    invoiceWhere: { storeId, order: { salesPersonId: actor.id } },
-    rebateWhere: { storeId, order: { salesPersonId: actor.id } },
-    salesCommissionWhere: { storeId, salesUserId: actor.id },
-    operationalWhere: { storeId, id: "__mallbay_sales_report_no_access__" }
+    orderWhere: { ...storeWhere, salesPersonId: userId },
+    orderAmountWhere: { order: { ...storeWhere, salesPersonId: userId } },
+    invoiceWhere: { ...storeWhere, order: { salesPersonId: userId } },
+    rebateWhere: { ...storeWhere, order: { salesPersonId: userId } },
+    salesCommissionWhere: { ...storeWhere, salesUserId: userId },
+    operationalWhere: { ...storeWhere, id: "__mallbay_sales_report_no_access__" }
   };
 }
 
@@ -884,7 +901,8 @@ function buildOperationalOrderWhere(
   storeId: string | undefined,
   query: OperationalReportQueryDto,
   dateRange: Prisma.DateTimeFilter | undefined,
-  salesPersonId?: string
+  salesPersonId?: string,
+  accessibleStoreIds: string[] = []
 ): Prisma.OrderWhereInput {
   const dateBasis = query.dateBasis ?? "DEFAULT";
   const dateScope = !dateRange
@@ -897,7 +915,7 @@ function buildOperationalOrderWhere(
           ? { costSettlement: { is: { settledAt: dateRange } } }
           : { createdAt: dateRange };
   return {
-    ...(storeId ? { storeId } : {}),
+    ...(storeId ? { storeId } : accessibleStoreIds.length ? { storeId: { in: accessibleStoreIds } } : {}),
     ...(salesPersonId ? { salesPersonId } : {}),
     ...(query.workerUserId ? { constructionRecord: { is: { assignments: { some: { workerUserId: query.workerUserId } } } } } : {}),
     ...(query.constructionType ? { constructionType: query.constructionType as never } : {}),

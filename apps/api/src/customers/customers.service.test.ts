@@ -4,13 +4,19 @@ import { CustomerNoteType, CustomerType, Gender, StorePosition } from "@prisma/c
 import { CustomersService } from "./customers.service";
 
 const customerAccess = {
-  can: async (actor: string, capability: string, action: string, context: { ownerId?: string } = {}) => {
-    if (capability === "store" && action === "write") return actor.includes("manager") || actor.includes("admin");
+  can: async (actor: { userId: string }, capability: string, action: string, context: { ownerId?: string } = {}) => {
+    const userId = actor.userId;
+    if (capability === "store" && action === "write") return userId.includes("manager") || userId.includes("admin");
     if (capability !== "customers") return true;
     if (action === "read") return true;
-    return context.ownerId === actor || actor.includes("manager") || actor.includes("admin") || actor.includes("service");
+    return context.ownerId === userId || userId.includes("manager") || userId.includes("admin") || userId.includes("service");
   },
-  resolve: async (actor: string) => ({ roles: [{ roleCode: actor.includes("sales") ? "SALES" : actor.includes("finance") ? "FINANCE" : actor.includes("admin") ? "HQ_ADMIN" : "MANAGER" }] })
+  scope: async (actor: { userId: string }, _capability: string, _action: string, _context: { storeId?: string }) => ({
+    allowed: true,
+    global: !actor.userId.includes("sales"),
+    storeIds: ["store-1"],
+    ...(actor.userId.includes("sales") ? { ownerId: actor.userId } : {})
+  })
 };
 
 test("CustomersService creates a personal customer owned by the current sales user", async () => {

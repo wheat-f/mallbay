@@ -5,7 +5,8 @@ import { ConstructionLocation, ConstructionTaskStatus, ConstructionType, Custome
 import { OrdersService, redactOrderAmount } from "./orders.service";
 
 const orderServiceAccess = {
-  can: async (actorId: string, capability: string, action: string, context: { storeId?: string; ownerId?: string } = {}) => {
+  can: async (actor: { userId: string }, capability: string, action: string, context: { storeId?: string; ownerId?: string } = {}) => {
+    const actorId = actor.userId;
     const role = actorId.startsWith("admin") || actorId.startsWith("hq") ? "HQ_ADMIN"
       : actorId.startsWith("sales") ? "SALES"
         : actorId.startsWith("finance") ? "FINANCE"
@@ -17,14 +18,28 @@ const orderServiceAccess = {
     if (capability === "finance" && action === "write") return ["HQ_ADMIN", "MANAGER", "FINANCE"].includes(role);
     return false;
   },
-  resolve: async (actorId: string, context: { storeId?: string }) => ({
-    userId: actorId,
+  scope: async (actor: { userId: string }, capability: string, action: string, context: { storeId?: string; ownerId?: string } = {}) => {
+    const actorId = actor.userId;
+    const role = actorId.startsWith("admin") || actorId.startsWith("hq") ? "HQ_ADMIN"
+      : actorId.startsWith("sales") ? "SALES"
+        : actorId.startsWith("finance") ? "FINANCE"
+          : actorId.startsWith("customer-service") || actorId.startsWith("cs") ? "CUSTOMER_SERVICE" : "MANAGER";
+    const allowed = await orderServiceAccess.can(actor, capability, action, context);
+    return {
+      allowed,
+      global: role === "HQ_ADMIN",
+      storeIds: context.storeId ? [context.storeId] : ["store-1"],
+      ...(role === "SALES" ? { ownerId: actorId } : {})
+    };
+  },
+  resolve: async (actor: { userId: string }, context: { storeId?: string }) => ({
+    userId: actor.userId,
     policyVersion: 1,
     bindingVersion: 1,
     roles: [{
-      roleCode: actorId.startsWith("admin") || actorId.startsWith("hq") ? "HQ_ADMIN" : actorId.startsWith("sales") ? "SALES" : actorId.startsWith("finance") ? "FINANCE" : "MANAGER",
+      roleCode: actor.userId.startsWith("admin") || actor.userId.startsWith("hq") ? "HQ_ADMIN" : actor.userId.startsWith("sales") ? "SALES" : actor.userId.startsWith("finance") ? "FINANCE" : "MANAGER",
       roleName: "test",
-      scopeType: actorId.startsWith("admin") || actorId.startsWith("hq") ? "HQ" : "STORE",
+      scopeType: actor.userId.startsWith("admin") || actor.userId.startsWith("hq") ? "HQ" : "STORE",
       scopeIds: context.storeId ? [context.storeId] : []
     }],
     permissions: [],

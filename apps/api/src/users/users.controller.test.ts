@@ -9,22 +9,22 @@ const imageFile = {
   buffer: Buffer.from("image")
 } as MulterFile;
 
-test("searchUsers delegates auditor user search to UsersService", async () => {
+test("searchUsers delegates user search to UsersService through the access subject", async () => {
   const calls: unknown[] = [];
   const usersService = {
-    searchUsers: async (userId: string, isAuditor: boolean, keyword: string) => {
-      calls.push({ userId, isAuditor, keyword });
+    searchUsers: async (userId: string, keyword: string) => {
+      calls.push({ userId, keyword });
       return [{ id: "user-2", username: "xiaoming" }];
     }
   };
   const controller = new UsersController(usersService as never, {} as never, {} as never);
 
   const result = await controller.searchUsers(
-    { user: { id: "auditor-1", username: "admin", isAuditor: true } } as never,
+    { user: { id: "auditor-1", username: "admin" } } as never,
     "xiao"
   );
 
-  assert.deepEqual(calls, [{ userId: "auditor-1", isAuditor: true, keyword: "xiao" }]);
+  assert.deepEqual(calls, [{ userId: "auditor-1", keyword: "xiao" }]);
   assert.deepEqual(result, [{ id: "user-2", username: "xiaoming" }]);
 });
 

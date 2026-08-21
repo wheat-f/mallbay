@@ -17,13 +17,13 @@ export class SettingsAuditService {
   ) {}
 
   async list(user: SettingsUser, input: AuditQuery) {
-    const actor = await this.access.resolveUser(user);
-    const canGlobal = await this.authorize(actor.id, "settings", "read");
-    const storeId = actor.storeMember?.storeId;
-    const canFinance = Boolean(storeId && await this.authorize(actor.id, "finance", "read", { storeId }));
-    if (!canGlobal && !canFinance && (!actor.storeMember || !["MANAGER", "FINANCE"].includes(actor.storeMember.position))) {
-      throw new ForbiddenException("当前角色无权访问审计");
-    }
+    const actor = user;
+    const settingsScope = await this.scope(actor.id, "settings", "read");
+    const financeScope = await this.scope(actor.id, "finance", "read");
+    const canGlobal = settingsScope.global;
+    const canFinance = financeScope.allowed;
+    const accessibleStoreIds = [...new Set([...settingsScope.storeIds, ...financeScope.storeIds])];
+    if (!canGlobal && !canFinance && !accessibleStoreIds.length) throw new ForbiddenException({ code: "SCOPE_UNRESOLVED", message: "当前用户没有可访问的审计范围" });
     const requestedDomain = input.domain?.trim().toUpperCase();
     // Legacy position === "FINANCE" && requestedDomain !== "FINANCE" rule is now permission-backed.
     if (requestedDomain && !canGlobal && canFinance && requestedDomain !== "FINANCE") {
@@ -47,7 +47,7 @@ export class SettingsAuditService {
     if (input.domain) predicates.push({ action: { contains: `settings.${input.domain.toLowerCase()}` } });
     const where: Prisma.AuditEventWhereInput = {
       ...(predicates.length ? { AND: predicates } : {}),
-      ...(!canGlobal ? { storeId: actor.storeMember!.storeId } : {})
+      ...(!canGlobal ? { storeId: { in: accessibleStoreIds.length ? accessibleStoreIds : ["__NO_SCOPE__"] } } : {})
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.auditEvent.findMany({ where, orderBy: { createdAt: "desc" }, skip: offset, take: limit }),
@@ -99,13 +99,13 @@ export class SettingsAuditService {
       rows.push(...page.rows);
       if (!page.rows.length) break;
     }
-    const actor = await this.access.resolveUser(user);
-    const canGlobal = await this.authorize(actor.id, "settings", "read");
+    const actor = user;
+    const canGlobal = (await this.scope(actor.id, "settings", "read")).global;
     await this.prisma.auditEvent.create({
       data: {
         action: "settings.audit.exported",
         actorId: actor.id,
-        storeId: canGlobal ? null : actor.storeMember?.storeId,
+        storeId: canGlobal ? null : null,
         targetType: "SettingsAuditExport",
         metadata: { count: rows.length, filters: input as Prisma.InputJsonValue }
       }
@@ -115,8 +115,14 @@ export class SettingsAuditService {
 
   private authorize(userId: string, capability: string, action: string, context: { storeId?: string } = {}) {
     return this.accessContext
-      ? this.accessContext.can(userId, capability, action, context)
+      ? this.accessContext.can({ userId }, capability, action, context)
       : this.permissions.authorize(userId, capability, action, context);
+  }
+
+  private scope(userId: string, capability: string, action: string) {
+    return this.accessContext
+      ? this.accessContext.scope({ userId }, capability, action)
+      : this.permissions.buildScopeFacts(userId, capability, action);
   }
 }
 

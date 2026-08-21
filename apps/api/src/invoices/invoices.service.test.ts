@@ -4,7 +4,8 @@ import { ConstructionTaskStatus, CustomerType, InvoiceStatus, OrderStatus, Store
 import { InvoicesService } from "./invoices.service";
 
 const invoiceAccess = {
-  can: async (actorId: string, capability: string, action: string, context: { ownerId?: string }) => {
+  can: async (actor: { userId: string }, capability: string, action: string, context: { ownerId?: string }) => {
+    const actorId = actor.userId;
     const managerOrFinance = actorId.includes("manager") || actorId.includes("finance") || actorId.includes("admin");
     if (capability === "finance" && action === "write") {
       return context.ownerId ? managerOrFinance || context.ownerId === actorId : managerOrFinance;
@@ -14,13 +15,11 @@ const invoiceAccess = {
     }
     return true;
   },
-  resolve: async (actorId: string) => ({
-    roles: [{
-      roleCode: actorId.startsWith("sales") ? "SALES" : "MANAGER",
-      roleName: "测试角色",
-      scopeType: "STORE",
-      scopeIds: ["store-1"]
-    }]
+  scope: async (actor: { userId: string }, _capability: string, _action: string, _context: { ownerId?: string }) => ({
+    allowed: true,
+    global: false,
+    storeIds: ["store-1"],
+    ...(actor.userId.startsWith("sales") ? { ownerId: actor.userId } : {})
   })
 };
 

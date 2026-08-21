@@ -154,7 +154,7 @@ export class InventoryService {
   ) {}
 
   private canAccess(actor: AuthenticatedInventoryUser, capability: string, action: string, storeId: string) {
-    return this.accessContext.can(actor.id, capability, action, { storeId });
+    return this.accessContext.can({ userId: actor.id }, capability, action, { storeId });
   }
 
   async listBatches(user: AuthenticatedInventoryUser, query: ListInventoryDto) {
@@ -2163,14 +2163,7 @@ export class InventoryService {
   }
 
   private async withStoreMember(user: AuthenticatedInventoryUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) {
-      return user;
-    }
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: user.id },
-      select: { storeId: true, position: true }
-    });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
+    return user;
   }
 }
 

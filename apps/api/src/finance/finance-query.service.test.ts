@@ -22,10 +22,11 @@ function membership(position: StorePosition, storeId = "store-1") {
 
 function accessContextFor(...allowedIds: string[]) {
   return {
-    can: async (actor: string, _capability: string, action: string, context: { storeId?: string; ownerId?: string }) => {
+    can: async (actor: { userId: string }, _capability: string, action: string, context: { storeId?: string; ownerId?: string }) => {
+      const actorId = actor.userId;
       if (context.storeId !== "store-1") return false;
-      if (action === "write") return allowedIds.some((id) => id === actor && (id.startsWith("manager") || id.startsWith("finance")));
-      return Boolean(context.ownerId === actor || allowedIds.includes(actor));
+      if (action === "write") return allowedIds.some((id) => id === actorId && (id.startsWith("manager") || id.startsWith("finance")));
+      return Boolean(context.ownerId === actorId || allowedIds.includes(actorId));
     }
   };
 }

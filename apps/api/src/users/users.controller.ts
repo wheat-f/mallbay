@@ -27,7 +27,7 @@ import { OssService } from "./oss.service";
 import { UsersService } from "./users.service";
 
 type AuthRequest = Request & {
-  user: { id: string; username: string; isAuditor: boolean };
+  user: { id: string; username: string };
 };
 
 // 头像最大 2 MB
@@ -103,7 +103,7 @@ export class UsersController {
   // 管理员专用：搜索用户
   @Get("search")
   searchUsers(@Req() req: AuthRequest, @Query("q") keyword: string) {
-    return this.usersService.searchUsers(req.user.id, req.user.isAuditor, keyword ?? "");
+    return this.usersService.searchUsers(req.user.id, keyword ?? "");
   }
 
   // 管理员专用：重置用户密码

@@ -1,5 +1,4 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { UserWithStoreMember } from "../permissions/domain/access-types";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { estimateCosts } from "./domain/cost-estimator";
@@ -13,8 +12,8 @@ export class CostEstimatorService {
   constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
 
   async estimate(user: PricingAuthenticatedUser, dto: EstimateCostDto) {
-    const actor = await this.withStoreMember(user);
-    if (!await this.accessContext.can(actor.id, "products", "read", { storeId: dto.storeId })) throw new ForbiddenException("无权限");
+    const actor = user;
+    if (!await this.accessContext.can({ userId: actor.id }, "products", "read", { storeId: dto.storeId })) throw new ForbiddenException("无权限");
     const productIds = [...new Set(dto.lines.map((line) => line.productId))];
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, storeId: dto.storeId },
@@ -81,9 +80,4 @@ export class CostEstimatorService {
     return this.estimate(user, { storeId, lines });
   }
 
-  private async withStoreMember(user: PricingAuthenticatedUser): Promise<UserWithStoreMember> {
-    if (user.storeMember !== undefined) return user;
-    const member = await this.prisma.storeMember.findUnique({ where: { userId: user.id }, select: { storeId: true, position: true } });
-    return { id: user.id, isAuditor: user.isAuditor, storeMember: member };
-  }
 }

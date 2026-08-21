@@ -10,7 +10,8 @@ import {
 import { CreateOrderUseCase } from "./create-order.use-case";
 
 const orderAccess = {
-  can: async (actorId: string, capability: string, action: string, context: { storeId?: string; ownerId?: string } = {}) => {
+  can: async (actor: { userId: string }, capability: string, action: string, context: { storeId?: string; ownerId?: string } = {}) => {
+    const actorId = actor.userId;
     const role = actorId.startsWith("sales") ? "SALES" : actorId.startsWith("manager") ? "MANAGER" : actorId.startsWith("customer-service") ? "CUSTOMER_SERVICE" : "SALES";
     if (capability === "orders" && action === "write") return ["SALES", "MANAGER", "CUSTOMER_SERVICE"].includes(role);
     if (capability === "store" && action === "write") return role === "MANAGER";

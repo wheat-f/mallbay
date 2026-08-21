@@ -54,7 +54,7 @@ export class ConstructionLifecycleImplementation {
   ) {
     const executionStoreId = order.executionStoreId ?? order.storeId;
     if (command.type === "DISPATCH" || command.type === "QUALITY_CHECK") {
-      if (!await this.accessContext.can(actor.id, "construction", "write", { storeId: executionStoreId })) {
+      if (!await this.accessContext.can({ userId: actor.id }, "construction", "write", { storeId: executionStoreId })) {
         throw new ForbiddenException("无权限");
       }
       return;
@@ -64,7 +64,7 @@ export class ConstructionLifecycleImplementation {
       select: { id: true }
     });
     if (assignment) return;
-    if (!await this.accessContext.can(actor.id, "construction", "write", { storeId: executionStoreId })) {
+    if (!await this.accessContext.can({ userId: actor.id }, "construction", "write", { storeId: executionStoreId })) {
       throw new ForbiddenException("无权限");
     }
   }

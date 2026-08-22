@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
-import { Prisma, PricingRolloutMode, ProductUnit } from "@prisma/client";
+import { Prisma, PricingRolloutMode, ProductUnit, StorePosition } from "@prisma/client";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -25,7 +25,7 @@ export type PricingAuthenticatedUser = {
   /** @deprecated compatibility for staged test/request adapters only. */
   isAuditor?: boolean;
   /** @deprecated compatibility for staged test/request adapters only. */
-  storeMember?: { storeId: string; position: string } | null;
+  storeMember?: { storeId: string; position: StorePosition } | null;
 };
 
 type CostEstimateSnapshot = {

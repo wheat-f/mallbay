@@ -237,8 +237,10 @@ test("OrdersService recalculates paid and outstanding amount after payment", asy
       aggregate: async () => ({ _sum: { amountCents: 1500000 } })
     },
     paymentRecord: {
+      findFirst: async () => null,
       create: async (args: unknown) => {
         paymentRecords.push(args);
+        return { id: "cash-fact-1" };
       }
     },
     orderAmount: {
@@ -285,10 +287,12 @@ test("OrdersService recalculates paid and outstanding amount after payment", asy
         storeId: "store-1",
         accountId: "account-1",
         type: PaymentRecordType.ORDER_PAYMENT,
-        direction: PaymentDirection.INCOME,
-        amountCents: 1500000,
-        sourceId: "payment-1",
-        note: "订单收款",
+         direction: PaymentDirection.INCOME,
+         amountCents: 1500000,
+         sourceType: "ORDER_PAYMENT",
+         sourceId: "payment-1",
+         idempotencyKey: "ORDER_PAYMENT:order-1:aa6e0a5d575be7798de19d7fb4e2917c9522f93b642af576156491570b378550",
+         note: "订单收款",
         createdById: "finance-1",
         occurredAt: new Date("2026-05-31T12:00:00.000Z")
       }

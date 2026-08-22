@@ -9,11 +9,12 @@ import { UsersModule } from "../users/users.module";
 import { FinanceAttachmentService } from "./finance-attachment.service";
 import { FinancialDocumentQuery } from "./domain/financial-document-query";
 import { PermissionsModule } from "../permissions/permissions.module";
+import { CashFactWriter } from "./domain/cash-fact-writer";
 
 @Module({
   imports: [PrismaModule, UsersModule, PermissionsModule],
   controllers: [FinanceController],
-  providers: [FinanceService, FinancialDocumentQuery, ExpenseWorkflowService, FinanceQueryService, ReimbursementWorkflowService, FinanceAttachmentService],
-  exports: [FinanceService, ExpenseWorkflowService, FinancialDocumentQuery, ReimbursementWorkflowService, FinanceAttachmentService]
+  providers: [FinanceService, CashFactWriter, FinancialDocumentQuery, ExpenseWorkflowService, FinanceQueryService, ReimbursementWorkflowService, FinanceAttachmentService],
+  exports: [FinanceService, CashFactWriter, ExpenseWorkflowService, FinancialDocumentQuery, ReimbursementWorkflowService, FinanceAttachmentService]
 })
 export class FinanceModule {}

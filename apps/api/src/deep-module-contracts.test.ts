@@ -11,6 +11,7 @@ import { ProcurementFlow } from "./inventory/procurement-flow";
 import { InventoryCatalog } from "./inventory/inventory-catalog";
 import { ConstructionFulfillment } from "./construction/construction-fulfillment";
 import { FinanceService } from "./finance/finance.service";
+import { CashFactWriter } from "./finance/domain/cash-fact-writer";
 import { SettlementWorkflow } from "./customer-settlements/domain/settlement-workflow";
 import { InventoryModule } from "./inventory/inventory.module";
 import { InventoryService } from "./inventory/inventory.service";
@@ -143,6 +144,7 @@ test("deep modules do not re-export compatibility implementations", () => {
   assert.equal(exported(ConstructionModule).has(CrossStoreConstructionService), false);
   assert.equal(exported(CustomerSettlementsModule).has(CustomerSettlementsService), false);
   assert.equal(exported(FinanceModule).has(FinanceQueryService), false);
+  assert.equal(exported(FinanceModule).has(CashFactWriter), true);
   assert.equal(exported(ReportsModule).has(ReportsService), false);
 });
 
@@ -174,6 +176,31 @@ test("production source keeps CreateOrderUseCase behind the OrderLifecycle seam"
     }
   };
   visit(sourceRoot);
+  assert.deepEqual(violations, []);
+});
+
+test("order cash-fact callers use CashFactWriter instead of PaymentRecord directly", () => {
+  const sourceRoot = path.resolve(__dirname);
+  const allowed = new Set([
+    path.join(sourceRoot, "finance", "domain", "cash-fact-writer.ts"),
+    path.join(sourceRoot, "returns", "returns.service.ts")
+  ]);
+  const violations: string[] = [];
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolute);
+        continue;
+      }
+      if (!entry.name.endsWith(".ts") || entry.name.endsWith(".test.ts") || allowed.has(absolute)) continue;
+      const source = readFileSync(absolute, "utf8");
+      if (source.includes("paymentRecord.create")) violations.push(path.relative(sourceRoot, absolute));
+    }
+  };
+    visit(path.join(sourceRoot, "orders"));
+    visit(path.join(sourceRoot, "finance"));
+    visit(path.join(sourceRoot, "returns"));
   assert.deepEqual(violations, []);
 });
 
@@ -347,7 +374,7 @@ test("Finance owns customer cash-fact writes and preserves the business idempote
   const writes: unknown[] = [];
   const finance = new FinanceService({} as never);
   await finance.recordCustomerReceipt(
-    { paymentRecord: { create: async (args: unknown) => { writes.push(args); return { id: "payment-1" }; } } } as never,
+    { paymentRecord: { findFirst: async () => null, create: async (args: unknown) => { writes.push(args); return { id: "payment-1" }; } } } as never,
     {
       storeId: "store-1",
       accountId: "account-1",
@@ -363,7 +390,7 @@ test("Finance owns customer cash-fact writes and preserves the business idempote
   assert.equal(serialized.includes("CUSTOMER_RECEIPT"), true);
   assert.equal(serialized.includes("receipt-op-1"), true);
   await finance.recordRebatePayout(
-    { paymentRecord: { create: async (args: unknown) => { writes.push(args); return { id: "payment-2" }; } } } as never,
+    { paymentRecord: { findFirst: async () => null, create: async (args: unknown) => { writes.push(args); return { id: "payment-2" }; } } } as never,
     {
       storeId: "store-1",
       amountCents: 500,

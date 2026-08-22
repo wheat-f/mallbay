@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
 import { ConflictException, ForbiddenException, forwardRef, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { FinanceApprovalStatus, PaymentDirection, PaymentRecordType, Prisma } from "@prisma/client";
+import { FinanceApprovalStatus, Prisma } from "@prisma/client";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateExpenseDto, CreateReimbursementDto, ListFinanceDto, ReviewFinanceDto } from "./dto/finance.dto";
 import { ExpenseWorkflowService } from "./expense-workflow.service";
 import { ReimbursementWorkflowService } from "./reimbursement-workflow.service";
 import { FINANCE_CAPABILITIES } from "./domain/finance-capabilities";
+import { CashFactWriter, toCashFactTransaction } from "./domain/cash-fact-writer";
 
 export type AuthenticatedFinanceUser = {
   id: string;
@@ -19,12 +20,17 @@ export type AuthenticatedFinanceUser = {
 
 @Injectable()
 export class FinanceService {
+  private readonly cashFactWriter: CashFactWriter;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly expenseWorkflow?: ExpenseWorkflowService,
     @Optional() @Inject(forwardRef(() => ReimbursementWorkflowService)) private readonly reimbursementWorkflow?: ReimbursementWorkflowService,
-    @Optional() private readonly accessContext?: AccessContext
-  ) {}
+    @Optional() private readonly accessContext?: AccessContext,
+    @Optional() cashFactWriter?: CashFactWriter
+  ) {
+    this.cashFactWriter = cashFactWriter ?? new CashFactWriter();
+  }
 
   private canAccess(actor: AuthenticatedFinanceUser, capability: string, action: string, storeId: string, ownerId?: string) {
     if (this.accessContext) return this.accessContext.can({ userId: actor.id }, capability, action, { storeId, ownerId });
@@ -49,20 +55,7 @@ export class FinanceService {
       idempotencyKey: string;
     }
   ) {
-    return tx.paymentRecord.create({
-      data: {
-        storeId: input.storeId,
-        accountId: input.accountId,
-        type: PaymentRecordType.CUSTOMER_RECEIPT,
-        direction: PaymentDirection.INCOME,
-        amountCents: input.amountCents,
-        sourceId: input.sourceId,
-        note: input.note,
-        createdById: input.createdById,
-        occurredAt: input.occurredAt,
-        idempotencyKey: input.idempotencyKey
-      }
-    });
+    return this.cashFactWriter.recordCustomerReceipt(toCashFactTransaction(tx), input).then((result) => ({ id: result.recordId }));
   }
 
   recordCustomerReceiptReversal(
@@ -78,20 +71,10 @@ export class FinanceService {
       idempotencyKey: string;
     }
   ) {
-    return tx.paymentRecord.create({
-      data: {
-        storeId: input.storeId,
-        accountId: input.accountId,
-        type: PaymentRecordType.CUSTOMER_RECEIPT_REVERSAL,
-        direction: PaymentDirection.EXPENSE,
-        amountCents: input.amountCents,
-        sourceId: input.sourceId,
-        note: input.note,
-        createdById: input.createdById,
-        occurredAt: input.occurredAt,
-        idempotencyKey: input.idempotencyKey
-      }
-    });
+    return this.cashFactWriter.recordCustomerReceiptReversal(toCashFactTransaction(tx), {
+      ...input,
+      occurredAt: input.occurredAt ?? new Date()
+    }).then((result) => ({ id: result.recordId }));
   }
 
   recordRebatePayout(
@@ -106,19 +89,10 @@ export class FinanceService {
       idempotencyKey: string;
     }
   ) {
-    return tx.paymentRecord.create({
-      data: {
-        storeId: input.storeId,
-        type: PaymentRecordType.REBATE,
-        direction: PaymentDirection.EXPENSE,
-        amountCents: input.amountCents,
-        sourceId: input.sourceId,
-        note: input.note,
-        createdById: input.createdById,
-        occurredAt: input.occurredAt,
-        idempotencyKey: input.idempotencyKey
-      }
-    });
+    return this.cashFactWriter.recordRebatePayout(toCashFactTransaction(tx), {
+      ...input,
+      occurredAt: input.occurredAt ?? new Date()
+    }).then((result) => ({ id: result.recordId }));
   }
 
   recordReimbursementPayout(
@@ -134,20 +108,7 @@ export class FinanceService {
       idempotencyKey: string;
     }
   ) {
-    return tx.paymentRecord.create({
-      data: {
-        storeId: input.storeId,
-        accountId: input.accountId,
-        type: PaymentRecordType.REIMBURSEMENT,
-        direction: PaymentDirection.EXPENSE,
-        amountCents: input.amountCents,
-        sourceId: input.sourceId,
-        note: input.note,
-        createdById: input.createdById,
-        occurredAt: input.occurredAt,
-        idempotencyKey: input.idempotencyKey
-      }
-    });
+    return this.cashFactWriter.recordReimbursementPayout(toCashFactTransaction(tx), input).then((result) => ({ id: result.recordId }));
   }
 
   async createExpense(user: AuthenticatedFinanceUser, dto: CreateExpenseDto) {

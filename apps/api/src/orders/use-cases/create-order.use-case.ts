@@ -7,13 +7,14 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, CrossStoreTaskStatus, CustomerContactRole, CustomerVehicleStatus, DictionaryStatus, NotificationType, OrderStatus, PaymentDirection, PaymentRecordType, Prisma, ProductStatus, ProductUnit, StorePosition, StoreStatus } from "@prisma/client";
+import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, CrossStoreTaskStatus, CustomerContactRole, CustomerVehicleStatus, DictionaryStatus, NotificationType, OrderStatus, Prisma, ProductStatus, ProductUnit, StorePosition, StoreStatus } from "@prisma/client";
 import { type UserWithStoreMember } from "../../permissions/domain/access-types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AccessContext } from "../../permissions/domain/access-context";
 import { PricingDecision } from "../../pricing/domain/pricing-decision";
 import { multiplyMoneyCents } from "../../pricing/domain/money";
 import { CreateOrderDto } from "../dto/create-order.dto";
+import { CashFactWriter, toCashFactTransaction } from "../../finance/domain/cash-fact-writer";
 
 export const ORDER_NUMBER_GENERATOR = Symbol("ORDER_NUMBER_GENERATOR");
 
@@ -33,6 +34,7 @@ type CreateOrderOptions = {
 @Injectable()
 export class CreateOrderUseCase {
   private readonly orderNumber: OrderNumberGenerator;
+  private readonly cashFactWriter: CashFactWriter;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -42,9 +44,13 @@ export class CreateOrderUseCase {
     orderNumber?: OrderNumberGenerator,
     @Optional()
     @Inject(PricingDecision)
-    private readonly pricing?: PricingDecision
+    private readonly pricing?: PricingDecision,
+    @Optional()
+    @Inject(CashFactWriter)
+    cashFactWriter?: CashFactWriter
   ) {
     this.orderNumber = orderNumber ?? createDefaultOrderNumberGenerator();
+    this.cashFactWriter = cashFactWriter ?? new CashFactWriter();
   }
 
   async execute(user: UserWithStoreMember, dto: CreateOrderDto, options: CreateOrderOptions = {}) {
@@ -400,20 +406,16 @@ export class CreateOrderUseCase {
             idempotencyKey: "INITIAL_DEPOSIT"
           }
         });
-        await tx.paymentRecord.create({
-          data: {
-            storeId: dto.storeId,
-            accountId: dto.deposit.accountId,
-            type: PaymentRecordType.ORDER_PAYMENT,
-            direction: PaymentDirection.INCOME,
-            amountCents: dto.deposit.amountCents,
-            sourceType: "ORDER_PAYMENT",
-            sourceId: initialPayment.id,
-            idempotencyKey: `ORDER_INITIAL_DEPOSIT:${order.id}`,
-            note: "订单初始定金",
-            createdById: user.id,
-            occurredAt: new Date(dto.deposit.paidAt)
-          }
+        await this.cashFactWriter.recordOrderPayment(toCashFactTransaction(tx), {
+          storeId: dto.storeId,
+          accountId: dto.deposit.accountId,
+          amountCents: dto.deposit.amountCents,
+          sourceType: "ORDER_PAYMENT",
+          sourceId: initialPayment.id,
+          idempotencyKey: `ORDER_INITIAL_DEPOSIT:${order.id}`,
+          note: "订单初始定金",
+          createdById: user.id,
+          occurredAt: new Date(dto.deposit.paidAt)
         });
       }
 

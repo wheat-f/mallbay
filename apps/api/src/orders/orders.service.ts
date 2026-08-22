@@ -8,8 +8,6 @@ import {
   CustomerVehicleStatus,
   OrderAmendmentStatus,
   OrderStatus,
-  PaymentDirection,
-  PaymentRecordType,
   PaymentType,
   NotificationType,
   QualityCheckResult,
@@ -35,6 +33,7 @@ import { ReturnOrderDto } from "./dto/return-order.dto";
 import { CreateOrderAmendmentRequestDto, ReviewOrderAmendmentRequestDto } from "./dto/order-amendment.dto";
 import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
+import { CashFactWriter, toCashFactTransaction } from "../finance/domain/cash-fact-writer";
 
 type ExistingOrderPayment = {
   id: string;
@@ -71,13 +70,18 @@ export type AuthenticatedOrderUser = UserWithStoreMember & {
 
 @Injectable()
 export class OrdersService {
+  private readonly cashFactWriter: CashFactWriter;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly orderLifecycle: OrderLifecycle,
     private readonly accessContext: AccessContext,
-    @Optional() private readonly auditWriter: AuditEventWriter | undefined
-  ) {}
+    @Optional() private readonly auditWriter: AuditEventWriter | undefined,
+    @Optional() cashFactWriter?: CashFactWriter
+  ) {
+    this.cashFactWriter = cashFactWriter ?? new CashFactWriter();
+  }
 
   async create(user: AuthenticatedOrderUser, commandId: string | undefined, dto: CreateOrderDto) {
     const actor = await this.withStoreMember(user);
@@ -418,18 +422,16 @@ export class OrdersService {
 
       // 订单收款既是订单维度的收款记录，也是已经发生的资金收入。
       // 用订单收款 ID 作为来源，支持一张订单的多笔收款且保证幂等。
-      await tx.paymentRecord.create({
-        data: {
-          storeId: order.storeId,
-          accountId: dto.accountId,
-          type: PaymentRecordType.ORDER_PAYMENT,
-          direction: PaymentDirection.INCOME,
-          amountCents: dto.amountCents,
-          sourceId: payment.id,
-          note: "订单收款",
-          createdById: actor.id,
-          occurredAt: new Date(dto.paidAt)
-        }
+      await this.cashFactWriter.recordOrderPayment(toCashFactTransaction(tx), {
+        storeId: order.storeId,
+        accountId: dto.accountId,
+        amountCents: dto.amountCents,
+        sourceType: "ORDER_PAYMENT",
+        sourceId: payment.id,
+        idempotencyKey: `ORDER_PAYMENT:${orderId}:${idempotencyKey}`,
+        note: "订单收款",
+        createdById: actor.id,
+        occurredAt: new Date(dto.paidAt)
       });
 
       const aggregate = await tx.orderPayment.aggregate({

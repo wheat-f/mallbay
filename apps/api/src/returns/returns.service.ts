@@ -2,13 +2,18 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PrismaService } from "../prisma/prisma.service";
 import type { Prisma } from "@prisma/client";
 import { AccessContext } from "../permissions/domain/access-context";
+import { CashFactWriter, toCashFactTransaction } from "../finance/domain/cash-fact-writer";
 import { ApproveSalesReturnDto, CancelReturnDto, CostVerificationConfirmDto, CostVerificationResubmitDto, CostVerificationSubmitDto, CreatePurchaseReturnDto, CreateSalesReturnDto, InspectionApproveDto, InspectionConvertDto, ReceiveSalesReturnDto, RefundSalesReturnDto, ReturnActionDto, SettlePurchaseReturnDto } from "./dto/returns.dto";
 
 export type ReturnUser = { id: string; username?: string };
 
 @Injectable()
 export class ReturnsService {
-  constructor(private readonly prisma: PrismaService, private readonly accessContext: AccessContext) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessContext: AccessContext,
+    private readonly cashFactWriter: CashFactWriter
+  ) {}
 
   private requireAction(user: ReturnUser, action: "create" | "approve" | "manage") {
     return this.accessContext.require({ userId: user.id }, "returns", action);
@@ -244,15 +249,25 @@ export class ReturnsService {
     const claim = await this.beginAction("SALES", id, "SALES_REFUND", dto.idempotencyKey, user.id, { amount, refundMethod: dto.refundMethod, voucherId: "[REDACTED]" });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
+    const refundedAt = new Date();
     return this.prisma.$transaction(async (tx) => {
       const action = claim.action;
-      if (amount > 0) await tx.paymentRecord.create({ data: { storeId: parent.executionStoreId, type: "CUSTOMER_RECEIPT_REVERSAL", direction: "EXPENSE", amountCents: amount, sourceType: "SALES_RETURN", sourceId: action.id, note: "销售退货线下退款", createdById: user.id } });
+      if (amount > 0) await this.cashFactWriter.recordCustomerReceiptReversal(toCashFactTransaction(tx), {
+        storeId: parent.executionStoreId,
+        amountCents: amount,
+        sourceType: "SALES_RETURN",
+        sourceId: action.id,
+        note: "销售退货线下退款",
+        createdById: user.id,
+        occurredAt: refundedAt,
+        idempotencyKey: `SALES_RETURN_REFUND:${id}:${dto.idempotencyKey}`
+      });
       if (amount > 0) {
         await tx.returnFinancialAdjustment.create({ data: { storeId: parent.storeId, returnType: "SALES", returnId: id, type: "REVENUE_REVERSAL", amountCents: amount, originalValue: { approved: parent.approvedRefundCents }, newValue: { refunded: amount }, calculationBasis: { rule: "actual_refund" }, idempotencyKey: dto.idempotencyKey, createdById: user.id } });
         await tx.returnFinancialAdjustment.create({ data: { storeId: parent.storeId, returnType: "SALES", returnId: id, type: "RECEIPT_REVERSAL", amountCents: amount, originalValue: { paid: parent.approvedRefundCents }, newValue: { reversed: amount }, calculationBasis: { rule: "actual_refund" }, idempotencyKey: dto.idempotencyKey, createdById: user.id } });
         if (commissionAdjustment > 0) await tx.returnFinancialAdjustment.create({ data: { storeId: parent.storeId, returnType: "SALES", returnId: id, type: "COMMISSION_REVERSAL", amountCents: commissionAdjustment, originalValue: { commissionCents: orderAmount?.salesCommissionCents ?? 0 }, newValue: { reversed: commissionAdjustment }, calculationBasis: { refundCents: amount, approvedRefundCents: parent.approvedRefundCents }, idempotencyKey: dto.idempotencyKey, createdById: user.id } });
       }
-      const updated = await tx.salesReturn.update({ where: { id }, data: { status: left === 0 ? "REFUNDED" : "PARTIAL_REFUND", actualRefundCents: amount, refundedAmountCents: { increment: amount }, waivedRefundCents: { increment: waived }, remainingRefundCents: left, waiverReason: dto.waiverReason, refundMethod: dto.refundMethod, voucherId: dto.voucherId, refundedById: user.id, refundedAt: new Date() } });
+      const updated = await tx.salesReturn.update({ where: { id }, data: { status: left === 0 ? "REFUNDED" : "PARTIAL_REFUND", actualRefundCents: amount, refundedAmountCents: { increment: amount }, waivedRefundCents: { increment: waived }, remainingRefundCents: left, waiverReason: dto.waiverReason, refundMethod: dto.refundMethod, voucherId: dto.voucherId, refundedById: user.id, refundedAt } });
       await tx.returnAction.update({ where: { id: action.id }, data: { status: "SUCCEEDED", resultSummary: { refundedAmountCents: amount, remainingRefundCents: left } } });
       return updated;
     }).catch((error) => this.failAction(actionId, error));
@@ -401,14 +416,25 @@ export class ReturnsService {
     const claim = await this.beginAction("PURCHASE", id, "PURCHASE_SETTLE", dto.idempotencyKey, user.id, { settlementMode: dto.settlementMode, refundAmountCents: refund, payableOffsetAmountCents: offset });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
+    const confirmedAt = new Date();
     return this.prisma.$transaction(async (tx) => {
       const last = await tx.supplierReturnSettlementAdjustment.findFirst({ where: { purchaseReturnId: id }, orderBy: { sequenceNo: "desc" } });
-      const adjustment = await tx.supplierReturnSettlementAdjustment.create({ data: { purchaseReturnId: id, supplierId: parent.supplierId, sequenceNo: (last?.sequenceNo ?? 0) + 1, status: "CONFIRMED", settlementMode: dto.settlementMode, refundAmountCents: refund, payableOffsetAmountCents: offset, exchangeQuantity: dto.exchangeQuantity, supplierDocumentNo: dto.supplierDocumentNo, differenceReason: dto.differenceReason, reason: dto.reason, createdById: user.id, confirmedById: user.id, confirmedAt: new Date(), idempotencyKey: dto.idempotencyKey } });
+      const adjustment = await tx.supplierReturnSettlementAdjustment.create({ data: { purchaseReturnId: id, supplierId: parent.supplierId, sequenceNo: (last?.sequenceNo ?? 0) + 1, status: "CONFIRMED", settlementMode: dto.settlementMode, refundAmountCents: refund, payableOffsetAmountCents: offset, exchangeQuantity: dto.exchangeQuantity, supplierDocumentNo: dto.supplierDocumentNo, differenceReason: dto.differenceReason, reason: dto.reason, createdById: user.id, confirmedById: user.id, confirmedAt, idempotencyKey: dto.idempotencyKey } });
       if (refund > 0) {
         const account = await tx.paymentAccount.findFirst({ where: { storeId: parent.executionStoreId, isActive: true, isDefault: true } });
         if (!account) throw new BadRequestException("RETURN_INVALID_ARGUMENT: 未配置执行门店财务账户");
-        const payment = await tx.paymentRecord.create({ data: { storeId: parent.executionStoreId, accountId: account.id, type: "SUPPLIER_REFUND_OUT", direction: "OUTFLOW", amountCents: refund, sourceType: "SUPPLIER_RETURN_SETTLEMENT", sourceId: adjustment.id, note: dto.supplierDocumentNo, createdById: user.id } });
-        await tx.supplierReturnSettlementAdjustment.update({ where: { id: adjustment.id }, data: { paymentRecordId: payment.id } });
+        const payment = await this.cashFactWriter.recordSupplierRefundPayout(toCashFactTransaction(tx), {
+          storeId: parent.executionStoreId,
+          accountId: account.id,
+          amountCents: refund,
+          sourceType: "SUPPLIER_RETURN_SETTLEMENT",
+          sourceId: adjustment.id,
+          note: dto.supplierDocumentNo,
+          createdById: user.id,
+          occurredAt: confirmedAt,
+          idempotencyKey: `SUPPLIER_RETURN_SETTLEMENT:${id}:${dto.idempotencyKey}`
+        });
+        await tx.supplierReturnSettlementAdjustment.update({ where: { id: adjustment.id }, data: { paymentRecordId: payment.recordId } });
       }
       const total = settled + refund + offset;
       const status = total >= confirmed ? "SETTLED" : "PARTIAL_SETTLEMENT";
@@ -453,14 +479,26 @@ export class ReturnsService {
     const claim = await this.beginAction("PURCHASE", id, "SETTLEMENT_REVERSE", dto.idempotencyKey, user.id, { adjustmentId, reason: dto.reason });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
+    const reversedAt = new Date();
     return this.prisma.$transaction(async (tx) => {
       if (adjustment.paymentRecordId) {
         const original = await tx.paymentRecord.findUnique({ where: { id: adjustment.paymentRecordId } });
         if (!original || original.reversedById) throw new BadRequestException("RETURN_ALREADY_REVERSED");
-        const reversal = await tx.paymentRecord.create({ data: { storeId: original.storeId, accountId: original.accountId, type: "SUPPLIER_REFUND_REVERSAL", direction: "INFLOW", amountCents: original.amountCents, sourceType: "SUPPLIER_RETURN_SETTLEMENT", sourceId: adjustment.id, note: dto.reason, createdById: user.id, reversalOfId: original.id } });
-        await tx.paymentRecord.update({ where: { id: original.id }, data: { reversedById: reversal.id } });
+        const reversal = await this.cashFactWriter.recordSupplierRefundReversal(toCashFactTransaction(tx), {
+          storeId: original.storeId,
+          accountId: original.accountId ?? undefined,
+          amountCents: original.amountCents,
+          sourceType: "SUPPLIER_RETURN_SETTLEMENT",
+          sourceId: adjustment.id,
+          note: dto.reason,
+          createdById: user.id,
+          occurredAt: reversedAt,
+          idempotencyKey: `SUPPLIER_RETURN_SETTLEMENT_REVERSAL:${adjustment.id}:${dto.idempotencyKey}`,
+          reversalOfId: original.id
+        });
+        await tx.paymentRecord.update({ where: { id: original.id }, data: { reversedById: reversal.recordId } });
       }
-      await tx.supplierReturnSettlementAdjustment.update({ where: { id: adjustmentId }, data: { status: "REVERSED", reversedById: user.id, reversedAt: new Date() } });
+      await tx.supplierReturnSettlementAdjustment.update({ where: { id: adjustmentId }, data: { status: "REVERSED", reversedById: user.id, reversedAt } });
       await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", settlementAdjustmentId: adjustmentId, resultSummary: { status: "REVERSED" } } });
       const valid = await tx.supplierReturnSettlementAdjustment.findMany({ where: { purchaseReturnId: id, status: "CONFIRMED" } });
       const total = valid.reduce((sum, item) => sum + item.refundAmountCents + item.payableOffsetAmountCents, 0);

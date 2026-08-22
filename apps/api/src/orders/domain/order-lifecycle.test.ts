@@ -6,13 +6,15 @@ import { finalizeOrderDelivery } from "./order-delivery";
 
 const lifecycleAccess = { can: async () => true };
 const noConstructionWrites = { assertAccess: async () => undefined, execute: async () => { throw new Error("unexpected construction write"); } };
+const inventoryLedger = { releaseWithin: async () => ({ released: 0, allocationIds: [] }) };
 
 function makeLifecycle(prisma: unknown = {}) {
   return new OrderLifecycle(
     {} as never,
     prisma as never,
     lifecycleAccess as never,
-    noConstructionWrites as never
+    noConstructionWrites as never,
+    inventoryLedger as never
   );
 }
 
@@ -75,6 +77,7 @@ test("OrderLifecycle keeps attempted notification intents on a rolled-back comma
         throw new Error("construction write failed");
       }
     } as never,
+    inventoryLedger as never,
     { record: (event: { rolledBack: boolean; notificationIntentCount: number | null }) => observations.push(event) } as never
   );
 

@@ -141,7 +141,9 @@ test("ConstructionService persists material pickup idempotently and invalidates 
     inventoryMovement: { findMany: async () => [], createMany: async () => ({ count: 1 }) },
     order: { findUnique: async () => ({ id: "order-1", orderNo: "ORD-1", status: ConstructionTaskStatus.IN_CONSTRUCTION, constructionType: "PPF", constructionLocation: "IN_STORE", appointmentDate: null, appointmentTimeSlot: null, items: [], inventoryMovements: [] }) },
     $transaction: async (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
-  } as never, {} as never, undefined, undefined, undefined, undefined, access as never);
+  } as never, {} as never, undefined, undefined, undefined, undefined, access as never, {
+    pickupMaterialsWithin: async () => { writes.push("ledger"); return { count: 1 }; }
+  } as never);
   await service.pickupMaterials({ id: "worker-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION } }, "order-1", { allocationIds: ["allocation-1"] });
   assert.equal(writes.length, 2);
 });

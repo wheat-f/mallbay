@@ -6,7 +6,6 @@ import {
   ConstructionPhotoStage,
   ConstructionTaskStatus,
   CrossStoreTaskStatus,
-  InventoryMovementType,
   LeaveRequestStatus,
   NotificationType,
   OrderStatus,
@@ -24,6 +23,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationDispatcher } from "../notifications/notification-dispatcher";
 import { ensureBalanceTodos } from "../orders/domain/order-delivery";
 import { OrderLifecycle } from "../orders/domain/order-lifecycle";
+import { InventoryLedger, toInventoryLedgerTransaction } from "../inventory/domain/inventory-ledger";
 import {
   AssignOrderDto,
   CompleteConstructionDto,
@@ -60,7 +60,8 @@ export class ConstructionService {
     @Optional() private readonly costSettlements?: ConstructionCostSettlementService,
     @Optional() private readonly notifications?: NotificationsService,
     @Optional() private readonly notificationDispatcher?: NotificationDispatcher,
-    @Optional() private readonly accessContext?: AccessContext
+    @Optional() private readonly accessContext?: AccessContext,
+    private readonly inventoryLedger?: InventoryLedger
   ) {}
 
   private canAccess(actor: AuthenticatedConstructionUser | UserWithStoreMember, capability: string, action: string, storeId: string, ownerId?: string) {
@@ -365,20 +366,15 @@ export class ConstructionService {
       throw new NotFoundException("订单未锁定该批次");
     }
     await this.prisma.$transaction(async (tx) => {
-      await tx.inventoryMovement.create({
-        data: {
-          storeId: allocation.storeId,
-          batchId: allocation.batchId,
-          productId: allocation.productId,
-          orderId,
-          movementType: InventoryMovementType.STOCK_ADJUST,
-          quantity: 0,
-          unit: allocation.batch.unit,
-          sourceType: "CONSTRUCTION_MATERIAL_VERIFY",
-          sourceId: allocation.id,
-          createdById: actor.id,
-          note: dto.note ?? `施工物料批次核验：${allocation.batch.batchNo}`
-        }
+      await this.inventoryLedger!.verifyMaterialWithin(toInventoryLedgerTransaction(tx), {
+        allocationId: allocation.id,
+        orderId,
+        batchId: allocation.batchId,
+        productId: allocation.productId,
+        storeId: allocation.storeId,
+        unit: allocation.batch.unit,
+        actorId: actor.id,
+        note: dto.note ?? `施工物料批次核验：${allocation.batch.batchNo}`
       });
       await this.invalidateOrderLifecycleFact(tx, orderId, "CONSTRUCTION_MATERIAL_VERIFY", allocation.id, { allocationId: allocation.id });
     });
@@ -409,20 +405,11 @@ export class ConstructionService {
     const pendingAllocations = allocations.filter((allocation) => !pickedAllocationIds.has(allocation.id));
     if (pendingAllocations.length > 0) {
       await this.prisma.$transaction(async (tx) => {
-        await tx.inventoryMovement.createMany({
-          data: pendingAllocations.map((allocation) => ({
-            storeId: allocation.storeId,
-            batchId: allocation.batchId,
-            productId: allocation.productId,
-            orderId,
-            movementType: InventoryMovementType.STOCK_ADJUST,
-            quantity: 0,
-            unit: allocation.batch.unit,
-            sourceType: "CONSTRUCTION_MATERIAL_PICKUP",
-            sourceId: allocation.id,
-            createdById: actor.id,
-            note: dto.note ?? `施工领取物料：${allocation.batch.batchNo}`
-          }))
+        await this.inventoryLedger!.pickupMaterialsWithin(toInventoryLedgerTransaction(tx), {
+          orderId,
+          allocations: pendingAllocations,
+          actorId: actor.id,
+          note: dto.note
         });
         await this.invalidateOrderLifecycleFact(tx, orderId, "CONSTRUCTION_MATERIAL_PICKUP", pendingAllocations.map((allocation) => allocation.id).join(","), { allocationIds: pendingAllocations.map((allocation) => allocation.id) });
       });
@@ -435,36 +422,12 @@ export class ConstructionService {
     const record = await this.findRecordForOrder(orderId);
     await this.assertCanAccessOrderMaterials(actor, record);
     await this.prisma.$transaction(async (tx) => {
-      const batch = await tx.inventoryBatch.findFirst({
-        where: { id: dto.batchId, allocations: { some: { orderId } } }
-      });
-      if (!batch) {
-        throw new NotFoundException("订单未锁定该批次");
-      }
-      if (dto.quantity > decimalToNumber(batch.availableQuantity)) {
-        throw new BadRequestException("损耗数量超出可用库存");
-      }
-      await tx.inventoryBatch.update({
-        where: { id: batch.id },
-        data: {
-          availableQuantity: { decrement: dto.quantity },
-          outboundQuantity: { increment: dto.quantity }
-        }
-      });
-      await tx.inventoryMovement.create({
-        data: {
-          storeId: batch.storeId,
-          batchId: batch.id,
-          productId: batch.productId,
-          orderId,
-          movementType: InventoryMovementType.DAMAGE_OUT,
-          quantity: dto.quantity,
-          unit: batch.unit,
-          sourceType: "CONSTRUCTION_MATERIAL_LOSS",
-          sourceId: orderId,
-          createdById: actor.id,
-          note: dto.note ?? "施工现场损耗"
-        }
+      await this.inventoryLedger!.recordMaterialLossWithin(toInventoryLedgerTransaction(tx), {
+        orderId,
+        batchId: dto.batchId,
+        quantity: dto.quantity,
+        actorId: actor.id,
+        note: dto.note
       });
       await this.invalidateOrderLifecycleFact(tx, orderId, "CONSTRUCTION_MATERIAL_LOSS", dto.batchId, { batchId: dto.batchId, quantity: dto.quantity });
     });

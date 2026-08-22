@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { CapacityReservationStatus, ConstructionLocation, ConstructionType, InventoryMovementType, NotificationType, OrderLifecycleCommandStatus, OrderStatus, Prisma, SalesQuoteStatus } from "@prisma/client";
+import { CapacityReservationStatus, ConstructionLocation, ConstructionType, NotificationType, OrderLifecycleCommandStatus, OrderStatus, Prisma, SalesQuoteStatus } from "@prisma/client";
 import { type UserWithStoreMember } from "../../permissions/domain/access-types";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AccessContext } from "../../permissions/domain/access-context";
@@ -9,6 +9,7 @@ import { CreateOrderUseCase } from "../use-cases/create-order.use-case";
 import { type CreateOrderDto } from "../dto/create-order.dto";
 import { ConstructionLifecycleImplementation } from "../implementation/construction-lifecycle.implementation";
 import { OrderLifecycleObservability } from "./order-lifecycle-observability";
+import { InventoryLedger, toInventoryLedgerTransaction } from "../../inventory/domain/inventory-ledger";
 import {
   assertCommandBinding,
   fingerprintCommand,
@@ -57,6 +58,7 @@ export class OrderLifecycle {
     private readonly prisma: PrismaService,
     private readonly accessContext: AccessContext,
     private readonly constructionImplementation: ConstructionLifecycleImplementation,
+    private readonly inventoryLedger: InventoryLedger,
     @Optional() private readonly observability?: OrderLifecycleObservability
   ) {}
 
@@ -624,33 +626,7 @@ export class OrderLifecycle {
     actorId: string,
     reasonCode: string
   ) {
-    const allocations = await tx.orderInventoryAllocation.findMany({
-      where: { orderId, status: "LOCKED" }
-    });
-    for (const allocation of allocations) {
-      const quantity = decimalToNumber(allocation.lockedQuantity) - decimalToNumber(allocation.outboundQuantity);
-      if (quantity <= 0) continue;
-      await tx.inventoryBatch.update({
-        where: { id: allocation.batchId },
-        data: { availableQuantity: { increment: quantity }, lockedQuantity: { decrement: quantity } }
-      });
-      await tx.orderInventoryAllocation.update({ where: { id: allocation.id }, data: { status: "RELEASED" } });
-      await tx.inventoryMovement.create({
-        data: {
-          storeId: allocation.storeId,
-          batchId: allocation.batchId,
-          productId: allocation.productId,
-          orderId,
-          movementType: InventoryMovementType.STOCK_RELEASE,
-          quantity,
-          sourceType: "ORDER_LIFECYCLE_RELEASE",
-          sourceId: allocation.id,
-          idempotencyKey: reasonCode,
-          createdById: actorId,
-          note: reasonCode
-        }
-      });
-    }
+    await this.inventoryLedger.releaseWithin(toInventoryLedgerTransaction(tx), { orderId, actorId, reasonCode });
     const reservation = await tx.capacityReservation.findUnique({ where: { orderId } });
     if (!reservation || (reservation.status !== CapacityReservationStatus.HELD && reservation.status !== CapacityReservationStatus.CONFIRMED)) return;
     const capacity = await tx.dailyCapacity.findUnique({ where: { id: reservation.dailyCapacityId } });

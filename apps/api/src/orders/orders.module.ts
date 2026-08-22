@@ -11,9 +11,10 @@ import { PermissionsModule } from "../permissions/permissions.module";
 import { ConstructionLifecycleImplementation } from "./implementation/construction-lifecycle.implementation";
 import { OrderLifecycleReconciliationService } from "./order-lifecycle-reconciliation.service";
 import { FinanceModule } from "../finance/finance.module";
+import { InventoryModule } from "../inventory/inventory.module";
 
 @Module({
-  imports: [ObservabilityModule, PricingModule, PermissionsModule, FinanceModule],
+  imports: [ObservabilityModule, PricingModule, PermissionsModule, FinanceModule, InventoryModule],
   controllers: [OrdersController, PaymentAccountsController, OrderLifecycleClientEventsController],
   providers: [OrdersService, OrderRepository, CreateOrderUseCase, ConstructionLifecycleImplementation, OrderLifecycle, OrderLifecycleReconciliationService],
   exports: [OrdersService, OrderLifecycle]

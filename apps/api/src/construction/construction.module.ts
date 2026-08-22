@@ -11,9 +11,10 @@ import { ObservabilityModule } from "../observability/observability.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { OrdersModule } from "../orders/orders.module";
 import { ConstructionFulfillment } from "./construction-fulfillment";
+import { InventoryModule } from "../inventory/inventory.module";
 
 @Module({
-  imports: [PrismaModule, PermissionsModule, UsersModule, ObservabilityModule, NotificationsModule, OrdersModule],
+  imports: [PrismaModule, PermissionsModule, UsersModule, ObservabilityModule, NotificationsModule, OrdersModule, InventoryModule],
   controllers: [ConstructionController],
   providers: [ConstructionService, CapacityReservationService, ConstructionCostSettlementService, CrossStoreConstructionService, ConstructionFulfillment],
   exports: [CapacityReservationService, ConstructionCostSettlementService, ConstructionFulfillment]

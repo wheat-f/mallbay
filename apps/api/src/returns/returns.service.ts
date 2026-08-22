@@ -3,6 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { Prisma } from "@prisma/client";
 import { AccessContext } from "../permissions/domain/access-context";
 import { CashFactWriter, toCashFactTransaction } from "../finance/domain/cash-fact-writer";
+import { InventoryLedger, toInventoryLedgerTransaction } from "../inventory/domain/inventory-ledger";
 import { ApproveSalesReturnDto, CancelReturnDto, CostVerificationConfirmDto, CostVerificationResubmitDto, CostVerificationSubmitDto, CreatePurchaseReturnDto, CreateSalesReturnDto, InspectionApproveDto, InspectionConvertDto, ReceiveSalesReturnDto, RefundSalesReturnDto, ReturnActionDto, SettlePurchaseReturnDto } from "./dto/returns.dto";
 
 export type ReturnUser = { id: string; username?: string };
@@ -12,7 +13,8 @@ export class ReturnsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessContext: AccessContext,
-    private readonly cashFactWriter: CashFactWriter
+    private readonly cashFactWriter: CashFactWriter,
+    private readonly inventoryLedger: InventoryLedger
   ) {}
 
   private requireAction(user: ReturnUser, action: "create" | "approve" | "manage") {
@@ -219,10 +221,24 @@ export class ReturnsService {
     return this.prisma.$transaction(async (tx) => {
       const sourceBatch = detail.sourceOutboundBatchId ? await tx.inventoryBatch.findUnique({ where: { id: detail.sourceOutboundBatchId } }) : null;
       const unitCostCents = sourceBatch?.unitCostCents ?? 0;
-      const batch = await tx.inventoryBatch.create({ data: { storeId: parent.executionStoreId, productId: detail.productId, batchNo: `RET-${Date.now()}-${detail.id.slice(-6)}`, unit: detail.salesUnit ?? sourceBatch?.unit ?? "ROLL", baseUnit: sourceBatch?.baseUnit ?? "PIECE", totalQuantity: dto.quantity, availableQuantity: targetStatus === "AVAILABLE" ? dto.quantity : 0, unitCostCents, sourceType: "SALES_RETURN", sourceId: id, inventoryStatus: targetStatus } });
+      const batch = await this.inventoryLedger.receiveSalesReturnWithin(toInventoryLedgerTransaction(tx), {
+        storeId: parent.executionStoreId,
+        productId: detail.productId,
+        batchNo: `RET-${Date.now()}-${detail.id.slice(-6)}`,
+        unit: detail.salesUnit ?? sourceBatch?.unit ?? "ROLL",
+        baseUnit: sourceBatch?.baseUnit ?? "PIECE",
+        quantity: dto.quantity,
+        availableQuantity: targetStatus === "AVAILABLE" ? dto.quantity : 0,
+        unitCostCents,
+        inventoryStatus: targetStatus,
+        sourceId: id,
+        returnId: id,
+        sourceDetailId: detail.id,
+        actorId: user.id,
+        note: targetStatus === "DAMAGED" ? "销售退货报损" : "销售退货收货"
+      });
       const received = Number(detail.receivedQuantity) + dto.quantity;
       await tx.salesReturnDetail.update({ where: { id: detail.id }, data: { receivedQuantity: dto.quantity === 0 ? undefined : { increment: dto.quantity }, status: received >= Number(detail.approvedQuantity ?? detail.quantity) ? "RECEIVED" : "PARTIAL_RECEIVED", inspectionStatus: targetStatus, costStatus: sourceBatch ? "VERIFIED" : "PENDING_VERIFICATION", costAdjustmentCents: sourceBatch && targetStatus !== "DAMAGED" ? unitCostCents * dto.quantity : 0, inventoryBatchId: batch.id } });
-      await tx.inventoryMovement.create({ data: { storeId: parent.executionStoreId, batchId: batch.id, productId: detail.productId, movementType: targetStatus === "DAMAGED" ? "DAMAGE_OUT" : "RETURN_IN", quantity: dto.quantity, unit: batch.unit, sourceType: "SALES_RETURN", sourceId: id, returnId: id, sourceDetailId: detail.id, note: targetStatus === "DAMAGED" ? "销售退货报损" : "销售退货收货", createdById: user.id } });
       if (sourceBatch && targetStatus !== "DAMAGED") await tx.returnFinancialAdjustment.create({ data: { storeId: parent.storeId, returnType: "SALES", returnId: id, returnDetailId: detail.id, type: "MATERIAL_COST_REVERSAL", amountCents: unitCostCents * dto.quantity, originalValue: { unitCostCents }, newValue: { returnedQuantity: dto.quantity }, calculationBasis: { sourceBatchId: sourceBatch.id }, idempotencyKey: dto.idempotencyKey, createdById: user.id } });
       const all = await tx.salesReturnDetail.findMany({ where: { returnId: id } });
       const complete = all.every((item) => Number(item.receivedQuantity) >= Number(item.approvedQuantity ?? item.quantity));
@@ -302,11 +318,17 @@ export class ReturnsService {
     const actionId = claim.action.id;
     return this.prisma.$transaction(async (tx) => {
       const source = await tx.inventoryBatch.findUnique({ where: { id: detail.inventoryBatchId! } });
-      if (!source || source.inventoryStatus !== "INSPECTION" || source.totalQuantity.toNumber() < dto.quantity) throw new BadRequestException("RETURN_INVALID_ARGUMENT");
-      const child = await tx.inventoryBatch.create({ data: { storeId: source.storeId, productId: source.productId, batchNo: `RET-CONVERT-${Date.now()}`, unit: source.unit, baseUnit: source.baseUnit, totalQuantity: dto.quantity, availableQuantity: dto.targetStatus === "AVAILABLE" ? dto.quantity : 0, unitCostCents: source.unitCostCents, parentBatchId: source.id, sourceType: "SALES_RETURN_INSPECTION", sourceId: id, inventoryStatus: dto.targetStatus } });
-      await tx.inventoryBatch.update({ where: { id: source.id }, data: { totalQuantity: { decrement: dto.quantity } } });
+      if (!source) throw new BadRequestException("RETURN_INVALID_ARGUMENT");
+      const child = await this.inventoryLedger.convertSalesReturnInspectionWithin(toInventoryLedgerTransaction(tx), {
+        sourceBatchId: source.id,
+        quantity: dto.quantity,
+        targetStatus: dto.targetStatus,
+        sourceId: id,
+        returnId: id,
+        sourceDetailId: detail.id,
+        actorId: user.id
+      });
       await tx.salesReturnDetail.update({ where: { id: detail.id }, data: { inspectionApprovalStatus: "EXECUTED" } });
-      await tx.inventoryMovement.create({ data: { storeId: source.storeId, batchId: child.id, productId: source.productId, movementType: dto.targetStatus === "DAMAGED" ? "DAMAGE_OUT" : "STOCK_ADJUST", quantity: dto.quantity, unit: source.unit, sourceType: "SALES_RETURN_INSPECTION", sourceId: id, returnId: id, sourceDetailId: detail.id, createdById: user.id } });
       await tx.auditEvent.create({ data: { actorId: user.id, storeId: source.storeId, action: "SALES_RETURN_INSPECTION_CONVERTED", targetType: "SalesReturnDetail", targetId: detail.id, metadata: { quantity: dto.quantity, targetStatus: dto.targetStatus, sourceBatchId: source.id, childBatchId: child.id } } });
       await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", returnDetailId: detail.id, batchId: child.id, resultSummary: { batchId: child.id, quantity: dto.quantity } } });
       return child;
@@ -456,17 +478,21 @@ export class ReturnsService {
     if (claim.replay) return parent;
     const actionId = claim.action.id;
     return this.prisma.$transaction(async (tx) => {
-      const batch = await tx.inventoryBatch.findUnique({ where: { id: detail.batchId } });
-      if (!batch || batch.storeId !== parent.executionStoreId || batch.inventoryStatus !== "AVAILABLE" || batch.availableQuantity.toNumber() < quantity) throw new BadRequestException("RETURN_INVALID_ARGUMENT: 库存可用数量不足");
-      await tx.inventoryBatch.update({ where: { id: batch.id }, data: { availableQuantity: { decrement: quantity }, outboundQuantity: { increment: quantity } } });
+      await this.inventoryLedger.outboundPurchaseReturnWithin(toInventoryLedgerTransaction(tx), {
+        storeId: parent.executionStoreId,
+        batchId: detail.batchId,
+        quantity,
+        returnId: id,
+        sourceDetailId: detail.id,
+        actorId: user.id
+      });
       await tx.purchaseReturnDetail.update({ where: { id: detail.id }, data: { outboundQuantity: { increment: quantity } } });
-      await tx.inventoryMovement.create({ data: { storeId: parent.executionStoreId, batchId: batch.id, productId: batch.productId, movementType: "RETURN_OUT", quantity, unit: batch.unit, sourceType: "PURCHASE_RETURN", sourceId: id, returnId: id, sourceDetailId: detail.id, note: "采购退货出库", createdById: user.id } });
       const all = await tx.purchaseReturnDetail.findMany({ where: { returnId: id } });
       const complete = all.every((item) => Number(item.outboundQuantity) >= Number(item.approvedQuantity ?? item.quantity));
       const status = complete ? "WAITING_SETTLEMENT" : "PARTIAL_OUTBOUND";
       const updated = await tx.purchaseReturn.update({ where: { id }, data: { status } });
-      await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", returnDetailId: detail.id, batchId: batch.id, resultSummary: { status } } });
-      await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.storeId, action: "PURCHASE_RETURN_OUTBOUND", targetType: "PurchaseReturnDetail", targetId: detail.id, metadata: { quantity, status, batchId: batch.id } } });
+      await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", returnDetailId: detail.id, batchId: detail.batchId, resultSummary: { status } } });
+      await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.storeId, action: "PURCHASE_RETURN_OUTBOUND", targetType: "PurchaseReturnDetail", targetId: detail.id, metadata: { quantity, status, batchId: detail.batchId } } });
       return updated;
     }).catch((error) => this.failAction(actionId, error));
   }

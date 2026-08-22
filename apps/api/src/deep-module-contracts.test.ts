@@ -9,6 +9,7 @@ import { NotificationDispatcher } from "./notifications/notification-dispatcher"
 import { PricingDecision } from "./pricing/domain/pricing-decision";
 import { ProcurementFlow } from "./inventory/procurement-flow";
 import { InventoryCatalog } from "./inventory/inventory-catalog";
+import { InventoryLedger } from "./inventory/domain/inventory-ledger";
 import { ConstructionFulfillment } from "./construction/construction-fulfillment";
 import { FinanceService } from "./finance/finance.service";
 import { CashFactWriter } from "./finance/domain/cash-fact-writer";
@@ -202,6 +203,44 @@ test("order cash-fact callers use CashFactWriter instead of PaymentRecord direct
     visit(path.join(sourceRoot, "finance"));
     visit(path.join(sourceRoot, "returns"));
   assert.deepEqual(violations, []);
+});
+
+test("cross-module stock-fact callers use InventoryLedger instead of direct writes", () => {
+  const sourceRoot = path.resolve(__dirname);
+  const callers = [
+    path.join(sourceRoot, "orders"),
+    path.join(sourceRoot, "construction"),
+    path.join(sourceRoot, "returns")
+  ];
+  const violations: string[] = [];
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolute);
+        continue;
+      }
+      if (!entry.name.endsWith(".ts") || entry.name.endsWith(".test.ts")) continue;
+      const source = readFileSync(absolute, "utf8");
+      if (/inventoryBatch\.(create|update|upsert|delete)|inventoryMovement\.create(?:Many)?|orderInventoryAllocation\.(create|update|delete)/.test(source)) {
+        violations.push(path.relative(sourceRoot, absolute));
+      }
+    }
+  };
+  callers.forEach(visit);
+  assert.deepEqual(violations, []);
+  assert.equal(new Set((Reflect.getMetadata("exports", InventoryModule) ?? []) as unknown[]).has(InventoryLedger), true);
+});
+
+test("InventoryService is only a compatibility adapter after the deletion gate", () => {
+  const sourceRoot = path.resolve(__dirname);
+  const adapterSource = readFileSync(path.join(sourceRoot, "inventory", "inventory.service.ts"), "utf8");
+
+  assert.match(adapterSource, /InventoryImplementation/);
+  assert.doesNotMatch(
+    adapterSource,
+    /inventoryBatch\.(create|update|upsert|delete)|inventoryMovement\.create(?:Many)?|orderInventoryAllocation\.(create|update|delete)/
+  );
 });
 
 test("ProcurementFlow exposes the purchase seam for receipt operations", async () => {

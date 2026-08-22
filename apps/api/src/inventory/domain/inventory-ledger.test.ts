@@ -66,3 +66,45 @@ test("InventoryLedger exposes the complete stock fact command boundary", async (
 
   assert.deepEqual(calls, ["reserve", "release", "receive", "receive-batches", "outbound", "adjust"]);
 });
+
+test("InventoryLedger releases allocations and records one typed movement per allocation", async () => {
+  const writes: string[] = [];
+  const transaction = {
+    orderInventoryAllocation: {
+      findMany: async () => [{ id: "allocation-1", storeId: "store-1", batchId: "batch-1", productId: "product-1", lockedQuantity: 3, outboundQuantity: 1 }],
+      update: async () => { writes.push("allocation"); return {}; }
+    },
+    inventoryBatch: { update: async () => { writes.push("batch"); return {}; } },
+    inventoryMovement: { create: async ({ data }: { data: { movementType: string; sourceType: string; quantity: number } }) => { writes.push(`${data.movementType}:${data.sourceType}:${data.quantity}`); return {}; } }
+  };
+  const ledger = new InventoryLedger({} as never);
+
+  const result = await ledger.releaseWithin(transaction as never, { orderId: "order-1", actorId: "worker-1", reasonCode: "ORDER_CANCELLED" });
+
+  assert.deepEqual(result, { released: 1, allocationIds: ["allocation-1"] });
+  assert.deepEqual(writes, ["batch", "allocation", "STOCK_RELEASE:ORDER_LIFECYCLE_RELEASE:2"]);
+});
+
+test("InventoryLedger owns typed return inventory facts", async () => {
+  const writes: string[] = [];
+  const transaction = {
+    inventoryBatch: {
+      create: async ({ data }: { data: { sourceType: string } }) => { writes.push(`batch:${data.sourceType}`); return { id: "batch-1", unit: "PIECE" }; },
+      findUnique: async () => ({ id: "source-1", storeId: "store-1", productId: "product-1", unit: "PIECE", baseUnit: "PIECE", totalQuantity: 4, availableQuantity: 4, unitCostCents: 10, inventoryStatus: "AVAILABLE" }),
+      update: async () => { writes.push("update"); return {}; }
+    },
+    inventoryMovement: { create: async ({ data }: { data: { movementType: string; sourceType: string } }) => { writes.push(`${data.movementType}:${data.sourceType}`); return {}; } }
+  };
+  const ledger = new InventoryLedger({} as never);
+
+  await ledger.receiveSalesReturnWithin(transaction as never, {
+    storeId: "store-1", productId: "product-1", batchNo: "RET-1", unit: "PIECE" as never, baseUnit: "PIECE" as never,
+    quantity: 1, availableQuantity: 1, unitCostCents: 10, inventoryStatus: "AVAILABLE" as never,
+    sourceId: "return-1", returnId: "return-1", sourceDetailId: "detail-1", actorId: "worker-1", note: "退货收货"
+  });
+  await ledger.outboundPurchaseReturnWithin(transaction as never, {
+    storeId: "store-1", batchId: "source-1", quantity: 1, returnId: "return-2", sourceDetailId: "detail-2", actorId: "worker-1"
+  });
+
+  assert.deepEqual(writes, ["batch:SALES_RETURN", "RETURN_IN:SALES_RETURN", "update", "RETURN_OUT:PURCHASE_RETURN"]);
+});

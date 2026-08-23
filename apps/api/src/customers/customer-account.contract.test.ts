@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { Test } from "@nestjs/testing";
 import { CustomerAccount } from "./domain/customer-account";
 import { CustomersModule } from "./customers.module";
 import { CustomersService } from "./customers.service";
@@ -89,4 +90,16 @@ test("CustomersModule exports the CustomerAccount seam, not its compatibility im
   const exports = new Set((Reflect.getMetadata("exports", CustomersModule) ?? []) as unknown[]);
   assert.equal(exports.has(CustomerAccount), true);
   assert.equal(exports.has(CustomersService), false);
+});
+
+test("CustomerAccount keeps an explicit Nest token for its compatibility implementation", async () => {
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      CustomerAccount,
+      { provide: CustomersService, useValue: {} }
+    ]
+  }).compile();
+
+  assert.ok(moduleRef.get(CustomerAccount));
+  await moduleRef.close();
 });

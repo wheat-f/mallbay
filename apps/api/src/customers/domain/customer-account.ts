@@ -1,7 +1,7 @@
-import { Injectable } from "@nestjs/common";
-import type {
-  AuthenticatedCustomerUser,
-  CustomersService
+import { Inject, Injectable } from "@nestjs/common";
+import {
+  CustomersService,
+  type AuthenticatedCustomerUser
 } from "../customers.service";
 import type { CreateCustomerNoteDto } from "../dto/create-customer-note.dto";
 import type { CreateCustomerTagDto } from "../dto/create-customer-tag.dto";
@@ -52,7 +52,7 @@ type CustomerAccountImplementation = Pick<
  */
 @Injectable()
 export class CustomerAccount {
-  constructor(private readonly implementation: CustomerAccountImplementation) {}
+  constructor(@Inject(CustomersService) private readonly implementation: CustomerAccountImplementation) {}
 
   createCustomer(user: AuthenticatedCustomerUser, storeId: string, dto: CreateCustomerDto) {
     return this.implementation.create(user, storeId, dto);

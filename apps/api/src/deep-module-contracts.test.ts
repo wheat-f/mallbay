@@ -426,6 +426,57 @@ test("ConstructionFulfillment keeps transport pass-through operations out of its
   }
 });
 
+test("ConstructionFulfillment routes lifecycle commands through OrderLifecycle", async () => {
+  const commands: Array<{ orderId: string; command: unknown; context: unknown }> = [];
+  const fulfillment = new ConstructionFulfillment(
+    { assignOrder: async () => { throw new Error("legacy command adapter must not be called"); } } as never,
+    {} as never,
+    { transition: async (user: unknown, orderId: string, command: unknown, context: unknown) => { commands.push({ orderId, command, context }); return { orderId }; } } as never,
+    { constructionRecord: { findUnique: async () => ({ orderId: "order-1" }) } } as never,
+    {} as never
+  );
+  const actor = { id: "worker-1" } as never;
+  const context = { commandId: "command-1", expectedVersion: 3 };
+
+  await fulfillment.assign(actor, "order-1", {} as never, context);
+  await fulfillment.start(actor, "order-1", {} as never, context);
+  await fulfillment.complete(actor, "order-1", {} as never, context);
+  await fulfillment.qualityCheck(actor, "record-1", {} as never, context);
+
+  assert.deepEqual(commands.map(({ command }) => (command as { type: string }).type), [
+    "DISPATCH", "START_CONSTRUCTION", "COMPLETE_CONSTRUCTION", "QUALITY_CHECK"
+  ]);
+  assert.deepEqual(commands.map(({ orderId }) => orderId), ["order-1", "order-1", "order-1", "order-1"]);
+  assert.deepEqual(commands.map(({ context: value }) => value), [
+    { ...context, source: "CONSTRUCTION_WEB" },
+    { ...context, source: "CONSTRUCTION_WEB" },
+    { ...context, source: "CONSTRUCTION_WEB" },
+    { ...context, source: "CONSTRUCTION_WEB" }
+  ]);
+});
+
+test("ConstructionFulfillment routes cross-store lifecycle commands through OrderLifecycle", async () => {
+  const calls: Array<{ orderId: string; command: unknown; context: unknown }> = [];
+  const fulfillment = new ConstructionFulfillment(
+    {} as never,
+    { get: async () => ({ orderId: "order-2" }) } as never,
+    { transition: async (_user: unknown, orderId: string, command: unknown, context: unknown) => { calls.push({ orderId, command, context }); return { orderId }; } } as never,
+    {} as never,
+    {} as never
+  );
+  const actor = { id: "manager-1" } as never;
+  const context = { commandId: "cross-command-1", expectedVersion: 7, taskVersion: 4 };
+
+  await fulfillment.acceptCrossStoreTask(actor, "task-1", context);
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], {
+    orderId: "order-2",
+    command: { type: "ACCEPT_CROSS_STORE_TASK", taskId: "task-1", taskVersion: 4 },
+    context: { ...context, source: "CONSTRUCTION_WEB" }
+  });
+});
+
 test("Finance owns customer cash-fact writes and preserves the business idempotency key", async () => {
   const writes: unknown[] = [];
   const finance = new FinanceService({} as never);

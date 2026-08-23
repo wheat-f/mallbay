@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConstructionService, type AuthenticatedConstructionUser } from "./construction.service";
 import { CrossStoreConstructionService } from "./cross-store-construction.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -256,10 +256,27 @@ export class ConstructionFulfillment {
     return { items, generatedAt: new Date().toISOString() };
   }
 
-  assign(user: AuthenticatedConstructionUser, orderId: string, input: AssignOrderDto, context: { commandId: string; expectedVersion: number }) { return this.construction.assignOrder(user, orderId, input, context); }
-  start(user: AuthenticatedConstructionUser, orderId: string, input: StartConstructionDto, context: { commandId: string; expectedVersion: number }) { return this.construction.startOrder(user, orderId, input, context); }
-  complete(user: AuthenticatedConstructionUser, orderId: string, input: CompleteConstructionDto, context: { commandId: string; expectedVersion: number }) { return this.construction.completeOrderForOrder(user, orderId, input, context); }
-  qualityCheck(user: AuthenticatedConstructionUser, recordId: string, input: QualityCheckDto, context: { commandId: string; expectedVersion: number }) { return this.construction.qualityCheck(user, recordId, input, context); }
+  assign(user: AuthenticatedConstructionUser, orderId: string, input: AssignOrderDto, context: { commandId: string; expectedVersion: number }) {
+    return this.orderLifecycle.transition(user, orderId, { type: "DISPATCH", input }, { ...context, source: "CONSTRUCTION_WEB" });
+  }
+
+  start(user: AuthenticatedConstructionUser, orderId: string, input: StartConstructionDto, context: { commandId: string; expectedVersion: number }) {
+    return this.orderLifecycle.transition(user, orderId, { type: "START_CONSTRUCTION", input }, { ...context, source: "CONSTRUCTION_WEB" });
+  }
+
+  complete(user: AuthenticatedConstructionUser, orderId: string, input: CompleteConstructionDto, context: { commandId: string; expectedVersion: number }) {
+    return this.orderLifecycle.transition(user, orderId, { type: "COMPLETE_CONSTRUCTION", input }, { ...context, source: "CONSTRUCTION_WEB" });
+  }
+
+  async qualityCheck(user: AuthenticatedConstructionUser, recordId: string, input: QualityCheckDto, context: { commandId: string; expectedVersion: number }) {
+    const record = await this.prisma.constructionRecord.findUnique({ where: { id: recordId }, select: { orderId: true } });
+    if (!record) throw new NotFoundException("施工记录不存在");
+    return this.orderLifecycle.transition(user, record.orderId, { type: "QUALITY_CHECK", recordId, input }, { ...context, source: "CONSTRUCTION_WEB" });
+  }
+
+  getCrossStoreTask(user: AuthenticatedConstructionUser, id: string) {
+    return this.crossStore.get(user, id);
+  }
 
   async listCrossStoreTasks(user: AuthenticatedConstructionUser, query: ListCrossStoreTasksDto) {
     const tasks = await this.crossStore.list(user, query);

@@ -80,7 +80,7 @@ export class ConstructionController {
 
   @Get("cross-store/tasks/:id")
   getCrossStoreTask(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.crossStore.get(req.user, id);
+    return this.fulfillment.getCrossStoreTask(req.user, id);
   }
 
   @Post("cross-store/tasks/:id/accept")

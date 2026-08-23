@@ -6,11 +6,18 @@ import { PermissionsService } from "./permissions.service";
 import { PermissionsInterceptor } from "./permissions.interceptor";
 import { AccessContext } from "./domain/access-context";
 import { RuntimeAccessSnapshotStore } from "./domain/runtime-access-snapshot.store";
+import { PERMISSION_GOVERNANCE } from "./domain/permission-governance";
 
 @Module({
   imports: [PrismaModule],
   controllers: [PermissionsController],
-  providers: [PermissionsService, AccessContext, RuntimeAccessSnapshotStore, { provide: APP_INTERCEPTOR, useClass: PermissionsInterceptor }],
-  exports: [PermissionsService, AccessContext]
+  providers: [
+    PermissionsService,
+    { provide: PERMISSION_GOVERNANCE, useExisting: PermissionsService },
+    AccessContext,
+    RuntimeAccessSnapshotStore,
+    { provide: APP_INTERCEPTOR, useClass: PermissionsInterceptor }
+  ],
+  exports: [PERMISSION_GOVERNANCE, PermissionsService, AccessContext]
 })
 export class PermissionsModule {}

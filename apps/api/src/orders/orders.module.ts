@@ -10,13 +10,16 @@ import { PricingModule } from "../pricing/pricing.module";
 import { PermissionsModule } from "../permissions/permissions.module";
 import { ConstructionLifecycleImplementation } from "./implementation/construction-lifecycle.implementation";
 import { OrderLifecycleReconciliationService } from "./order-lifecycle-reconciliation.service";
+import { ORDER_OPERATIONS, ORDER_READ_MODEL } from "./domain/order-operations";
 import { FinanceModule } from "../finance/finance.module";
 import { InventoryModule } from "../inventory/inventory.module";
 
 @Module({
   imports: [ObservabilityModule, PricingModule, PermissionsModule, FinanceModule, InventoryModule],
   controllers: [OrdersController, PaymentAccountsController, OrderLifecycleClientEventsController],
-  providers: [OrdersService, OrderRepository, CreateOrderUseCase, ConstructionLifecycleImplementation, OrderLifecycle, OrderLifecycleReconciliationService],
-  exports: [OrdersService, OrderLifecycle]
+  providers: [OrdersService, OrderRepository, CreateOrderUseCase, ConstructionLifecycleImplementation, OrderLifecycle, OrderLifecycleReconciliationService,
+    { provide: ORDER_OPERATIONS, useExisting: OrdersService },
+    { provide: ORDER_READ_MODEL, useExisting: OrdersService }],
+  exports: [ORDER_OPERATIONS, ORDER_READ_MODEL, OrderLifecycle]
 })
 export class OrdersModule {}

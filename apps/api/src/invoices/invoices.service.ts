@@ -156,15 +156,25 @@ export class InvoicesService {
     });
     if (!invoice) throw new NotFoundException("发票不存在");
     if (!await this.accessContext.can(actor, "finance", "write", { storeId: invoice.storeId })) throw new ForbiddenException("无权限");
+    if (invoice.status === InvoiceStatus.ISSUED || invoice.status === InvoiceStatus.REISSUED) return invoice;
+    if (invoice.status !== InvoiceStatus.APPLIED) throw new BadRequestException("仅已申请发票可以开具");
     const fileUrl = dto.fileUrl ?? (await this.invoicePdf.generate(invoice, dto.invoiceNo));
-    const updated = await this.prisma.invoice.update({
-      where: { id },
-      data: { status: InvoiceStatus.ISSUED, invoiceNo: dto.invoiceNo, fileUrl, issuedAt: new Date() }
+    return this.prisma.$transaction(async (tx) => {
+      const changed = await tx.invoice.updateMany({
+        where: { id, status: InvoiceStatus.APPLIED },
+        data: { status: InvoiceStatus.ISSUED, invoiceNo: dto.invoiceNo, fileUrl, issuedAt: new Date() }
+      });
+      if (changed.count === 0) {
+        const current = await tx.invoice.findUnique({ where: { id } });
+        if (current?.status === InvoiceStatus.ISSUED || current?.status === InvoiceStatus.REISSUED) return current;
+        throw new BadRequestException("发票状态已变化，不能重复开具");
+      }
+      const updated = await tx.invoice.findUniqueOrThrow({ where: { id } });
+      await tx.invoiceLog.create({
+        data: { invoiceId: id, status: InvoiceStatus.ISSUED, note: dto.note, createdById: actor.userId }
+      });
+      return updated;
     });
-    await this.prisma.invoiceLog.create({
-      data: { invoiceId: id, status: InvoiceStatus.ISSUED, note: dto.note, createdById: actor.userId }
-    });
-    return updated;
   }
 
   async void(user: AuthenticatedInvoiceUser, id: string, dto: InvoiceActionDto) {
@@ -172,16 +182,34 @@ export class InvoicesService {
   }
 
   async reissue(user: AuthenticatedInvoiceUser, id: string, dto: IssueInvoiceDto) {
+    const actor = { userId: user.id } satisfies AccessSubject;
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: { allocations: { select: { orderId: true, amountCents: true } } }
     });
     if (!invoice) throw new NotFoundException("发票不存在");
+    if (!await this.accessContext.can(actor, "finance", "write", { storeId: invoice.storeId })) throw new ForbiddenException("无权限");
+    if (invoice.status === InvoiceStatus.REISSUED) return invoice;
     if (invoice.status !== InvoiceStatus.VOIDED) {
       throw new BadRequestException("仅作废发票可以重新开具；如需新开票请重新提交申请");
     }
-    const updated = await this.issue(user, id, dto);
-    return this.prisma.invoice.update({ where: { id: updated.id }, data: { status: InvoiceStatus.REISSUED } });
+    const fileUrl = dto.fileUrl ?? (await this.invoicePdf.generate(invoice, dto.invoiceNo));
+    return this.prisma.$transaction(async (tx) => {
+      const changed = await tx.invoice.updateMany({
+        where: { id, status: InvoiceStatus.VOIDED },
+        data: { status: InvoiceStatus.REISSUED, invoiceNo: dto.invoiceNo, fileUrl, issuedAt: new Date() }
+      });
+      if (changed.count === 0) {
+        const current = await tx.invoice.findUnique({ where: { id } });
+        if (current?.status === InvoiceStatus.REISSUED) return current;
+        throw new BadRequestException("发票状态已变化，不能重复重开");
+      }
+      const updated = await tx.invoice.findUniqueOrThrow({ where: { id } });
+      await tx.invoiceLog.create({
+        data: { invoiceId: id, status: InvoiceStatus.REISSUED, note: dto.note, createdById: actor.userId }
+      });
+      return updated;
+    });
   }
 
   async send(user: AuthenticatedInvoiceUser, id: string, dto: SendInvoiceDto) {
@@ -248,9 +276,20 @@ export class InvoicesService {
     const invoice = await this.prisma.invoice.findUnique({ where: { id } });
     if (!invoice) throw new NotFoundException("发票不存在");
     if (!await this.accessContext.can(actor, "finance", "write", { storeId: invoice.storeId })) throw new ForbiddenException("无权限");
-    const updated = await this.prisma.invoice.update({ where: { id }, data: { status } });
-    await this.prisma.invoiceLog.create({ data: { invoiceId: id, status, note, createdById: actor.userId } });
-    return updated;
+    if (invoice.status === status) return invoice;
+    const allowedFrom: InvoiceStatus[] = status === InvoiceStatus.VOIDED ? [InvoiceStatus.ISSUED, InvoiceStatus.REISSUED] : [];
+    if (!allowedFrom.includes(invoice.status)) throw new BadRequestException("当前发票状态不允许此操作");
+    return this.prisma.$transaction(async (tx) => {
+      const changed = await tx.invoice.updateMany({ where: { id, status: { in: allowedFrom } }, data: { status } });
+      if (changed.count === 0) {
+        const current = await tx.invoice.findUnique({ where: { id } });
+        if (current?.status === status) return current;
+        throw new BadRequestException("发票状态已变化，不能重复操作");
+      }
+      const updated = await tx.invoice.findUniqueOrThrow({ where: { id } });
+      await tx.invoiceLog.create({ data: { invoiceId: id, status, note, createdById: actor.userId } });
+      return updated;
+    });
   }
 
 }

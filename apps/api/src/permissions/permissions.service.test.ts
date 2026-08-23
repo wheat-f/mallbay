@@ -159,6 +159,14 @@ test("user-level permission mutations clear the internal runtime snapshot", asyn
       findMany: async () => [],
       findUnique: async () => ({ code: "SALES" })
     },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      permissionRole: { findUnique: async () => ({ code: "SALES" }) },
+      permissionRoleBinding: {
+        count: async () => 2,
+        update: async () => ({ id: "b1", userId: "u1", roleId: "r1", scopeType: "STORE", storeId: "s1", status: "DISABLED" })
+      },
+      auditEvent: { create: async () => ({ id: "audit-1" }) }
+    }),
     auditEvent: { create: async () => ({ id: "audit-1" }) }
   });
   const permissionsService = new PermissionsService(prisma as never, snapshotStore);

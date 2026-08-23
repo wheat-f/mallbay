@@ -13,10 +13,12 @@ import { DictionaryTemplatesController } from "./dictionary-templates.controller
 import { DictionaryTemplatesService } from "./dictionary-templates.service";
 import { DictionaryGovernanceController } from "./dictionary-governance.controller";
 import { DictionaryGovernanceService } from "./dictionary-governance.service";
+import { CONFIGURATION_VERSION_GOVERNANCE } from "./domain/configuration-version-governance";
+import { DICTIONARY_GOVERNANCE } from "./domain/dictionary-governance";
 import { OssConnectionController } from "./oss-connection.controller";
 import { OssConnectionService } from "./oss-connection.service";
 import { SettingsMigrationReviewsController } from "./migration-reviews.controller";
 import { SettingsMigrationReviewsService } from "./migration-reviews.service";
 
-@Module({ imports: [PrismaModule, PermissionsModule], controllers: [DictionariesController, DictionaryGovernanceController, SettingsController, ConfigVersionsController, SettingsAuditController, DictionaryTemplatesController, OssConnectionController, SettingsMigrationReviewsController], providers: [DictionariesService, DictionaryGovernanceService, SettingsAccessService, ConfigVersionsService, SettingsAuditService, DictionaryTemplatesService, OssConnectionService, SettingsMigrationReviewsService], exports: [DictionariesService, SettingsAccessService, DictionaryGovernanceService] })
+@Module({ imports: [PrismaModule, PermissionsModule], controllers: [DictionariesController, DictionaryGovernanceController, SettingsController, ConfigVersionsController, SettingsAuditController, DictionaryTemplatesController, OssConnectionController, SettingsMigrationReviewsController], providers: [DictionariesService, DictionaryGovernanceService, SettingsAccessService, ConfigVersionsService, SettingsAuditService, DictionaryTemplatesService, OssConnectionService, SettingsMigrationReviewsService, { provide: CONFIGURATION_VERSION_GOVERNANCE, useExisting: ConfigVersionsService }, { provide: DICTIONARY_GOVERNANCE, useExisting: DictionaryGovernanceService }], exports: [DictionariesService, SettingsAccessService, DictionaryGovernanceService, CONFIGURATION_VERSION_GOVERNANCE, DICTIONARY_GOVERNANCE] })
 export class SettingsModule {}

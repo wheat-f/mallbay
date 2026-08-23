@@ -55,7 +55,8 @@ test("inviteMember cancels stale invitations, creates a new invitation, and noti
         });
         return invitation;
       }
-    }
+    },
+    $transaction: async (callback: (transaction: unknown) => Promise<unknown>) => callback(prisma)
   };
   const service = new MembersService(prisma as never, {
     send: async (userId: string, type: string, payload: unknown) => {
@@ -142,12 +143,13 @@ test("acceptInvitation replaces frozen-store membership, accepts invitation, and
       }
     },
     storeInvitation: {
-      update: async (args: unknown) => {
+      updateMany: async (args: unknown) => {
         transactionCalls.push("invitation.update");
         assert.deepEqual(args, {
-          where: { id: "invitation-1" },
+          where: { id: "invitation-1", status: InvitationStatus.PENDING },
           data: { status: InvitationStatus.ACCEPTED }
         });
+        return { count: 1 };
       }
     }
   };
@@ -210,8 +212,9 @@ test("rejectInvitation rejects pending invitation and notifies inviter", async (
           store: { id: "store-1", name: "门店一" }
         };
       },
-      update: async (args: unknown) => {
+      updateMany: async (args: unknown) => {
         updates.push(args);
+        return { count: 1 };
       }
     }
   };
@@ -226,7 +229,7 @@ test("rejectInvitation rejects pending invitation and notifies inviter", async (
   assert.deepEqual(result, { success: true });
   assert.deepEqual(updates, [
     {
-      where: { id: "invitation-1" },
+      where: { id: "invitation-1", status: InvitationStatus.PENDING },
       data: { status: InvitationStatus.REJECTED }
     }
   ]);

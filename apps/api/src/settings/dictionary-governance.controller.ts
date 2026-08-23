@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { DictionaryStatus } from "@prisma/client";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import type { AuthenticatedSettingsUser } from "./dictionaries.service";
-import { DictionaryGovernanceService } from "./dictionary-governance.service";
+import { DICTIONARY_GOVERNANCE, type DictionaryGovernance } from "./domain/dictionary-governance";
 import { DeleteDictionaryItemDto, DictionaryCatalogQueryDto, DictionaryItemsQueryDto, CreateDictionaryItemDto, ImportDictionaryItemsDto, UpdateDictionaryItemDto } from "./dto/dictionary.dto";
 
 type AuthRequest = Request & { user: AuthenticatedSettingsUser };
@@ -11,7 +11,7 @@ type AuthRequest = Request & { user: AuthenticatedSettingsUser };
 @UseGuards(JwtAuthGuard)
 @Controller("settings/dictionary-governance")
 export class DictionaryGovernanceController {
-  constructor(private readonly governance: DictionaryGovernanceService) {}
+  constructor(@Inject(DICTIONARY_GOVERNANCE) private readonly governance: DictionaryGovernance) {}
 
   @Get("catalog")
   catalog(@Req() req: AuthRequest, @Query() query: DictionaryCatalogQueryDto, @Query("storeId") storeId?: string) {

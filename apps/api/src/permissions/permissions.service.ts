@@ -457,17 +457,20 @@ export class PermissionsService {
         seen.add(key);
       }
     }
-    const role = await this.prisma.permissionRole.create({
-      data: { code: input.code, name: input.name, description: input.description, createdById: input.createdById }
-    });
-    if (input.grants?.length) {
-      await this.prisma.permissionRoleGrant.createMany({
-        data: input.grants.map((grant) => ({ roleId: role.id, permissionCode: grant.permissionCode, action: grant.action, scope: grant.scope })),
-        skipDuplicates: true
+    const role = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.permissionRole.create({
+        data: { code: input.code, name: input.name, description: input.description, createdById: input.createdById }
       });
-    }
-    await this.prisma.auditEvent.create({
-      data: { action: "permissions.role.created", actorId: input.createdById, targetType: "PermissionRole", targetId: role.id, metadata: { code: role.code } }
+      if (input.grants?.length) {
+        await tx.permissionRoleGrant.createMany({
+          data: input.grants.map((grant) => ({ roleId: created.id, permissionCode: grant.permissionCode, action: grant.action, scope: grant.scope })),
+          skipDuplicates: true
+        });
+      }
+      await tx.auditEvent.create({
+        data: { action: "permissions.role.created", actorId: input.createdById, targetType: "PermissionRole", targetId: created.id, metadata: { code: created.code } }
+      });
+      return created;
     });
     return this.prisma.permissionRole.findUnique({ where: { id: role.id } });
   }
@@ -512,9 +515,12 @@ export class PermissionsService {
     if (!target) throw new Error("目标用户不存在");
     if (!role || role.status !== PermissionRoleStatus.ACTIVE) throw new Error("角色不存在或已停用");
     if (existing) throw new Error("相同角色和组织范围已绑定");
-    const binding = await this.prisma.permissionRoleBinding.create({ data: { userId: input.userId, roleId: input.roleId, scopeType: input.scopeType, storeId: input.storeId, createdById: input.createdById, effectiveAt: new Date() } });
+    const binding = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.permissionRoleBinding.create({ data: { userId: input.userId, roleId: input.roleId, scopeType: input.scopeType, storeId: input.storeId, createdById: input.createdById, effectiveAt: new Date() } });
+      await tx.auditEvent.create({ data: { action: "permissions.binding.created", actorId: input.createdById, targetType: "PermissionRoleBinding", targetId: created.id, storeId: created.storeId, metadata: { userId: created.userId, roleId: created.roleId, scopeType: created.scopeType } } });
+      return created;
+    });
     this.invalidateUserCache(input.userId);
-    await this.prisma.auditEvent.create({ data: { action: "permissions.binding.created", actorId: input.createdById, targetType: "PermissionRoleBinding", targetId: binding.id, storeId: binding.storeId, metadata: { userId: binding.userId, roleId: binding.roleId, scopeType: binding.scopeType } } });
     return binding;
   }
 
@@ -522,14 +528,17 @@ export class PermissionsService {
     const binding = await this.prisma.permissionRoleBinding.findUnique({ where: { id: bindingId } });
     if (!binding) throw new Error("角色绑定不存在");
     if (binding.status === PermissionBindingStatus.DISABLED) return binding;
-    const role = await this.prisma.permissionRole.findUnique({ where: { id: binding.roleId }, select: { code: true } });
-    if (role?.code === "HQ_ADMIN" && binding.scopeType === PermissionScopeType.HQ) {
-      const count = await this.prisma.permissionRoleBinding.count({ where: { roleId: binding.roleId, scopeType: PermissionScopeType.HQ, status: PermissionBindingStatus.ACTIVE } });
-      if (count <= 1) throw new Error("不能移除最后一个总部管理员");
-    }
-    const updated = await this.prisma.permissionRoleBinding.update({ where: { id: bindingId }, data: { status: PermissionBindingStatus.DISABLED } });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const role = await tx.permissionRole.findUnique({ where: { id: binding.roleId }, select: { code: true } });
+      if (role?.code === "HQ_ADMIN" && binding.scopeType === PermissionScopeType.HQ) {
+        const count = await tx.permissionRoleBinding.count({ where: { roleId: binding.roleId, scopeType: PermissionScopeType.HQ, status: PermissionBindingStatus.ACTIVE } });
+        if (count <= 1) throw new Error("不能移除最后一个总部管理员");
+      }
+      const next = await tx.permissionRoleBinding.update({ where: { id: bindingId }, data: { status: PermissionBindingStatus.DISABLED } });
+      await tx.auditEvent.create({ data: { action: "permissions.binding.disabled", actorId, targetType: "PermissionRoleBinding", targetId: next.id, storeId: next.storeId, metadata: { userId: next.userId, roleId: next.roleId } } });
+      return next;
+    });
     this.invalidateUserCache(updated.userId);
-    await this.prisma.auditEvent.create({ data: { action: "permissions.binding.disabled", actorId, targetType: "PermissionRoleBinding", targetId: updated.id, storeId: updated.storeId, metadata: { userId: updated.userId, roleId: updated.roleId } } });
     return updated;
   }
 

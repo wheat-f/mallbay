@@ -2,14 +2,15 @@ import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res, UseGuards }
 import type { Request, Response } from "express";
 import { createHash } from "crypto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { ConfigVersionsService } from "./config-versions.service";
+import { Inject } from "@nestjs/common";
+import { CONFIGURATION_VERSION_GOVERNANCE, type ConfigurationVersionGovernance } from "./domain/configuration-version-governance";
 import { CreateConfigVersionDto, UpdateConfigVersionDto, WithdrawConfigVersionDto } from "./dto/config-version.dto";
 import type { SettingsUser } from "./settings-access.service";
 type AuthRequest = Request & { user: SettingsUser };
 @UseGuards(JwtAuthGuard)
 @Controller("settings/config-versions")
 export class ConfigVersionsController {
-  constructor(private readonly versions: ConfigVersionsService) {}
+  constructor(@Inject(CONFIGURATION_VERSION_GOVERNANCE) private readonly versions: ConfigurationVersionGovernance) {}
   @Get()
   async list(@Req() req: AuthRequest, @Res({ passthrough: true }) res: Response, @Query("capabilityCode") capabilityCode?: string, @Query("scopeId") scopeId?: string, @Query("page") page?: string, @Query("pageSize") pageSize?: string) {
     const rows = await this.versions.list(req.user, capabilityCode, scopeId, Number(page ?? 1), Number(pageSize ?? 20));

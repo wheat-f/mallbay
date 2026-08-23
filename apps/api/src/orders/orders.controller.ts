@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Inject, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CreateOrderDto } from "./dto/create-order.dto";
@@ -11,7 +11,8 @@ import { ReturnOrderDto } from "./dto/return-order.dto";
 import { CreateOrderAmendmentRequestDto, ReviewOrderAmendmentRequestDto } from "./dto/order-amendment.dto";
 import { UpdateOrderCommercialsDto } from "./dto/update-order-commercials.dto";
 import { UpdatePaymentAccountDto } from "./dto/update-payment-account.dto";
-import { OrdersService, type AuthenticatedOrderUser } from "./orders.service";
+import type { AuthenticatedOrderUser } from "./orders.service";
+import { ORDER_OPERATIONS, ORDER_READ_MODEL, type OrderOperations, type OrderReadModel } from "./domain/order-operations";
 
 type AuthRequest = Request & {
   user: AuthenticatedOrderUser;
@@ -20,7 +21,10 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("orders")
 export class OrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    @Inject(ORDER_OPERATIONS) private readonly orders: OrderOperations,
+    @Inject(ORDER_READ_MODEL) private readonly reads: OrderReadModel
+  ) {}
 
   @Post()
   create(
@@ -33,22 +37,22 @@ export class OrdersController {
 
   @Get()
   list(@Req() req: AuthRequest, @Query() query: ListOrdersDto) {
-    return this.orders.list(req.user, query);
+    return this.reads.list(req.user, query);
   }
 
   @Get("export-details")
   exportDetails(@Req() req: AuthRequest, @Query() query: ExportOrderDetailsDto) {
-    return this.orders.exportDetails(req.user, query);
+    return this.reads.exportDetails(req.user, query);
   }
 
   @Get("lifecycle/batch")
   lifecycleBatch(@Req() req: AuthRequest, @Query("orderIds") rawOrderIds: string) {
-    return this.orders.lifecycleBatch(req.user, (rawOrderIds ?? "").split(",").filter(Boolean));
+    return this.reads.lifecycleBatch(req.user, (rawOrderIds ?? "").split(",").filter(Boolean));
   }
 
   @Get("historical-verification")
   listHistoricalVerification(@Req() req: AuthRequest, @Query("storeId") storeId: string, @Query("q") q?: string) {
-    return this.orders.listHistoricalVerification(req.user, storeId, q);
+    return this.reads.listHistoricalVerification(req.user, storeId, q);
   }
 
   @Post(":id/historical-verification")
@@ -64,17 +68,17 @@ export class OrdersController {
 
   @Get(":id/audit-events")
   listAuditEvents(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.orders.listAuditEvents(req.user, id);
+    return this.reads.listAuditEvents(req.user, id);
   }
 
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.orders.detail(req.user, id);
+    return this.reads.detail(req.user, id);
   }
 
   @Get(":id/lifecycle")
   lifecycle(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.orders.lifecycle(req.user, id);
+    return this.reads.lifecycle(req.user, id);
   }
 
   @Post(":id/copy")
@@ -138,14 +142,17 @@ export class OrdersController {
 
   @Get(":id/payments")
   listPayments(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.orders.listPayments(req.user, id);
+    return this.reads.listPayments(req.user, id);
   }
 }
 
 @UseGuards(JwtAuthGuard)
 @Controller("payment-accounts")
 export class PaymentAccountsController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    @Inject(ORDER_OPERATIONS) private readonly orders: OrderOperations,
+    @Inject(ORDER_READ_MODEL) private readonly reads: OrderReadModel
+  ) {}
 
   @Post()
   create(@Req() req: AuthRequest, @Body() dto: CreatePaymentAccountDto) {
@@ -154,12 +161,12 @@ export class PaymentAccountsController {
 
   @Get()
   list(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.orders.listPaymentAccounts(req.user, storeId);
+    return this.reads.listPaymentAccounts(req.user, storeId);
   }
 
   @Get(":id/audit-events")
   listAuditEvents(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.orders.listPaymentAccountAuditEvents(req.user, id);
+    return this.reads.listPaymentAccountAuditEvents(req.user, id);
   }
 
   @Patch(":id")

@@ -72,52 +72,62 @@ export class ConfigVersionsService {
     }
     if (!dto.payload || Object.keys(dto.payload).length === 0) throw new BadRequestException("配置内容不能为空");
     const latest = await this.prisma.settingsConfigVersion.findFirst({ where: { capabilityCode: dto.capabilityCode, scopeId: scopeId ?? dto.scopeId }, orderBy: { version: "desc" }, select: { version: true } });
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const row = await tx.settingsConfigVersion.create({ data: { domain: dto.domain, capabilityCode: dto.capabilityCode, scopeId: scopeId ?? dto.scopeId, version: (latest?.version ?? 0) + 1, payload: dto.payload as Prisma.InputJsonValue, effectiveAt: dto.effectiveAt ? new Date(dto.effectiveAt) : null, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null, createdById: actor.id, updatedById: actor.id, requestId: dto.requestId ?? null } });
       await this.audit(tx, "settings.config.draft.created", actor.id, row.id, { capabilityCode: row.capabilityCode, scopeId: row.scopeId, after: { version: row.version, status: row.status } });
-      this.listCache.clear();
       return this.sanitize(row);
     });
+    this.listCache.clear();
+    return result;
   }
   async update(user: SettingsUser, id: string, dto: UpdateConfigVersionDto) {
     const row = await this.prisma.settingsConfigVersion.findUnique({ where: { id } }); if (!row) throw new NotFoundException("配置版本不存在");
     const { actor } = await this.access.assert(user, row.capabilityCode, "edit", row.scopeId); if (dto.requestId) { const existingRequest = await this.prisma.settingsConfigVersion.findFirst({ where: { createdById: actor.id, requestId: dto.requestId } }); if (existingRequest && existingRequest.id === id) return this.sanitize(existingRequest); if (existingRequest) throw new ConflictException("请求标识已用于其他配置操作"); }
     if (row.status !== SettingsConfigStatus.DRAFT && row.status !== SettingsConfigStatus.VALIDATION_FAILED) throw new ConflictException("已发布版本不可直接修改，请创建新草稿");
     if (dto.expectedVersion !== undefined && dto.expectedVersion !== row.version) throw new ConflictException("配置版本已被其他人修改，请刷新后重试");
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.settingsConfigVersion.update({ where: { id }, data: { payload: dto.payload as Prisma.InputJsonValue, ...(dto.effectiveAt === undefined ? {} : { effectiveAt: dto.effectiveAt ? new Date(dto.effectiveAt) : null }), ...(dto.expiresAt === undefined ? {} : { expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null }), updatedById: actor.id, ...(dto.requestId ? { requestId: dto.requestId } : {}), status: SettingsConfigStatus.DRAFT, validationErrors: Prisma.JsonNull } });
       await this.audit(tx, "settings.config.draft.updated", actor.id, id, { capabilityCode: row.capabilityCode, scopeId: row.scopeId, before: { version: row.version }, after: { version: updated.version, status: updated.status } });
-      this.listCache.clear();
-      return this.sanitize(updated);
+       return this.sanitize(updated);
     });
+    this.listCache.clear();
+    return result;
   }
   async validate(user: SettingsUser, id: string, requestId?: string) {
     const row = await this.prisma.settingsConfigVersion.findUnique({ where: { id } }); if (!row) throw new NotFoundException("配置版本不存在"); const { actor } = await this.access.assert(user, row.capabilityCode, "validate", row.scopeId);
-    const errors: Record<string, string> = {}; if (row.effectiveAt && row.expiresAt && row.expiresAt <= row.effectiveAt) errors.effectiveAt = "结束时间必须晚于生效时间"; const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? row.payload as Record<string, unknown> : {}; if (!row.payload || typeof row.payload !== "object" || Array.isArray(row.payload)) errors.payload = "配置内容必须是对象"; if (row.capabilityCode === "settings.security" && !row.effectiveAt) errors.effectiveAt = "安全策略必须明确填写生效时间"; const numberValue = (key: string) => Number(payload[key]); if (row.capabilityCode === "settings.security") { const sessionIdleMinutes = numberValue("sessionIdleMinutes"); const minPasswordLength = numberValue("minPasswordLength"); const maxLoginFailures = numberValue("maxLoginFailures"); const lockoutMinutes = numberValue("lockoutMinutes"); if (!Number.isFinite(sessionIdleMinutes) || sessionIdleMinutes < 5) errors.sessionIdleMinutes = "会话闲置时间不能少于 5 分钟"; if (!Number.isFinite(minPasswordLength) || minPasswordLength < 8) errors.minPasswordLength = "密码长度不能少于 8 位"; if (payload.requireAlphaNumeric !== true) errors.requireAlphaNumeric = "必须启用字母和数字组合"; if (!Number.isFinite(maxLoginFailures) || maxLoginFailures < 5) errors.maxLoginFailures = "失败锁定阈值不能少于 5 次"; if (!Number.isFinite(lockoutMinutes) || lockoutMinutes < 1) errors.lockoutMinutes = "锁定时长必须大于 0"; } if (row.capabilityCode === "store.capacity") { for (const key of ["inStoreCapacity", "outsideCapacity", "glassFilmCapacity", "reinspectionCapacity"]) { const value = numberValue(key); if (!Number.isFinite(value) || value < 0) errors[key] = "容量不能为负数且必须填写"; } } if (row.capabilityCode === "store.operations" && ["appointmentEnabled", "inventoryAlertEnabled", "constructionPhotoRequired", "smsReminderEnabled"].some((key) => payload[key] === false) && (typeof payload.disableReason !== "string" || !payload.disableReason.trim())) errors.disableReason = "关闭高风险业务开关必须填写原因"; if (row.capabilityCode === "settings.permissions" && (!payload.matrix || typeof payload.matrix !== "object" || Array.isArray(payload.matrix))) errors.matrix = "权限矩阵不能为空";
-    if (row.capabilityCode === "finance.settlement") Object.assign(errors, validateFinanceSettlementPolicy(payload));
-    if (row.capabilityCode === "customer.tags") {
-      const high = numberValue("highValueThresholdCents");
-      const vip = numberValue("vipThresholdCents");
-      if (!Number.isInteger(high) || high < 0) errors.highValueThresholdCents = "高价值阈值必须是非负整数分";
-      if (!Number.isInteger(vip) || vip <= high) errors.vipThresholdCents = "VIP 阈值必须是整数分且高于高价值阈值";
-    }
+    const errors = this.collectValidationErrors(row);
     const status = Object.keys(errors).length ? SettingsConfigStatus.VALIDATION_FAILED : SettingsConfigStatus.DRAFT;
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.settingsConfigVersion.update({ where: { id }, data: { status, validationErrors: Object.keys(errors).length ? errors : Prisma.JsonNull, updatedById: actor.id, ...(requestId ? { requestId } : {}) } });
       await this.audit(tx, Object.keys(errors).length ? "settings.config.validation.failed" : "settings.config.validated", actor.id, id, { capabilityCode: row.capabilityCode, scopeId: row.scopeId, errors });
-      this.listCache.clear();
       return { ...this.sanitize(updated), errors };
     });
+    this.listCache.clear();
+    return result;
   }
   async clone(user: SettingsUser, id: string) { const row = await this.prisma.settingsConfigVersion.findUnique({ where: { id } }); if (!row) throw new NotFoundException("配置版本不存在"); const { actor } = await this.access.assert(user, row.capabilityCode, "create", row.scopeId); return this.create(user, { domain: row.domain, capabilityCode: row.capabilityCode, scopeId: row.scopeId, payload: row.payload as Record<string, unknown>, effectiveAt: row.effectiveAt?.toISOString(), expiresAt: row.expiresAt?.toISOString() }); }
   async publish(user: SettingsUser, id: string, requestId?: string) {
     const row = await this.prisma.settingsConfigVersion.findUnique({ where: { id } }); if (!row) throw new NotFoundException("配置版本不存在"); const { actor } = await this.access.assert(user, row.capabilityCode, "publish", row.scopeId);
     if (requestId && row.status === SettingsConfigStatus.PUBLISHED && row.requestId === requestId) return this.sanitize(row);
-    if (row.status !== SettingsConfigStatus.DRAFT) throw new ConflictException("请先通过服务端校验再发布"); const checked = await this.validate(user, id, undefined); if (Object.keys(checked.errors ?? {}).length) throw new ConflictException("配置校验失败，请修复后再发布");
-    const existing = await this.prisma.settingsConfigVersion.findMany({ where: { id: { not: id }, capabilityCode: row.capabilityCode, scopeId: row.scopeId, status: SettingsConfigStatus.PUBLISHED } });
-    const start = row.effectiveAt?.getTime() ?? Date.now(); const end = row.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY;
-    if (existing.some((item) => { const itemStart = item.effectiveAt?.getTime() ?? 0; const itemEnd = item.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY; return start < itemEnd && itemStart < end; })) throw new ConflictException("存在重叠生效时间的冲突版本");
-    return this.prisma.$transaction(async (tx) => { const published = await tx.settingsConfigVersion.update({ where: { id }, data: { status: SettingsConfigStatus.PUBLISHED, publishedById: actor.id, publishedAt: new Date(), updatedById: actor.id, ...(requestId ? { requestId } : {}) } }); await this.audit(tx, "settings.config.published", actor.id, id, { capabilityCode: row.capabilityCode, scopeId: row.scopeId, after: { version: row.version, status: published.status } }); this.listCache.clear(); return this.sanitize(published); });
+    if (row.status !== SettingsConfigStatus.DRAFT && row.status !== SettingsConfigStatus.VALIDATION_FAILED) throw new ConflictException("请先通过服务端校验再发布");
+    const result = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.settingsConfigVersion.findUnique({ where: { id } });
+      if (!current || current.status !== SettingsConfigStatus.DRAFT && current.status !== SettingsConfigStatus.VALIDATION_FAILED) throw new ConflictException("配置版本已被其他人修改");
+      const errors = this.collectValidationErrors(current);
+      if (Object.keys(errors).length) {
+        await tx.settingsConfigVersion.update({ where: { id }, data: { status: SettingsConfigStatus.VALIDATION_FAILED, validationErrors: errors, updatedById: actor.id } });
+        await this.audit(tx, "settings.config.validation.failed", actor.id, id, { capabilityCode: current.capabilityCode, scopeId: current.scopeId, errors });
+        throw new ConflictException("配置校验失败，请修复后再发布");
+      }
+      const existing = await tx.settingsConfigVersion.findMany({ where: { id: { not: id }, capabilityCode: current.capabilityCode, scopeId: current.scopeId, status: SettingsConfigStatus.PUBLISHED } });
+      const start = current.effectiveAt?.getTime() ?? Date.now(); const end = current.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY;
+      if (existing.some((item) => { const itemStart = item.effectiveAt?.getTime() ?? 0; const itemEnd = item.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY; return start < itemEnd && itemStart < end; })) throw new ConflictException("存在重叠生效时间的冲突版本");
+      const published = await tx.settingsConfigVersion.update({ where: { id }, data: { status: SettingsConfigStatus.PUBLISHED, validationErrors: Prisma.JsonNull, publishedById: actor.id, publishedAt: new Date(), updatedById: actor.id, ...(requestId ? { requestId } : {}) } });
+      await this.audit(tx, "settings.config.published", actor.id, id, { capabilityCode: current.capabilityCode, scopeId: current.scopeId, after: { version: current.version, status: published.status } });
+      return this.sanitize(published);
+    });
+    this.listCache.clear();
+    return result;
   }
   async withdraw(user: SettingsUser, id: string, reason: string, requestId?: string) {
     const row = await this.prisma.settingsConfigVersion.findUnique({ where: { id } });
@@ -125,12 +135,35 @@ export class ConfigVersionsService {
     const { actor } = await this.access.assert(user, row.capabilityCode, "publish", row.scopeId);
     if (requestId && row.status === SettingsConfigStatus.WITHDRAWN && row.requestId === requestId) return this.sanitize(row);
     if (row.status !== SettingsConfigStatus.PUBLISHED) throw new ConflictException("只有已发布版本可以撤回");
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const withdrawn = await tx.settingsConfigVersion.update({ where: { id }, data: { status: SettingsConfigStatus.WITHDRAWN, updatedById: actor.id, ...(requestId ? { requestId } : {}) } });
       await this.audit(tx, "settings.config.withdrawn", actor.id, id, { capabilityCode: row.capabilityCode, scopeId: row.scopeId, before: { status: row.status, version: row.version }, after: { status: withdrawn.status }, reason: reason.trim() });
-      this.listCache.clear();
       return this.sanitize(withdrawn);
     });
+    this.listCache.clear();
+    return result;
+  }
+  private collectValidationErrors(row: { capabilityCode: string; effectiveAt: Date | null; expiresAt: Date | null; payload: Prisma.JsonValue }): Record<string, string> {
+    const errors: Record<string, string> = {};
+    if (row.effectiveAt && row.expiresAt && row.expiresAt <= row.effectiveAt) errors.effectiveAt = "结束时间必须晚于生效时间";
+    const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? row.payload as Record<string, unknown> : {};
+    if (!row.payload || typeof row.payload !== "object" || Array.isArray(row.payload)) errors.payload = "配置内容必须是对象";
+    if (row.capabilityCode === "settings.security" && !row.effectiveAt) errors.effectiveAt = "安全策略必须明确填写生效时间";
+    const numberValue = (key: string) => Number(payload[key]);
+    if (row.capabilityCode === "settings.security") {
+      const sessionIdleMinutes = numberValue("sessionIdleMinutes"); const minPasswordLength = numberValue("minPasswordLength"); const maxLoginFailures = numberValue("maxLoginFailures"); const lockoutMinutes = numberValue("lockoutMinutes");
+      if (!Number.isFinite(sessionIdleMinutes) || sessionIdleMinutes < 5) errors.sessionIdleMinutes = "会话闲置时间不能少于 5 分钟";
+      if (!Number.isFinite(minPasswordLength) || minPasswordLength < 8) errors.minPasswordLength = "密码长度不能少于 8 位";
+      if (payload.requireAlphaNumeric !== true) errors.requireAlphaNumeric = "必须启用字母和数字组合";
+      if (!Number.isFinite(maxLoginFailures) || maxLoginFailures < 5) errors.maxLoginFailures = "失败锁定阈值不能少于 5 次";
+      if (!Number.isFinite(lockoutMinutes) || lockoutMinutes < 1) errors.lockoutMinutes = "锁定时长必须大于 0";
+    }
+    if (row.capabilityCode === "store.capacity") for (const key of ["inStoreCapacity", "outsideCapacity", "glassFilmCapacity", "reinspectionCapacity"]) { const value = numberValue(key); if (!Number.isFinite(value) || value < 0) errors[key] = "容量不能为负数且必须填写"; }
+    if (row.capabilityCode === "store.operations" && ["appointmentEnabled", "inventoryAlertEnabled", "constructionPhotoRequired", "smsReminderEnabled"].some((key) => payload[key] === false) && (typeof payload.disableReason !== "string" || !payload.disableReason.trim())) errors.disableReason = "关闭高风险业务开关必须填写原因";
+    if (row.capabilityCode === "settings.permissions" && (!payload.matrix || typeof payload.matrix !== "object" || Array.isArray(payload.matrix))) errors.matrix = "权限矩阵不能为空";
+    if (row.capabilityCode === "finance.settlement") Object.assign(errors, validateFinanceSettlementPolicy(payload));
+    if (row.capabilityCode === "customer.tags") { const high = numberValue("highValueThresholdCents"); const vip = numberValue("vipThresholdCents"); if (!Number.isInteger(high) || high < 0) errors.highValueThresholdCents = "高价值阈值必须是非负整数分"; if (!Number.isInteger(vip) || vip <= high) errors.vipThresholdCents = "VIP 阈值必须是整数分且高于高价值阈值"; }
+    return errors;
   }
   private sanitizePayload(payload: Prisma.JsonValue): Prisma.JsonValue {
     if (Array.isArray(payload)) return payload.map((item) => this.sanitizePayload(item));

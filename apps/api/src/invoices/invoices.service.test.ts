@@ -46,14 +46,16 @@ test("InvoicesService applies and issues invoice for paid completed order", asyn
         writes.push(args);
         return { id: "invoice-1", status: InvoiceStatus.APPLIED };
       },
-      findUnique: async () => ({ id: "invoice-1", storeId: "store-1", orderId: "order-1" }),
-      update: async (args: unknown) => {
+      findUnique: async () => ({ id: "invoice-1", storeId: "store-1", orderId: "order-1", status: InvoiceStatus.APPLIED }),
+      updateMany: async (args: unknown) => {
         writes.push(args);
-        return { id: "invoice-1", status: InvoiceStatus.ISSUED, invoiceNo: "INV-1" };
-      }
+        return { count: 1 };
+      },
+      findUniqueOrThrow: async () => ({ id: "invoice-1", status: InvoiceStatus.ISSUED, invoiceNo: "INV-1" })
     },
     invoiceLog: { create: async (args: unknown) => writes.push(args) }
   };
+  (prisma as any).$transaction = async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma);
   const service = new InvoicesService(prisma as never, invoiceAccess as never);
 
   await service.apply(
@@ -148,17 +150,20 @@ test("InvoicesService auto generates a local PDF URL when issuing without fileUr
         id: "invoice-2",
         storeId: "store-1",
         orderId: "order-1",
+        status: InvoiceStatus.APPLIED,
         title: "客户发票",
         taxNo: "TAX-2",
         amountCents: 120000
       }),
-      update: async (args: unknown) => {
+      updateMany: async (args: unknown) => {
         writes.push(args);
-        return { id: "invoice-2", status: InvoiceStatus.ISSUED, invoiceNo: "INV-2" };
-      }
+        return { count: 1 };
+      },
+      findUniqueOrThrow: async () => ({ id: "invoice-2", status: InvoiceStatus.ISSUED, invoiceNo: "INV-2" })
     },
     invoiceLog: { create: async (args: unknown) => writes.push(args) }
   };
+  (prisma as any).$transaction = async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma);
   const service = new InvoicesService(prisma as never, invoiceAccess as never);
 
   await service.issue(

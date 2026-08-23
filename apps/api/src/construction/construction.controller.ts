@@ -5,6 +5,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Inject,
   Headers,
   Param,
   Patch,
@@ -56,6 +57,7 @@ import {
   UpsertWorkerProfileDto,
   VerifyMaterialBatchDto
 } from "./dto/construction.dto";
+import { CONSTRUCTION_MANAGEMENT, type ConstructionManagement } from "./domain/construction-management";
 
 type AuthRequest = Request & {
   user: AuthenticatedConstructionUser;
@@ -66,6 +68,7 @@ type AuthRequest = Request & {
 export class ConstructionController {
   constructor(
     private readonly construction: ConstructionService,
+    @Inject(CONSTRUCTION_MANAGEMENT) private readonly management: ConstructionManagement,
     private readonly capacities: CapacityReservationService,
     private readonly costSettlements: ConstructionCostSettlementService,
     private readonly crossStore: CrossStoreConstructionService,
@@ -202,12 +205,12 @@ export class ConstructionController {
 
   @Get("capacities")
   listCapacities(@Req() req: AuthRequest, @Query() query: ListConstructionDto) {
-    return this.construction.listCapacities(req.user, query);
+    return this.management.listCapacities(req.user, query);
   }
 
   @Post("capacities")
   upsertCapacity(@Req() req: AuthRequest, @Body() dto: UpsertDailyCapacityDto) {
-    return this.construction.upsertCapacity(req.user, dto);
+    return this.management.upsertCapacity(req.user, dto);
   }
 
   @Get("capacities/reconciliation")
@@ -224,7 +227,7 @@ export class ConstructionController {
 
   @Patch("capacities/:id")
   updateCapacity(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateDailyCapacityDto) {
-    return this.construction.updateCapacity(req.user, id, dto);
+    return this.management.updateCapacity(req.user, id, dto);
   }
 
   @Get("assignments")
@@ -336,42 +339,42 @@ export class ConstructionController {
 
   @Get("workers")
   listWorkers(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.construction.listWorkers(req.user, storeId);
+    return this.management.listWorkers(req.user, storeId);
   }
 
   @Post("workers")
   upsertWorker(@Req() req: AuthRequest, @Body() dto: UpsertWorkerProfileDto) {
-    return this.construction.upsertWorker(req.user, dto);
+    return this.management.upsertWorker(req.user, dto);
   }
 
   @Patch("workers/:userId")
   updateWorker(@Req() req: AuthRequest, @Param("userId") userId: string, @Body() dto: UpsertWorkerProfileDto) {
-    return this.construction.upsertWorker(req.user, { ...dto, userId });
+    return this.management.upsertWorker(req.user, { ...dto, userId });
   }
 
   @Get("leaves")
   listLeaves(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.construction.listLeaves(req.user, storeId);
+    return this.management.listLeaves(req.user, storeId);
   }
 
   @Post("leaves")
   createLeave(@Req() req: AuthRequest, @Body() dto: LeaveRequestDto, @Headers("idempotency-key") clientOperationId?: string) {
-    return this.construction.createLeave(req.user, dto, clientOperationId);
+    return this.management.createLeave(req.user, dto, clientOperationId);
   }
 
   @Patch("leaves/:id")
   updateLeave(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateLeaveRequestDto) {
-    return this.construction.updateLeave(req.user, id, dto);
+    return this.management.updateLeave(req.user, id, dto);
   }
 
   @Post("schedules")
   upsertSchedule(@Req() req: AuthRequest, @Body() dto: UpsertScheduleDto) {
-    return this.construction.upsertSchedule(req.user, dto);
+    return this.management.upsertSchedule(req.user, dto);
   }
 
   @Get("schedules")
   listSchedules(@Req() req: AuthRequest, @Query() query: ListConstructionDto) {
-    return this.construction.listSchedules(req.user, query);
+    return this.management.listSchedules(req.user, query);
   }
 
   @Post("offline-sync")

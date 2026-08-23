@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { MulterFile } from "../users/multer-file.type";
-import { AfterSalesService, type AuthenticatedAfterSalesUser } from "./after-sales.service";
+import type { AuthenticatedAfterSalesUser } from "./after-sales.service";
+import { AFTER_SALES_READ_MODEL, AFTER_SALES_RESOLUTION, type AfterSalesReadModel, type AfterSalesResolution } from "./domain/after-sales-resolution";
 import { AssignAfterSaleDto, CreateAfterSaleCostDto, CreateAfterSaleDto, JudgeAfterSaleDto, ListAfterSalesDto, ReverseAfterSaleCostDto, SubmitAfterSaleEvidenceDto, UploadAfterSalePhotoDto } from "./dto/after-sales.dto";
 
 type AuthRequest = Request & {
@@ -14,16 +15,19 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("after-sales")
 export class AfterSalesController {
-  constructor(private readonly afterSales: AfterSalesService) {}
+  constructor(
+    @Inject(AFTER_SALES_RESOLUTION) private readonly afterSales: AfterSalesResolution,
+    @Inject(AFTER_SALES_READ_MODEL) private readonly reads: AfterSalesReadModel
+  ) {}
 
   @Get()
   list(@Req() req: AuthRequest, @Query() query: ListAfterSalesDto) {
-    return this.afterSales.list(req.user, query);
+    return this.reads.list(req.user, query);
   }
 
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.afterSales.detail(req.user, id);
+    return this.reads.detail(req.user, id);
   }
 
   @Post()

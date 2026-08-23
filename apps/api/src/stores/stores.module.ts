@@ -12,18 +12,20 @@ import { ChangeStoreManagerUseCase } from "./use-cases/change-store-manager.use-
 import { ReviewStoreSubmissionUseCase } from "./use-cases/review-store-submission.use-case";
 import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
+import { STORE_GOVERNANCE } from "./domain/store-governance";
 
 @Module({
   imports: [PrismaModule, PermissionsModule, SettingsModule, NotificationsModule, UsersModule, ObservabilityModule],
   controllers: [StoresController],
   providers: [
     StoresService,
+    { provide: STORE_GOVERNANCE, useExisting: StoresService },
     StoreRepository,
     ReviewStoreSubmissionUseCase,
     SubmitStoreForReviewUseCase,
     ChangeStoreManagerUseCase,
     SetStoreFrozenUseCase
   ],
-  exports: [StoresService]
+  exports: [STORE_GOVERNANCE, StoresService]
 })
 export class StoresModule {}

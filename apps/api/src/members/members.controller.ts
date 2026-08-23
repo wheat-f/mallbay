@@ -1,15 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { InviteMemberDto } from "./dto/invite-member.dto";
-import { MembersService } from "./members.service";
+import { MEMBER_INVITATION_WORKFLOW, type MemberInvitationWorkflow } from "./domain/member-invitation-workflow";
 
 type AuthRequest = Request & { user: { id: string } };
 
 @UseGuards(JwtAuthGuard)
 @Controller()
 export class MembersController {
-  constructor(private readonly membersService: MembersService) {}
+  constructor(@Inject(MEMBER_INVITATION_WORKFLOW) private readonly membersService: MemberInvitationWorkflow) {}
 
   // 店长：搜索可邀请的用户
   @Get("stores/:storeId/members/search")

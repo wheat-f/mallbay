@@ -5,6 +5,7 @@ import { StoresController } from "./stores.controller";
 import { MetricsService } from "../observability/metrics.service";
 import { OssService } from "../users/oss.service";
 import { StoresService } from "./stores.service";
+import { STORE_GOVERNANCE } from "./domain/store-governance";
 import type { MulterFile } from "../users/multer-file.type";
 
 const imageFile = {
@@ -80,7 +81,7 @@ test("StoresController receives StoresService through Nest injection", async () 
   const moduleRef = await Test.createTestingModule({
     controllers: [StoresController],
     providers: [
-      { provide: StoresService, useValue: storesService },
+      { provide: STORE_GOVERNANCE, useValue: storesService },
       { provide: OssService, useValue: {} },
       { provide: MetricsService, useValue: { increment: () => undefined } }
     ]

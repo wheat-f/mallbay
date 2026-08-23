@@ -78,19 +78,20 @@ export class MembersService {
       throw new BadRequestException("该用户已是其他门店的成员");
     }
 
-    // 取消该用户对本门店的旧待处理邀请（如有）
-    await this.prisma.storeInvitation.updateMany({
-      where: { storeId, invitedUserId: dto.userId, status: InvitationStatus.PENDING },
-      data: { status: InvitationStatus.CANCELLED }
-    });
+    const invitation = await this.prisma.$transaction(async (tx) => {
+      await tx.storeInvitation.updateMany({
+        where: { storeId, invitedUserId: dto.userId, status: InvitationStatus.PENDING },
+        data: { status: InvitationStatus.CANCELLED }
+      });
 
-    const invitation = await this.prisma.storeInvitation.create({
-      data: {
-        storeId,
-        invitedById: managerId,
-        invitedUserId: dto.userId,
-        position: dto.position
-      }
+      return tx.storeInvitation.create({
+        data: {
+          storeId,
+          invitedById: managerId,
+          invitedUserId: dto.userId,
+          position: dto.position
+        }
+      });
     });
 
     await this.dispatchNotification(dto.userId, "STORE_INVITATION", {
@@ -98,7 +99,7 @@ export class MembersService {
       storeId,
       storeName: store.name,
       position: dto.position
-    });
+    }, `store-invitation:${invitation.id}:created`);
 
     return invitation;
   }
@@ -133,11 +134,12 @@ export class MembersService {
         }
       });
 
-      // 更新邀请状态
-      await tx.storeInvitation.update({
-        where: { id: invitationId },
+      // 只有仍处于待处理状态的邀请可以完成接受，避免并发接受产生重复成员关系。
+      const accepted = await tx.storeInvitation.updateMany({
+        where: { id: invitationId, status: InvitationStatus.PENDING },
         data: { status: InvitationStatus.ACCEPTED }
       });
+      if (accepted.count !== 1) throw new BadRequestException("该邀请已处理");
     });
 
     // 通知邀请人
@@ -145,7 +147,7 @@ export class MembersService {
       storeId: invitation.storeId,
       storeName: invitation.store.name,
       invitedUserId: userId
-    });
+    }, `store-invitation:${invitation.id}:accepted`);
 
     return { success: true };
   }
@@ -164,8 +166,8 @@ export class MembersService {
       throw new BadRequestException("该邀请已处理");
     }
 
-    await this.prisma.storeInvitation.update({
-      where: { id: invitationId },
+    await this.prisma.storeInvitation.updateMany({
+      where: { id: invitationId, status: InvitationStatus.PENDING },
       data: { status: InvitationStatus.REJECTED }
     });
 
@@ -173,7 +175,7 @@ export class MembersService {
       storeId: invitation.storeId,
       storeName: invitation.store.name,
       invitedUserId: userId
-    });
+    }, `store-invitation:${invitation.id}:rejected`);
 
     return { success: true };
   }
@@ -210,7 +212,7 @@ export class MembersService {
       storeId,
       storeName: store.name,
       reason: "已被店长移出门店"
-    });
+    }, `store-member:${member.id}:removed`);
 
     return { success: true };
   }
@@ -246,9 +248,10 @@ export class MembersService {
   private dispatchNotification(
     userId: string,
     type: "STORE_INVITATION" | "INVITATION_ACCEPTED" | "INVITATION_REJECTED" | "REMOVED_FROM_STORE",
-    payload: object
+    payload: object,
+    dedupeKey?: string
   ) {
-    return this.notificationDispatcher?.dispatch({ userId, type, payload })
-      ?? this.notifications.send(userId, type, payload);
+    return this.notificationDispatcher?.dispatch({ userId, type, payload, dedupeKey })
+      ?? this.notifications.send(userId, type, payload, dedupeKey);
   }
 }

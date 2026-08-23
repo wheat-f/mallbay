@@ -1,21 +1,68 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { AccessContext } from "../permissions/domain/access-context";
 import { CashFactWriter, toCashFactTransaction } from "../finance/domain/cash-fact-writer";
 import { InventoryLedger, toInventoryLedgerTransaction } from "../inventory/domain/inventory-ledger";
-import { ApproveSalesReturnDto, CancelReturnDto, CostVerificationConfirmDto, CostVerificationResubmitDto, CostVerificationSubmitDto, CreatePurchaseReturnDto, CreateSalesReturnDto, InspectionApproveDto, InspectionConvertDto, ReceiveSalesReturnDto, RefundSalesReturnDto, ReturnActionDto, SettlePurchaseReturnDto } from "./dto/returns.dto";
+import { ApprovePurchaseReturnDto, ApproveSalesReturnDto, CancelReturnDto, CostVerificationConfirmDto, CostVerificationResubmitDto, CostVerificationSubmitDto, CreatePurchaseReturnDto, CreateSalesReturnDto, InspectionApproveDto, InspectionConvertDto, ReceiveSalesReturnDto, RefundSalesReturnDto, ReturnActionDto, SettlePurchaseReturnDto } from "./dto/returns.dto";
 
 export type ReturnUser = { id: string; username?: string };
 
+export type ReturnsWorkflowCommand =
+  | { action: "CREATE_SALES"; user: ReturnUser; dto: CreateSalesReturnDto }
+  | { action: "SUBMIT_SALES"; user: ReturnUser; id: string; dto: ReturnActionDto }
+  | { action: "APPROVE_SALES"; user: ReturnUser; id: string; dto: ApproveSalesReturnDto }
+  | { action: "RECEIVE_SALES"; user: ReturnUser; id: string; dto: ReceiveSalesReturnDto }
+  | { action: "APPROVE_INSPECTION"; user: ReturnUser; id: string; dto: InspectionApproveDto }
+  | { action: "CONVERT_INSPECTION"; user: ReturnUser; id: string; dto: InspectionConvertDto }
+  | { action: "SUBMIT_COST_VERIFICATION"; user: ReturnUser; id: string; dto: CostVerificationSubmitDto }
+  | { action: "CONFIRM_COST_VERIFICATION"; user: ReturnUser; id: string; dto: CostVerificationConfirmDto }
+  | { action: "RESUBMIT_COST_VERIFICATION"; user: ReturnUser; id: string; dto: CostVerificationResubmitDto }
+  | { action: "REFUND_SALES"; user: ReturnUser; id: string; dto: RefundSalesReturnDto }
+  | { action: "CANCEL_SALES"; user: ReturnUser; id: string; dto: CancelReturnDto }
+  | { action: "CREATE_PURCHASE"; user: ReturnUser; dto: CreatePurchaseReturnDto }
+  | { action: "SUBMIT_PURCHASE"; user: ReturnUser; id: string; dto: ReturnActionDto }
+  | { action: "APPROVE_PURCHASE"; user: ReturnUser; id: string; dto: ApprovePurchaseReturnDto }
+  | { action: "OUTBOUND_PURCHASE"; user: ReturnUser; id: string; detailId: string; quantity: number; dto: ReturnActionDto }
+  | { action: "SETTLE_PURCHASE"; user: ReturnUser; id: string; dto: SettlePurchaseReturnDto }
+  | { action: "REVERSE_SETTLEMENT"; user: ReturnUser; id: string; adjustmentId: string; dto: ReturnActionDto }
+  | { action: "CANCEL_PURCHASE"; user: ReturnUser; id: string; dto: CancelReturnDto };
+
 @Injectable()
-export class ReturnsService {
+export class ReturnsWorkflow {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessContext: AccessContext,
     private readonly cashFactWriter: CashFactWriter,
     private readonly inventoryLedger: InventoryLedger
   ) {}
+
+  private runTransaction<T>(callback: (tx: Prisma.TransactionClient) => Promise<T>) {
+    return this.prisma.$transaction(callback, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
+  async execute(command: ReturnsWorkflowCommand) {
+    switch (command.action) {
+      case "CREATE_SALES": return this.createSales(command.user, command.dto);
+      case "SUBMIT_SALES": return this.submitSales(command.user, command.id, command.dto);
+      case "APPROVE_SALES": return this.approveSales(command.user, command.id, command.dto);
+      case "RECEIVE_SALES": return this.receiveSales(command.user, command.id, command.dto);
+      case "APPROVE_INSPECTION": return this.approveInspection(command.user, command.id, command.dto);
+      case "CONVERT_INSPECTION": return this.convertInspection(command.user, command.id, command.dto);
+      case "SUBMIT_COST_VERIFICATION": return this.submitCostVerification(command.user, command.id, command.dto);
+      case "CONFIRM_COST_VERIFICATION": return this.confirmCostVerification(command.user, command.id, command.dto);
+      case "RESUBMIT_COST_VERIFICATION": return this.resubmitCostVerification(command.user, command.id, command.dto);
+      case "REFUND_SALES": return this.refundSales(command.user, command.id, command.dto);
+      case "CANCEL_SALES": return this.cancelSales(command.user, command.id, command.dto);
+      case "CREATE_PURCHASE": return this.createPurchase(command.user, command.dto);
+      case "SUBMIT_PURCHASE": return this.submitPurchase(command.user, command.id, command.dto);
+      case "APPROVE_PURCHASE": return this.approvePurchase(command.user, command.id, command.dto);
+      case "OUTBOUND_PURCHASE": return this.outboundPurchase(command.user, command.id, command.detailId, command.quantity, command.dto);
+      case "SETTLE_PURCHASE": return this.settlePurchase(command.user, command.id, command.dto);
+      case "REVERSE_SETTLEMENT": return this.reverseSettlement(command.user, command.id, command.adjustmentId, command.dto);
+      case "CANCEL_PURCHASE": return this.cancelPurchase(command.user, command.id, command.dto);
+    }
+  }
 
   private requireAction(user: ReturnUser, action: "create" | "approve" | "manage") {
     return this.accessContext.require({ userId: user.id }, "returns", action);
@@ -62,9 +109,10 @@ export class ReturnsService {
     await this.requireAction(user, "create");
     if (!dto.idempotencyKey?.trim()) throw new BadRequestException("RETURN_INVALID_ARGUMENT: idempotencyKey 必填");
     if (!dto.details?.length) throw new BadRequestException("RETURN_INVALID_ARGUMENT: 退货明细不能为空");
+    const requestSummary = { storeId: dto.storeId, executionStoreId: dto.executionStoreId ?? null, orderId: dto.orderId, returnMode: dto.returnMode ?? "PHYSICAL_RETURN", reason: dto.reason, details: dto.details } as Prisma.InputJsonValue;
     const priorSales = await this.prisma.returnAction.findFirst({ where: { returnType: "SALES", actionType: "CREATE", idempotencyKey: dto.idempotencyKey } });
     if (priorSales) {
-      if (JSON.stringify(priorSales.requestSummary ?? {}) !== JSON.stringify({ storeId: dto.storeId, orderId: dto.orderId })) throw new ConflictException("RETURN_IDEMPOTENCY_CONFLICT");
+      if (JSON.stringify(priorSales.requestSummary ?? {}) !== JSON.stringify(requestSummary)) throw new ConflictException("RETURN_IDEMPOTENCY_CONFLICT");
       return this.prisma.salesReturn.findUnique({ where: { id: priorSales.returnId } });
     }
     const order = await this.prisma.order.findUnique({ where: { id: dto.orderId }, include: { constructionRecord: true } });
@@ -86,30 +134,23 @@ export class ReturnsService {
       details.push({ orderItemId: source.id, productId: source.productId, quantity: input.quantity, approvedQuantity: input.quantity, refundEligibleQuantity: input.quantity, unitPriceCents, refundAmountCents: amount, reason: input.reason, sourceOutboundBatchId: input.sourceOutboundBatchId });
     }
     const returnNo = "SR-" + Date.now() + "-" + Math.floor(Math.random() * 1000).toString().padStart(3, "0");
-    const { created, action } = await this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const created = await tx.salesReturn.create({ data: { storeId: dto.storeId, executionStoreId: dto.executionStoreId ?? order.executionStoreId, orderId: dto.orderId, returnNo, reason: dto.reason, returnMode: dto.returnMode ?? "PHYSICAL_RETURN", requestedRefundCents: total, remainingRefundCents: total, createdById: user.id } });
-      const action = await tx.returnAction.create({ data: { returnType: "SALES", returnId: created.id, actionType: "CREATE", status: "PENDING", actorId: user.id, idempotencyKey: dto.idempotencyKey, requestSummary: { storeId: dto.storeId, orderId: dto.orderId } } });
-      return { created, action };
+      const action = await tx.returnAction.create({ data: { returnType: "SALES", returnId: created.id, actionType: "CREATE", status: "PENDING", actorId: user.id, idempotencyKey: dto.idempotencyKey, requestSummary } });
+      await tx.salesReturnDetail.createMany({ data: details.map((item) => ({ ...item, returnId: created.id })) as never });
+      await tx.returnAction.update({ where: { id: action.id }, data: { status: "SUCCEEDED", resultSummary: { id: created.id } } });
+      await tx.auditEvent.create({ data: { actorId: user.id, storeId: created.storeId, action: "SALES_RETURN_CREATED", targetType: "SalesReturn", targetId: created.id, metadata: { status: created.status, orderId: created.orderId } } });
+      return created;
     });
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        await tx.salesReturnDetail.createMany({ data: details.map((item) => ({ ...item, returnId: created.id })) as never });
-        await tx.returnAction.update({ where: { id: action.id }, data: { status: "SUCCEEDED", resultSummary: { id: created.id } } });
-        await tx.auditEvent.create({ data: { actorId: user.id, storeId: created.storeId, action: "SALES_RETURN_CREATED", targetType: "SalesReturn", targetId: created.id, metadata: { status: created.status, orderId: created.orderId } } });
-        return created;
-      });
-    } catch (error) {
-      await this.prisma.salesReturn.update({ where: { id: created.id }, data: { status: "CANCELLED", cancelReason: "创建明细失败" } }).catch(() => undefined);
-      return this.failAction(action.id, error);
-    }
   }  async createPurchase(user: ReturnUser, dto: CreatePurchaseReturnDto) {
     await this.requireStore(user, dto.storeId, "PURCHASE");
     await this.requireAction(user, "create");
     if (!dto.idempotencyKey?.trim()) throw new BadRequestException("RETURN_INVALID_ARGUMENT: idempotencyKey 必填");
     if (!dto.details?.length) throw new BadRequestException("RETURN_INVALID_ARGUMENT: 退货明细不能为空");
+    const requestSummary = { storeId: dto.storeId, executionStoreId: dto.executionStoreId ?? null, purchaseOrderId: dto.purchaseOrderId, supplierId: dto.supplierId ?? null, supplierName: dto.supplierName ?? null, returnMode: dto.returnMode ?? "PHYSICAL_RETURN", settlementMode: dto.settlementMode ?? "PAYABLE_OFFSET", reason: dto.reason, details: dto.details } as Prisma.InputJsonValue;
     const priorPurchase = await this.prisma.returnAction.findFirst({ where: { returnType: "PURCHASE", actionType: "CREATE", idempotencyKey: dto.idempotencyKey } });
     if (priorPurchase) {
-      if (JSON.stringify(priorPurchase.requestSummary ?? {}) !== JSON.stringify({ storeId: dto.storeId, purchaseOrderId: dto.purchaseOrderId })) throw new ConflictException("RETURN_IDEMPOTENCY_CONFLICT");
+      if (JSON.stringify(priorPurchase.requestSummary ?? {}) !== JSON.stringify(requestSummary)) throw new ConflictException("RETURN_IDEMPOTENCY_CONFLICT");
       return this.prisma.purchaseReturn.findUnique({ where: { id: priorPurchase.returnId } });
     }
     const order = await this.prisma.purchaseOrder.findUnique({ where: { id: dto.purchaseOrderId } });
@@ -135,22 +176,14 @@ export class ReturnsService {
       details.push({ purchaseOrderItemId: source.id, productId: source.productId, batchId: batch.id, quantity: input.quantity, approvedQuantity: input.quantity, unitCostCents, refundAmountCents: amount, reason: input.reason });
     }
     const returnNo = "PR-" + Date.now() + "-" + Math.floor(Math.random() * 1000).toString().padStart(3, "0");
-    const { created, action } = await this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const created = await tx.purchaseReturn.create({ data: { storeId: dto.storeId, executionStoreId: dto.executionStoreId ?? dto.storeId, purchaseOrderId: dto.purchaseOrderId, supplierId, supplierName, returnNo, reason: dto.reason, returnMode: dto.returnMode ?? "PHYSICAL_RETURN", settlementMode: dto.settlementMode ?? "PAYABLE_OFFSET", requestedAmountCents: total, totalAmountCents: total, createdById: user.id } });
-      const action = await tx.returnAction.create({ data: { returnType: "PURCHASE", returnId: created.id, actionType: "CREATE", status: "PENDING", actorId: user.id, idempotencyKey: dto.idempotencyKey, requestSummary: { storeId: dto.storeId, purchaseOrderId: dto.purchaseOrderId } } });
-      return { created, action };
+      const action = await tx.returnAction.create({ data: { returnType: "PURCHASE", returnId: created.id, actionType: "CREATE", status: "PENDING", actorId: user.id, idempotencyKey: dto.idempotencyKey, requestSummary } });
+      await tx.purchaseReturnDetail.createMany({ data: details.map((item) => ({ ...item, returnId: created.id })) as never });
+      await tx.returnAction.update({ where: { id: action.id }, data: { status: "SUCCEEDED", resultSummary: { id: created.id } } });
+      await tx.auditEvent.create({ data: { actorId: user.id, storeId: created.storeId, action: "PURCHASE_RETURN_CREATED", targetType: "PurchaseReturn", targetId: created.id, metadata: { status: created.status, purchaseOrderId: created.purchaseOrderId } } });
+      return created;
     });
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        await tx.purchaseReturnDetail.createMany({ data: details.map((item) => ({ ...item, returnId: created.id })) as never });
-        await tx.returnAction.update({ where: { id: action.id }, data: { status: "SUCCEEDED", resultSummary: { id: created.id } } });
-        await tx.auditEvent.create({ data: { actorId: user.id, storeId: created.storeId, action: "PURCHASE_RETURN_CREATED", targetType: "PurchaseReturn", targetId: created.id, metadata: { status: created.status, purchaseOrderId: created.purchaseOrderId } } });
-        return created;
-      });
-    } catch (error) {
-      await this.prisma.purchaseReturn.update({ where: { id: created.id }, data: { status: "CANCELLED", cancelReason: "创建明细失败" } }).catch(() => undefined);
-      return this.failAction(action.id, error);
-    }
   }  async listSales(user: ReturnUser, storeId: string) { await this.requireStore(user, storeId, "SALES"); return this.prisma.salesReturn.findMany({ where: { storeId }, orderBy: { createdAt: "desc" } }); }
   async listPurchase(user: ReturnUser, storeId: string) { await this.requireStore(user, storeId, "PURCHASE"); return this.prisma.purchaseReturn.findMany({ where: { storeId }, orderBy: { createdAt: "desc" } }); }
 
@@ -163,7 +196,7 @@ export class ReturnsService {
     const claim = await this.beginAction("SALES", id, "SALES_SUBMIT", dto.idempotencyKey, user.id, { reason: dto.reason });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const updated = await tx.salesReturn.update({ where: { id }, data: { status: "SUBMITTED" } });
       await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", targetStatus: "SUBMITTED", resultSummary: { status: "SUBMITTED" } } });
       await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.storeId, action: "SALES_RETURN_SUBMITTED", targetType: "SalesReturn", targetId: id, metadata: { from: parent.status, to: "SUBMITTED" } } });
@@ -182,7 +215,7 @@ export class ReturnsService {
     const claim = await this.beginAction("SALES", id, "SALES_APPROVE", dto.idempotencyKey, user.id, { approvedRefundAmountCents: dto.approvedRefundAmountCents, returnMode: dto.returnMode });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const updated = await tx.salesReturn.update({ where: { id }, data: { status, approvedRefundCents: amount, remainingRefundCents: amount } });
       await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", targetStatus: status, resultSummary: { status } } });
       await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.storeId, action: "SALES_RETURN_APPROVED", targetType: "SalesReturn", targetId: id, metadata: { status, approvedRefundCents: amount } } });
@@ -198,7 +231,7 @@ export class ReturnsService {
     const claim = await this.beginAction("SALES", id, "SALES_CANCEL", dto.idempotencyKey, user.id, { reason: dto.reason });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const updated = await tx.salesReturn.update({ where: { id }, data: { status: parent.status.startsWith("PARTIAL") ? "PARTIAL_CANCELLED" : "CANCELLED", waiverReason: dto.reason } });
       await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", targetStatus: updated.status, resultSummary: { status: updated.status } } });
       await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.storeId, action: "SALES_RETURN_CANCELLED", targetType: "SalesReturn", targetId: id, metadata: { status: updated.status, reason: dto.reason } } });
@@ -218,7 +251,7 @@ export class ReturnsService {
     const claim = await this.beginAction("SALES", id, "SALES_RECEIVE", dto.idempotencyKey, user.id, { detailId: dto.detailId, quantity: dto.quantity, targetStatus });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const sourceBatch = detail.sourceOutboundBatchId ? await tx.inventoryBatch.findUnique({ where: { id: detail.sourceOutboundBatchId } }) : null;
       const unitCostCents = sourceBatch?.unitCostCents ?? 0;
       const batch = await this.inventoryLedger.receiveSalesReturnWithin(toInventoryLedgerTransaction(tx), {
@@ -266,7 +299,7 @@ export class ReturnsService {
     if (claim.replay) return parent;
     const actionId = claim.action.id;
     const refundedAt = new Date();
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const action = claim.action;
       if (amount > 0) await this.cashFactWriter.recordCustomerReceiptReversal(toCashFactTransaction(tx), {
         storeId: parent.executionStoreId,
@@ -285,6 +318,7 @@ export class ReturnsService {
       }
       const updated = await tx.salesReturn.update({ where: { id }, data: { status: left === 0 ? "REFUNDED" : "PARTIAL_REFUND", actualRefundCents: amount, refundedAmountCents: { increment: amount }, waivedRefundCents: { increment: waived }, remainingRefundCents: left, waiverReason: dto.waiverReason, refundMethod: dto.refundMethod, voucherId: dto.voucherId, refundedById: user.id, refundedAt } });
       await tx.returnAction.update({ where: { id: action.id }, data: { status: "SUCCEEDED", resultSummary: { refundedAmountCents: amount, remainingRefundCents: left } } });
+      await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.executionStoreId, action: "SALES_RETURN_REFUNDED", targetType: "SalesReturn", targetId: id, metadata: { amountCents: amount, waivedRefundCents: waived, remainingRefundCents: left, refundMethod: dto.refundMethod } } });
       return updated;
     }).catch((error) => this.failAction(actionId, error));
   }
@@ -298,7 +332,7 @@ export class ReturnsService {
     const claim = await this.beginAction("SALES", id, "INSPECTION_APPROVE", dto.idempotencyKey, user.id, { returnDetailId: dto.returnDetailId, targetStatus: dto.targetStatus, approvedQuantity: dto.approvedQuantity });
     if (claim.replay) return claim.action;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       await tx.salesReturnDetail.update({ where: { id: detail.id }, data: { inspectionApprovalStatus: "APPROVED", inspectionApprovedQuantity: dto.approvedQuantity, inspectionApprovedById: user.id, inspectionApprovedAt: new Date() } });
       await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.executionStoreId, action: "SALES_RETURN_INSPECTION_APPROVED", targetType: "SalesReturnDetail", targetId: detail.id, metadata: { approvedQuantity: dto.approvedQuantity, targetStatus: dto.targetStatus } } });
       return tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", returnDetailId: detail.id, targetStatus: dto.targetStatus, approvedQuantity: dto.approvedQuantity, resultSummary: { status: "APPROVED" } } });
@@ -316,7 +350,7 @@ export class ReturnsService {
     const claim = await this.beginAction("SALES", id, "INSPECTION_CONVERT", dto.idempotencyKey, user.id, { returnDetailId: dto.returnDetailId, quantity: dto.quantity, targetStatus: dto.targetStatus });
     if (claim.replay) return claim.action;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const source = await tx.inventoryBatch.findUnique({ where: { id: detail.inventoryBatchId! } });
       if (!source) throw new BadRequestException("RETURN_INVALID_ARGUMENT");
       const child = await this.inventoryLedger.convertSalesReturnInspectionWithin(toInventoryLedgerTransaction(tx), {
@@ -344,7 +378,7 @@ export class ReturnsService {
     const claim = await this.beginAction("SALES", id, "COST_VERIFICATION_SUBMIT", dto.idempotencyKey, user.id, { returnDetailId: dto.returnDetailId, batchId: dto.batchId, reason: dto.reason });
     if (claim.replay) return claim.action;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const updated = await tx.salesReturnDetail.update({ where: { id: detail.id }, data: { costStatus: "PENDING_VERIFICATION" } });
       await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", returnDetailId: detail.id, resultSummary: { status: "PENDING_VERIFICATION" } } });
       await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.storeId, action: "SALES_RETURN_COST_SUBMITTED", targetType: "SalesReturnDetail", targetId: detail.id, metadata: { batchId: dto.batchId, status: "PENDING_VERIFICATION" } } });
@@ -360,7 +394,7 @@ export class ReturnsService {
     const claim = await this.beginAction("SALES", id, "COST_VERIFICATION_CONFIRM", dto.idempotencyKey, user.id, { returnDetailId: dto.returnDetailId, batchId: dto.batchId, verifiedUnitCostCents: dto.verifiedUnitCostCents });
     if (claim.replay) return claim.action;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const amount = dto.verifiedUnitCostCents * Number(detail.refundEligibleQuantity);
       const updated = await tx.salesReturnDetail.update({ where: { id: detail.id }, data: { costStatus: "VERIFIED", verifiedUnitCostCents: dto.verifiedUnitCostCents, costAdjustmentCents: amount } });
       await tx.returnFinancialAdjustment.create({ data: { storeId: parent.storeId, returnType: "SALES", returnId: id, returnDetailId: detail.id, type: "COST_DIFFERENCE", amountCents: amount, originalValue: { status: detail.costStatus }, newValue: { verifiedUnitCostCents: dto.verifiedUnitCostCents }, calculationBasis: { quantity: detail.refundEligibleQuantity }, idempotencyKey: dto.idempotencyKey, createdById: user.id } });
@@ -379,7 +413,7 @@ export class ReturnsService {
     const claim = await this.beginAction("SALES", id, "COST_VERIFICATION_RESUBMIT", dto.idempotencyKey, user.id, { returnDetailId: dto.returnDetailId, supplementNote: dto.supplementNote });
     if (claim.replay) return claim.action;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const updated = await tx.salesReturnDetail.update({ where: { id: detail.id }, data: { costStatus: "PENDING_VERIFICATION" } });
       await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", returnDetailId: detail.id, resultSummary: { status: "PENDING_VERIFICATION" } } });
       await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.storeId, action: "SALES_RETURN_COST_RESUBMITTED", targetType: "SalesReturnDetail", targetId: detail.id, metadata: { batchId: dto.batchId, status: "PENDING_VERIFICATION" } } });
@@ -395,7 +429,7 @@ export class ReturnsService {
     const claim = await this.beginAction("PURCHASE", id, "PURCHASE_SUBMIT", dto.idempotencyKey, user.id, { reason: dto.reason });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const updated = await tx.purchaseReturn.update({ where: { id }, data: { status: "SUBMITTED" } });
       await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", targetStatus: "SUBMITTED", resultSummary: { status: "SUBMITTED" } } });
       await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.storeId, action: "PURCHASE_RETURN_SUBMITTED", targetType: "PurchaseReturn", targetId: id, metadata: { from: parent.status, to: "SUBMITTED" } } });
@@ -416,7 +450,7 @@ export class ReturnsService {
     const claim = await this.beginAction("PURCHASE", id, actionType, dto.idempotencyKey, user.id, { approvalType: dto.approvalType, confirmedAmountCents: dto.confirmedAmountCents });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const updated = await tx.purchaseReturn.update({ where: { id }, data: { ...data, status: both ? "WAITING_OUTBOUND" : "SUBMITTED" } });
       await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", approvalType: dto.approvalType, resultSummary: { status: updated.status } } });
       await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.storeId, action: dto.approvalType === "FINANCIAL" ? "PURCHASE_RETURN_FINANCIAL_APPROVED" : "PURCHASE_RETURN_BUSINESS_APPROVED", targetType: "PurchaseReturn", targetId: id, metadata: { status: updated.status, approvalType: dto.approvalType } } });
@@ -439,7 +473,7 @@ export class ReturnsService {
     if (claim.replay) return parent;
     const actionId = claim.action.id;
     const confirmedAt = new Date();
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const last = await tx.supplierReturnSettlementAdjustment.findFirst({ where: { purchaseReturnId: id }, orderBy: { sequenceNo: "desc" } });
       const adjustment = await tx.supplierReturnSettlementAdjustment.create({ data: { purchaseReturnId: id, supplierId: parent.supplierId, sequenceNo: (last?.sequenceNo ?? 0) + 1, status: "CONFIRMED", settlementMode: dto.settlementMode, refundAmountCents: refund, payableOffsetAmountCents: offset, exchangeQuantity: dto.exchangeQuantity, supplierDocumentNo: dto.supplierDocumentNo, differenceReason: dto.differenceReason, reason: dto.reason, createdById: user.id, confirmedById: user.id, confirmedAt, idempotencyKey: dto.idempotencyKey } });
       if (refund > 0) {
@@ -477,7 +511,7 @@ export class ReturnsService {
     const claim = await this.beginAction("PURCHASE", id, "PURCHASE_OUTBOUND", dto.idempotencyKey, user.id, { detailId, quantity });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       await this.inventoryLedger.outboundPurchaseReturnWithin(toInventoryLedgerTransaction(tx), {
         storeId: parent.executionStoreId,
         batchId: detail.batchId,
@@ -506,7 +540,7 @@ export class ReturnsService {
     if (claim.replay) return parent;
     const actionId = claim.action.id;
     const reversedAt = new Date();
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       if (adjustment.paymentRecordId) {
         const original = await tx.paymentRecord.findUnique({ where: { id: adjustment.paymentRecordId } });
         if (!original || original.reversedById) throw new BadRequestException("RETURN_ALREADY_REVERSED");
@@ -557,7 +591,7 @@ export class ReturnsService {
     const claim = await this.beginAction("PURCHASE", id, "PURCHASE_CANCEL", dto.idempotencyKey, user.id, { reason: dto.reason });
     if (claim.replay) return parent;
     const actionId = claim.action.id;
-    return this.prisma.$transaction(async (tx) => {
+    return this.runTransaction(async (tx) => {
       const updated = await tx.purchaseReturn.update({ where: { id }, data: { status: parent.status.startsWith("PARTIAL") ? "PARTIAL_CANCELLED" : "CANCELLED", cancelReason: dto.reason } });
       await tx.returnAction.update({ where: { id: actionId }, data: { status: "SUCCEEDED", targetStatus: updated.status, resultSummary: { status: updated.status } } });
       await tx.auditEvent.create({ data: { actorId: user.id, storeId: parent.storeId, action: "PURCHASE_RETURN_CANCELLED", targetType: "PurchaseReturn", targetId: id, metadata: { status: updated.status, reason: dto.reason } } });
@@ -576,3 +610,6 @@ export class ReturnsService {
     await this.requireStore(user, item.storeId, "PURCHASE");
     return this.prisma.purchaseReturn.update({ where: { id }, data: { status, approvedById } });
   }}
+
+/** Compatibility type alias for callers that still import the legacy name. */
+export { ReturnsWorkflow as ReturnsService };

@@ -131,7 +131,7 @@ function withAuthCookieEnv(
 test("wechat mini login returns token response and sets refresh token cookie", async () => {
   let capturedCode: string | undefined;
   const service = {
-    loginWithWechatCode: async (dto: { code: string }) => {
+    wechatLogin: async (dto: { code: string }) => {
       capturedCode = dto.code;
       return authResponse;
     }

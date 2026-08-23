@@ -10,6 +10,6 @@ import { CustomerAccount } from "./domain/customer-account";
   imports: [UsersModule, PermissionsModule],
   controllers: [CustomersController],
   providers: [CustomersService, CustomerRepository, CustomerAccount],
-  exports: [CustomersService, CustomerAccount]
+  exports: [CustomerAccount]
 })
 export class CustomersModule {}

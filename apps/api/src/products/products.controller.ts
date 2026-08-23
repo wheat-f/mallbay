@@ -7,7 +7,8 @@ import { ListProductsDto } from "./dto/list-products.dto";
 import { UpdateProductDto } from "./dto/update-product.dto";
 import { UpdateProductStandardCostDto } from "./dto/update-product-standard-cost.dto";
 import { UpdateProductUnitSuggestedPricesDto } from "./dto/update-product-unit-suggested-prices.dto";
-import { ProductsService, type AuthenticatedProductUser } from "./products.service";
+import { ProductCatalog } from "./domain/product-catalog";
+import type { AuthenticatedProductUser } from "./products.service";
 
 type AuthRequest = Request & {
   user: AuthenticatedProductUser;
@@ -16,7 +17,7 @@ type AuthRequest = Request & {
 @UseGuards(JwtAuthGuard)
 @Controller("products")
 export class ProductsController {
-  constructor(private readonly products: ProductsService) {}
+  constructor(private readonly products: ProductCatalog) {}
 
   @Post()
   create(@Req() req: AuthRequest, @Body() dto: CreateProductDto) {

@@ -3,11 +3,15 @@ import { test } from "node:test";
 import { Test } from "@nestjs/testing";
 import { CustomersController } from "./customers.controller";
 import { CustomersService } from "./customers.service";
+import { CustomerAccount } from "./domain/customer-account";
 import { OssService } from "../users/oss.service";
 
-test("CustomersController receives CustomersService through Nest injection", async () => {
+test("CustomersController receives CustomerAccount for customer account writes", async () => {
   const customersService = {
-    create: async (_user: unknown, storeId: string, dto: { phone: string }) => ({
+    orderContext: async () => ({})
+  };
+  const customerAccount = {
+    createCustomer: async (_user: unknown, storeId: string, dto: { phone: string }) => ({
       storeId,
       phone: dto.phone
     })
@@ -16,6 +20,7 @@ test("CustomersController receives CustomersService through Nest injection", asy
     controllers: [CustomersController],
     providers: [
       { provide: CustomersService, useValue: customersService },
+      { provide: CustomerAccount, useValue: customerAccount },
       { provide: OssService, useValue: {} }
     ]
   }).compile();
@@ -49,6 +54,7 @@ test("CustomersController uploads vehicle photos through OSS and returns the pho
     controllers: [CustomersController],
     providers: [
       { provide: CustomersService, useValue: customersService },
+      { provide: CustomerAccount, useValue: {} },
       { provide: OssService, useValue: ossService }
     ]
   }).compile();

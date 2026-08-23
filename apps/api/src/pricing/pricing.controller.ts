@@ -14,16 +14,14 @@ import {
 } from "./dto/vehicle-pricing.dto";
 import { PricingService, type PricingAuthenticatedUser } from "./pricing.service";
 import { CreatePricingRuleSetDto, ListPricingRuleSetsDto, PublishPricingRuleSetDto, RuleSetStoreDto, UpdatePricingRuleSetDto } from "./dto/pricing-rules.dto";
-import { PricingRulesService } from "./pricing-rules.service";
 import { VehiclePricingService } from "./vehicle-pricing.service";
 import { CostEstimatorService } from "./cost-estimator.service";
 import { EstimateCostDto } from "./dto/estimate-cost.dto";
 import { CopyPricingTemplateDto, CreatePricingTemplateDto, CreatePricingTemplateVersionDto } from "./dto/pricing-template.dto";
-import { PricingTemplateService } from "./pricing-template.service";
-import { PricingRolloutService } from "./pricing-rollout.service";
 import { SetPricingRolloutDto } from "./dto/pricing-rollout.dto";
-import { ConstructionCostConfigService } from "./construction-cost-config.service";
 import { PricingDecision } from "./domain/pricing-decision";
+import { Inject } from "@nestjs/common";
+import { PRICING_GOVERNANCE, type PricingGovernance } from "./domain/pricing-governance";
 import { CreateConstructionServiceItemDto, CreatePositionCostRateVersionDto, StoreScopedDto, UpdateConstructionServiceItemDto, UpdatePositionCostRateVersionDto } from "./dto/construction-cost-config.dto";
 
 type AuthRequest = Request & { user: PricingAuthenticatedUser };
@@ -35,11 +33,8 @@ export class PricingController {
     private readonly pricing: PricingService,
     private readonly pricingDecision: PricingDecision,
     private readonly vehiclePricing: VehiclePricingService,
-    private readonly pricingRules: PricingRulesService,
     private readonly costs: CostEstimatorService,
-    private readonly constructionCosts: ConstructionCostConfigService,
-    private readonly templates: PricingTemplateService,
-    private readonly rollout: PricingRolloutService
+    @Inject(PRICING_GOVERNANCE) private readonly governance: PricingGovernance
   ) {}
 
   @Post("calculate")
@@ -54,127 +49,127 @@ export class PricingController {
 
   @Get("construction-service-items")
   listConstructionServiceItems(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.constructionCosts.listServiceItems(req.user, storeId);
+    return this.governance.listConstructionServiceItems(req.user, storeId);
   }
 
   @Post("construction-service-items")
   createConstructionServiceItem(@Req() req: AuthRequest, @Body() dto: CreateConstructionServiceItemDto) {
-    return this.constructionCosts.createServiceItem(req.user, dto);
+    return this.governance.createConstructionServiceItem(req.user, dto);
   }
 
   @Patch("construction-service-items/:id")
   updateConstructionServiceItem(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateConstructionServiceItemDto) {
-    return this.constructionCosts.updateServiceItem(req.user, id, dto);
+    return this.governance.updateConstructionServiceItem(req.user, id, dto);
   }
 
   @Get("position-cost-rate-versions")
   listPositionCostRateVersions(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.constructionCosts.listRateVersions(req.user, storeId);
+    return this.governance.listPositionCostRateVersions(req.user, storeId);
   }
 
   @Post("position-cost-rate-versions")
   createPositionCostRateVersion(@Req() req: AuthRequest, @Body() dto: CreatePositionCostRateVersionDto) {
-    return this.constructionCosts.createRateVersion(req.user, dto);
+    return this.governance.createPositionCostRateVersion(req.user, dto);
   }
 
   @Patch("position-cost-rate-versions/:id")
   updatePositionCostRateVersion(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdatePositionCostRateVersionDto) {
-    return this.constructionCosts.updateRateVersion(req.user, id, dto);
+    return this.governance.updatePositionCostRateVersion(req.user, id, dto);
   }
 
   @Post("position-cost-rate-versions/:id/publish")
   publishPositionCostRateVersion(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: StoreScopedDto) {
-    return this.constructionCosts.publishRateVersion(req.user, dto.storeId, id);
+    return this.governance.publishPositionCostRateVersion(req.user, dto.storeId, id);
   }
 
   @Get("templates")
   listTemplates(@Req() req: AuthRequest) {
-    return this.templates.list(req.user);
+    return this.governance.listTemplates(req.user);
   }
 
   @Get("rollout")
   getRollout(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.rollout.get(req.user, storeId);
+    return this.governance.getRollout(req.user, storeId);
   }
 
   @Get("rollout/precheck")
   precheckRollout(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.rollout.precheck(req.user, storeId);
+    return this.governance.precheckRollout(req.user, storeId);
   }
 
   @Get("rollout/migration-precheck")
   migrationPrecheck(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.rollout.migrationPrecheck(req.user, storeId);
+    return this.governance.migrationPrecheckRollout(req.user, storeId);
   }
 
   @Post("rollout")
   setRollout(@Req() req: AuthRequest, @Body() dto: SetPricingRolloutDto) {
-    return this.rollout.set(req.user, dto);
+    return this.governance.setRollout(req.user, dto);
   }
 
   @Post("templates")
   createTemplate(@Req() req: AuthRequest, @Body() dto: CreatePricingTemplateDto) {
-    return this.templates.create(req.user, dto);
+    return this.governance.createTemplate(req.user, dto);
   }
 
   @Post("templates/:templateId/versions")
   createTemplateVersion(@Req() req: AuthRequest, @Param("templateId") templateId: string, @Body() dto: CreatePricingTemplateVersionDto) {
-    return this.templates.createVersion(req.user, templateId, dto);
+    return this.governance.createTemplateVersion(req.user, templateId, dto);
   }
 
   @Post("templates/:templateId/versions/:versionId/publish")
   publishTemplateVersion(@Req() req: AuthRequest, @Param("templateId") templateId: string, @Param("versionId") versionId: string) {
-    return this.templates.publishVersion(req.user, templateId, versionId);
+    return this.governance.publishTemplateVersion(req.user, templateId, versionId);
   }
 
   @Post("templates/:templateId/versions/:versionId/copy-to-store")
   copyTemplateToStore(@Req() req: AuthRequest, @Param("templateId") templateId: string, @Param("versionId") versionId: string, @Body() dto: CopyPricingTemplateDto) {
-    return this.templates.copyToStore(req.user, templateId, versionId, dto);
+    return this.governance.copyTemplateToStore(req.user, templateId, versionId, dto);
   }
 
   @Get("rule-sets")
   listRuleSets(@Req() req: AuthRequest, @Query() query: ListPricingRuleSetsDto) {
-    return this.pricingRules.list(req.user, query);
+    return this.governance.listRuleSets(req.user, query);
   }
 
   @Get("rule-sets/:id")
   getRuleSet(@Req() req: AuthRequest, @Param("id") id: string, @Query("storeId") storeId: string) {
-    return this.pricingRules.get(req.user, storeId, id);
+    return this.governance.getRuleSet(req.user, storeId, id);
   }
 
   @Patch("rule-sets/:id")
   updateRuleSet(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdatePricingRuleSetDto) {
-    return this.pricingRules.updateDraft(req.user, id, dto);
+    return this.governance.updateRuleSet(req.user, id, dto);
   }
 
   @Post("rule-sets/default-draft")
   createDefaultRuleSet(@Req() req: AuthRequest, @Query("storeId") storeId: string) {
-    return this.pricingRules.createDefaultDraft(req.user, storeId);
+    return this.governance.createDefaultRuleSet(req.user, storeId);
   }
 
   @Post("rule-sets")
   createRuleSet(@Req() req: AuthRequest, @Body() dto: CreatePricingRuleSetDto) {
-    return this.pricingRules.createDraft(req.user, dto);
+    return this.governance.createRuleSet(req.user, dto);
   }
 
   @Post("rule-sets/:id/publish")
   publishRuleSet(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: PublishPricingRuleSetDto) {
-    return this.pricingRules.publish(req.user, dto.storeId, id);
+    return this.governance.publishRuleSet(req.user, dto.storeId, id);
   }
 
   @Post("rule-sets/:id/validate")
   validateRuleSet(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: RuleSetStoreDto) {
-    return this.pricingRules.validate(req.user, dto.storeId, id);
+    return this.governance.validateRuleSet(req.user, dto.storeId, id);
   }
 
   @Post("rule-sets/:id/retire")
   retireRuleSet(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: RuleSetStoreDto) {
-    return this.pricingRules.retire(req.user, dto.storeId, id);
+    return this.governance.retireRuleSet(req.user, dto.storeId, id);
   }
 
   @Post("rule-sets/:id/copy")
   copyRuleSet(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: RuleSetStoreDto) {
-    return this.pricingRules.copy(req.user, dto.storeId, id);
+    return this.governance.copyRuleSet(req.user, dto.storeId, id);
   }
 
   @Post("rule-sets/:id/simulate")

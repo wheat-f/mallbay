@@ -11,7 +11,6 @@ import {
   Post,
   Query,
   Req,
-  Optional,
   UploadedFile,
   UseInterceptors,
   UseGuards
@@ -21,8 +20,8 @@ import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import type { MulterFile } from "../users/multer-file.type";
 import { OssService } from "../users/oss.service";
-import { CustomersService, type AuthenticatedCustomerUser } from "./customers.service";
-import { CustomerAccount } from "./domain/customer-account";
+import { CustomersService } from "./customers.service";
+import { CustomerAccount, type AuthenticatedCustomerUser } from "./domain/customer-account";
 import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
 import { CreateCustomerTagDto } from "./dto/create-customer-tag.dto";
 import { CreateCustomerUserForCustomerDto } from "./dto/create-customer-user.dto";
@@ -47,27 +46,27 @@ export class CustomersController {
   constructor(
     @Inject(CustomersService) private readonly customers: CustomersService,
     @Inject(OssService) private readonly ossService: OssService,
-    @Optional() @Inject(CustomerAccount) private readonly customerAccount?: CustomerAccount
+    @Inject(CustomerAccount) private readonly customerAccount: CustomerAccount
   ) {}
 
   @Post()
   create(@Req() req: AuthRequest, @Body() dto: CreateCustomerDto) {
-    return this.customers.create(req.user, dto.storeId, dto);
+    return this.customerAccount.createCustomer(req.user, dto.storeId, dto);
   }
 
   @Get()
   list(@Req() req: AuthRequest, @Query() query: ListCustomersDto) {
-    return this.customers.list(req.user, query);
+    return this.customerAccount.listCustomers(req.user, query);
   }
 
   @Get("search")
   search(@Req() req: AuthRequest, @Query("storeId") storeId: string, @Query("q") q = "") {
-    return this.customers.search(req.user, storeId, q);
+    return this.customerAccount.searchCustomers(req.user, storeId, q);
   }
 
   @Get(":id")
   detail(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.customerAccount!.getCustomerSummary(req.user, id);
+    return this.customerAccount.getCustomerSummary(req.user, id);
   }
 
   @Get(":id/order-context")
@@ -81,12 +80,12 @@ export class CustomersController {
 
   @Patch(":id")
   update(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateCustomerDto) {
-    return this.customers.update(req.user, id, dto);
+    return this.customerAccount.updateCustomer(req.user, id, dto);
   }
 
   @Post("vehicles")
   createVehicle(@Req() req: AuthRequest, @Body() dto: CreateVehicleDto) {
-    return this.customers.createVehicle(req.user, dto);
+    return this.customerAccount.createVehicle(req.user, dto);
   }
 
   @Get(":id/vehicles")
@@ -95,7 +94,7 @@ export class CustomersController {
     @Param("id") id: string,
     @Query() query: ListCustomerVehiclesDto
   ) {
-    return this.customerAccount!.getVehicleSummary(req.user, id, query);
+    return this.customerAccount.getVehicleSummary(req.user, id, query);
   }
 
   @Post("vehicles/photos/upload")
@@ -120,46 +119,46 @@ export class CustomersController {
 
   @Post("users")
   createCustomerUser(@Req() req: AuthRequest, @Body() dto: CreateCustomerUserForCustomerDto) {
-    return this.customers.createCustomerUser(req.user, dto);
+    return this.customerAccount.createCustomerUser(req.user, dto);
   }
 
   @Patch("vehicles/:id")
   updateVehicle(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateVehicleDto) {
-    return this.customers.updateVehicle(req.user, id, dto);
+    return this.customerAccount.updateVehicle(req.user, id, dto);
   }
 
   @Post("vehicles/:id/disable")
   disableVehicle(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ChangeVehicleStatusDto) {
-    return this.customers.changeVehicleStatus(req.user, id, "INACTIVE", dto);
+    return this.customerAccount.changeVehicleStatus(req.user, id, "INACTIVE", dto);
   }
 
   @Post("vehicles/:id/enable")
   enableVehicle(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ChangeVehicleStatusDto) {
-    return this.customers.changeVehicleStatus(req.user, id, "ACTIVE", dto);
+    return this.customerAccount.changeVehicleStatus(req.user, id, "ACTIVE", dto);
   }
 
   @Post("vehicles/:id/transfer")
   transferVehicle(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: TransferVehicleDto) {
-    return this.customers.transferVehicle(req.user, id, dto);
+    return this.customerAccount.transferVehicle(req.user, id, dto);
   }
 
   @Get("vehicles/:id/history")
   vehicleHistory(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.customers.vehicleHistory(req.user, id);
+    return this.customerAccount.getVehicleHistory(req.user, id);
   }
 
   @Post("notes")
   createNote(@Req() req: AuthRequest, @Body() dto: CreateCustomerNoteDto) {
-    return this.customers.createNote(req.user, dto);
+    return this.customerAccount.createCustomerNote(req.user, dto);
   }
 
   @Post("tags")
   createTag(@Req() req: AuthRequest, @Body() dto: CreateCustomerTagDto) {
-    return this.customerAccount!.maintainManualTags(req.user, { operation: "create", dto });
+    return this.customerAccount.maintainManualTags(req.user, { operation: "create", dto });
   }
 
   @Delete("tags/:id")
   deleteTag(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.customerAccount!.maintainManualTags(req.user, { operation: "delete", id });
+    return this.customerAccount.maintainManualTags(req.user, { operation: "delete", id });
   }
 }

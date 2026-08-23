@@ -21,15 +21,11 @@ import { AuditEventWriter } from "../observability/audit-event-writer";
 import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 import { PrismaService } from "../prisma/prisma.service";
-import { FinanceService } from "../finance/finance.service";
+import { CashFactWriter, toCashFactTransaction } from "../finance/domain/cash-fact-writer";
 import {
   CreateCustomerReceiptDto,
   CreateCustomerStatementDto,
   CustomerReceiptAllocationDto,
-  ListCustomerReceiptsDto,
-  ListCustomerStatementsDto,
-  ListStatementCandidatesDto,
-  PreviewCustomerReceiptDto,
   ReverseCustomerReceiptDto,
   StatementActionDto
 } from "./dto/customer-settlement.dto";
@@ -50,68 +46,24 @@ export type AuthenticatedSettlementUser = {
 const SETTLED_ORDER_STATUSES = [OrderStatus.COMPLETED, OrderStatus.WARRANTIED];
 
 @Injectable()
-export class CustomerSettlementsService {
+export class SettlementExecutionImplementation {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessContext: AccessContext,
-    @Optional() private readonly auditWriter?: AuditEventWriter,
-    @Optional() private readonly finance?: FinanceService
+    @Optional() private readonly auditWriter: AuditEventWriter | undefined,
+    private readonly cashFactWriter: CashFactWriter
   ) {}
 
   private canAccess(actor: AccessSubject, capability: string, action: string, storeId: string, ownerId?: string) {
     return this.accessContext.can(actor, capability, action, { storeId, ownerId });
   }
 
-  async listStatementCandidates(
-    user: AuthenticatedSettlementUser,
-    query: ListStatementCandidatesDto
-  ) {
-    const actor = { userId: user.id } satisfies AccessSubject;
-    await this.assertCanViewCustomer(actor, query.storeId, query.customerId);
-    return this.loadCandidateOrders(
-      query.storeId,
-      query.customerId,
-      query.periodStart ? new Date(query.periodStart) : undefined,
-      query.periodEnd ? endOfDay(new Date(query.periodEnd)) : undefined
-    );
-  }
-
-  async listStatements(
-    user: AuthenticatedSettlementUser,
-    query: ListCustomerStatementsDto
-  ) {
-    const actor = { userId: user.id } satisfies AccessSubject;
-    if (!await this.canAccess(actor, "finance", "write", query.storeId)) {
-      if (!query.customerId) throw new ForbiddenException("请选择有权限查看的客户");
-      await this.assertCanViewCustomer(actor, query.storeId, query.customerId);
-    }
-
-    return this.prisma.customerStatement.findMany({
-      where: {
-        storeId: query.storeId,
-        customerId: query.customerId,
-        status: query.status
-      },
-      include: statementInclude,
-      orderBy: { createdAt: "desc" }
-    });
-  }
-
-  async getStatement(user: AuthenticatedSettlementUser, id: string) {
-    const actor = { userId: user.id } satisfies AccessSubject;
-    const statement = await this.prisma.customerStatement.findUnique({
-      where: { id },
-      include: statementInclude
-    });
-    if (!statement) throw new NotFoundException("对账单不存在");
-    await this.assertCanViewCustomer(actor, statement.storeId, statement.customerId);
-    return statement;
-  }
-
   async createStatement(
     user: AuthenticatedSettlementUser,
     dto: CreateCustomerStatementDto
   ) {
+    const idempotencyKey = dto.idempotencyKey.trim();
+    if (!idempotencyKey) throw new BadRequestException("对账单幂等键不能为空");
     const actor = { userId: user.id } satisfies AccessSubject;
     const customer = await this.assertCanViewCustomer(actor, dto.storeId, dto.customerId);
     this.assertCompanyCustomer(customer.customerType);
@@ -119,6 +71,21 @@ export class CustomerSettlementsService {
     const periodStart = new Date(dto.periodStart);
     const periodEnd = endOfDay(new Date(dto.periodEnd));
     if (periodStart > periodEnd) throw new BadRequestException("对账开始日期不能晚于结束日期");
+
+    const normalizedOrderIds = [...new Set(dto.orderIds)].sort();
+    const replay = await this.prisma.customerStatement.findFirst({
+      where: { storeId: dto.storeId, idempotencyKey },
+      include: statementInclude
+    });
+    if (replay) {
+      if (!sameStatementPayload(replay, dto.customerId, periodStart, periodEnd, normalizedOrderIds)) {
+        throw new ConflictException({
+          code: "SETTLEMENT_IDEMPOTENCY_CONFLICT",
+          message: "对账单幂等键已用于其他结算操作"
+        });
+      }
+      return replay;
+    }
 
     const orders = await this.loadCandidateOrders(dto.storeId, dto.customerId);
     const requestedIds = new Set(dto.orderIds);
@@ -145,44 +112,87 @@ export class CustomerSettlementsService {
       0
     );
 
-    const statement = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.customerStatement.create({
-        data: {
-          storeId: dto.storeId,
-          customerId: dto.customerId,
-          statementNo: createBusinessNo("STM"),
-          periodStart,
-          periodEnd,
-          receivableCents,
-          receivedCents,
-          outstandingCents,
-          items: {
-            create: selected.map((order) => ({
-              orderId: order.id,
-              orderAmountCents: order.amount?.totalAmountCents ?? 0,
-              paidAmountCents: order.amount?.paidAmountCents ?? 0,
-              outstandingCents: order.amount?.outstandingCents ?? 0
-            }))
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const existing = await tx.customerStatement.findFirst({
+            where: { storeId: dto.storeId, idempotencyKey },
+            include: statementInclude
+          });
+          if (existing) {
+            if (!sameStatementPayload(existing, dto.customerId, periodStart, periodEnd, normalizedOrderIds)) {
+              throw new ConflictException({
+                code: "SETTLEMENT_IDEMPOTENCY_CONFLICT",
+                message: "对账单幂等键已用于其他结算操作"
+              });
+            }
+            return existing;
           }
-        },
-        include: statementInclude
-      });
-      await this.recordAudit(tx, {
-        action: "CUSTOMER_STATEMENT_CREATED",
-        actorId: actor.userId,
-        targetType: "customerStatement",
-        targetId: created.id,
-        metadata: {
-          storeId: dto.storeId,
-          customerId: dto.customerId,
-          orderIds: dto.orderIds,
-          receivableCents,
-          outstandingCents
+
+          const occupied = await tx.customerStatementItem.findFirst({
+            where: {
+              orderId: { in: selected.map((order) => order.id) },
+              statement: { status: { in: [CustomerStatementStatus.DRAFT, CustomerStatementStatus.CONFIRMED] } }
+            },
+            select: { orderId: true }
+          });
+          if (occupied) {
+            throw new ConflictException({
+              code: "ORDER_ALREADY_SETTLED",
+              message: "所选订单已存在于未作废对账单中"
+            });
+          }
+
+          const created = await tx.customerStatement.create({
+            data: {
+              storeId: dto.storeId,
+              customerId: dto.customerId,
+              statementNo: createBusinessNo("STM"),
+              periodStart,
+              periodEnd,
+              receivableCents,
+              receivedCents,
+              outstandingCents,
+              idempotencyKey,
+              items: {
+                create: selected.map((order) => ({
+                  orderId: order.id,
+                  orderAmountCents: order.amount?.totalAmountCents ?? 0,
+                  paidAmountCents: order.amount?.paidAmountCents ?? 0,
+                  outstandingCents: order.amount?.outstandingCents ?? 0
+                }))
+              }
+            },
+            include: statementInclude
+          });
+          await this.recordAudit(tx, {
+            action: "CUSTOMER_STATEMENT_CREATED",
+            actorId: actor.userId,
+            targetType: "customerStatement",
+            targetId: created.id,
+            metadata: {
+              storeId: dto.storeId,
+              customerId: dto.customerId,
+              orderIds: normalizedOrderIds,
+              receivableCents,
+              outstandingCents
+            }
+          });
+          return created;
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      } catch (error) {
+        if (!isSerializationFailure(error) || attempt === 2) {
+          if (isSerializationFailure(error)) {
+            throw new ConflictException({
+              code: "SETTLEMENT_CONCURRENCY_CONFLICT",
+              message: "结算并发冲突，请刷新后重试"
+            });
+          }
+          throw error;
         }
-      });
-      return created;
-    });
-    return statement;
+      }
+    }
+    throw new ConflictException({ code: "SETTLEMENT_CONCURRENCY_CONFLICT", message: "结算并发冲突，请刷新后重试" });
   }
 
   async confirmStatement(
@@ -198,15 +208,18 @@ export class CustomerSettlementsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.customerStatement.update({
-        where: { id },
+      const result = await tx.customerStatement.updateMany({
+        where: { id, status: CustomerStatementStatus.DRAFT },
         data: {
           status: CustomerStatementStatus.CONFIRMED,
           confirmedById: actor.userId,
           confirmedAt: new Date()
-        },
-        include: statementInclude
+        }
       });
+      if (result.count !== 1) {
+        throw new ConflictException({ code: "SETTLEMENT_STATE_CONFLICT", message: "对账单状态已被其他操作改变" });
+      }
+      const updated = await tx.customerStatement.findUniqueOrThrow({ where: { id }, include: statementInclude });
       await this.recordAudit(tx, {
         action: "CUSTOMER_STATEMENT_CONFIRMED",
           actorId: actor.userId,
@@ -236,11 +249,14 @@ export class CustomerSettlementsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.customerStatement.update({
-        where: { id },
-        data: { status: CustomerStatementStatus.VOIDED, voidReason: reason },
-        include: statementInclude
+      const result = await tx.customerStatement.updateMany({
+        where: { id, status: { in: [CustomerStatementStatus.DRAFT, CustomerStatementStatus.CONFIRMED] } },
+        data: { status: CustomerStatementStatus.VOIDED, voidReason: reason }
       });
+      if (result.count !== 1) {
+        throw new ConflictException({ code: "SETTLEMENT_STATE_CONFLICT", message: "对账单状态已被其他操作改变" });
+      }
+      const updated = await tx.customerStatement.findUniqueOrThrow({ where: { id }, include: statementInclude });
       await this.recordAudit(tx, {
         action: "CUSTOMER_STATEMENT_VOIDED",
         actorId: actor.userId,
@@ -252,61 +268,12 @@ export class CustomerSettlementsService {
     });
   }
 
-  async previewReceiptAllocation(
-    user: AuthenticatedSettlementUser,
-    dto: PreviewCustomerReceiptDto
-  ) {
-    const actor = { userId: user.id } satisfies AccessSubject;
-    await this.assertCanManageReceipts(actor, dto.storeId);
-    const customer = await this.requireCustomer(dto.storeId, dto.customerId);
-    this.assertCompanyCustomer(customer.customerType);
-
-    const candidates = await this.loadReceiptCandidates(
-      dto.storeId,
-      dto.customerId,
-      dto.orderIds
-    );
-    const allocations = buildAutomaticReceiptAllocation(dto.amountCents, candidates);
-    return {
-      amountCents: dto.amountCents,
-      availableCents: candidates.reduce((sum, order) => sum + order.outstandingCents, 0),
-      allocations: this.describeAllocations(allocations, candidates)
-    };
-  }
-
-  async listReceipts(
-    user: AuthenticatedSettlementUser,
-    query: ListCustomerReceiptsDto
-  ) {
-    const actor = { userId: user.id } satisfies AccessSubject;
-    await this.assertCanManageReceipts(actor, query.storeId);
-    const receipts = await this.prisma.customerReceipt.findMany({
-      where: {
-        storeId: query.storeId,
-        customerId: query.customerId,
-        status: query.status
-      },
-      include: receiptInclude,
-      orderBy: [{ receivedAt: "desc" }, { createdAt: "desc" }]
-    });
-    return receipts.map(withReversedAmount);
-  }
-
-  async getReceipt(user: AuthenticatedSettlementUser, id: string) {
-    const actor = { userId: user.id } satisfies AccessSubject;
-    const receipt = await this.prisma.customerReceipt.findUnique({
-      where: { id },
-      include: receiptInclude
-    });
-    if (!receipt) throw new NotFoundException("企业收款不存在");
-    await this.assertCanManageReceipts(actor, receipt.storeId);
-    return withReversedAmount(receipt);
-  }
-
   async createReceipt(
     user: AuthenticatedSettlementUser,
     dto: CreateCustomerReceiptDto
   ) {
+    const idempotencyKey = dto.idempotencyKey.trim();
+    if (!idempotencyKey) throw new BadRequestException("收款幂等键不能为空");
     const actor = { userId: user.id } satisfies AccessSubject;
     await this.assertCanManageReceipts(actor, dto.storeId);
     const customer = await this.requireCustomer(dto.storeId, dto.customerId);
@@ -316,6 +283,21 @@ export class CustomerSettlementsService {
       where: { id: dto.accountId, storeId: dto.storeId, isActive: true }
     });
     if (!account) throw new BadRequestException("收款账户不存在、已停用或不属于当前门店");
+
+    const replay = await this.prisma.customerReceipt.findFirst({
+      where: { storeId: dto.storeId, idempotencyKey },
+      include: receiptInclude
+    });
+    if (replay) {
+      const replayAllocations = dto.allocations ?? replay.allocations.map((allocation) => ({
+        orderId: allocation.orderId,
+        amountCents: allocation.amountCents
+      }));
+      if (!sameReceiptPayload(replay, dto, replayAllocations)) {
+        throw new ConflictException({ code: "RECEIPT_IDEMPOTENCY_CONFLICT", message: "收款幂等键已用于其他收款操作" });
+      }
+      return withReversedAmount(replay);
+    }
 
     const requestedOrderIds = dto.allocations?.map((item) => item.orderId) ?? dto.orderIds;
     const candidates = await this.loadReceiptCandidates(
@@ -330,12 +312,12 @@ export class CustomerSettlementsService {
 
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.customerReceipt.findFirst({
-        where: { storeId: dto.storeId, idempotencyKey: dto.idempotencyKey.trim() },
+        where: { storeId: dto.storeId, idempotencyKey },
         include: receiptInclude
       });
       if (existing) {
-        if (existing.customerId !== dto.customerId || existing.amountCents !== dto.amountCents || existing.accountId !== dto.accountId) {
-          throw new ConflictException("收款幂等键已用于其他收款操作");
+        if (!sameReceiptPayload(existing, dto, allocations)) {
+          throw new ConflictException({ code: "RECEIPT_IDEMPOTENCY_CONFLICT", message: "收款幂等键已用于其他收款操作" });
         }
         return withReversedAmount(existing);
       }
@@ -351,7 +333,7 @@ export class CustomerSettlementsService {
           bankSerialNo: dto.bankSerialNo?.trim() || undefined,
           note: dto.note?.trim() || undefined,
           status: CustomerReceiptStatus.POSTED,
-          idempotencyKey: dto.idempotencyKey.trim(),
+          idempotencyKey,
           createdById: actor.userId,
           postedById: actor.userId,
           postedAt: new Date()
@@ -374,13 +356,16 @@ export class CustomerSettlementsService {
             idempotencyKey: `CUSTOMER_RECEIPT:${receipt.id}`
           }
         });
-        await tx.orderAmount.update({
-          where: { orderId: allocation.orderId },
+        const amountUpdate = await tx.orderAmount.updateMany({
+          where: { orderId: allocation.orderId, outstandingCents: { gte: allocation.amountCents } },
           data: {
             paidAmountCents: { increment: allocation.amountCents },
             outstandingCents: { decrement: allocation.amountCents }
           }
         });
+        if (amountUpdate.count !== 1) {
+          throw new ConflictException({ code: "SETTLEMENT_CONCURRENCY_CONFLICT", message: "订单待收金额已被其他操作更新，请刷新后重试" });
+        }
         await this.bumpOrderLifecycleVersion(tx, allocation.orderId, `CUSTOMER_RECEIPT:${receipt.id}:${allocation.orderId}`, {
           customerReceiptId: receipt.id,
           orderId: allocation.orderId,
@@ -389,20 +374,16 @@ export class CustomerSettlementsService {
         });
       }
 
-      if (this.finance) {
-        await this.finance.recordCustomerReceipt(tx, {
-          storeId: dto.storeId,
-          accountId: dto.accountId,
-          amountCents: dto.amountCents,
-          sourceId: receipt.id,
-          note: dto.note?.trim() || `企业统一收款 ${receipt.receiptNo}`,
-          createdById: actor.userId,
-          occurredAt: new Date(dto.receivedAt),
-          idempotencyKey: dto.idempotencyKey.trim()
-        });
-      } else {
-        throw new BadRequestException("财务现金事实模块未配置");
-      }
+      await this.cashFactWriter.recordCustomerReceipt(toCashFactTransaction(tx), {
+        storeId: dto.storeId,
+        accountId: dto.accountId,
+        amountCents: dto.amountCents,
+        sourceId: receipt.id,
+        note: dto.note?.trim() || `企业统一收款 ${receipt.receiptNo}`,
+        createdById: actor.userId,
+        occurredAt: new Date(dto.receivedAt),
+        idempotencyKey
+      });
       await this.recordAudit(tx, {
         action: "CUSTOMER_RECEIPT_POSTED",
         actorId: actor.userId,
@@ -427,6 +408,8 @@ export class CustomerSettlementsService {
     id: string,
     dto: ReverseCustomerReceiptDto
   ) {
+    const idempotencyKey = dto.idempotencyKey.trim();
+    if (!idempotencyKey) throw new BadRequestException("红冲幂等键不能为空");
     const actor = { userId: user.id } satisfies AccessSubject;
     const receipt = await this.prisma.customerReceipt.findUnique({
       where: { id },
@@ -434,53 +417,55 @@ export class CustomerSettlementsService {
     });
     if (!receipt) throw new NotFoundException("企业收款不存在");
     await this.assertCanReverseReceipt(actor, receipt.storeId);
-    if (receipt.status === CustomerReceiptStatus.DRAFT) {
-      throw new BadRequestException("草稿收款尚未入账，不能红冲");
-    }
     const reason = dto.reason.trim();
     if (!reason) throw new BadRequestException("红冲必须填写原因");
-
-    const priorReversedCents = receipt.reversals.reduce(
-      (sum, reversal) => sum + reversal.amountCents,
-      0
-    );
-    const remainingReceiptCents = receipt.amountCents - priorReversedCents;
-    if (dto.amountCents > remainingReceiptCents) {
-      throw new BadRequestException("红冲金额不能超过原收款剩余可红冲金额");
-    }
-
-    const availableByOrder = receipt.allocations.map((payment) => ({
-      orderId: payment.orderId,
-      orderPaymentId: payment.id,
-      amountCents: payment.amountCents - payment.reversalAllocations.reduce(
-        (sum, allocation) => sum + allocation.amountCents,
-        0
-      ),
-      createdAt: payment.createdAt
-    }));
-    const allocations = dto.allocations
-      ? this.validateReversalAllocations(dto.amountCents, dto.allocations, availableByOrder)
-      : buildAutomaticReversalAllocation(dto.amountCents, availableByOrder);
-
-    const fullyReversed = priorReversedCents + dto.amountCents === receipt.amountCents;
     return this.prisma.$transaction(async (tx) => {
+      const currentReceipt = await tx.customerReceipt.findUniqueOrThrow({
+        where: { id: receipt.id },
+        include: receiptInclude
+      });
       const existing = await tx.customerReceiptReversal.findFirst({
-        where: { receiptId: receipt.id, idempotencyKey: dto.idempotencyKey.trim() }
+        where: { receiptId: receipt.id, idempotencyKey },
+        include: { allocations: true }
       });
       if (existing) {
-        const current = await tx.customerReceipt.findUniqueOrThrow({
-          where: { id: receipt.id },
-          include: receiptInclude
-        });
-        return withReversedAmount(current);
+        const replayAllocations = dto.allocations
+          ? dto.allocations.map((allocation) => ({ ...allocation, orderPaymentId: "" }))
+          : existing.allocations.map((allocation) => ({
+            orderId: allocation.orderId,
+            orderPaymentId: allocation.orderPaymentId,
+            amountCents: allocation.amountCents
+          }));
+        if (!sameReversalPayload(existing, dto.amountCents, reason, replayAllocations)) {
+          throw new ConflictException({ code: "REVERSAL_IDEMPOTENCY_CONFLICT", message: "红冲幂等键已用于其他红冲操作" });
+        }
+        return withReversedAmount(currentReceipt);
       }
+      if (currentReceipt.status === CustomerReceiptStatus.DRAFT) {
+        throw new BadRequestException("草稿收款尚未入账，不能红冲");
+      }
+      const priorReversedCents = currentReceipt.reversals.reduce((sum, reversal) => sum + reversal.amountCents, 0);
+      const remainingReceiptCents = currentReceipt.amountCents - priorReversedCents;
+      if (dto.amountCents > remainingReceiptCents) {
+        throw new BadRequestException("红冲金额不能超过原收款剩余可红冲金额");
+      }
+      const availableByOrder = currentReceipt.allocations.map((payment) => ({
+        orderId: payment.orderId,
+        orderPaymentId: payment.id,
+        amountCents: payment.amountCents - payment.reversalAllocations.reduce((sum, allocation) => sum + allocation.amountCents, 0),
+        createdAt: payment.createdAt
+      }));
+      const allocations = dto.allocations
+        ? this.validateReversalAllocations(dto.amountCents, dto.allocations, availableByOrder)
+        : buildAutomaticReversalAllocation(dto.amountCents, availableByOrder);
+      const fullyReversed = priorReversedCents + dto.amountCents === currentReceipt.amountCents;
       const reversal = await tx.customerReceiptReversal.create({
         data: {
-          receiptId: receipt.id,
+          receiptId: currentReceipt.id,
           amountCents: dto.amountCents,
           reason,
           createdById: actor.userId,
-          idempotencyKey: dto.idempotencyKey.trim(),
+          idempotencyKey,
           allocations: {
             create: allocations.map((allocation) => ({
               orderPaymentId: allocation.orderPaymentId,
@@ -492,39 +477,39 @@ export class CustomerSettlementsService {
       });
 
       for (const allocation of allocations) {
-        await tx.orderAmount.update({
-          where: { orderId: allocation.orderId },
+        const amountUpdate = await tx.orderAmount.updateMany({
+          where: { orderId: allocation.orderId, paidAmountCents: { gte: allocation.amountCents } },
           data: {
             paidAmountCents: { decrement: allocation.amountCents },
             outstandingCents: { increment: allocation.amountCents }
           }
         });
+        if (amountUpdate.count !== 1) {
+          throw new ConflictException({ code: "SETTLEMENT_CONCURRENCY_CONFLICT", message: "订单已收金额已被其他操作更新，请刷新后重试" });
+        }
         await this.bumpOrderLifecycleVersion(tx, allocation.orderId, `CUSTOMER_RECEIPT_REVERSAL:${reversal.id}:${allocation.orderId}`, {
           customerReceiptReversalId: reversal.id,
-          receiptId: receipt.id,
+          receiptId: currentReceipt.id,
           orderId: allocation.orderId,
           amountCents: allocation.amountCents,
           direction: "REVERSED"
         });
       }
 
-      if (this.finance) {
-        await this.finance.recordCustomerReceiptReversal(tx, {
-          storeId: receipt.storeId,
-          accountId: receipt.accountId,
-          amountCents: dto.amountCents,
-          sourceId: reversal.id,
-          note: `企业收款红冲：${reason}`,
-          createdById: actor.userId,
-          idempotencyKey: dto.idempotencyKey.trim()
-        });
-      } else {
-        throw new BadRequestException("财务现金事实模块未配置");
-      }
+      await this.cashFactWriter.recordCustomerReceiptReversal(toCashFactTransaction(tx), {
+        storeId: currentReceipt.storeId,
+        accountId: currentReceipt.accountId,
+        amountCents: dto.amountCents,
+        sourceId: reversal.id,
+        note: `企业收款红冲：${reason}`,
+        createdById: actor.userId,
+        occurredAt: new Date(),
+        idempotencyKey: `CUSTOMER_RECEIPT_REVERSAL:${currentReceipt.id}:${idempotencyKey}`
+      });
 
       if (fullyReversed) {
         await tx.customerReceipt.update({
-          where: { id: receipt.id },
+          where: { id: currentReceipt.id },
           data: {
             status: CustomerReceiptStatus.REVERSED,
           reversedById: actor.userId,
@@ -540,9 +525,9 @@ export class CustomerSettlementsService {
           : "CUSTOMER_RECEIPT_PARTIALLY_REVERSED",
         actorId: actor.userId,
         targetType: "customerReceipt",
-        targetId: receipt.id,
+        targetId: currentReceipt.id,
         metadata: {
-          storeId: receipt.storeId,
+          storeId: currentReceipt.storeId,
           reversalId: reversal.id,
           amountCents: dto.amountCents,
           reason,
@@ -551,7 +536,7 @@ export class CustomerSettlementsService {
       });
 
       const updated = await tx.customerReceipt.findUniqueOrThrow({
-        where: { id: receipt.id },
+        where: { id: currentReceipt.id },
         include: receiptInclude
       });
       return withReversedAmount(updated);
@@ -679,17 +664,6 @@ export class CustomerSettlementsService {
     return result;
   }
 
-  private describeAllocations(
-    allocations: Array<{ orderId: string; amountCents: number }>,
-    candidates: ReceiptAllocationCandidate[]
-  ) {
-    const byId = new Map(candidates.map((candidate) => [candidate.orderId, candidate]));
-    return allocations.map((allocation) => ({
-      ...allocation,
-      orderNo: byId.get(allocation.orderId)?.orderNo ?? ""
-    }));
-  }
-
   private async assertCanViewCustomer(
     actor: AccessSubject,
     storeId: string,
@@ -809,6 +783,64 @@ function buildAutomaticReversalAllocation(
   }
   if (remainingCents > 0) throw new BadRequestException("红冲金额超过可红冲余额");
   return allocations;
+}
+
+function sameStatementPayload(
+  existing: { customerId: string; periodStart: Date; periodEnd: Date; items: Array<{ orderId: string }> },
+  customerId: string,
+  periodStart: Date,
+  periodEnd: Date,
+  orderIds: string[]
+) {
+  return existing.customerId === customerId
+    && existing.periodStart.getTime() === periodStart.getTime()
+    && existing.periodEnd.getTime() === periodEnd.getTime()
+    && JSON.stringify(existing.items.map((item) => item.orderId).sort()) === JSON.stringify(orderIds);
+}
+
+function sameReceiptPayload(
+  existing: {
+    customerId: string;
+    accountId: string;
+    amountCents: number;
+    receivedAt: Date;
+    payerName: string | null;
+    bankSerialNo: string | null;
+    note: string | null;
+    allocations: Array<{ orderId: string; amountCents: number }>;
+  },
+  input: CreateCustomerReceiptDto,
+  allocations: Array<{ orderId: string; amountCents: number }>
+) {
+  return existing.customerId === input.customerId
+    && existing.accountId === input.accountId
+    && existing.amountCents === input.amountCents
+    && existing.receivedAt.getTime() === new Date(input.receivedAt).getTime()
+    && existing.payerName === (input.payerName?.trim() || null)
+    && existing.bankSerialNo === (input.bankSerialNo?.trim() || null)
+    && existing.note === (input.note?.trim() || null)
+    && JSON.stringify(normalizeAllocations(existing.allocations)) === JSON.stringify(normalizeAllocations(allocations));
+}
+
+function sameReversalPayload(
+  existing: { amountCents: number; reason: string; allocations: Array<{ orderId: string; amountCents: number }> },
+  amountCents: number,
+  reason: string,
+  allocations: Array<{ orderId: string; amountCents: number }>
+) {
+  return existing.amountCents === amountCents
+    && existing.reason === reason
+    && JSON.stringify(normalizeAllocations(existing.allocations)) === JSON.stringify(normalizeAllocations(allocations));
+}
+
+function normalizeAllocations(allocations: Array<{ orderId: string; amountCents: number }>) {
+  return allocations
+    .map((allocation) => ({ orderId: allocation.orderId, amountCents: allocation.amountCents }))
+    .sort((left, right) => left.orderId.localeCompare(right.orderId));
+}
+
+function isSerializationFailure(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
 }
 
 function createBusinessNo(prefix: string) {

@@ -45,6 +45,10 @@ export class ListCustomerStatementsDto {
 
 export class CreateCustomerStatementDto {
   @IsString()
+  @MaxLength(160)
+  idempotencyKey!: string;
+
+  @IsString()
   storeId!: string;
 
   @IsString()

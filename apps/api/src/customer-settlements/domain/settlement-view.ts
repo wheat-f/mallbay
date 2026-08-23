@@ -1,9 +1,11 @@
 import { Injectable } from "@nestjs/common";
-import { CustomerSettlementsService, type AuthenticatedSettlementUser } from "../customer-settlements.service";
+import { type AuthenticatedSettlementUser } from "../settlement-execution-implementation";
+import { SettlementQueryImplementation } from "../settlement-query-implementation";
 import type {
   ListCustomerReceiptsDto,
   ListCustomerStatementsDto,
-  ListStatementCandidatesDto
+  ListStatementCandidatesDto,
+  PreviewCustomerReceiptDto
 } from "../dto/customer-settlement.dto";
 
 export type SettlementStatement = {
@@ -134,7 +136,7 @@ export type SettlementReceiptViewResult = {
 /** Read-only enterprise settlement projection seam. */
 @Injectable()
 export class SettlementView {
-  constructor(private readonly implementation: CustomerSettlementsService) {}
+  constructor(private readonly implementation: SettlementQueryImplementation) {}
 
   async getSettlementView(
     user: AuthenticatedSettlementUser,
@@ -232,6 +234,10 @@ export class SettlementView {
 
   getStatement(user: AuthenticatedSettlementUser, id: string) {
     return this.implementation.getStatement(user, id);
+  }
+
+  previewReceipt(user: AuthenticatedSettlementUser, input: PreviewCustomerReceiptDto) {
+    return this.implementation.previewReceiptAllocation(user, input);
   }
 
   async listReceipts(

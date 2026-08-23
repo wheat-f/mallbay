@@ -21,7 +21,7 @@ import { ConstructionModule } from "./construction/construction.module";
 import { ConstructionService } from "./construction/construction.service";
 import { CrossStoreConstructionService } from "./construction/cross-store-construction.service";
 import { CustomerSettlementsModule } from "./customer-settlements/customer-settlements.module";
-import { CustomerSettlementsService } from "./customer-settlements/customer-settlements.service";
+import { SettlementExecutionImplementation } from "./customer-settlements/settlement-execution-implementation";
 import { FinanceModule } from "./finance/finance.module";
 import { FinanceQueryService } from "./finance/finance-query.service";
 import { ReportsModule } from "./reports/reports.module";
@@ -144,7 +144,7 @@ test("deep modules do not re-export compatibility implementations", () => {
   assert.equal(exported(InventoryModule).has(InventoryService), false);
   assert.equal(exported(ConstructionModule).has(ConstructionService), false);
   assert.equal(exported(ConstructionModule).has(CrossStoreConstructionService), false);
-  assert.equal(exported(CustomerSettlementsModule).has(CustomerSettlementsService), false);
+  assert.equal(exported(CustomerSettlementsModule).has(SettlementExecutionImplementation), false);
   assert.equal(exported(FinanceModule).has(FinanceQueryService), false);
   assert.equal(exported(FinanceModule).has(CashFactWriter), true);
   assert.equal(exported(ReportsModule).has(ReportsService), false);

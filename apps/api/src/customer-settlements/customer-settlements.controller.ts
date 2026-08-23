@@ -12,9 +12,7 @@ import {
   ReverseCustomerReceiptDto,
   StatementActionDto
 } from "./dto/customer-settlement.dto";
-import {
-  type AuthenticatedSettlementUser
-} from "./customer-settlements.service";
+import { type AuthenticatedSettlementUser } from "./settlement-execution-implementation";
 import { SettlementView } from "./domain/settlement-view";
 import { SettlementWorkflow } from "./domain/settlement-workflow";
 
@@ -79,7 +77,7 @@ export class CustomerReceiptsController {
     @Req() req: AuthRequest,
     @Body() dto: PreviewCustomerReceiptDto
   ) {
-    return this.workflow.previewReceipt(req.user, dto);
+    return this.settlementView.previewReceipt(req.user, dto);
   }
 
   @Get()

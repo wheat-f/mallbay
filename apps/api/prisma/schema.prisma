@@ -1912,6 +1912,7 @@ model CustomerStatement {
   confirmedById    String?
   confirmedAt      DateTime?
   voidReason       String?
+  idempotencyKey   String?
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 
@@ -1922,6 +1923,7 @@ model CustomerStatement {
 
   @@index([storeId, customerId, periodStart, periodEnd])
   @@index([storeId, status])
+  @@unique([storeId, idempotencyKey])
 }
 
 model CustomerStatementItem {

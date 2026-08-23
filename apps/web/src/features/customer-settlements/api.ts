@@ -151,6 +151,7 @@ export type CustomerReceipt = {
 };
 
 export type CreateStatementPayload = {
+  idempotencyKey: string;
   storeId: string;
   customerId: string;
   periodStart: string;
@@ -164,6 +165,7 @@ export type ReceiptAllocationInput = {
 };
 
 export type CreateReceiptPayload = {
+  idempotencyKey: string;
   storeId: string;
   customerId: string;
   accountId: string;
@@ -243,6 +245,7 @@ export const customerSettlementApi = {
   reverseReceipt: (
     id: string,
     payload: {
+      idempotencyKey: string;
       amountCents: number;
       reason: string;
       allocations?: ReceiptAllocationInput[];

@@ -94,6 +94,9 @@ export default function CustomerSettlementPage() {
   const [receiptOrderIds, setReceiptOrderIds] = useState<React.Key[]>([]);
   const [receiptAllocations, setReceiptAllocations] = useState<ReceiptAllocationInput[]>([]);
   const [reverseReceipt, setReverseReceipt] = useState<CustomerReceipt | null>(null);
+  const [statementIdempotencyKey, setStatementIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [receiptIdempotencyKey, setReceiptIdempotencyKey] = useState<string | null>(null);
+  const [reversalIdempotencyKey, setReversalIdempotencyKey] = useState<string | null>(null);
 
   const customerId = params.id;
   const position = user?.storeMember?.position;
@@ -173,6 +176,7 @@ export default function CustomerSettlementPage() {
 
   const createStatementMutation = useMutation({
     mutationFn: () => customerSettlementApi.createStatement({
+      idempotencyKey: statementIdempotencyKey,
       storeId: storeId!,
       customerId,
       periodStart,
@@ -182,6 +186,7 @@ export default function CustomerSettlementPage() {
     onSuccess: () => {
       message.success("对账单草稿已生成");
       setSelectedStatementOrders([]);
+      setStatementIdempotencyKey(crypto.randomUUID());
       refreshSettlementData();
     }
   });
@@ -213,6 +218,7 @@ export default function CustomerSettlementPage() {
   const createReceiptMutation = useMutation({
     mutationFn: (values: ReceiptFormValues) =>
       customerSettlementApi.createReceipt({
+        idempotencyKey: receiptIdempotencyKey!,
         storeId: storeId!,
         customerId,
         accountId: values.accountId,
@@ -226,6 +232,7 @@ export default function CustomerSettlementPage() {
     onSuccess: () => {
       message.success("企业统一收款已入账并完成逐单分摊");
       setReceiptOpen(false);
+      setReceiptIdempotencyKey(null);
       setReceiptAllocations([]);
       receiptForm.resetFields();
       refreshSettlementData();
@@ -234,12 +241,14 @@ export default function CustomerSettlementPage() {
   const reverseReceiptMutation = useMutation({
     mutationFn: (values: ReverseFormValues) =>
       customerSettlementApi.reverseReceipt(reverseReceipt!.id, {
+        idempotencyKey: reversalIdempotencyKey!,
         amountCents: yuanToCents(values.amountYuan),
         reason: values.reason
       }),
     onSuccess: () => {
       message.success("收款红冲已入账，订单待收金额已恢复");
       setReverseReceipt(null);
+      setReversalIdempotencyKey(null);
       reverseForm.resetFields();
       refreshSettlementData();
     }
@@ -251,6 +260,7 @@ export default function CustomerSettlementPage() {
       .map((order) => order.id);
     setReceiptOrderIds(outstandingOrderIds);
     setReceiptAllocations([]);
+    setReceiptIdempotencyKey(crypto.randomUUID());
     setReceiptOpen(true);
     const defaultAccount = accountsQuery.data?.find((account) => account.isDefault)
       ?? accountsQuery.data?.[0];
@@ -607,6 +617,7 @@ export default function CustomerSettlementPage() {
                     icon={<RollbackOutlined />}
                     onClick={() => {
                       setReverseReceipt(item);
+                      setReversalIdempotencyKey(crypto.randomUUID());
                       reverseForm.setFieldsValue({
                         amountYuan: item.reversibleAmountCents / 100,
                         reason: ""
@@ -754,7 +765,10 @@ export default function CustomerSettlementPage() {
         width={480}
         open={Boolean(reverseReceipt)}
         title="红冲企业收款"
-        onClose={() => setReverseReceipt(null)}
+        onClose={() => {
+          setReverseReceipt(null);
+          setReversalIdempotencyKey(null);
+        }}
         extra={
           <Popconfirm
             title="确认执行收款红冲？"

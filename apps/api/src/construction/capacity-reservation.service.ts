@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Optional } from "@nestjs/common";
 import { CapacityReservationSourceType, CapacityReservationStatus, ConstructionLocation, ConstructionType, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../observability/audit-log.service";
@@ -67,32 +67,42 @@ export class CapacityReservationService {
   }
 
   async confirmQuote(quoteId: string) {
-    const result = await this.prisma.capacityReservation.updateMany({
+    return this.prisma.$transaction((tx) => this.confirmQuoteWithin(tx, quoteId));
+  }
+
+  async confirmQuoteWithin(tx: Prisma.TransactionClient, quoteId: string) {
+    const result = await tx.capacityReservation.updateMany({
       where: { quoteId, status: CapacityReservationStatus.HELD },
       data: { status: CapacityReservationStatus.CONFIRMED }
     });
-    if (result.count) await this.recordAudit({ action: "capacity_quote_confirmed", targetType: "CapacityReservation", metadata: { quoteId, count: result.count } });
+    if (result.count !== 1) throw new ConflictException({ code: "CAPACITY_CONFIRMATION_FAILED", message: "报价容量不存在或已被其他操作处理" });
+    await this.recordAuditTransactional(tx, { action: "capacity_quote_confirmed", targetType: "CapacityReservation", metadata: { quoteId, count: result.count } });
     return result;
   }
 
   async releaseQuote(quoteId: string, reasonCode: string, status: CapacityReservationStatus = CapacityReservationStatus.RELEASED) {
-    const result = await this.prisma.$transaction(async (tx) => {
-      const reservation = await tx.capacityReservation.findUnique({ where: { quoteId } });
-      if (!reservation || !isActiveStatus(reservation.status)) {
-        return reservation;
-      }
-      const capacity = await tx.dailyCapacity.findUnique({ where: { id: reservation.dailyCapacityId } });
-      if (capacity) {
-        await tx.dailyCapacity.update({
-          where: { id: capacity.id },
-          data: getCapacityDecrements(capacity, reservation.constructionLocation, reservation.constructionType)
-        });
-      }
-      return tx.capacityReservation.update({ where: { id: reservation.id }, data: { status, releasedReasonCode: reasonCode } });
-    });
-    if (result && "id" in result) {
-      await this.recordAudit({ action: result.status === status ? "capacity_quote_released" : "capacity_quote_release_ignored", targetType: "CapacityReservation", targetId: result.id, metadata: { quoteId, reasonCode, requestedStatus: status, resultingStatus: result.status } });
+    return this.prisma.$transaction((tx) => this.releaseQuoteWithin(tx, quoteId, reasonCode, status));
+  }
+
+  async releaseQuoteWithin(
+    tx: Prisma.TransactionClient,
+    quoteId: string,
+    reasonCode: string,
+    status: CapacityReservationStatus = CapacityReservationStatus.RELEASED
+  ) {
+    const reservation = await tx.capacityReservation.findUnique({ where: { quoteId } });
+    if (!reservation || !isActiveStatus(reservation.status)) {
+      return reservation;
     }
+    const capacity = await tx.dailyCapacity.findUnique({ where: { id: reservation.dailyCapacityId } });
+    if (capacity) {
+      await tx.dailyCapacity.update({
+        where: { id: capacity.id },
+        data: getCapacityDecrements(capacity, reservation.constructionLocation, reservation.constructionType)
+      });
+    }
+    const result = await tx.capacityReservation.update({ where: { id: reservation.id }, data: { status, releasedReasonCode: reasonCode } });
+    await this.recordAuditTransactional(tx, { action: result.status === status ? "capacity_quote_released" : "capacity_quote_release_ignored", targetType: "CapacityReservation", targetId: result.id, metadata: { quoteId, reasonCode, requestedStatus: status, resultingStatus: result.status } });
     return result;
   }
 
@@ -149,6 +159,11 @@ export class CapacityReservationService {
     if (this.auditWriter) return this.auditWriter.writeTransactional(this.prisma, event);
     this.audit?.record(event);
     await persistAuditEvent(this.prisma, event);
+  }
+
+  private async recordAuditTransactional(prisma: Prisma.TransactionClient, event: AuditEvent) {
+    if (this.auditWriter) return this.auditWriter.writeTransactional(prisma, event);
+    await persistAuditEvent(prisma, event);
   }
 }
 

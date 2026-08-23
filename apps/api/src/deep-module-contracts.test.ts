@@ -29,6 +29,9 @@ import { ReportsService } from "./reports/reports.service";
 import { OrdersModule } from "./orders/orders.module";
 import { OrderLifecycle } from "./orders/domain/order-lifecycle";
 import { CreateOrderUseCase } from "./orders/use-cases/create-order.use-case";
+import { SalesQuotesModule } from "./sales-quotes/sales-quotes.module";
+import { SalesQuotesService } from "./sales-quotes/sales-quotes.service";
+import { QUOTE_READ_MODEL, QUOTE_WORKFLOW } from "./sales-quotes/domain/quote-workflow";
 
 test("P1/P2 module seams delegate business calls without exposing implementations", async () => {
   const pricing = new PricingDecision({
@@ -154,6 +157,13 @@ test("OrdersModule exposes only OrderLifecycle for lifecycle writes", () => {
   const exports = new Set((Reflect.getMetadata("exports", OrdersModule) ?? []) as unknown[]);
   assert.equal(exports.has(OrderLifecycle), true);
   assert.equal(exports.has(CreateOrderUseCase), false);
+});
+
+test("SalesQuotesModule exposes command/read seams instead of the implementation", () => {
+  const exports = new Set((Reflect.getMetadata("exports", SalesQuotesModule) ?? []) as unknown[]);
+  assert.equal(exports.has(QUOTE_WORKFLOW), true);
+  assert.equal(exports.has(QUOTE_READ_MODEL), true);
+  assert.equal(exports.has(SalesQuotesService), false);
 });
 
 test("production source keeps CreateOrderUseCase behind the OrderLifecycle seam", () => {

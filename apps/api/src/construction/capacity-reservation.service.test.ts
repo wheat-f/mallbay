@@ -78,3 +78,26 @@ test("驳回或过期容量占位会释放 DailyCapacity 计数", async () => {
   assert.deepEqual((calls[0] as { data: { inStoreReserved: { decrement: number } } }).data.inStoreReserved, { decrement: 1 });
   assert.equal((calls[1] as { data: { status: CapacityReservationStatus } }).data.status, CapacityReservationStatus.RELEASED);
 });
+
+test("报价批准只允许 HELD 容量在事务内确认", async () => {
+  const calls: unknown[] = [];
+  const tx = {
+    capacityReservation: {
+      updateMany: async (args: unknown) => {
+        calls.push(args);
+        return { count: 1 };
+      }
+    }
+  };
+  const service = new CapacityReservationService({ $transaction: async (callback: (value: typeof tx) => unknown) => callback(tx) } as never);
+  const result = await service.confirmQuoteWithin(tx as never, "quote-1");
+  assert.equal(result.count, 1);
+  assert.deepEqual((calls[0] as { where: unknown }).where, { quoteId: "quote-1", status: CapacityReservationStatus.HELD });
+  assert.deepEqual((calls[0] as { data: unknown }).data, { status: CapacityReservationStatus.CONFIRMED });
+});
+
+test("报价批准在没有 HELD 容量时拒绝确认", async () => {
+  const tx = { capacityReservation: { updateMany: async () => ({ count: 0 }) } };
+  const service = new CapacityReservationService({} as never);
+  await assert.rejects(() => service.confirmQuoteWithin(tx as never, "quote-missing"), /报价容量不存在或已被其他操作处理/);
+});

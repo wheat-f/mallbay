@@ -1,6 +1,7 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { CapacityReservationService } from "../construction/capacity-reservation.service";
-import { SalesQuotesService } from "./sales-quotes.service";
+import { QUOTE_WORKFLOW } from "./domain/quote-workflow";
+import type { QuoteWorkflow } from "./domain/quote-workflow";
 
 /**
  * Releases quote/capacity holds without requiring an external cron service.
@@ -12,7 +13,7 @@ export class SalesQuoteExpiryScheduler implements OnModuleInit, OnModuleDestroy 
   private timer?: NodeJS.Timeout;
 
   constructor(
-    private readonly quotes: SalesQuotesService,
+    @Inject(QUOTE_WORKFLOW) private readonly quotes: QuoteWorkflow,
     private readonly capacity: CapacityReservationService
   ) {}
 

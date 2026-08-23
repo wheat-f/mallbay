@@ -28,9 +28,31 @@ test("报价过期任务只把仍待审批的报价标记为过期并释放对�
   const capacity = { releaseQuote: async (id: string) => { released.push(id); return undefined; } };
   const service = new SalesQuotesService(prisma as never, capacity as never, {} as never, undefined, undefined, salesAccess as never);
   const result = await service.expirePending(new Date("2026-07-16T00:00:00.000Z"));
-  assert.equal(result, 2);
+  assert.deepEqual(result, { scannedCount: 2, expiredCount: 1, capacityReleasePendingCount: 0 });
   assert.deepEqual(statuses, ["quote-1", "quote-2"]);
   assert.deepEqual(released, ["quote-1"]);
+});
+
+test("报价过期在容量释放失败时返回待重试数量", async () => {
+  const prisma = {
+    salesQuote: {
+      findMany: async () => [{ id: "quote-1" }],
+      updateMany: async () => ({ count: 1 })
+    }
+  };
+  const service = new SalesQuotesService(
+    prisma as never,
+    { releaseQuote: async () => { throw new Error("capacity unavailable"); } } as never,
+    {} as never,
+    undefined,
+    undefined,
+    salesAccess as never
+  );
+  assert.deepEqual(await service.expirePending(new Date("2026-07-16T00:00:00.000Z")), {
+    scannedCount: 1,
+    expiredCount: 1,
+    capacityReleasePendingCount: 1
+  });
 });
 
 test("报价重复转单返回既有订单而不是再次创建", async () => {
@@ -52,6 +74,42 @@ test("报价重复转单返回既有订单而不是再次创建", async () => {
   assert.deepEqual(result, { orderId: "order-1", quoteId: "quote-1" });
   assert.deepEqual((input as unknown[])[1], { commandId: "command-quote-1", source: "QUOTE_CONVERSION" });
   assert.deepEqual((input as unknown[])[2], { source: "APPROVED_QUOTE", quoteId: "quote-1" });
+});
+
+test("报价重算在缺少 header 时也使用稳定幂等标识", async () => {
+  const prisma = {
+    salesQuote: {
+      findFirst: async () => ({
+        id: "quote-1",
+        storeId: "store-1",
+        status: "REJECTED",
+        salesPersonId: "sales-1",
+        executionStoreId: "store-1",
+        customerId: "customer-1",
+        vehicleId: null,
+        appointmentDate: null,
+        appointmentTimeSlot: null,
+        constructionAddress: null,
+        pricingCalculationId: "pricing-old",
+        capacityReservation: null
+      })
+    },
+    pricingCalculation: {
+      findUnique: async () => ({ inputSnapshot: { constructionType: "PPF", constructionLocation: "IN_STORE" } })
+    }
+  };
+  const service = new SalesQuotesService(prisma as never, {} as never, {} as never, undefined, undefined, salesAccess as never);
+  const keys: string[] = [];
+  service.create = async (_user, key) => {
+    keys.push(key ?? "");
+    return { id: "quote-next" };
+  };
+  const actor = { id: "sales-1", storeMember: { storeId: "store-1", position: "SALES" } } as never;
+  const dto = { storeId: "store-1", pricingCalculationId: "pricing-new", items: [], finalConstructionChargeCents: 100 } as never;
+  await service.recalculate(actor, "quote-1", dto);
+  await service.recalculate(actor, "quote-1", dto);
+  assert.equal(keys.length, 2);
+  assert.equal(keys[0], keys[1]);
 });
 
 test("报价详情按销售归属返回关联快照", async () => {

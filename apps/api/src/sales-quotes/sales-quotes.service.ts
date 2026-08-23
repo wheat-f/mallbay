@@ -15,9 +15,10 @@ import { AuditEventWriter } from "../observability/audit-event-writer";
 import type { AuditEvent } from "../observability/audit-log.service";
 import { persistAuditEvent } from "../observability/persist-audit-event";
 import { fingerprintCommand } from "../orders/domain/order-lifecycle-command";
+import type { QuoteExpiryResult, QuoteReadModel, QuoteWorkflow } from "./domain/quote-workflow";
 
 @Injectable()
-export class SalesQuotesService {
+export class SalesQuotesService implements QuoteWorkflow, QuoteReadModel {
   constructor(
     private readonly prisma: PrismaService,
     private readonly capacityReservations: CapacityReservationService,
@@ -414,22 +415,30 @@ export class SalesQuotesService {
     }
   }
 
-  async expirePending(now = new Date()) {
+  async expirePending(now = new Date()): Promise<QuoteExpiryResult> {
     const expired = await this.prisma.salesQuote.findMany({
       where: { status: SalesQuoteStatus.PENDING_APPROVAL, validUntil: { lte: now } },
       select: { id: true }
     });
+    let expiredCount = 0;
+    let capacityReleasePendingCount = 0;
     for (const quote of expired) {
       const claimed = await this.prisma.salesQuote.updateMany({
         where: { id: quote.id, status: SalesQuoteStatus.PENDING_APPROVAL },
         data: { status: SalesQuoteStatus.EXPIRED }
       });
       if (claimed.count === 1) {
-        await this.capacityReservations.releaseQuote(quote.id, "EXPIRED", CapacityReservationStatus.EXPIRED);
+        expiredCount += 1;
+        try {
+          await this.capacityReservations.releaseQuote(quote.id, "EXPIRED", CapacityReservationStatus.EXPIRED);
+        } catch {
+          capacityReleasePendingCount += 1;
+          continue;
+        }
         await this.recordAudit({ action: "sales_quote_expired", targetType: "SalesQuote", targetId: quote.id });
       }
     }
-    return expired.length;
+    return { scannedCount: expired.length, expiredCount, capacityReleasePendingCount };
   }
 
   async review(user: PricingAuthenticatedUser, id: string, approve: boolean, dto: ReviewSalesQuoteDto) {
@@ -457,10 +466,13 @@ export class SalesQuotesService {
         data: { status, approvedAt: approve ? new Date() : undefined }
       });
       if (claimedQuote.count !== 1) throw new BadRequestException("报价单已被其他操作处理");
+      if (approve) {
+        await this.capacityReservations.confirmQuoteWithin(tx, id);
+      } else {
+        await this.capacityReservations.releaseQuoteWithin(tx, id, "APPROVED_REJECTED");
+      }
       return tx.salesQuote.findUnique({ where: { id }, include: { items: true, approvals: true } });
     });
-    if (approve) await this.capacityReservations.confirmQuote(id);
-    else await this.capacityReservations.releaseQuote(id, "APPROVED_REJECTED");
     await this.recordAudit({ action: approve ? "sales_quote_approved" : "sales_quote_rejected", actorId: actor.id, targetType: "SalesQuote", targetId: id, metadata: { storeId: dto.storeId, reviewNote: dto.reviewNote?.trim() || undefined } });
     return reviewed;
   }
@@ -486,7 +498,7 @@ export class SalesQuotesService {
     return this.prisma.salesQuote.findUnique({ where: { id }, include: { items: true, approvals: true } });
   }
 
-  async recalculate(user: PricingAuthenticatedUser, id: string, dto: RecalculateSalesQuoteDto) {
+  async recalculate(user: PricingAuthenticatedUser, id: string, dto: RecalculateSalesQuoteDto, commandId?: string) {
     const actor = await this.withStoreMember(user);
     const quote = await this.prisma.salesQuote.findFirst({ where: { id, storeId: dto.storeId }, include: { capacityReservation: true } });
     if (!quote) throw new NotFoundException("报价单不存在");
@@ -506,7 +518,8 @@ export class SalesQuotesService {
     if (quote.status === SalesQuoteStatus.PENDING_APPROVAL) {
       await this.withdraw(user, id, { storeId: dto.storeId, reason: "RECALCULATED" });
     }
-    const next = await this.create(user, `RECALCULATE:${id}:${Date.now()}`, {
+    const recalculationKey = commandId?.trim() || fingerprintCommand("RECALCULATE_SALES_QUOTE", id, dto);
+    const next = await this.create(user, recalculationKey, {
       storeId: dto.storeId,
       executionStoreId: quote.executionStoreId,
       customerId: quote.customerId,

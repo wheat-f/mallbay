@@ -1,7 +1,35 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { InventoryMovementType, ProductUnit, StorePosition } from "@prisma/client";
-import { InventoryService } from "./inventory.service";
+import { InventoryService as InventoryAdapter } from "./inventory.service";
+import { InventoryImplementation } from "./inventory-implementation";
+import { InventoryLedger } from "./domain/inventory-ledger";
+import { InventoryCatalog } from "./inventory-catalog";
+import { ProcurementImplementation } from "./procurement-implementation";
+
+// Keep the legacy test surface stable while production callers migrate to the
+// explicit ProcurementFlow seam. Inventory tests still exercise the adapter;
+// purchase tests are routed to the extracted implementation.
+const InventoryService: any = class {
+  constructor(prisma: any, accessContext: any) {
+    const inventoryImplementation = new InventoryImplementation(prisma, accessContext);
+    const inventory = new InventoryAdapter(inventoryImplementation);
+    const catalog = new InventoryCatalog(inventory);
+    const procurement = new ProcurementImplementation(
+      prisma,
+      accessContext,
+      new InventoryLedger(inventoryImplementation),
+      catalog
+    );
+    return new Proxy({}, {
+      get: (_target, property) => {
+        const owner = property in procurement ? procurement : inventory;
+        const value = owner[property as keyof typeof owner];
+        return typeof value === "function" ? value.bind(owner) : value;
+      }
+    });
+  }
+};
 
 const inventoryAccess = {
   can: async (actor: { userId: string }, capability: string, action: string) => {
@@ -1052,7 +1080,7 @@ test("InventoryService rejects receiving draft purchase orders", async () => {
           storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
         },
         "poi-1",
-        { quantity: 1, batchNo: "B20260604", supplierName: "3M" }
+        { quantity: 1, batchNo: "B20260604", supplierName: "3M", idempotencyKey: "draft-receipt-1" }
       ),
     /采购订单审批通过后才能入库/
   );
@@ -1062,6 +1090,16 @@ test("InventoryService cancels purchase orders with audit reason", async () => {
   const writes: unknown[] = [];
   const service = new InventoryService({
     storeMember: { findUnique: async () => null },
+    $transaction: async (fn: (innerTx: unknown) => Promise<unknown>) => fn({
+      purchaseOrder: {
+        findUnique: async () => ({ id: "po-1", storeId: "store-1", status: "DRAFT", orderNo: "PO1" }),
+        update: async (args: unknown) => {
+          writes.push({ update: args });
+          return { id: "po-1", status: "CANCELLED" };
+        }
+      },
+      auditEvent: { create: async (args: unknown) => writes.push({ audit: args }) }
+    }),
     purchaseOrder: {
       findUnique: async () => ({ id: "po-1", storeId: "store-1", status: "DRAFT", orderNo: "PO1" }),
       update: async (args: unknown) => {
@@ -1138,7 +1176,7 @@ test("InventoryService rejects receiving cancelled purchase orders", async () =>
           storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
         },
         "poi-1",
-        { quantity: 1, batchNo: "B20260604", supplierName: "3M" }
+        { quantity: 1, batchNo: "B20260604", supplierName: "3M", idempotencyKey: "cancelled-receipt-1" }
       ),
     /采购订单已取消，不能入库/
   );
@@ -1530,6 +1568,7 @@ test("InventoryService receive purchase item updates purchase requirement fulfil
       }
     },
     inventoryMovement: {
+      findFirst: async () => null,
       create: async (args: unknown) => writes.push(args)
     },
     purchaseReceiptCostRecord: {
@@ -1562,7 +1601,7 @@ test("InventoryService receive purchase item updates purchase requirement fulfil
       storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
     },
     "poi-1",
-    { quantity: 2, batchNo: "B20260604", supplierName: "3M" }
+    { quantity: 2, batchNo: "B20260604", supplierName: "3M", idempotencyKey: "receipt-fulfillment-1" }
   );
 
   const serialized = JSON.stringify(writes);
@@ -1600,6 +1639,7 @@ test("InventoryService receives purchase item package quantity as base stock", a
       }
     },
     inventoryMovement: {
+      findFirst: async () => null,
       create: async (args: unknown) => writes.push(args)
     },
     purchaseReceiptCostRecord: {
@@ -1625,7 +1665,7 @@ test("InventoryService receives purchase item package quantity as base stock", a
       storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
     },
     "poi-1",
-    { quantity: 1, batchNo: "ROLL-PO-1", supplierName: "3M" }
+    { quantity: 1, batchNo: "ROLL-PO-1", supplierName: "3M", idempotencyKey: "receipt-roll-1" }
   );
 
   const serialized = JSON.stringify(writes);
@@ -1660,7 +1700,7 @@ test("InventoryService receives purchase item batches with per-line failures", a
       findUnique: async () => null,
       upsert: async (args: { create: { batchNo: string } }) => ({ id: `batch-${args.create.batchNo}` })
     },
-    inventoryMovement: { create: async () => undefined },
+    inventoryMovement: { findFirst: async () => null, create: async () => undefined },
     purchaseReceiptCostRecord: { create: async () => ({ id: "receipt-cost-1" }) },
     auditEvent: { create: async () => undefined },
     purchaseOrder: { update: async () => undefined }
@@ -1679,9 +1719,9 @@ test("InventoryService receives purchase item batches with per-line failures", a
     "poi-1",
     {
       batches: [
-        { batchNo: "B001", quantity: 1, supplierName: "3M" },
-        { batchNo: "B002", quantity: 2, supplierName: "3M" },
-        { batchNo: "B003", quantity: 1, supplierName: "3M" }
+        { batchNo: "B001", quantity: 1, supplierName: "3M", idempotencyKey: "batch-receipt-1" },
+        { batchNo: "B002", quantity: 2, supplierName: "3M", idempotencyKey: "batch-receipt-2" },
+        { batchNo: "B003", quantity: 1, supplierName: "3M", idempotencyKey: "batch-receipt-3" }
       ]
     } as never
   );
@@ -1721,7 +1761,7 @@ test("InventoryService stores receiving warehouse on purchase-in batch and movem
         return { id: "batch-1" };
       }
     },
-    inventoryMovement: { create: async (args: unknown) => writes.push(args) },
+    inventoryMovement: { findFirst: async () => null, create: async (args: unknown) => writes.push(args) },
     purchaseReceiptCostRecord: {
       create: async (args: unknown) => {
         writes.push(args);
@@ -1743,7 +1783,7 @@ test("InventoryService stores receiving warehouse on purchase-in batch and movem
       storeMember: { storeId: "store-1", position: StorePosition.PURCHASING }
     },
     "poi-1",
-    { quantity: 1, batchNo: "B001", supplierName: "3M", warehouseId: "warehouse-1" } as never
+    { quantity: 1, batchNo: "B001", supplierName: "3M", warehouseId: "warehouse-1", idempotencyKey: "warehouse-receipt-1" } as never
   );
 
   const serialized = JSON.stringify(writes);

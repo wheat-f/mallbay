@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { InventoryService, type AuthenticatedInventoryUser } from "./inventory.service";
+import { ProcurementImplementation } from "./procurement-implementation";
+import type { AuthenticatedInventoryUser } from "./inventory.service";
 import type {
   CreatePurchaseOrderDto,
   CreatePurchaseOrderFromRequirementDto,
@@ -14,7 +15,7 @@ import type {
 /** Public seam for purchase requirements, orders and receipts. */
 @Injectable()
 export class ProcurementFlow {
-  constructor(private readonly implementation: InventoryService) {}
+  constructor(private readonly implementation: ProcurementImplementation) {}
 
   getOverview(user: AuthenticatedInventoryUser, storeId: string) { return this.implementation.getPurchaseOverview(user, storeId); }
   listRequirements(user: AuthenticatedInventoryUser, storeId: string) { return this.implementation.listPurchaseRequirements(user, storeId); }

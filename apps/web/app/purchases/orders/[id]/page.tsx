@@ -653,6 +653,7 @@ export default function PurchaseOrderDetailPage() {
                         supplierName: batch.supplierName?.trim() || values.supplierName?.trim() || purchaseOrder.supplierName || undefined,
                         warehouseId: values.warehouseId,
                         warehouseName: selectedWarehouse?.label,
+                        idempotencyKey: crypto.randomUUID(),
                         actualUnitCostCents: batch.actualCostMode === "PENDING"
                           ? null
                           : batch.actualCostMode === "ACTUAL"

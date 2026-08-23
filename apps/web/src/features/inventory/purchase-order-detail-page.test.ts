@@ -28,6 +28,7 @@ test("purchase order detail page keeps arrival review and inbound actions togeth
   assert.match(detailSource, /title="采购清单"/);
   assert.doesNotMatch(detailSource, /title="采购清单与到货验收"/);
   assert.match(detailSource, /receivePurchaseItemBatches/);
+  assert.match(detailSource, /idempotencyKey: crypto\.randomUUID\(\)/);
   assert.match(detailSource, /parseInboundScanLines/);
   assert.match(detailSource, /批次明细/);
   assert.match(detailSource, /手工新增批次/);

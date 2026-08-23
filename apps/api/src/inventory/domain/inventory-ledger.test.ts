@@ -50,8 +50,6 @@ test("InventoryLedger exposes the complete stock fact command boundary", async (
   const implementation = {
     createOrderInventoryAllocations: async () => { calls.push("reserve"); return { locked: [] }; },
     releaseOrderInventory: async () => { calls.push("release"); return { released: [] }; },
-    receivePurchaseItem: async () => { calls.push("receive"); return { received: true }; },
-    receivePurchaseItemBatches: async () => { calls.push("receive-batches"); return { received: true }; },
     outboundOrderInventory: async () => { calls.push("outbound"); return { outbound: true }; },
     createStockOperation: async () => { calls.push("adjust"); return { id: "movement-1" }; }
   } as never;
@@ -59,12 +57,47 @@ test("InventoryLedger exposes the complete stock fact command boundary", async (
 
   await ledger.reserve({} as never, { orderId: "order-1", allocations: {} as never });
   await ledger.release({} as never, { orderId: "order-1" });
-  await ledger.receive({} as never, { purchaseOrderItemId: "item-1", receipt: {} as never });
-  await ledger.receiveBatches({} as never, { purchaseOrderItemId: "item-1", receipt: {} as never });
   await ledger.outbound({} as never, { orderId: "order-1" });
   await ledger.adjust({} as never, {} as never);
 
-  assert.deepEqual(calls, ["reserve", "release", "receive", "receive-batches", "outbound", "adjust"]);
+  assert.deepEqual(calls, ["reserve", "release", "outbound", "adjust"]);
+});
+
+test("InventoryLedger makes purchase receiving idempotent and rejects payload reuse", async () => {
+  const writes: string[] = [];
+  let movement: any;
+  const batch = { id: "batch-1", batchNo: "B001", unitCostCents: 100 };
+  const transaction = {
+    inventoryMovement: {
+      findFirst: async () => movement,
+      create: async ({ data }: { data: any }) => {
+        writes.push("movement");
+        movement = { ...data, batch };
+        return movement;
+      }
+    },
+    inventoryBatch: {
+      findUnique: async () => null,
+      upsert: async () => {
+        writes.push("batch");
+        return batch;
+      }
+    }
+  };
+  const ledger = new InventoryLedger({} as never);
+  const input = {
+    storeId: "store-1", purchaseOrderItemId: "item-1", productId: "product-1", batchNo: "B001",
+    supplierName: "供应商", quantity: 2, packageUnit: "PIECE", baseUnit: "PIECE", baseQuantityPerPackage: 1,
+    baseQuantity: 2, unitCostCents: 100, actorId: "worker-1", idempotencyKey: "receive-1"
+  } as never;
+
+  assert.equal((await ledger.receivePurchaseWithin(transaction as never, input)).replayed, false);
+  assert.equal((await ledger.receivePurchaseWithin(transaction as never, input)).replayed, true);
+  assert.deepEqual(writes, ["batch", "movement"]);
+  await assert.rejects(
+    () => ledger.receivePurchaseWithin(transaction as never, { ...input, quantity: 3, baseQuantity: 3 } as never),
+    /幂等键已被不同收货内容使用/
+  );
 });
 
 test("InventoryLedger releases allocations and records one typed movement per allocation", async () => {

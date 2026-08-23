@@ -152,6 +152,8 @@ export type CreateOrderInventoryAllocationsPayload = {
 };
 
 export type ReceivePurchaseItemPayload = {
+  /** 每个收货批次的稳定重试键，由收货工作台在提交前生成。 */
+  idempotencyKey?: string;
   quantity: number;
   batchNo: string;
   unit?: ProductUnit;

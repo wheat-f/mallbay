@@ -8,6 +8,7 @@ import { FinancialDocumentQuery } from "./finance/domain/financial-document-quer
 import { NotificationDispatcher } from "./notifications/notification-dispatcher";
 import { PricingDecision } from "./pricing/domain/pricing-decision";
 import { ProcurementFlow } from "./inventory/procurement-flow";
+import { ProcurementImplementation } from "./inventory/procurement-implementation";
 import { InventoryCatalog } from "./inventory/inventory-catalog";
 import { InventoryLedger } from "./inventory/domain/inventory-ledger";
 import { ConstructionFulfillment } from "./construction/construction-fulfillment";
@@ -263,6 +264,22 @@ test("ProcurementFlow owns the purchase lifecycle boundary including cancellatio
     orderId: "po-1",
     input: { reason: "duplicate" }
   });
+});
+
+test("ProcurementFlow is the sole procurement execution seam", () => {
+  const sourceRoot = path.resolve(__dirname);
+  const flowSource = readFileSync(path.join(sourceRoot, "inventory", "procurement-flow.ts"), "utf8");
+  const procurementSource = readFileSync(path.join(sourceRoot, "inventory", "procurement-implementation.ts"), "utf8");
+  const inventorySource = readFileSync(path.join(sourceRoot, "inventory", "inventory-implementation.ts"), "utf8");
+  const serviceSource = readFileSync(path.join(sourceRoot, "inventory", "inventory.service.ts"), "utf8");
+  const providers = new Set((Reflect.getMetadata("providers", InventoryModule) ?? []) as unknown[]);
+
+  assert.match(flowSource, /ProcurementImplementation/);
+  assert.doesNotMatch(flowSource, /InventoryService/);
+  assert.doesNotMatch(procurementSource, /inventoryBatch\.(create|update|upsert|delete)|inventoryMovement\.create(?:Many)?/);
+  assert.doesNotMatch(inventorySource, /async (createPurchaseOrder|approvePurchaseOrder|cancelPurchaseOrder|receivePurchaseItem|receivePurchaseItemBatches)\b/);
+  assert.doesNotMatch(serviceSource, /createPurchaseOrder|approvePurchaseOrder|cancelPurchaseOrder|receivePurchaseItem/);
+  assert.equal(providers.has(ProcurementImplementation), true);
 });
 
 test("InventoryCatalog owns inventory and supplier master-data access", async () => {

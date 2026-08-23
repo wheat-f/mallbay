@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { InventoryMovementType, InventoryStatus, ProductUnit } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { InventoryImplementation } from "../inventory-implementation";
@@ -17,8 +17,6 @@ import type {
 
 type InventoryUser = AuthenticatedInventoryUser;
 type ReserveInput = CreateOrderInventoryAllocationsDto;
-type ReceiveInput = ReceivePurchaseItemDto;
-type ReceiveBatchesInput = ReceivePurchaseItemBatchesDto;
 type OutboundInput = OutboundOrderInventoryDto;
 type AdjustInput = CreateStockOperationDto;
 type TraceInput = ListInventoryDto;
@@ -91,6 +89,25 @@ type PurchaseReturnOutboundInput = {
   actorId: string;
 };
 
+export type PurchaseReceiptStockInput = {
+  storeId: string;
+  purchaseOrderItemId: string;
+  productId: string;
+  batchNo: string;
+  supplierName?: string | null;
+  quantity: number;
+  packageUnit: ProductUnit;
+  baseUnit: ProductUnit;
+  baseQuantityPerPackage: number;
+  baseQuantity: number;
+  unitCostCents: number | null;
+  warehouseId?: string;
+  warehouseName?: string | null;
+  actorId: string;
+  idempotencyKey: string;
+  note: string;
+};
+
 /**
  * InventoryLedger is the single command/query seam for stock facts.
  * InventoryImplementation remains an internal persistence implementation; callers
@@ -106,14 +123,6 @@ export class InventoryLedger {
 
   release(user: InventoryUser, input: { orderId: string }) {
     return this.implementation.releaseOrderInventory(user, input.orderId);
-  }
-
-  receive(user: InventoryUser, input: { purchaseOrderItemId: string; receipt: ReceiveInput }) {
-    return this.implementation.receivePurchaseItem(user, input.purchaseOrderItemId, input.receipt);
-  }
-
-  receiveBatches(user: InventoryUser, input: { purchaseOrderItemId: string; receipt: ReceiveBatchesInput }) {
-    return this.implementation.receivePurchaseItemBatches(user, input.purchaseOrderItemId, input.receipt);
   }
 
   outbound(user: InventoryUser, input: { orderId: string; outbound?: OutboundInput }) {
@@ -150,6 +159,112 @@ export class InventoryLedger {
 
   orderMatch(user: InventoryUser, orderId: string) {
     return this.implementation.getOrderInventoryMatch(user, orderId);
+  }
+
+  async receivePurchaseWithin(transaction: InventoryLedgerTransaction, input: PurchaseReceiptStockInput) {
+    if (!input.idempotencyKey.trim()) throw new BadRequestException("收货幂等键不能为空");
+    const existing = await transaction.inventoryMovement.findFirst({
+      where: {
+        storeId: input.storeId,
+        sourceType: "PURCHASE_ORDER_ITEM",
+        sourceId: input.purchaseOrderItemId,
+        idempotencyKey: input.idempotencyKey
+      },
+      include: { batch: true }
+    });
+    if (existing) {
+      const samePayload = existing.productId === input.productId
+        && existing.unit === input.baseUnit
+        && toNumber(existing.quantity) === input.baseQuantity
+        && existing.batch?.batchNo === input.batchNo
+        && (existing.warehouseId ?? undefined) === input.warehouseId
+        && (existing.warehouseName ?? undefined) === input.warehouseName;
+      if (!samePayload) throw new ConflictException("收货幂等键已被不同收货内容使用");
+      return { replayed: true, batch: existing.batch, movement: existing };
+    }
+
+    const existingBatch = await transaction.inventoryBatch.findUnique({
+      where: {
+        storeId_productId_batchNo: {
+          storeId: input.storeId,
+          productId: input.productId,
+          batchNo: input.batchNo
+        }
+      },
+      select: { id: true, unitCostCents: true }
+    });
+    if (existingBatch?.unitCostCents != null && input.unitCostCents != null && existingBatch.unitCostCents !== input.unitCostCents) {
+      throw new BadRequestException("同一批次只能保留一个实际入库成本；价格不同请使用新的批次号入库");
+    }
+    const batch = await transaction.inventoryBatch.upsert({
+      where: {
+        storeId_productId_batchNo: {
+          storeId: input.storeId,
+          productId: input.productId,
+          batchNo: input.batchNo
+        }
+      },
+      create: {
+        storeId: input.storeId,
+        productId: input.productId,
+        batchNo: input.batchNo,
+        supplierName: input.supplierName ?? undefined,
+        unit: input.baseUnit,
+        packageUnit: input.packageUnit,
+        packageQuantity: input.quantity,
+        baseUnit: input.baseUnit,
+        baseQuantityPerPackage: input.baseQuantityPerPackage,
+        totalQuantity: input.baseQuantity,
+        availableQuantity: input.baseQuantity,
+        unitCostCents: input.unitCostCents,
+        receivedAt: new Date(),
+        warehouseId: input.warehouseId,
+        warehouseName: input.warehouseName ?? undefined,
+        sourceType: "PURCHASE_ORDER_ITEM",
+        sourceId: input.purchaseOrderItemId
+      },
+      update: {
+        totalQuantity: { increment: input.baseQuantity },
+        availableQuantity: { increment: input.baseQuantity },
+        packageQuantity: { increment: input.quantity },
+        packageUnit: input.packageUnit,
+        baseUnit: input.baseUnit,
+        baseQuantityPerPackage: input.baseQuantityPerPackage,
+        unit: input.baseUnit,
+        receivedAt: new Date(),
+        warehouseId: input.warehouseId,
+        warehouseName: input.warehouseName ?? undefined,
+        unitCostCents: existingBatch?.unitCostCents ?? input.unitCostCents
+      }
+    });
+    const movement = await transaction.inventoryMovement.create({
+      data: {
+        storeId: input.storeId,
+        batchId: batch.id,
+        productId: input.productId,
+        movementType: InventoryMovementType.PURCHASE_IN,
+        quantity: input.baseQuantity,
+        unit: input.baseUnit,
+        fromUnit: input.packageUnit,
+        toUnit: input.baseUnit,
+        conversionRate: input.baseQuantityPerPackage,
+        sourceType: "PURCHASE_ORDER_ITEM",
+        sourceId: input.purchaseOrderItemId,
+        idempotencyKey: input.idempotencyKey,
+        warehouseId: input.warehouseId,
+        warehouseName: input.warehouseName ?? undefined,
+        createdById: input.actorId,
+        note: input.note
+      }
+    });
+    return { replayed: false, batch, movement };
+  }
+
+  updatePurchaseReceiptCostWithin(transaction: InventoryLedgerTransaction, input: { batchId: string; unitCostCents: number | null }) {
+    return transaction.inventoryBatch.update({
+      where: { id: input.batchId },
+      data: { unitCostCents: input.unitCostCents }
+    });
   }
 
   async releaseWithin(transaction: InventoryLedgerTransaction, input: ReleaseWithinInput) {

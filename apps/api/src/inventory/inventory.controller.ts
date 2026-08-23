@@ -172,7 +172,7 @@ export class InventoryController {
 
   @Post("purchase-orders/items/:id/receive")
   receivePurchaseItem(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: ReceivePurchaseItemDto) {
-    return this.ledger.receive(req.user, { purchaseOrderItemId: id, receipt: dto });
+    return this.procurement.receive(req.user, id, dto);
   }
 
   @Post("purchase-orders/items/:id/receive-batches")
@@ -181,7 +181,7 @@ export class InventoryController {
     @Param("id") id: string,
     @Body() dto: ReceivePurchaseItemBatchesDto
   ) {
-    return this.ledger.receiveBatches(req.user, { purchaseOrderItemId: id, receipt: dto });
+    return this.procurement.receiveBatches(req.user, id, dto);
   }
 
   @Post("orders/:orderId/outbound")

@@ -58,6 +58,9 @@ test("legacy users retain compatibility permissions before migration", async () 
   });
   assert.equal(await service.authorize("u1", "orders.edit", "write", { storeId: "s1" }), true);
   assert.equal(await service.authorize("u1", "orders.edit", "write", { storeId: "s2" }), false);
+  assert.equal(await service.authorize("u1", "settings", "read", { storeId: "s1" }), true);
+  assert.equal(await service.authorize("u1", "settings", "write", { storeId: "s1" }), true);
+  assert.equal(await service.authorize("u1", "settings", "read", { storeId: "s2" }), false);
 });
 
 test("legacy isAuditor users do not receive HQ permissions without an active HQ binding", async () => {

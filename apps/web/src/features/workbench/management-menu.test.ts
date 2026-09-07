@@ -39,6 +39,16 @@ test("management menu maps manager role to full prototype sidebar", () => {
   );
 });
 
+test("management menu keeps store settings visible when the manager has its runtime settings grant", () => {
+  const items = getManagementMenuItems({
+    position: "MANAGER",
+    storeId: "store-1",
+    permissions: [{ code: "settings", actions: ["read", "write"] }]
+  });
+
+  assert.equal(items.some((item) => item.key === "settings" && item.href === "/settings"), true);
+});
+
 test("management menu keeps customer service inventory and purchase read-only entries without product management", () => {
   const items = getManagementMenuItems({ position: "CUSTOMER_SERVICE" as never, storeId: "store-1" });
   const labels = items.map((item) => item.label);

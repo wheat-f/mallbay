@@ -45,7 +45,10 @@ const legacyPermissionMap: Record<string, Array<[string, string, string]>> = {
     ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"],
     ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.expense", "review", "STORE"],
     ["rebates", "read", "STORE"], ["rebates", "review", "STORE"], ["commissions", "write", "STORE"],
-    ["returns", "write", "STORE"], ["returns", "create", "STORE"], ["returns", "manage", "STORE"], ["returns", "approve", "STORE"], ["returns", "finance", "STORE"]
+    ["returns", "write", "STORE"], ["returns", "create", "STORE"], ["returns", "manage", "STORE"], ["returns", "approve", "STORE"], ["returns", "finance", "STORE"],
+    // A store manager owns the store-level configuration.  This permission is
+    // also what authorizes dictionary reads used by customer vehicle forms.
+    ["settings", "read", "STORE"], ["settings", "write", "STORE"]
   ],
   SALES: [["customers", "read", "OWN"], ["customers", "write", "OWN"], ["orders", "read", "OWN"], ["orders", "write", "OWN"], ["warranties", "read", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"], ["rebates", "read", "OWN"], ["rebates", "apply", "OWN"]],
   CUSTOMER_SERVICE: [["customers", "read", "STORE"], ["customers", "write", "STORE"], ["orders", "read", "STORE"], ["orders", "write", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"], ["rebates", "read", "STORE"], ["rebates", "apply", "STORE"]],

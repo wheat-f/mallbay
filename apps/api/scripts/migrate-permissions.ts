@@ -15,7 +15,7 @@ const roleDefinitions: Record<string, { name: string; grants: Array<[string, str
       ["orders.lifecycle", "finalize", "GLOBAL"], ["orders.lifecycle", "cancel", "GLOBAL"], ["orders.lifecycle", "cross_store_source_manage", "GLOBAL"], ["orders.lifecycle", "verification_resolve", "GLOBAL"],
       ["warranties", "read", "GLOBAL"], ["warranties", "write", "GLOBAL"],
       ["construction", "read", "GLOBAL"], ["construction", "write", "GLOBAL"],
-      ["products", "read", "GLOBAL"], ["products", "write", "GLOBAL"],
+      ["products", "read", "GLOBAL"], ["products", "write", "GLOBAL"], ["products", "suggested-price-write", "GLOBAL"],
       ["inventory", "read", "GLOBAL"], ["inventory", "write", "GLOBAL"],
       ["purchase", "read", "GLOBAL"], ["purchase", "write", "GLOBAL"],
       ["finance", "read", "GLOBAL"], ["finance", "write", "GLOBAL"], ["finance.application", "submit", "GLOBAL"], ["finance.document", "read", "GLOBAL"], ["finance.document", "attach", "GLOBAL"], ["finance.expense", "review", "GLOBAL"], ["finance.reimbursement", "review", "GLOBAL"], ["finance.reimbursement", "pay", "GLOBAL"],
@@ -25,7 +25,7 @@ const roleDefinitions: Record<string, { name: string; grants: Array<[string, str
   },
   MANAGER: { name: "店长", grants: [
     ["customers", "read", "STORE"], ["customers", "write", "STORE"], ["orders", "read", "STORE"], ["orders", "write", "STORE"], ["orders.lifecycle", "finalize", "STORE"], ["orders.lifecycle", "cancel", "STORE"], ["orders.lifecycle", "cross_store_source_manage", "STORE"], ["orders.lifecycle", "verification_resolve", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"],
-    ["construction", "read", "STORE"], ["construction", "write", "STORE"], ["products", "read", "STORE"], ["products", "write", "STORE"], ["inventory", "read", "STORE"], ["inventory", "write", "STORE"],
+    ["construction", "read", "STORE"], ["construction", "write", "STORE"], ["products", "read", "STORE"], ["products", "write", "STORE"], ["products", "suggested-price-write", "STORE"], ["inventory", "read", "STORE"], ["inventory", "write", "STORE"],
     ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"], ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.expense", "review", "STORE"],
     ["purchase", "read", "STORE"], ["purchase", "write", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["reports", "read", "STORE"], ["settings", "read", "STORE"], ["settings", "write", "STORE"]
   ]},
@@ -58,7 +58,7 @@ async function main() {
         code: resource,
         name: resource,
         resource,
-        actions: resource === "orders.lifecycle" ? ["finalize", "cancel", "cross_store_source_manage", "verification_resolve"] : resource === "finance.application" ? ["submit"] : resource === "finance.document" ? ["read", "attach"] : resource === "finance.expense" ? ["review"] : resource === "finance.reimbursement" ? ["review", "pay"] : ["read", "write"],
+        actions: resource === "orders.lifecycle" ? ["finalize", "cancel", "cross_store_source_manage", "verification_resolve"] : resource === "finance.application" ? ["submit"] : resource === "finance.document" ? ["read", "attach"] : resource === "finance.expense" ? ["review"] : resource === "finance.reimbursement" ? ["review", "pay"] : resource === "products" ? ["read", "write", "suggested-price-write"] : ["read", "write"],
         supportedScopes: ["OWN", "STORE", "GLOBAL"]
       }
     });

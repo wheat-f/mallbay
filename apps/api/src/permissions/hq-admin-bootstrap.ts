@@ -10,7 +10,7 @@ export const HEADQUARTERS_ADMIN_GRANTS = [
   ["orders.lifecycle", "finalize", "GLOBAL"], ["orders.lifecycle", "cancel", "GLOBAL"], ["orders.lifecycle", "cross_store_source_manage", "GLOBAL"], ["orders.lifecycle", "verification_view", "GLOBAL"], ["orders.lifecycle", "verification_resolve", "GLOBAL"],
   ["warranties", "read", "GLOBAL"], ["warranties", "write", "GLOBAL"],
   ["construction", "read", "GLOBAL"], ["construction", "write", "GLOBAL"],
-  ["products", "read", "GLOBAL"], ["products", "write", "GLOBAL"],
+  ["products", "read", "GLOBAL"], ["products", "write", "GLOBAL"], ["products", "suggested-price-write", "GLOBAL"],
   ["pricing.template", "write", "GLOBAL"],
   ["inventory", "read", "GLOBAL"], ["inventory", "write", "GLOBAL"],
   ["purchase", "read", "GLOBAL"], ["purchase", "write", "GLOBAL"],

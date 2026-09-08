@@ -166,9 +166,9 @@ SELECT
   jsonb_build_object(
     'source', 'permission-catalog-migration',
     'grants', COALESCE((
-      SELECT jsonb_agg(jsonb_build_object('roleCode', role."code", 'permissionCode', grant."permissionCode", 'action', grant."action", 'scope', grant."scope") ORDER BY role."code", grant."permissionCode", grant."action", grant."scope")
-      FROM "PermissionRoleGrant" grant
-      JOIN "PermissionRole" role ON role."id" = grant."roleId"
+      SELECT jsonb_agg(jsonb_build_object('roleCode', role."code", 'permissionCode', role_grant."permissionCode", 'action', role_grant."action", 'scope', role_grant."scope") ORDER BY role."code", role_grant."permissionCode", role_grant."action", role_grant."scope")
+      FROM "PermissionRoleGrant" role_grant
+      JOIN "PermissionRole" role ON role."id" = role_grant."roleId"
       WHERE role."status" = 'ACTIVE'
     ), '[]'::jsonb)
   ),

@@ -11,6 +11,11 @@ test("ChangeStoreManagerUseCase replaces current manager and notifies removed ma
   const currentManager = { id: "member-current", userId: "manager-old" };
   const tx = {
     storeMember: {
+      findUnique: async (args: unknown) => {
+        transactionCalls.push("member.findUnique");
+        assert.deepEqual(args, { where: { id: "member-current" }, select: { userId: true } });
+        return { userId: "manager-old" };
+      },
       delete: async (args: unknown) => {
         transactionCalls.push("member.delete");
         assert.deepEqual(args, { where: { id: "member-current" } });
@@ -22,6 +27,49 @@ test("ChangeStoreManagerUseCase replaces current manager and notifies removed ma
             storeId: "store-1",
             userId: "manager-new",
             position: StorePosition.MANAGER
+          }
+        });
+      }
+    },
+    permissionRoleBinding: {
+      updateMany: async (args: unknown) => {
+        const updateArgs = args as { where: { userId: string } };
+        transactionCalls.push(`binding.disable:${updateArgs.where.userId}`);
+        assert.deepEqual(args, {
+          where: { userId: updateArgs.where.userId, scopeType: "STORE", storeId: "store-1", status: "ACTIVE" },
+          data: { status: "DISABLED" }
+        });
+      },
+      upsert: async (args: unknown) => {
+        transactionCalls.push("binding.upsert");
+        const upsertArgs = args as { update: { effectiveAt: unknown } };
+        assert.ok(upsertArgs.update.effectiveAt instanceof Date);
+        assert.deepEqual(args, {
+          where: { userId_roleId_scopeType_storeId: { userId: "manager-new", roleId: "role-manager", scopeType: "STORE", storeId: "store-1" } },
+          update: { status: "ACTIVE", effectiveAt: upsertArgs.update.effectiveAt, expiredAt: null, createdById: "admin-1" },
+          create: { userId: "manager-new", roleId: "role-manager", scopeType: "STORE", storeId: "store-1", createdById: "admin-1" }
+        });
+        return { id: "binding-manager-new" };
+      }
+    },
+    permissionRole: {
+      findUnique: async (args: unknown) => {
+        transactionCalls.push("role.findUnique");
+        assert.deepEqual(args, { where: { code: StorePosition.MANAGER } });
+        return { id: "role-manager", status: "ACTIVE" };
+      }
+    },
+    auditEvent: {
+      create: async (args: unknown) => {
+        transactionCalls.push("audit.create");
+        assert.deepEqual(args, {
+          data: {
+            action: "permissions.binding.changed",
+            actorId: "admin-1",
+            storeId: "store-1",
+            targetType: "PermissionRoleBinding",
+            targetId: "binding-manager-new",
+            metadata: { userId: "manager-new", roleId: "role-manager", source: "store_manager_changed" }
           }
         });
       }
@@ -67,7 +115,16 @@ test("ChangeStoreManagerUseCase replaces current manager and notifies removed ma
   const result = await useCase.execute("admin-1", "store-1", { newManagerId: "manager-new" });
 
   assert.deepEqual(result, { success: true });
-  assert.deepEqual(transactionCalls, ["member.delete", "member.create"]);
+  assert.deepEqual(transactionCalls, [
+    "member.findUnique",
+    "member.delete",
+    "binding.disable:manager-old",
+    "member.create",
+    "role.findUnique",
+    "binding.disable:manager-new",
+    "binding.upsert",
+    "audit.create"
+  ]);
   assert.deepEqual(notifications, [
     {
       userId: "manager-old",

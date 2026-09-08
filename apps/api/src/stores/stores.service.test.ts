@@ -11,6 +11,7 @@ import { SetStoreFrozenUseCase } from "./use-cases/set-store-frozen.use-case";
 import { SubmitStoreForReviewUseCase } from "./use-cases/submit-store-for-review.use-case";
 import { StoreRepository } from "./repositories/store.repository";
 import { DictionariesService } from "../settings/dictionaries.service";
+import { AccessContext } from "../permissions/domain/access-context";
 
 test("listPublishedStores caps pageSize at 100", async () => {
   let capturedTake = 0;
@@ -49,7 +50,8 @@ test("StoresService receives PrismaService through Nest injection", async () => 
       { provide: SubmitStoreForReviewUseCase, useValue: {} },
       { provide: ChangeStoreManagerUseCase, useValue: {} },
       { provide: SetStoreFrozenUseCase, useValue: {} },
-      { provide: DictionariesService, useValue: {} }
+      { provide: DictionariesService, useValue: {} },
+      { provide: AccessContext, useValue: { scope: async () => ({ allowed: true, global: true, storeIds: [] }) } }
     ]
   }).compile();
 
@@ -332,7 +334,7 @@ function createStoresService(prisma: unknown, notifications: unknown, auditLog: 
   return new StoresService(
     prisma as never,
     new ReviewStoreSubmissionUseCase(storeRepository, notifications as never, auditLog as never),
-    new SubmitStoreForReviewUseCase(storeRepository),
+    new SubmitStoreForReviewUseCase(storeRepository, { scope: async () => ({ allowed: true }) } as never),
     new ChangeStoreManagerUseCase(storeRepository, notifications as never, auditLog as never),
     new SetStoreFrozenUseCase(storeRepository, notifications as never, auditLog as never),
     {} as never,

@@ -59,7 +59,10 @@ test("SubmitStoreForReviewUseCase closes pending submissions, creates a normaliz
       }
     }
   };
-  const useCase = new SubmitStoreForReviewUseCase(new StoreRepository(prisma as never));
+  const useCase = new SubmitStoreForReviewUseCase(
+    new StoreRepository(prisma as never),
+    { scope: async () => ({ allowed: true }) } as never
+  );
 
   const result = await useCase.execute("manager-1", "store-1", {
     name: "送审门店",
@@ -73,7 +76,6 @@ test("SubmitStoreForReviewUseCase closes pending submissions, creates a normaliz
 
   assert.equal(result, createdSubmission);
   assert.deepEqual(calls, [
-    "member.findUnique",
     "store.findUniqueOrThrow",
     "submission.updateMany",
     "submission.create",

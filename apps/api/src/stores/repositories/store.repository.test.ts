@@ -285,6 +285,11 @@ test("StoreRepository delegates store admin persistence to Prisma", async () => 
   const calls: string[] = [];
   const tx = {
     storeMember: {
+      findUnique: async (args: unknown) => {
+        calls.push("tx.member.findUnique");
+        assert.deepEqual(args, { where: { id: "member-current" }, select: { userId: true } });
+        return { userId: "manager-old" };
+      },
       delete: async (args: unknown) => {
         calls.push("tx.member.delete");
         assert.deepEqual(args, { where: { id: "member-current" } });
@@ -294,6 +299,54 @@ test("StoreRepository delegates store admin persistence to Prisma", async () => 
         assert.deepEqual(args, {
           where: { id: "member-new" },
           data: { position: StorePosition.MANAGER }
+        });
+      }
+    },
+    permissionRoleBinding: {
+      updateMany: async (args: unknown) => {
+        const updateArgs = args as { where: { userId: string } };
+        calls.push(`tx.binding.disable:${updateArgs.where.userId}`);
+        assert.deepEqual(args, {
+          where: {
+            userId: updateArgs.where.userId,
+            scopeType: "STORE",
+            storeId: "store-1",
+            status: "ACTIVE"
+          },
+          data: { status: "DISABLED" }
+        });
+      },
+      upsert: async (args: unknown) => {
+        calls.push("tx.binding.upsert");
+        const upsertArgs = args as { update: { effectiveAt: unknown } };
+        assert.ok(upsertArgs.update.effectiveAt instanceof Date);
+        assert.deepEqual(args, {
+          where: { userId_roleId_scopeType_storeId: { userId: "manager-new", roleId: "role-manager", scopeType: "STORE", storeId: "store-1" } },
+          update: { status: "ACTIVE", effectiveAt: upsertArgs.update.effectiveAt, expiredAt: null, createdById: "admin-1" },
+          create: { userId: "manager-new", roleId: "role-manager", scopeType: "STORE", storeId: "store-1", createdById: "admin-1" }
+        });
+        return { id: "binding-manager-new" };
+      }
+    },
+    permissionRole: {
+      findUnique: async (args: unknown) => {
+        calls.push("tx.role.findUnique");
+        assert.deepEqual(args, { where: { code: StorePosition.MANAGER } });
+        return { id: "role-manager", status: "ACTIVE" };
+      }
+    },
+    auditEvent: {
+      create: async (args: unknown) => {
+        calls.push("tx.audit.create");
+        assert.deepEqual(args, {
+          data: {
+            action: "permissions.binding.changed",
+            actorId: "admin-1",
+            storeId: "store-1",
+            targetType: "PermissionRoleBinding",
+            targetId: "binding-manager-new",
+            metadata: { userId: "manager-new", roleId: "role-manager", source: "store_manager_changed" }
+          }
         });
       }
     }
@@ -360,6 +413,7 @@ test("StoreRepository delegates store admin persistence to Prisma", async () => 
   });
   await repository.changeManager({
     storeId: "store-1",
+    actorId: "admin-1",
     newManagerId: "manager-new",
     currentManagerId: "member-current",
     existingNewManagerMemberId: "member-new"
@@ -372,8 +426,14 @@ test("StoreRepository delegates store admin persistence to Prisma", async () => 
     "user.findUnique",
     "member.findFirst",
     "member.findUnique",
+    "tx.member.findUnique",
     "tx.member.delete",
+    "tx.binding.disable:manager-old",
     "tx.member.update",
+    "tx.role.findUnique",
+    "tx.binding.disable:manager-new",
+    "tx.binding.upsert",
+    "tx.audit.create",
     "store.update",
     "member.findMany"
   ]);

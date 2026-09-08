@@ -3,6 +3,10 @@ import { test } from "node:test";
 import { InvitationStatus, StorePosition, StoreStatus } from "@prisma/client";
 import { MembersService } from "./members.service";
 
+const storeMemberWriter = {
+  scope: async () => ({ allowed: true })
+};
+
 test("inviteMember cancels stale invitations, creates a new invitation, and notifies invitee", async () => {
   const calls: string[] = [];
   const notifications: unknown[] = [];
@@ -62,7 +66,7 @@ test("inviteMember cancels stale invitations, creates a new invitation, and noti
     send: async (userId: string, type: string, payload: unknown) => {
       notifications.push({ userId, type, payload });
     }
-  } as never);
+  } as never, storeMemberWriter as never);
 
   const result = await service.inviteMember("manager-1", "store-1", {
     userId: "user-2",
@@ -71,7 +75,6 @@ test("inviteMember cancels stale invitations, creates a new invitation, and noti
 
   assert.equal(result, invitation);
   assert.deepEqual(calls, [
-    "member.findUnique:manager-1",
     "store.findUniqueOrThrow",
     "user.findUnique",
     "member.findUnique:user-2",
@@ -97,7 +100,7 @@ test("inviteMember tells managers to contact an administrator when assigning sto
     storeMember: {
       findUnique: async () => ({ storeId: "store-1", position: StorePosition.MANAGER })
     }
-  } as never, { send: async () => undefined } as never);
+  } as never, { send: async () => undefined } as never, storeMemberWriter as never);
 
   await assert.rejects(
     () => service.inviteMember("manager-1", "store-1", {
@@ -151,6 +154,48 @@ test("acceptInvitation replaces frozen-store membership, accepts invitation, and
         });
         return { count: 1 };
       }
+    },
+    permissionRoleBinding: {
+      updateMany: async (args: unknown) => {
+        transactionCalls.push("binding.disable");
+        assert.deepEqual(args, {
+          where: { userId: "user-2", scopeType: "STORE", storeId: "frozen-store", status: "ACTIVE" },
+          data: { status: "DISABLED" }
+        });
+      },
+      upsert: async (args: unknown) => {
+        transactionCalls.push("binding.upsert");
+        const upsertArgs = args as { update: { effectiveAt: unknown } };
+        assert.ok(upsertArgs.update.effectiveAt instanceof Date);
+        assert.deepEqual(args, {
+          where: { userId_roleId_scopeType_storeId: { userId: "user-2", roleId: "role-finance", scopeType: "STORE", storeId: "store-1" } },
+          update: { status: "ACTIVE", effectiveAt: upsertArgs.update.effectiveAt, expiredAt: null },
+          create: { userId: "user-2", roleId: "role-finance", scopeType: "STORE", storeId: "store-1" }
+        });
+        return { id: "binding-1" };
+      }
+    },
+    permissionRole: {
+      findUnique: async (args: unknown) => {
+        transactionCalls.push("role.findUnique");
+        assert.deepEqual(args, { where: { code: StorePosition.FINANCE } });
+        return { id: "role-finance", status: "ACTIVE" };
+      }
+    },
+    auditEvent: {
+      create: async (args: unknown) => {
+        transactionCalls.push("audit.create");
+        assert.deepEqual(args, {
+          data: {
+            action: "permissions.binding.created",
+            actorId: "manager-1",
+            storeId: "store-1",
+            targetType: "PermissionRoleBinding",
+            targetId: "binding-1",
+            metadata: { userId: "user-2", roleId: "role-finance", source: "store_invitation" }
+          }
+        });
+      }
     }
   };
   const prisma = {
@@ -169,7 +214,7 @@ test("acceptInvitation replaces frozen-store membership, accepts invitation, and
     send: async (userId: string, type: string, payload: unknown) => {
       notifications.push({ userId, type, payload });
     }
-  } as never);
+  } as never, storeMemberWriter as never);
 
   const result = await service.acceptInvitation("user-2", "invitation-1");
 
@@ -177,8 +222,12 @@ test("acceptInvitation replaces frozen-store membership, accepts invitation, and
   assert.deepEqual(transactionCalls, [
     "member.findUnique",
     "member.delete",
+    "binding.disable",
     "member.create",
-    "invitation.update"
+    "invitation.update",
+    "role.findUnique",
+    "binding.upsert",
+    "audit.create"
   ]);
   assert.deepEqual(notifications, [
     {
@@ -222,7 +271,7 @@ test("rejectInvitation rejects pending invitation and notifies inviter", async (
     send: async (userId: string, type: string, payload: unknown) => {
       notifications.push({ userId, type, payload });
     }
-  } as never);
+  } as never, storeMemberWriter as never);
 
   const result = await service.rejectInvitation("user-2", "invitation-1");
 
@@ -256,7 +305,7 @@ test("removeMember tells managers to contact an administrator when removing stor
         return { id: "member-2", storeId: "store-1", position: StorePosition.MANAGER };
       }
     }
-  } as never, { send: async () => undefined } as never);
+  } as never, { send: async () => undefined } as never, storeMemberWriter as never);
 
   await assert.rejects(
     () => service.removeMember("manager-1", "store-1", "user-2"),

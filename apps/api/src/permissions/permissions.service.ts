@@ -1,8 +1,9 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { PermissionBindingStatus, PermissionPolicyVersionStatus, PermissionRoleStatus, Prisma, PermissionScopeType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { RuntimeAccessSnapshotStore } from "./domain/runtime-access-snapshot.store";
 import type { AccessDenialReason, AccessScopeFacts } from "./domain/access-context";
+import { isCatalogGrant } from "./permission-catalog";
 
 export type PermissionContext = {
   storeId?: string;
@@ -16,47 +17,6 @@ export type PermissionResult = {
   roles: Array<{ roleCode: string; roleName: string; scopeType: PermissionScopeType; scopeIds: string[] }>;
   permissions: Array<{ code: string; actions: string[]; scopes: string[]; bindingScopes?: Array<{ scopeType: PermissionScopeType; scopeIds: string[] }> }>;
   generatedAt: string;
-};
-
-const legacyRoleNames: Record<string, string> = {
-  MANAGER: "店长",
-  SALES: "销售",
-  CUSTOMER_SERVICE: "客服",
-  PURCHASING: "采购",
-  FINANCE: "财务",
-  SCHEDULER: "排班员",
-  CONSTRUCTION: "施工员",
-  APPRENTICE: "学徒"
-};
-
-const legacyPermissionMap: Record<string, Array<[string, string, string]>> = {
-    MANAGER: [
-    ["customers", "read", "STORE"], ["customers", "write", "STORE"],
-    ["orders", "read", "STORE"], ["orders", "write", "STORE"],
-    ["orders.lifecycle", "finalize", "STORE"], ["orders.lifecycle", "cancel", "STORE"], ["orders.lifecycle", "cross_store_source_manage", "STORE"], ["orders.lifecycle", "verification_view", "STORE"], ["orders.lifecycle", "verification_resolve", "STORE"],
-    ["warranties", "read", "STORE"], ["warranties", "write", "STORE"],
-    ["construction", "read", "STORE"], ["construction", "write", "STORE"],
-    ["inventory", "read", "STORE"], ["inventory", "write", "STORE"],
-    ["products", "read", "STORE"], ["products", "write", "STORE"], ["products", "suggested-price-write", "STORE"],
-    ["purchase", "read", "STORE"], ["purchase", "write", "STORE"],
-    ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"],
-    ["reports", "read", "STORE"],
-    ["finance", "read", "STORE"], ["finance", "write", "STORE"],
-    ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"],
-    ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.expense", "review", "STORE"],
-    ["rebates", "read", "STORE"], ["rebates", "review", "STORE"], ["commissions", "write", "STORE"],
-    ["returns", "write", "STORE"], ["returns", "create", "STORE"], ["returns", "manage", "STORE"], ["returns", "approve", "STORE"], ["returns", "finance", "STORE"],
-    // A store manager owns the store-level configuration.  This permission is
-    // also what authorizes dictionary reads used by customer vehicle forms.
-    ["settings", "read", "STORE"], ["settings", "write", "STORE"]
-  ],
-  SALES: [["customers", "read", "OWN"], ["customers", "write", "OWN"], ["orders", "read", "OWN"], ["orders", "write", "OWN"], ["warranties", "read", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"], ["rebates", "read", "OWN"], ["rebates", "apply", "OWN"]],
-  CUSTOMER_SERVICE: [["customers", "read", "STORE"], ["customers", "write", "STORE"], ["orders", "read", "STORE"], ["orders", "write", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"], ["rebates", "read", "STORE"], ["rebates", "apply", "STORE"]],
-  PURCHASING: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["inventory", "read", "STORE"], ["inventory", "write", "STORE"], ["products", "read", "STORE"], ["purchase", "read", "STORE"], ["purchase", "write", "STORE"], ["after-sales", "read", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
-  FINANCE: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["finance", "read", "STORE"], ["finance", "write", "STORE"], ["finance.cost", "read", "STORE"], ["products", "read", "STORE"], ["reports", "read", "STORE"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "read", "STORE"], ["finance.document", "attach", "OWN"], ["finance.document", "attach", "STORE"], ["finance.reimbursement", "review", "STORE"], ["finance.reimbursement", "pay", "STORE"], ["rebates", "read", "STORE"], ["rebates", "pay", "STORE"], ["commissions", "write", "STORE"]],
-  SCHEDULER: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["warranties", "write", "STORE"], ["construction", "read", "STORE"], ["construction", "write", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "STORE"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
-  CONSTRUCTION: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["construction", "read", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]],
-  APPRENTICE: [["orders", "read", "STORE"], ["warranties", "read", "STORE"], ["construction", "read", "STORE"], ["products", "read", "STORE"], ["after-sales", "read", "STORE"], ["after-sales", "write", "OWN"], ["finance", "write", "OWN"], ["finance.application", "submit", "OWN"], ["finance.document", "read", "OWN"], ["finance.document", "attach", "OWN"]]
 };
 
 @Injectable()
@@ -79,7 +39,7 @@ export class PermissionsService {
     const [user, bindings, published] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, storeMembers: { select: { storeId: true, position: true } } }
+        select: { id: true }
       }),
       this.prisma.permissionRoleBinding.findMany({
         where: {
@@ -142,15 +102,6 @@ export class PermissionsService {
             scopeIds: binding.storeId ? [binding.storeId] : []
           }
         });
-      }
-    }
-
-    if (bindings.length === 0) {
-      this.addLegacyStorePermissions(grants, user.storeMembers, context);
-      for (const member of user.storeMembers) {
-        if (!context.storeId || context.storeId === member.storeId) {
-          roles.push({ roleCode: member.position, roleName: legacyRoleNames[member.position] ?? member.position, scopeType: PermissionScopeType.STORE, scopeIds: [member.storeId] });
-        }
       }
     }
 
@@ -231,10 +182,7 @@ export class PermissionsService {
     resolved?: PermissionResult
   ): Promise<AccessScopeFacts> {
     const result = resolved ?? await this.getForUser(userId);
-    const resource = permissionCode.split(".")[0];
-    const permissions = result.permissions.filter((item) =>
-      (item.code === permissionCode || item.code === resource) && item.actions.includes(action)
-    );
+    const permissions = result.permissions.filter((item) => item.code === permissionCode && item.actions.includes(action));
     if (permissions.length === 0) return { allowed: false, global: false, storeIds: [], reason: "ACCESS_DENIED" };
 
     const storeIds = new Set<string>();
@@ -322,25 +270,7 @@ export class PermissionsService {
   async validatePolicy(id: string, actorId: string) {
     const policy = await this.prisma.permissionPolicyVersion.findUnique({ where: { id } });
     if (!policy || policy.status !== PermissionPolicyVersionStatus.DRAFT) throw new Error("只能校验草稿版本");
-    const payload = policy.payload as { grants?: unknown } | null;
-    const grants = payload && !Array.isArray(payload) && Array.isArray(payload.grants) ? payload.grants : null;
-    const [definitions, roles] = await Promise.all([
-      this.prisma.permissionDefinition.findMany({ where: { status: "ACTIVE" } }),
-      this.prisma.permissionRole.findMany({ where: { status: "ACTIVE" } })
-    ]);
-    const definitionMap = new Map(definitions.map((item) => [item.code, item]));
-    const roleCodes = new Set(roles.map((item) => item.code));
-    const seen = new Set<string>();
-    const valid = Boolean(grants) && grants!.every((item) => {
-      if (!item || typeof item !== "object") return false;
-      const grant = item as { roleCode?: unknown; permissionCode?: unknown; action?: unknown; scope?: unknown };
-      if (typeof grant.roleCode !== "string" || typeof grant.permissionCode !== "string" || typeof grant.action !== "string" || typeof grant.scope !== "string") return false;
-      const definition = definitionMap.get(grant.permissionCode);
-      const key = [grant.roleCode, grant.permissionCode, grant.action, grant.scope].join("|");
-      if (!definition || !roleCodes.has(grant.roleCode) || seen.has(key) || !definition.actions.includes(grant.action) || !definition.supportedScopes.includes(grant.scope)) return false;
-      seen.add(key);
-      return true;
-    });
+    const valid = await this.isPolicyPayloadValid(policy.payload);
     const result = await this.prisma.permissionPolicyVersion.update({
       where: { id },
       data: { status: valid ? PermissionPolicyVersionStatus.VALIDATED : PermissionPolicyVersionStatus.VALIDATION_FAILED }
@@ -349,6 +279,57 @@ export class PermissionsService {
       data: { action: valid ? "permissions.policy.validated" : "permissions.policy.validation_failed", actorId, targetType: "PermissionPolicyVersion", targetId: id, metadata: { version: policy.version } }
     });
     return result;
+  }
+
+  private async isPolicyPayloadValid(payload: Prisma.JsonValue) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+    const rawGrants = (payload as { grants?: unknown }).grants;
+    if (!Array.isArray(rawGrants)) return false;
+    const grants = this.extractPolicyGrants(payload);
+    if (grants.length !== rawGrants.length) return false;
+    const [definitions, roles] = await Promise.all([
+      this.prisma.permissionDefinition.findMany({ where: { status: "ACTIVE" } }),
+      this.prisma.permissionRole.findMany({ where: { status: "ACTIVE" } })
+    ]);
+    const definitionMap = new Map(definitions.map((item) => [item.code, item]));
+    const roleCodes = new Set(roles.map((item) => item.code));
+    const seen = new Set<string>();
+    return grants.every((grant) => {
+      const definition = definitionMap.get(grant.permissionCode);
+      const key = [grant.roleCode, grant.permissionCode, grant.action, grant.scope].join("|");
+      if (!definition || !roleCodes.has(grant.roleCode) || seen.has(key) || !isCatalogGrant(grant.permissionCode, grant.action, grant.scope) || !definition.actions.includes(grant.action) || !definition.supportedScopes.includes(grant.scope)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private async assertPolicyPreservesRecovery(payload: Prisma.JsonValue, actorId: string) {
+    if (!await this.isPolicyPayloadValid(payload)) {
+      throw new Error("权限目录或角色已变更，请重新校验策略版本");
+    }
+    const nextGrants = this.extractPolicyGrants(payload);
+    const canPublishPermissions = (roleCode: string) => nextGrants.some((grant) =>
+      grant.roleCode === roleCode
+      && grant.permissionCode === "permissions.policy"
+      && grant.action === "publish"
+      && grant.scope === "GLOBAL"
+    );
+    const hqRole = await this.prisma.permissionRole.findUnique({ where: { code: "HQ_ADMIN" }, select: { id: true } });
+    if (!hqRole || !canPublishPermissions("HQ_ADMIN")) throw new Error("发布后必须保留总部管理员权限");
+    const hqAdminCount = await this.prisma.permissionRoleBinding.count({
+      where: { roleId: hqRole.id, scopeType: PermissionScopeType.HQ, status: PermissionBindingStatus.ACTIVE }
+    });
+    if (hqAdminCount <= 0) throw new Error("不能发布会移除最后一个总部管理员的配置");
+    const actorBindings = await this.prisma.permissionRoleBinding.findMany({
+      where: { userId: actorId, status: PermissionBindingStatus.ACTIVE }, select: { roleId: true }
+    });
+    const actorRoleIds = [...new Set(actorBindings.map((binding) => binding.roleId))];
+    const actorRoles = await this.prisma.permissionRole.findMany({
+      where: { id: { in: actorRoleIds }, status: PermissionRoleStatus.ACTIVE }, select: { id: true, code: true }
+    });
+    if (!actorRoles.some((role) => canPublishPermissions(role.code))) {
+      throw new Error("发布后当前操作者将失去权限发布能力");
+    }
   }
 
   async policyImpact(id: string) {
@@ -399,17 +380,7 @@ export class PermissionsService {
     const policy = await this.prisma.permissionPolicyVersion.findUnique({ where: { id } });
     if (!policy || policy.status !== PermissionPolicyVersionStatus.VALIDATED) throw new Error("只能发布已校验版本");
     if (expectedVersion !== undefined && policy.version !== expectedVersion) throw new Error("权限版本冲突");
-    const nextGrants = this.extractPolicyGrants(policy.payload);
-    const canManagePermissions = (roleCode: string) => nextGrants.some((grant) => grant.roleCode === roleCode && grant.permissionCode === "settings" && grant.action === "write" && grant.scope === "GLOBAL");
-    const hqRole = await this.prisma.permissionRole.findUnique({ where: { code: "HQ_ADMIN" }, select: { id: true } });
-    if (!hqRole || !canManagePermissions("HQ_ADMIN")) throw new Error("发布后必须保留总部管理员权限");
-    const hqAdminCount = await this.prisma.permissionRoleBinding.count({ where: { roleId: hqRole.id, scopeType: PermissionScopeType.HQ, status: PermissionBindingStatus.ACTIVE } });
-    if (hqAdminCount <= 0) throw new Error("不能发布会移除最后一个总部管理员的配置");
-    const actorBindings = await this.prisma.permissionRoleBinding.findMany({ where: { userId: actorId, status: PermissionBindingStatus.ACTIVE }, select: { roleId: true } });
-    const actorRoleIds = [...new Set(actorBindings.map((binding) => binding.roleId))];
-    const actorRoles = await this.prisma.permissionRole.findMany({ where: { id: { in: actorRoleIds }, status: PermissionRoleStatus.ACTIVE }, select: { id: true, code: true } });
-    const actorCanManage = actorRoles.some((role) => canManagePermissions(role.code));
-    if (!actorCanManage) throw new Error("发布后当前操作者将失去权限发布能力");
+    await this.assertPolicyPreservesRecovery(policy.payload, actorId);
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.permissionPolicyVersion.updateMany({ where: { status: PermissionPolicyVersionStatus.PUBLISHED }, data: { status: PermissionPolicyVersionStatus.ROLLED_BACK } });
       const published = await tx.permissionPolicyVersion.update({ where: { id }, data: { status: PermissionPolicyVersionStatus.PUBLISHED, publishedAt: new Date() } });
@@ -425,6 +396,7 @@ export class PermissionsService {
   async rollbackPolicy(targetId: string, actorId: string) {
     const target = await this.prisma.permissionPolicyVersion.findUnique({ where: { id: targetId } });
     if (!target || target.status !== PermissionPolicyVersionStatus.PUBLISHED && target.status !== PermissionPolicyVersionStatus.ROLLED_BACK) throw new Error("目标版本不可回滚");
+    await this.assertPolicyPreservesRecovery(target.payload, actorId);
     const max = await this.prisma.permissionPolicyVersion.findFirst({ orderBy: { version: "desc" } });
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.permissionPolicyVersion.updateMany({ where: { status: PermissionPolicyVersionStatus.PUBLISHED }, data: { status: PermissionPolicyVersionStatus.ROLLED_BACK } });
@@ -445,31 +417,12 @@ export class PermissionsService {
     return this.prisma.permissionRole.findMany({ orderBy: [{ status: "asc" }, { name: "asc" }] });
   }
 
-  async createRole(input: { code: string; name: string; description?: string; grants?: Array<{ permissionCode: string; action: string; scope: string }>; createdById: string }) {
+  async createRole(input: { code: string; name: string; description?: string; createdById: string }) {
     if (!input.code.trim() || !input.name.trim()) throw new Error("角色编码和名称不能为空");
-    if (input.grants?.length) {
-      const definitions = await this.prisma.permissionDefinition.findMany({ where: { code: { in: input.grants.map((grant) => grant.permissionCode) }, status: "ACTIVE" } });
-      const definitionMap = new Map(definitions.map((definition) => [definition.code, definition]));
-      const seen = new Set<string>();
-      for (const grant of input.grants) {
-        const definition = definitionMap.get(grant.permissionCode);
-        const key = [grant.permissionCode, grant.action, grant.scope].join("|");
-        if (!definition || !definition.actions.includes(grant.action) || !definition.supportedScopes.includes(grant.scope) || seen.has(key)) {
-          throw new Error("角色权限项无效或重复");
-        }
-        seen.add(key);
-      }
-    }
     const role = await this.prisma.$transaction(async (tx) => {
       const created = await tx.permissionRole.create({
         data: { code: input.code, name: input.name, description: input.description, createdById: input.createdById }
       });
-      if (input.grants?.length) {
-        await tx.permissionRoleGrant.createMany({
-          data: input.grants.map((grant) => ({ roleId: created.id, permissionCode: grant.permissionCode, action: grant.action, scope: grant.scope })),
-          skipDuplicates: true
-        });
-      }
       await tx.auditEvent.create({
         data: { action: "permissions.role.created", actorId: input.createdById, targetType: "PermissionRole", targetId: created.id, metadata: { code: created.code } }
       });
@@ -491,20 +444,15 @@ export class PermissionsService {
     return bindings.map((binding) => ({ ...binding, role: roleMap.get(binding.roleId) ?? null, user: userMap.get(binding.userId) ?? null }));
   }
 
-  async assertRoleBindingWriteAllowed(actorId: string, targetUserId: string, scopeType: PermissionScopeType) {
-    const result = await this.getForUser(actorId);
-    const isHeadquartersAdmin = result.roles.some((role) => role.roleCode === "HQ_ADMIN" && role.scopeType === PermissionScopeType.HQ);
-    if (isHeadquartersAdmin && (targetUserId !== actorId || scopeType === PermissionScopeType.HQ)) {
-      throw new ForbiddenException({
-        code: "HQ_MEMBER_BINDING_DISABLED",
-        message: "总部成员绑定暂未开放，请通过权限迁移脚本初始化总部管理员"
-      });
-    }
+  async assertRoleBindingWriteAllowed(_actorId: string, targetUserId: string, _scopeType: PermissionScopeType) {
+    const target = await this.prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true } });
+    if (!target) throw new Error("目标用户不存在");
   }
 
   async assertExistingRoleBindingWriteAllowed(actorId: string, bindingId: string) {
     const binding = await this.prisma.permissionRoleBinding.findUnique({ where: { id: bindingId }, select: { userId: true, scopeType: true } });
-    if (binding) await this.assertRoleBindingWriteAllowed(actorId, binding.userId, binding.scopeType);
+    if (!binding) throw new Error("角色绑定不存在");
+    await this.assertRoleBindingWriteAllowed(actorId, binding.userId, binding.scopeType);
   }
 
   async bindRole(input: { userId: string; roleId: string; scopeType: PermissionScopeType; storeId?: string; createdById: string }) {
@@ -566,12 +514,10 @@ export class PermissionsService {
   private invalidateUserCache(userId: string) {
     for (const key of this.resultCache.keys()) if (key.startsWith(userId + ":")) this.resultCache.delete(key);
     this.snapshotStore.clear(userId);
-    this.snapshotStore.clear(userId);
   }
 
   private invalidateAllCache() {
     this.resultCache.clear();
-    this.snapshotStore.clearAll();
     this.snapshotStore.clearAll();
   }
 
@@ -580,22 +526,4 @@ export class PermissionsService {
     return latest ? latest.updatedAt.getTime() : 0;
   }
 
-  private addLegacyStorePermissions(
-    grants: Array<{ code: string; action: string; scope: string; bindingScope: { scopeType: PermissionScopeType; scopeIds: string[] } }>,
-    members: Array<{ storeId: string; position: string }>,
-    context: PermissionContext
-  ) {
-    for (const member of members) {
-      if (context.storeId && context.storeId !== member.storeId) continue;
-      const mapped = legacyPermissionMap[member.position] ?? [];
-      const returns = member.position === "MANAGER"
-        ? [["write", "STORE"], ["create", "STORE"], ["manage", "STORE"], ["approve", "STORE"], ["finance", "STORE"]]
-        : member.position === "SALES" || member.position === "CUSTOMER_SERVICE"
-          ? [["write", "STORE"], ["create", "STORE"]]
-          : member.position === "PURCHASING"
-            ? [["write", "STORE"], ["manage", "STORE"]]
-            : member.position === "FINANCE" ? [["write", "STORE"], ["finance", "STORE"]] : [];
-      for (const [resource, action, scope] of [...mapped, ...returns.map(([action, scope]) => ["returns", action, scope] as [string, string, string])]) grants.push({ code: resource, action, scope, bindingScope: { scopeType: PermissionScopeType.STORE, scopeIds: [member.storeId] } });
-    }
-  }
 }

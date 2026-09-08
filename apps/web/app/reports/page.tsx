@@ -11,6 +11,7 @@ import { yuanCurrency } from "../../src/features/orders/order-display";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { exportWorkbookToExcel } from "../../src/lib/export-excel";
 import { useAuthStore } from "../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
 
 type ReportView = "sales" | "construction" | "finance" | "project" | "afterSalesWorker" | "afterSalesBreakdown";
 type TrendMetric = "amountCents" | "receivedCents" | "outstandingCents" | "grossProfitCents";
@@ -69,8 +70,9 @@ export default function ReportsPage() {
   const { message } = App.useApp();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const isSales = user?.storeMember?.position === "SALES";
-  const [view, setView] = useState<ReportView>(isSales ? "sales" : "sales");
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canReadReports = hasEffectivePermission(permissionsQuery.data?.permissions, "reports", "read", storeId);
+  const [view, setView] = useState<ReportView>("sales");
   const [filters, setFilters] = useState<OperationalReportFilters>({ storeId, dateBasis: "DEFAULT", ...currentMonthRange() });
   const dateRangeTooLarge = dateRangeDays(filters.dateFrom, filters.dateTo) > 366;
   const dateRangeInvalid = Boolean(filters.dateFrom && filters.dateTo && dateRangeDays(filters.dateFrom, filters.dateTo) <= 0);
@@ -79,18 +81,18 @@ export default function ReportsPage() {
   const filterOptionsQuery = useQuery({
     queryKey: ["report-filter-options", storeId],
     queryFn: () => reportsApi.filterOptions(storeId),
-    enabled: (Boolean(storeId) || Boolean(user?.isAuditor)) && !dateRangeTooLarge && !dateRangeInvalid
+    enabled: Boolean(storeId && canReadReports) && !dateRangeTooLarge && !dateRangeInvalid
   });
   const query = useMemo(() => ({ ...filters, storeId }), [filters, storeId]);
   const reportQuery = useQuery({
     queryKey: ["operational-reports", query],
     queryFn: () => reportsApi.operational(query),
-    enabled: (Boolean(storeId) || Boolean(user?.isAuditor)) && !dateRangeTooLarge && !dateRangeInvalid
+    enabled: Boolean(storeId && canReadReports) && !dateRangeTooLarge && !dateRangeInvalid
   });
   const report = reportQuery.data;
   const filterSummary = [filters.dateFrom && filters.dateTo ? `${filters.dateFrom} 至 ${filters.dateTo}` : "全部日期", `订单日期口径：${dateBasisOptions.find((item) => item.value === (filters.dateBasis ?? "DEFAULT"))?.label ?? "按业务默认日期"}`].join("；");
   const options = filterOptionsQuery.data;
-  const availableViews = isSales ? reportViews.filter((item) => item.key === "sales") : reportViews;
+  const availableViews = reportViews;
   const currentView = availableViews.some((item) => item.key === view) ? view : "sales";
   const exportCurrentView = async () => {
     if (!report) {
@@ -109,7 +111,7 @@ export default function ReportsPage() {
 
   return (
     <div className="management-page reports-page">
-      <StorePageHeader title={isSales ? "我的销售业绩" : "分析报表中心"} description="按真实人员、业务日期与订单明细分析经营数据" />
+      <StorePageHeader title="分析报表中心" description="按真实人员、业务日期与订单明细分析经营数据" />
       <div className="reports-context-strip"><Tag color="blue">{filterSummary}</Tag><Tag>按指标业务日期统计</Tag>{report && <Typography.Text type="secondary">数据更新时间：{dayjs(report.generatedAt).format("YYYY-MM-DD HH:mm:ss")}</Typography.Text>}</div>
 
       <Card className="reports-filter-card">

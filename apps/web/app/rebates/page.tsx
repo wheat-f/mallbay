@@ -7,6 +7,7 @@ import { CheckCircleOutlined, InfoCircleOutlined, PayCircleOutlined, PlusOutline
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { orderApi, rebatesApi } from "../../src/lib/api";
+import { permissionsApi } from "../../src/features/permissions/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { formatCentsAsYuan, yuanToCents } from "../../src/features/finance/display";
@@ -14,7 +15,7 @@ import {
   getRebateBusinessLabel,
   getRebateCustomerLabel,
   getRebateOrderLabel,
-  getRebateReviewOptionsForRole,
+  getRebateReviewOptionsForPermissions,
   getRebateStatusLabel
 } from "../../src/features/rebates/display";
 import {
@@ -54,16 +55,27 @@ export default function RebatesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [applicationDrawerOpen, setApplicationDrawerOpen] = useState(false);
   const [activeRebateSection, setActiveRebateSection] = useState<RebateWorkflowSectionKey>("application");
+  const permissionsQuery = useQuery({
+    queryKey: ["auth-permissions", storeId],
+    queryFn: () => permissionsApi.me(storeId),
+    enabled: Boolean(storeId)
+  });
+  const runtimePermissions = permissionsQuery.data?.permissions;
+  const hasRebatePermission = (action: string) => Boolean(runtimePermissions?.some((permission) => permission.code === "rebates" && permission.actions.includes(action)));
+  const canReadRebates = hasRebatePermission("read");
+  const canApplyRebate = hasRebatePermission("apply");
+  const canPayRebate = hasRebatePermission("pay");
+  const canReadOrders = Boolean(runtimePermissions?.some((permission) => permission.code === "orders" && permission.actions.includes("read")));
 
   const rebatesQuery = useQuery({
     queryKey: ["rebates", storeId],
     queryFn: () => rebatesApi.list(storeId!),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId) && canReadRebates
   });
   const rebateOrdersQuery = useQuery({
     queryKey: ["rebates", "orders", storeId],
     queryFn: () => orderApi.list({ storeId: storeId!, invoiceable: true, paymentStatus: "PAID", page: 1, pageSize: 100 }),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId) && canApplyRebate && canReadOrders
   });
   const rebateOrderOptions = ((rebateOrdersQuery.data?.items ?? []) as RebateOrderOption[]).map((order) => ({
     value: order.id,
@@ -100,7 +112,7 @@ export default function RebatesPage() {
     () => stageRebateRows.find((rebate) => rebate.id === activeRebateId) ?? stageRebateRows[0] ?? rebateRows[0],
     [activeRebateId, rebateRows, stageRebateRows]
   );
-  const rebateReviewOptions = getRebateReviewOptionsForRole(user?.storeMember?.position, user?.isAuditor);
+  const rebateReviewOptions = getRebateReviewOptionsForPermissions(runtimePermissions);
   const canBusinessReviewSelected =
     selectedRebate?.status === "APPLIED" && rebateReviewOptions.some((option) => option.value === "REVIEWED");
   const canFinanceApproveSelected =
@@ -111,7 +123,7 @@ export default function RebatesPage() {
     rebateReviewOptions.some((option) => option.value === "REJECTED");
   const canPaySelected =
     selectedRebate?.status === "APPROVED" &&
-    (Boolean(user?.isAuditor) || user?.storeMember?.position === "FINANCE");
+    canPayRebate;
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["rebates", storeId] });
 
   useEffect(() => {
@@ -227,9 +239,11 @@ export default function RebatesPage() {
               </div>
             }
             extra={
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setApplicationDrawerOpen(true)}>
-                新建申请
-              </Button>
+              canApplyRebate ? (
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => setApplicationDrawerOpen(true)}>
+                  新建申请
+                </Button>
+              ) : null
             }
           >
             {activeRebateSection === "report" ? (
@@ -430,7 +444,7 @@ export default function RebatesPage() {
         </Card>
       </section>
 
-      <Drawer
+      {canApplyRebate && <Drawer
         title="返利申请"
         placement="right"
         open={applicationDrawerOpen}
@@ -477,7 +491,7 @@ export default function RebatesPage() {
             <Input.TextArea rows={4} placeholder="说明客户返利、抵扣或补贴原因" />
           </Form.Item>
         </Form>
-      </Drawer>
+      </Drawer>}
     </div>
   );
 }

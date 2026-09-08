@@ -10,6 +10,7 @@ import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 
 const scheduleStatusOptions = [
@@ -37,8 +38,8 @@ export default function ConstructionSchedulesPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const workerId = user?.id;
-  const position = user?.storeMember?.position;
-  const canManageSchedules = Boolean(user?.isAuditor || position === "MANAGER" || position === "SCHEDULER");
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManageSchedules = hasEffectivePermission(permissionsQuery.data?.permissions, "construction", "write", storeId);
   const dateValue = date.format("YYYY-MM-DD");
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, index) => date.startOf("week").add(index, "day")),
@@ -49,7 +50,7 @@ export default function ConstructionSchedulesPage() {
   const schedulesQuery = useQuery({
     queryKey: ["construction-schedules", storeId, dateValue],
     queryFn: () => constructionApi.schedules({ storeId: storeId!, from: dateValue, to: dateValue }),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "construction", "read", storeId))
   });
   const workersQuery = useQuery({
     queryKey: ["construction-workers", storeId],

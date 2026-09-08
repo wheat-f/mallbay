@@ -335,7 +335,7 @@ export class AuthService {
 
   private async isEffectiveHeadquartersAdmin(userId: string) {
     if (!this.accessContext) return false;
-    const scope = await this.accessContext.scope({ userId }, "settings", "write");
+    const scope = await this.accessContext.scope({ userId }, "permissions.policy", "publish");
     return scope.allowed && scope.global;
   }
 }

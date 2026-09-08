@@ -8,6 +8,7 @@ import { constructionApi } from "../../../src/lib/api";
 import type { ConstructionCostSettlement, ConfirmCostSettlementPayload } from "../../../src/features/construction/api";
 import { dictionaryApi, type DictionaryItem } from "../../../src/features/settings/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { exportRowsToExcel } from "../../../src/lib/export-excel";
 
 export default function ConstructionCostSettlementsPage() {
@@ -15,8 +16,9 @@ export default function ConstructionCostSettlementsPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canConfirm = Boolean(user?.isAuditor || user?.storeMember?.position === "MANAGER");
-  const canSettle = Boolean(user?.isAuditor || user?.storeMember?.position === "FINANCE");
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canConfirm = hasEffectivePermission(permissionsQuery.data?.permissions, "store", "write", storeId);
+  const canSettle = hasEffectivePermission(permissionsQuery.data?.permissions, "finance.cost", "read", storeId);
   const canViewDetailedLaborCosts = canSettle;
   const canView = canConfirm || canSettle;
   const [selected, setSelected] = useState<ConstructionCostSettlement | null>(null);

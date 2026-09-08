@@ -171,12 +171,13 @@ test("after-sales evidence submission accepts photos already persisted before re
   assert.match(pageSource, /\(values\.constructionPhotos \?\? \[\]\)\.length === 0 && !hasPersistedConstructionPhoto/);
 });
 
-test("after-sales detail separates manager judgment from worker evidence submission", () => {
+test("after-sales detail separates manager judgment from worker evidence using effective permissions", () => {
   const pageSource = readFileSync("app/after-sales/[id]/page.tsx", "utf8");
 
-  assert.match(pageSource, /isAfterSalesManager/);
+  assert.match(pageSource, /const canManageAfterSales = hasEffectivePermission\(permissions, "after-sales", "write", storeId, \{ requireStoreScope: true \}\)/);
   assert.match(pageSource, /isAssignedAfterSalesWorker/);
-  assert.match(pageSource, /mode=\{isAfterSalesManager \? "manager" : "worker"\}/);
+  assert.match(pageSource, /mode=\{canManageAfterSales \? "manager" : "worker"\}/);
+  assert.doesNotMatch(pageSource, /isAfterSalesManagerPosition/);
   assert.match(pageSource, /责任判定/);
   assert.match(pageSource, /施工处罚设定/);
   assert.match(pageSource, /问题照片/);

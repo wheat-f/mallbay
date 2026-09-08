@@ -6,6 +6,7 @@ import { Spin } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { permissionsApi } from "../../src/features/permissions/api";
+import { hasEffectivePermission } from "../../src/features/permissions/use-effective-permissions";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const hasHydrated = useAuthStore((state) => state.hasHydrated);
@@ -16,7 +17,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     queryFn: () => permissionsApi.me(),
     enabled: hasHydrated && Boolean(user)
   });
-  const isHeadquartersAdmin = Boolean(permissionsQuery.data?.roles.some((role) => role.roleCode === "HQ_ADMIN" && role.scopeType === "HQ"));
+  const isHeadquartersAdmin = hasEffectivePermission(permissionsQuery.data?.permissions, "permissions.policy", "read");
 
   useEffect(() => {
     if (!hasHydrated) return;

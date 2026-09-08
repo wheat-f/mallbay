@@ -43,6 +43,7 @@ import type {
   UpdateVehiclePayload
 } from "../../../src/features/customers/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import {
   getAfterSaleResponsibilityLabel,
   getAfterSaleStatusLabel,
@@ -258,7 +259,9 @@ export default function CustomerDetailPage() {
   const [historyVehicle, setHistoryVehicle] = useState<CustomerVehicle | null>(null);
   const [vehiclePhotoUploading, setVehiclePhotoUploading] = useState(false);
   const currentUser = useAuthStore((state) => state.user);
-  const isManager = currentUser?.storeMember?.position === "MANAGER";
+  const storeId = currentUser?.storeMember?.store.id;
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const isManager = hasEffectivePermission(permissionsQuery.data?.permissions, "store", "write", storeId);
   const customerId = params.id;
   const detailQueryKey = ["customer-detail", customerId];
 

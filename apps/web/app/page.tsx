@@ -25,6 +25,7 @@ import { useEffect, useState } from "react";
 import { authApi, storeApi } from "../src/lib/api";
 import { NotificationBell } from "../src/components/NotificationBell";
 import { useAuthStore } from "../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../src/features/permissions/use-effective-permissions";
 
 const POSITION_LABEL: Record<string, string> = {
   MANAGER: "店长",
@@ -91,6 +92,8 @@ export default function HomePage() {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const permissionsQuery = useEffectivePermissions();
+  const canAccessOperations = hasEffectivePermission(permissionsQuery.data?.permissions, "permissions.policy", "read");
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -140,7 +143,7 @@ export default function HomePage() {
   const storeMember = user?.storeMember;
 
   const dropdownItems = [
-    ...(user?.isAuditor
+    ...(canAccessOperations
       ? [
           {
             key: "auditor",
@@ -173,7 +176,7 @@ export default function HomePage() {
           }
         ]
       : []),
-    ...((user?.isAuditor || storeMember) ? [{ type: "divider" as const }] : []),
+    ...((canAccessOperations || storeMember) ? [{ type: "divider" as const }] : []),
     { key: "profile", label: "个人设置", icon: <UserOutlined />, onClick: () => router.push("/profile") },
     { type: "divider" as const },
     {

@@ -3,33 +3,21 @@
 import type { ReactNode } from "react";
 import React from "react";
 import {
-  AppstoreOutlined,
-  AuditOutlined,
-  CalendarOutlined,
-  DashboardOutlined,
-  FileDoneOutlined,
-  FileProtectOutlined,
-  FormOutlined,
-  GiftOutlined,
-  IdcardOutlined,
-  ReconciliationOutlined,
-  SettingOutlined,
-  ShopOutlined,
-  ShoppingCartOutlined,
-  TeamOutlined,
-  ToolOutlined,
-  WalletOutlined
+  AppstoreOutlined, AuditOutlined, CalendarOutlined, DashboardOutlined,
+  FileDoneOutlined, FileProtectOutlined, FormOutlined, GiftOutlined,
+  IdcardOutlined, ReconciliationOutlined, SettingOutlined, ShopOutlined,
+  ShoppingCartOutlined, TeamOutlined, ToolOutlined, WalletOutlined
 } from "@ant-design/icons";
-import type { StorePosition } from "./navigation";
+
+export type RuntimePermission = { code: string; actions: string[]; scopes?: string[] };
+type PermissionRequirement = { code: string; action?: string; global?: boolean };
 
 export type ManagementMenuItem = {
   key: string;
   label: string;
   href: string;
   icon: ReactNode;
-  positions?: StorePosition[];
-  headquartersOnly?: boolean;
-  permissionCode?: string;
+  anyOf?: PermissionRequirement[];
 };
 
 export type ManagementMenuGroup = {
@@ -39,106 +27,82 @@ export type ManagementMenuGroup = {
   items: ManagementMenuItem[];
 };
 
-const storePositions: StorePosition[] = [
-  "MANAGER",
-  "SALES",
-  "CUSTOMER_SERVICE",
-  "PURCHASING",
-  "FINANCE",
-  "SCHEDULER",
-  "CONSTRUCTION",
-  "APPRENTICE"
+const settingsReadRequirements: PermissionRequirement[] = [
+  { code: "permissions.policy", action: "read", global: true }, { code: "settings.dictionary", action: "read", global: true },
+  { code: "settings.security", action: "read", global: true }, { code: "customer.tags", action: "read", global: true },
+  { code: "settings.audit.global", action: "read", global: true }, { code: "store.dictionary", action: "read" },
+  { code: "store.members", action: "read" }, { code: "store.profile", action: "read" },
+  { code: "store.operations", action: "read" }, { code: "store.notifications", action: "read" },
+  { code: "store.capacity", action: "read" }, { code: "finance.labor_cost", action: "read" },
+  { code: "finance.settlement", action: "read" }, { code: "finance.accounts", action: "read" },
+  { code: "finance.audit", action: "read" }
 ];
 
 export const managementMenuItems: ManagementMenuItem[] = [
-  { key: "workbench", label: "工作台", href: "/workbench", icon: <AppstoreOutlined />, positions: storePositions },
-  { key: "construction-tasks", label: "我的施工任务", href: "/construction/tasks", icon: <ToolOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
-  { key: "construction-schedules", label: "我的排班", href: "/construction/schedules", icon: <CalendarOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
-  { key: "construction-leaves", label: "请假申请", href: "/construction/leaves", icon: <FormOutlined />, positions: ["CONSTRUCTION", "APPRENTICE", "SCHEDULER"] },
-  { key: "construction-materials", label: "施工物料", href: "/construction/materials", icon: <AppstoreOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
-  { key: "construction-profile", label: "施工档案", href: "/construction/profile", icon: <IdcardOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
-  { key: "after-sales-tasks", label: "售后任务", href: "/after-sales/tasks", icon: <ReconciliationOutlined />, positions: ["CONSTRUCTION", "APPRENTICE"] },
-  { key: "customers", label: "客户管理", href: "/customers", icon: <TeamOutlined />, positions: ["MANAGER", "SALES", "CUSTOMER_SERVICE"] },
-  { key: "orders", label: "销售订单", href: "/orders", icon: <ShoppingCartOutlined />, positions: ["MANAGER", "SALES", "CUSTOMER_SERVICE", "FINANCE"] },
-  { key: "pricing", label: "建议价设置", href: "/orders/pricing", icon: <SettingOutlined />, positions: ["MANAGER"] },
-  { key: "construction-charge-standards", label: "施工收费标准", href: "/orders/pricing/construction-costs", icon: <ToolOutlined />, positions: ["MANAGER"] },
-  { key: "construction-role-costs", label: "岗位成本标准", href: "/orders/pricing/construction-costs/rates", icon: <WalletOutlined />, positions: ["FINANCE"] },
-  { key: "sales-quotes", label: "报价审批", href: "/orders/quotes", icon: <AuditOutlined />, positions: ["MANAGER", "SALES"] },
-  { key: "products", label: "产品管理", href: "/products", icon: <ShopOutlined />, positions: ["MANAGER", "PURCHASING", "FINANCE"] },
-  { key: "cross-store-construction", label: "跨店施工协作", href: "/construction/cross-store", icon: <TeamOutlined />, positions: ["MANAGER", "SCHEDULER", "PURCHASING"] },
-  { key: "construction", label: "施工管理", href: "/construction/assignments", icon: <ToolOutlined />, positions: ["MANAGER", "SCHEDULER"] },
-  { key: "construction-schedules", label: "施工排班", href: "/construction/schedules", icon: <CalendarOutlined />, positions: ["MANAGER", "SCHEDULER"] },
-  { key: "construction-leave-approvals", label: "请假审批", href: "/construction/leave-approvals", icon: <FormOutlined />, positions: ["MANAGER", "SCHEDULER"] },
-  { key: "construction-cost-settlements", label: "施工成本确认", href: "/construction/cost-settlements", icon: <WalletOutlined />, positions: ["MANAGER"] },
-  { key: "construction-cost-settlements", label: "施工成本结算", href: "/construction/cost-settlements", icon: <WalletOutlined />, positions: ["FINANCE"] },
-  { key: "inventory", label: "库存管理", href: "/inventory", icon: <AppstoreOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "PURCHASING"] },
-  { key: "purchases", label: "采购管理", href: "/purchases", icon: <FileDoneOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "PURCHASING", "FINANCE"] },
-  { key: "warranties", label: "质保管理", href: "/warranties", icon: <FileProtectOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "SCHEDULER"] },
-  { key: "after-sales", label: "售后管理", href: "/after-sales", icon: <ReconciliationOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "SCHEDULER"] },
-  { key: "members", label: "人员管理", href: "/members", icon: <IdcardOutlined />, positions: ["MANAGER"] },
-  { key: "finance-expenses", label: "费用申请", href: "/finance/expenses", icon: <WalletOutlined />, positions: storePositions },
-  { key: "finance", label: "财务管理", href: "/finance", icon: <WalletOutlined />, positions: ["MANAGER", "FINANCE", "PURCHASING"] },
-  { key: "reports", label: "报表分析", href: "/reports", icon: <DashboardOutlined />, positions: ["MANAGER", "SALES", "FINANCE"] },
-  { key: "invoices", label: "发票管理", href: "/invoices", icon: <FileDoneOutlined />, positions: ["MANAGER", "FINANCE"] },
-  { key: "rebates", label: "返利管理", href: "/rebates", icon: <GiftOutlined />, positions: ["MANAGER", "CUSTOMER_SERVICE", "FINANCE"] },
-  { key: "admin", label: "门店审核", href: "/admin", icon: <AuditOutlined />, headquartersOnly: true },
-  { key: "settings", label: "系统设置", href: "/settings", icon: <SettingOutlined />, positions: ["MANAGER"], headquartersOnly: true }
+  { key: "workbench", label: "工作台", href: "/workbench", icon: <AppstoreOutlined /> },
+  { key: "construction-tasks", label: "我的施工任务", href: "/construction/tasks", icon: <ToolOutlined />, anyOf: [{ code: "construction", action: "read" }] },
+  { key: "construction-schedules", label: "施工排班", href: "/construction/schedules", icon: <CalendarOutlined />, anyOf: [{ code: "construction", action: "read" }] },
+  { key: "construction-leaves", label: "请假申请", href: "/construction/leaves", icon: <FormOutlined />, anyOf: [{ code: "construction", action: "read" }] },
+  { key: "construction-materials", label: "施工物料", href: "/construction/materials", icon: <AppstoreOutlined />, anyOf: [{ code: "construction", action: "read" }] },
+  { key: "construction-profile", label: "施工档案", href: "/construction/profile", icon: <IdcardOutlined />, anyOf: [{ code: "construction", action: "read" }] },
+  { key: "after-sales-tasks", label: "售后任务", href: "/after-sales/tasks", icon: <ReconciliationOutlined />, anyOf: [{ code: "after-sales", action: "read" }] },
+  { key: "customers", label: "客户管理", href: "/customers", icon: <TeamOutlined />, anyOf: [{ code: "customers", action: "read" }] },
+  { key: "orders", label: "销售订单", href: "/orders", icon: <ShoppingCartOutlined />, anyOf: [{ code: "orders", action: "read" }] },
+  { key: "pricing", label: "建议价设置", href: "/orders/pricing", icon: <SettingOutlined />, anyOf: [{ code: "products", action: "suggested-price-write" }] },
+  { key: "construction-charge-standards", label: "施工收费标准", href: "/orders/pricing/construction-costs", icon: <ToolOutlined />, anyOf: [{ code: "construction", action: "write" }] },
+  { key: "construction-role-costs", label: "岗位成本标准", href: "/orders/pricing/construction-costs/rates", icon: <WalletOutlined />, anyOf: [{ code: "finance.labor_cost", action: "read" }, { code: "finance", action: "read" }] },
+  { key: "sales-quotes", label: "报价审批", href: "/orders/quotes", icon: <AuditOutlined />, anyOf: [{ code: "orders", action: "read" }] },
+  { key: "products", label: "产品管理", href: "/products", icon: <ShopOutlined />, anyOf: [{ code: "products", action: "read" }] },
+  { key: "cross-store-construction", label: "跨店施工协作", href: "/construction/cross-store", icon: <TeamOutlined />, anyOf: [{ code: "construction", action: "read" }] },
+  { key: "construction", label: "施工管理", href: "/construction/assignments", icon: <ToolOutlined />, anyOf: [{ code: "construction", action: "write" }] },
+  { key: "construction-leave-approvals", label: "请假审批", href: "/construction/leave-approvals", icon: <FormOutlined />, anyOf: [{ code: "construction", action: "write" }] },
+  { key: "construction-cost-settlements", label: "施工成本结算", href: "/construction/cost-settlements", icon: <WalletOutlined />, anyOf: [{ code: "finance", action: "read" }] },
+  { key: "inventory", label: "库存管理", href: "/inventory", icon: <AppstoreOutlined />, anyOf: [{ code: "inventory", action: "read" }] },
+  { key: "purchases", label: "采购管理", href: "/purchases", icon: <FileDoneOutlined />, anyOf: [{ code: "purchase", action: "read" }] },
+  { key: "warranties", label: "质保管理", href: "/warranties", icon: <FileProtectOutlined />, anyOf: [{ code: "warranties", action: "read" }] },
+  { key: "after-sales", label: "售后管理", href: "/after-sales", icon: <ReconciliationOutlined />, anyOf: [{ code: "after-sales", action: "read" }] },
+  { key: "members", label: "人员管理", href: "/members", icon: <IdcardOutlined />, anyOf: [{ code: "store.members", action: "read" }] },
+  { key: "finance-expenses", label: "费用申请", href: "/finance/expenses", icon: <WalletOutlined />, anyOf: [{ code: "finance.application", action: "submit" }] },
+  { key: "finance", label: "财务管理", href: "/finance", icon: <WalletOutlined />, anyOf: [{ code: "finance", action: "read" }] },
+  { key: "reports", label: "报表分析", href: "/reports", icon: <DashboardOutlined />, anyOf: [{ code: "reports", action: "read" }] },
+  { key: "invoices", label: "发票管理", href: "/invoices", icon: <FileDoneOutlined />, anyOf: [{ code: "finance", action: "read" }] },
+  { key: "rebates", label: "返利管理", href: "/rebates", icon: <GiftOutlined />, anyOf: [{ code: "rebates", action: "read" }] },
+  { key: "admin", label: "门店审核", href: "/admin", icon: <AuditOutlined />, anyOf: [{ code: "store", action: "read", global: true }] },
+  { key: "settings", label: "系统设置", href: "/settings", icon: <SettingOutlined />, anyOf: settingsReadRequirements }
 ];
-
-const menuPermissionCodes: Record<string, string> = {
-  customers: "customers", orders: "orders", construction: "construction", "construction-tasks": "construction", "construction-schedules": "construction", "construction-leaves": "construction", "construction-materials": "construction", "construction-profile": "construction", "after-sales-tasks": "after-sales", pricing: "settings", "construction-charge-standards": "construction", "construction-role-costs": "finance", "sales-quotes": "orders", products: "products", "cross-store-construction": "construction", inventory: "inventory", purchases: "purchase", warranties: "warranties", "after-sales": "after-sales", members: "settings", "finance-expenses": "finance", finance: "finance", reports: "reports", invoices: "finance", rebates: "finance", settings: "settings"
-};
 
 const managementMenuGroupDefinitions: Array<{ key: string; label: string; icon: ReactNode; itemKeys: string[] }> = [
   { key: "customer-sales", label: "客户与销售", icon: <TeamOutlined />, itemKeys: ["customers", "orders", "sales-quotes"] },
   { key: "product-pricing", label: "产品与定价", icon: <ShopOutlined />, itemKeys: ["products", "pricing", "construction-charge-standards", "construction-role-costs"] },
-  {
-    key: "construction",
-    label: "施工履约",
-    icon: <ToolOutlined />,
-    itemKeys: ["construction-tasks", "construction", "cross-store-construction", "construction-schedules", "construction-leaves", "construction-leave-approvals", "construction-materials", "construction-profile", "after-sales-tasks", "construction-cost-settlements"]
-  },
+  { key: "construction", label: "施工履约", icon: <ToolOutlined />, itemKeys: ["construction-tasks", "construction", "cross-store-construction", "construction-schedules", "construction-leaves", "construction-leave-approvals", "construction-materials", "construction-profile", "after-sales-tasks", "construction-cost-settlements"] },
   { key: "inventory-purchase", label: "库存与采购", icon: <AppstoreOutlined />, itemKeys: ["inventory", "purchases"] },
   { key: "warranty-after-sales", label: "质保与售后", icon: <FileProtectOutlined />, itemKeys: ["warranties", "after-sales"] },
   { key: "finance-business", label: "财务与经营", icon: <WalletOutlined />, itemKeys: ["finance-expenses", "finance", "invoices", "rebates", "reports"] },
   { key: "people-system", label: "人员与系统", icon: <SettingOutlined />, itemKeys: ["members", "admin", "settings"] }
 ];
 
-export function getManagementMenuItems(input: {
-  position?: StorePosition | null;
-  isHeadquartersAdmin?: boolean | null;
-  storeId?: string | null;
-  permissions?: Array<{ code: string; actions: string[] }>;
-}) {
-  const { position, isHeadquartersAdmin, storeId, permissions } = input;
-  return managementMenuItems
-    .filter((item) => {
-      const allowedByStorePosition = position && item.positions?.includes(position);
-      const allowedByHeadquarters = Boolean(isHeadquartersAdmin && item.headquartersOnly);
-      const permissionCode = item.permissionCode ?? menuPermissionCodes[item.key];
-      const allowedByPermission = !permissions || !permissionCode || permissions.some((permission) => permission.code === permissionCode && permission.actions.includes("read"));
-      return (allowedByStorePosition || allowedByHeadquarters) && allowedByPermission;
-    })
-    .map((item) => ({
-      ...item,
-      href: item.key === "workbench" && storeId ? `/workbench/${storeId}` : item.href
-    }));
+function satisfiesRequirement(permissions: RuntimePermission[], requirement: PermissionRequirement) {
+  return permissions.some((permission) => permission.code === requirement.code
+    && (!requirement.action || permission.actions.includes(requirement.action))
+    && (!requirement.global || permission.scopes?.includes("GLOBAL")));
 }
 
-export function getManagementMenuGroups(input: {
-  position?: StorePosition | null;
-  isHeadquartersAdmin?: boolean | null;
-  storeId?: string | null;
-  permissions?: Array<{ code: string; actions: string[] }>;
-}) {
+export function hasAnySettingsReadPermission(permissions?: RuntimePermission[]) {
+  return Boolean(permissions && settingsReadRequirements.some((requirement) => satisfiesRequirement(permissions, requirement)));
+}
+
+export function getManagementMenuItems(input: { storeId?: string | null; permissions?: RuntimePermission[] }) {
+  const { storeId, permissions } = input;
+  if (!permissions) return [];
+  return managementMenuItems
+    .filter((item) => item.key === "workbench" ? permissions.length > 0 : Boolean(item.anyOf?.some((requirement) => satisfiesRequirement(permissions, requirement))))
+    .map((item) => ({ ...item, href: item.key === "workbench" && storeId ? `/workbench/${storeId}` : item.href }));
+}
+
+export function getManagementMenuGroups(input: { storeId?: string | null; permissions?: RuntimePermission[] }) {
   const items = getManagementMenuItems(input);
   return managementMenuGroupDefinitions
-    .map((group) => ({
-      ...group,
-      items: group.itemKeys
-        .map((key) => items.find((item) => item.key === key))
-        .filter((item): item is ManagementMenuItem => Boolean(item))
-    }))
+    .map((group) => ({ ...group, items: group.itemKeys.map((key) => items.find((item) => item.key === key)).filter((item): item is ManagementMenuItem => Boolean(item)) }))
     .filter((group) => group.items.length > 0);
 }
 

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { dictionaryGovernanceApi, type DictionaryGovernanceEntry, type DictionaryGovernanceImportPreview, type DictionaryItemEntry, type DictionaryItemsPage, type DictionaryStatus } from "../../../src/features/settings/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { SettingsCapabilityGuard } from "../../../src/features/settings/capability-guard";
 
 type DirectoryEntry = DictionaryGovernanceEntry;
@@ -20,6 +21,12 @@ export default function DictionarySettingsPage() {
   const { message } = App.useApp();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const permissions = permissionsQuery.data?.permissions;
+  const canReadTemplates = hasEffectivePermission(permissions, "settings.dictionary", "read");
+  const canWriteTemplates = hasEffectivePermission(permissions, "settings.dictionary", "write");
+  const canReadStoreDictionaries = hasEffectivePermission(permissions, "store.dictionary", "read", storeId);
+  const canWriteStoreDictionaries = hasEffectivePermission(permissions, "store.dictionary", "write", storeId);
   const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>();
   const [directoryKeyword, setDirectoryKeyword] = useState("");
@@ -44,12 +51,12 @@ export default function DictionarySettingsPage() {
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
 
   const selected = useMemo(() => directory.find((item) => `${item.kind}:${item.id}` === selectedKey), [directory, selectedKey]);
-  const canMaintain = Boolean(selected && (selected.kind === "template" ? user?.isAuditor : true));
-  const canCreate = Boolean(selected && (selected.kind === "template" ? user?.isAuditor : selected.source === "STORE" && selected.allowCustomItems));
-  const canToggle = Boolean(selected && (selected.kind === "template" ? user?.isAuditor : selected.allowDisableItems));
+  const canMaintain = Boolean(selected && (selected.kind === "template" ? canWriteTemplates : canWriteStoreDictionaries));
+  const canCreate = Boolean(selected && (selected.kind === "template" ? canWriteTemplates : canWriteStoreDictionaries && selected.source === "STORE" && selected.allowCustomItems));
+  const canToggle = Boolean(selected && (selected.kind === "template" ? canWriteTemplates : canWriteStoreDictionaries && selected.allowDisableItems));
 
   const loadDirectory = useCallback(async (initial = false) => {
-    if (!storeId && !user?.isAuditor) return;
+    if (!canReadTemplates && !canReadStoreDictionaries) return;
     setLoading(true);
     try {
       const keyword = directoryQuery.trim() || undefined;
@@ -66,7 +73,7 @@ export default function DictionarySettingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [directoryPage, directoryPageSize, directoryQuery, selectedKey, storeId, user?.isAuditor]);
+  }, [canReadStoreDictionaries, canReadTemplates, directoryPage, directoryPageSize, directoryQuery, selectedKey, storeId]);
 
   const loadItems = useCallback(async () => {
     if (!selected) return;

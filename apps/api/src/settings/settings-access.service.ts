@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, Optional } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { PermissionsService } from "../permissions/permissions.service";
 import { AccessContext, type AccessScopeFacts } from "../permissions/domain/access-context";
+import { SETTINGS_CAPABILITY_PERMISSION } from "../permissions/permission-catalog";
 import { SETTINGS_CAPABILITIES, type SettingsAction, type SettingsCapability } from "./settings-capabilities";
 
 export type SettingsUser = { id: string; username?: string };
@@ -70,15 +71,17 @@ export class SettingsAccessService {
   }
 
   private async scopeFor(user: SettingsUser, capability: SettingsCapability, action: SettingsAction, requestedScopeId?: string): Promise<AccessScopeFacts> {
-    const permissionAction = action === "view" || action === "audit" ? "read" : "write";
+    const permission = SETTINGS_CAPABILITY_PERMISSION[capability.code];
+    const permissionAction = permission?.actionBySettingsAction[action];
+    if (!permissionAction) return { allowed: false, global: false, storeIds: [], reason: "ACCESS_DENIED" };
     const context = {
       ...(requestedScopeId && capability.scope === "store" ? { storeId: requestedScopeId } : {}),
       ...(capability.scope === "own" ? { ownerId: user.id } : {})
     };
     return this.accessContext
-      ? this.accessContext.scope({ userId: user.id }, "settings", permissionAction, context)
+      ? this.accessContext.scope({ userId: user.id }, permission.permissionCode, permissionAction, context)
       : this.permissions
-        ? this.permissions.buildScopeFacts(user.id, "settings", permissionAction, context)
+        ? this.permissions.buildScopeFacts(user.id, permission.permissionCode, permissionAction, context)
         : { allowed: false, global: false, storeIds: [], reason: "ACCESS_DENIED" };
   }
 

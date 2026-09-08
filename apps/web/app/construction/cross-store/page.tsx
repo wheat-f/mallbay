@@ -9,6 +9,7 @@ import { constructionApi, productApi, storeApi } from "../../../src/lib/api";
 import { clearLifecycleCommandId, getLifecycleCommandId } from "../../../src/features/construction/api";
 import type { CrossStoreProductMapping, CrossStoreTask, CrossStoreTaskScope, CrossStoreTaskStatus } from "../../../src/features/construction/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 
 const statusLabels: Record<CrossStoreTaskStatus, string> = {
   PENDING_ACCEPTANCE: "待执行门店确认",
@@ -63,7 +64,8 @@ export default function CrossStoreConstructionPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const position = user?.storeMember?.position;
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canConfigureMappings = hasEffectivePermission(permissionsQuery.data?.permissions, "construction", "write", storeId);
   const [scope, setScope] = useState<CrossStoreTaskScope>("EXECUTION");
   const [status, setStatus] = useState<CrossStoreTaskStatus | undefined>();
   const [actionModal, setActionModal] = useState<ActionModal>(null);
@@ -79,7 +81,7 @@ export default function CrossStoreConstructionPage() {
   const eligibleStoresQuery = useQuery({
     queryKey: ["cross-store-eligible-stores", storeId],
     queryFn: () => storeApi.eligibleExecutionStores(storeId!),
-    enabled: Boolean(storeId && (user?.isAuditor || position === "MANAGER"))
+    enabled: Boolean(storeId && canConfigureMappings)
   });
   const mappingStores = eligibleStoresQuery.data ?? [];
   const sourceProductsQuery = useQuery({
@@ -148,7 +150,6 @@ export default function CrossStoreConstructionPage() {
   const sourceProducts = (sourceProductsQuery.data?.items ?? []) as ProductOption[];
   const executionProducts = (executionProductsQuery.data?.items ?? []) as ProductOption[];
   const mappingRows = mappingsQuery.data ?? [];
-  const canConfigureMappings = Boolean(user?.isAuditor || position === "MANAGER");
 
   const columns = useMemo(() => [
     { title: "订单", key: "order", render: (_: unknown, task: CrossStoreTask) => <Space direction="vertical" size={0}><Button type="link" onClick={() => router.push(`/orders/${task.orderId}`)}>{task.order.orderNo}</Button><Typography.Text type="secondary">{customerLabel(task)}</Typography.Text></Space> },

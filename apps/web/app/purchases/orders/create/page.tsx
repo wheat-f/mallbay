@@ -11,6 +11,7 @@ import { getPurchaseRequirementSourceOrderLabel, getPurchaseRequirementStatusLab
 import { PurchaseModuleNav } from "../../../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../../src/features/permissions/use-effective-permissions";
 
 type SupplierOption = {
   id?: string;
@@ -71,15 +72,14 @@ export default function PurchaseOrderCreatePage() {
   const [selectedRequirementId, setSelectedRequirementId] = useState<string>();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canManagePurchase = user?.isAuditor === true ||
-    user?.storeMember?.position === "MANAGER" ||
-    user?.storeMember?.position === "PURCHASING";
-  const canAssignPurchaser = user?.storeMember?.position === "MANAGER";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManagePurchase = hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "write", storeId);
+  const canAssignPurchaser = hasEffectivePermission(permissionsQuery.data?.permissions, "store.members", "write", storeId);
 
   const requirementsQuery = useQuery({
     queryKey: ["purchase-requirements", storeId],
     queryFn: () => purchaseApi.requirements(storeId!),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "read", storeId))
   });
   const suppliersQuery = useQuery({
     queryKey: ["purchase-suppliers", storeId],
@@ -89,7 +89,7 @@ export default function PurchaseOrderCreatePage() {
   const storeMembersQuery = useQuery({
     queryKey: ["purchase-order-members", storeId],
     queryFn: () => storeApi.myStore(storeId!),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "store.members", "read", storeId))
   });
 
   const rows = (requirementsQuery.data ?? []) as PurchaseRequirementRow[];

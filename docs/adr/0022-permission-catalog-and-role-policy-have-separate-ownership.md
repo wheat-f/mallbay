@@ -1,0 +1,3 @@
+# Permission catalog and role policy have separate ownership
+
+MallBay maintains the permission catalog—permission codes, supported actions, and supported scopes—in reviewed application code and database migrations. A published permission policy may only assign catalogued capabilities to roles. Deployment validates that published policies reference active catalog entries, but it neither creates arbitrary catalog entries nor reconciles or restores role grants. This removes the duplicate grant lists that had drifted across bootstrap code, migrations, and legacy role mappings while preserving policy publication as the only runtime grant authority.

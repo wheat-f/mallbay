@@ -9,6 +9,7 @@ import { getPurchaseInboundItemDetails, getPurchaseOrderArrivalReminder, getPurc
 import { PurchaseModuleNav } from "../../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { exportRowsToExcel } from "../../../src/lib/export-excel";
 import { getProductUnitLabel } from "../../../src/features/products/display";
 import { useState } from "react";
@@ -30,13 +31,12 @@ export default function PurchasesOrdersPage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canManagePurchase = user?.isAuditor === true ||
-    user?.storeMember?.position === "MANAGER" ||
-    user?.storeMember?.position === "PURCHASING";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManagePurchase = hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "write", storeId);
   const ordersQuery = useQuery({
     queryKey: ["purchase-orders", storeId],
     queryFn: () => purchaseApi.orders(storeId!),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "read", storeId))
   });
   const rows = (ordersQuery.data ?? []) as PurchaseOrderRow[];
   const [exportDimension, setExportDimension] = useState<PurchaseExportDimension>("supplier");

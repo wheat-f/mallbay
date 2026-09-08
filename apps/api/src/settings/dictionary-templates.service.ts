@@ -23,17 +23,17 @@ export class DictionaryTemplatesService {
   }
 
   private async assertHq(user: AuthenticatedSettingsUser) {
-    if (!(await this.authorize(user.id, "settings", "write"))) throw new ForbiddenException("仅总部管理员可维护总部字典模板");
+    if (!(await this.authorize(user.id, "settings.dictionary", "write"))) throw new ForbiddenException("仅总部管理员可维护总部字典模板");
     return user;
   }
 
   private async assertReader(user: AuthenticatedSettingsUser) {
-    if (await this.authorize(user.id, "settings", "read")) return;
+    if (await this.authorize(user.id, "settings.dictionary", "read")) return;
     throw new ForbiddenException("无权读取总部字典模板");
   }
 
   async canEdit(user: AuthenticatedSettingsUser) {
-    return this.authorize(user.id, "settings", "write");
+    return this.authorize(user.id, "settings.dictionary", "write");
   }
 
   private serialize(template: Prisma.DictionaryTemplateGetPayload<{ include: { templateItems: true } }>) {

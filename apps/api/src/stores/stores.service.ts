@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException
 } from "@nestjs/common";
-import { DictionaryStatus, StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
+import { DictionaryStatus, PermissionBindingStatus, PermissionRoleStatus, PermissionScopeType, StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { normalizePagination } from "../common/pagination";
@@ -35,7 +35,7 @@ export class StoresService {
     @Inject(ChangeStoreManagerUseCase) private readonly changeStoreManager: ChangeStoreManagerUseCase,
     @Inject(SetStoreFrozenUseCase) private readonly setStoreFrozen: SetStoreFrozenUseCase,
     @Inject(DictionariesService) private readonly dictionaries: DictionariesService,
-    @Optional() @Inject(AccessContext) private readonly accessContext?: AccessContext
+    @Inject(AccessContext) private readonly accessContext: AccessContext
   ) {}
 
   // ─── 管理员：创建门店并指派店长 ────────────────────────────────────────────
@@ -81,6 +81,19 @@ export class StoresService {
           userId: dto.managerId,
           position: StorePosition.MANAGER
         }
+      });
+
+      const managerRole = await tx.permissionRole.findUnique({ where: { code: StorePosition.MANAGER } });
+      if (!managerRole || managerRole.status !== PermissionRoleStatus.ACTIVE) {
+        throw new BadRequestException("店长岗位尚未配置有效角色，请先完成权限目录初始化");
+      }
+      const binding = await tx.permissionRoleBinding.upsert({
+        where: { userId_roleId_scopeType_storeId: { userId: dto.managerId, roleId: managerRole.id, scopeType: PermissionScopeType.STORE, storeId: store.id } },
+        update: { status: PermissionBindingStatus.ACTIVE, effectiveAt: new Date(), expiredAt: null },
+        create: { userId: dto.managerId, roleId: managerRole.id, scopeType: PermissionScopeType.STORE, storeId: store.id, createdById: auditorId }
+      });
+      await tx.auditEvent.create({
+        data: { action: "permissions.binding.created", actorId: auditorId, storeId: store.id, targetType: "PermissionRoleBinding", targetId: binding.id, metadata: { userId: dto.managerId, roleId: managerRole.id, source: "store_created" } }
       });
 
       return store;
@@ -414,17 +427,11 @@ export class StoresService {
     return this.changeStoreManager.execute(actorId, storeId, dto);
   }
 
-  // ─── 工具：断言当前用户是指定门店的店长 ───────────────────────────────────
+  // ─── 工具：断言当前用户可维护指定门店资料 ───────────────────────────────────
 
   async assertStoreManager(userId: string, storeId: string) {
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId }
-    });
-
-    if (!member || member.storeId !== storeId || member.position !== StorePosition.MANAGER) {
-      throw new ForbiddenException("仅店长可执行此操作");
-    }
-
-    return member;
+    const scope = await this.accessContext.scope({ userId }, "store.profile", "write", { storeId });
+    if (!scope.allowed) throw new ForbiddenException("当前角色无权维护门店资料");
+    return scope;
   }
 }

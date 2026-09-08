@@ -6,9 +6,9 @@ import { App, Avatar, Button, Card, Drawer, Empty, Input, Popconfirm, Select, Sp
 import { CalendarOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Suspense, useMemo, useState } from "react";
+import type { StorePosition } from "@mallbay/shared";
 import { memberApi } from "../../src/features/members/api";
 import { storeApi } from "../../src/features/stores/api";
-import type { StorePosition } from "../../src/features/workbench/navigation";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../src/stores/auth-store";
 

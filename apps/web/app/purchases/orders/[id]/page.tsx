@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { purchaseApi } from "../../../../src/lib/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../../src/features/permissions/use-effective-permissions";
 import {
   getPurchaseInboundItemDetails,
   getPurchaseOrderArrivalReminder,
@@ -100,9 +101,8 @@ export default function PurchaseOrderDetailPage() {
   const purchaseOrderId = params.id;
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canManagePurchase = user?.isAuditor === true ||
-    user?.storeMember?.position === "MANAGER" ||
-    user?.storeMember?.position === "PURCHASING";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManagePurchase = hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "write", storeId);
   const [rejectReason, setRejectReason] = useState("");
   const [scanImportOpen, setScanImportOpen] = useState(false);
   const [scanImportText, setScanImportText] = useState("");

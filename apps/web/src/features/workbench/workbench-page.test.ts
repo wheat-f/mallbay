@@ -8,7 +8,8 @@ test("workbench page falls back to the current session store instead of renderin
   assert.match(pageSource, /useAuthStore/);
   assert.match(pageSource, /fallbackStore/);
   assert.match(pageSource, /user\?\.storeMember\?\.store\.id === storeId/);
-  assert.match(pageSource, /getWorkbenchSections\(store\.currentMember\.position/);
+  assert.match(pageSource, /permissionsApi\.me\(storeId\)/);
+  assert.match(pageSource, /getWorkbenchSections\(runtimePermissions, store\.id\)/);
   assert.match(pageSource, /workbench-data-alert/);
 });
 
@@ -135,15 +136,20 @@ test("workbench dashboard data is derived from business APIs instead of hardcode
   assert.doesNotMatch(workbenchSource, /\["05\.01", 64\]/);
 });
 
-test("workbench dashboard queries are gated by the current role", () => {
+test("workbench dashboard queries are gated by effective permissions", () => {
   const workbenchSource = readFileSync("app/workbench/[storeId]/page.tsx", "utf8");
 
   assert.match(workbenchSource, /const canLoadReportSummary =/);
+  assert.match(workbenchSource, /const canLoadPendingDispatch =/);
+  assert.match(workbenchSource, /const canLoadCapacity =/);
   assert.match(workbenchSource, /const canLoadInventoryBatches =/);
   assert.match(workbenchSource, /const canLoadWarranties =/);
-  assert.match(workbenchSource, /queryKey: \["workbench-summary", storeId, currentPosition\]/);
-  assert.match(workbenchSource, /queryKey: \["workbench-inventory-batches", storeId, currentPosition\]/);
-  assert.match(workbenchSource, /queryKey: \["workbench-warranties", storeId, currentPosition\]/);
+  assert.match(workbenchSource, /hasWorkbenchPermission\(runtimePermissions, "reports", "read"\)/);
+  assert.match(workbenchSource, /hasWorkbenchPermission\(runtimePermissions, "inventory", "read"\)/);
+  assert.match(workbenchSource, /hasWorkbenchPermission\(runtimePermissions, "warranties", "read"\)/);
+  assert.match(workbenchSource, /queryKey: \["workbench-summary", storeId, permissionsQuery\.data\?\.bindingVersion\]/);
+  assert.match(workbenchSource, /queryKey: \["workbench-inventory-batches", storeId, permissionsQuery\.data\?\.bindingVersion\]/);
+  assert.match(workbenchSource, /queryKey: \["workbench-warranties", storeId, permissionsQuery\.data\?\.bindingVersion\]/);
   assert.match(workbenchSource, /enabled: Boolean\(store\) && canLoadReportSummary/);
   assert.match(workbenchSource, /enabled: Boolean\(store\) && canLoadInventoryBatches/);
   assert.match(workbenchSource, /enabled: Boolean\(store\) && canLoadWarranties/);

@@ -42,13 +42,13 @@ function buildService(overrides: Record<string, unknown> = {}) {
 
 test("multi-role permissions are unioned and scoped to the requested store", async () => {
   const service = buildService();
-  assert.equal(await service.authorize("u1", "orders.read", "read", { storeId: "s1", ownerId: "u1" }), true);
-  assert.equal(await service.authorize("u1", "finance.read", "read", { storeId: "s1" }), true);
-  assert.equal(await service.authorize("u1", "orders.read", "read", { storeId: "s1", ownerId: "u2" }), false);
-  assert.equal(await service.authorize("u1", "finance.read", "read", { storeId: "s2" }), false);
+  assert.equal(await service.authorize("u1", "orders", "read", { storeId: "s1", ownerId: "u1" }), true);
+  assert.equal(await service.authorize("u1", "finance", "read", { storeId: "s1" }), true);
+  assert.equal(await service.authorize("u1", "orders", "read", { storeId: "s1", ownerId: "u2" }), false);
+  assert.equal(await service.authorize("u1", "finance", "read", { storeId: "s2" }), false);
 });
 
-test("legacy users retain compatibility permissions before migration", async () => {
+test("users without active role bindings receive no runtime permissions", async () => {
   const service = buildService({
     user: { findUnique: async () => ({ id: "u1", isAuditor: false, storeMembers: [{ storeId: "s1", position: "MANAGER" }] }) },
     permissionRoleBinding: {
@@ -56,11 +56,9 @@ test("legacy users retain compatibility permissions before migration", async () 
       findFirst: async () => null
     }
   });
-  assert.equal(await service.authorize("u1", "orders.edit", "write", { storeId: "s1" }), true);
+  assert.equal(await service.authorize("u1", "orders.edit", "write", { storeId: "s1" }), false);
   assert.equal(await service.authorize("u1", "orders.edit", "write", { storeId: "s2" }), false);
-  assert.equal(await service.authorize("u1", "settings", "read", { storeId: "s1" }), true);
-  assert.equal(await service.authorize("u1", "settings", "write", { storeId: "s1" }), true);
-  assert.equal(await service.authorize("u1", "settings", "read", { storeId: "s2" }), false);
+  assert.equal(await service.authorize("u1", "store.dictionary", "read", { storeId: "s1" }), false);
 });
 
 test("legacy isAuditor users do not receive HQ permissions without an active HQ binding", async () => {
@@ -75,10 +73,10 @@ test("legacy isAuditor users do not receive HQ permissions without an active HQ 
   });
   const result = await service.getForUser("auditor-1");
   assert.equal(result.roles.some((role) => role.roleCode === "HQ_ADMIN"), false);
-  assert.equal(await service.authorize("auditor-1", "settings", "read"), false);
+  assert.equal(await service.authorize("auditor-1", "permissions.policy", "read"), false);
 });
 
-test("HQ administrators cannot write other personnel or HQ role bindings", async () => {
+test("policy administrators may manage explicit role bindings", async () => {
   const service = buildService({
     user: { findUnique: async () => ({ id: "hq-1", isAuditor: false, storeMembers: [] }) },
     permissionRoleBinding: {
@@ -86,58 +84,10 @@ test("HQ administrators cannot write other personnel or HQ role bindings", async
       findFirst: async () => null
     },
     permissionRole: { findMany: async () => [{ id: "hq-role", code: "HQ_ADMIN", name: "总部管理员" }] },
-    permissionRoleGrant: { findMany: async () => [{ roleId: "hq-role", permissionCode: "settings", action: "write", scope: "GLOBAL" }] }
+    permissionRoleGrant: { findMany: async () => [{ roleId: "hq-role", permissionCode: "permissions.policy", action: "publish", scope: "GLOBAL" }] }
   });
-  let otherUserError: unknown;
-  try {
-    await service.assertRoleBindingWriteAllowed("hq-1", "other-user", "STORE");
-  } catch (error) {
-    otherUserError = error;
-  }
-  assert.ok(otherUserError);
-  assert.equal((otherUserError as { getResponse: () => { code?: string } }).getResponse().code, "HQ_MEMBER_BINDING_DISABLED");
-
-  let headquartersScopeError: unknown;
-  try {
-    await service.assertRoleBindingWriteAllowed("hq-1", "hq-1", "HQ");
-  } catch (error) {
-    headquartersScopeError = error;
-  }
-  assert.ok(headquartersScopeError);
-  assert.equal((headquartersScopeError as { getResponse: () => { code?: string } }).getResponse().code, "HQ_MEMBER_BINDING_DISABLED");
-});
-
-test("legacy finance capability matrix preserves submit, review, and payment boundaries", async () => {
-  const createLegacyService = (position: string, userId: string) => buildService({
-    user: {
-      findUnique: async () => ({
-        id: userId,
-        isAuditor: false,
-        storeMembers: [{ storeId: "s1", position }]
-      })
-    },
-    permissionRoleBinding: {
-      findMany: async () => [],
-      findFirst: async () => null
-    }
-  });
-
-  const managerService = createLegacyService("MANAGER", "manager-1");
-  assert.equal(await managerService.authorize("manager-1", "finance.application", "submit", { storeId: "s1", ownerId: "manager-1" }), true);
-  assert.equal(await managerService.authorize("manager-1", "finance.document", "read", { storeId: "s1" }), true);
-  assert.equal(await managerService.authorize("manager-1", "finance.expense", "review", { storeId: "s1" }), true);
-  assert.equal(await managerService.authorize("manager-1", "finance.reimbursement", "review", { storeId: "s1" }), false);
-
-  const financeService = createLegacyService("FINANCE", "finance-1");
-  assert.equal(await financeService.authorize("finance-1", "finance.document", "read", { storeId: "s1" }), true);
-  assert.equal(await financeService.authorize("finance-1", "finance.reimbursement", "review", { storeId: "s1" }), true);
-  assert.equal(await financeService.authorize("finance-1", "finance.reimbursement", "pay", { storeId: "s1" }), true);
-  assert.equal(await financeService.authorize("finance-1", "finance.expense", "review", { storeId: "s1" }), false);
-
-  const salesService = createLegacyService("SALES", "sales-1");
-  assert.equal(await salesService.authorize("sales-1", "finance.application", "submit", { storeId: "s1", ownerId: "sales-1" }), true);
-  assert.equal(await salesService.authorize("sales-1", "finance.document", "read", { storeId: "s1", ownerId: "sales-1" }), true);
-  assert.equal(await salesService.authorize("sales-1", "finance.document", "read", { storeId: "s1" }), false);
+  await service.assertRoleBindingWriteAllowed("hq-1", "other-user", "STORE");
+  await service.assertRoleBindingWriteAllowed("hq-1", "hq-1", "HQ");
 });
 
 test("permissions service populates the internal access snapshot store", async () => {
@@ -145,7 +95,7 @@ test("permissions service populates the internal access snapshot store", async (
   const service = new PermissionsService(buildPrisma() as never, snapshotStore);
 
   assert.equal(snapshotStore.has("u1"), false);
-  assert.equal(await service.authorize("u1", "orders.read", "read", { storeId: "s1", ownerId: "u1" }), true);
+  assert.equal(await service.authorize("u1", "orders", "read", { storeId: "s1", ownerId: "u1" }), true);
   assert.equal(snapshotStore.has("u1"), true);
 });
 
@@ -207,7 +157,7 @@ test("global permission mutations clear all internal runtime snapshots", async (
 test("publishing a validated policy clears all internal runtime snapshots", async () => {
   const snapshotStore = new RuntimeAccessSnapshotStore();
   const payload = {
-    grants: [{ roleCode: "HQ_ADMIN", permissionCode: "settings", action: "write", scope: "GLOBAL" }]
+    grants: [{ roleCode: "HQ_ADMIN", permissionCode: "permissions.policy", action: "publish", scope: "GLOBAL" }]
   };
   const tx = {
     permissionPolicyVersion: {
@@ -229,6 +179,9 @@ test("publishing a validated policy clears all internal runtime snapshots", asyn
       findUnique: async () => ({ id: "role-hq" }),
       findMany: async () => [{ id: "role-hq", code: "HQ_ADMIN" }]
     },
+    permissionDefinition: {
+      findMany: async () => [{ code: "permissions.policy", actions: ["read", "write", "publish"], supportedScopes: ["GLOBAL"] }]
+    },
     permissionRoleBinding: {
       count: async () => 1,
       findMany: async () => [{ roleId: "role-hq" }]
@@ -248,12 +201,23 @@ test("publishing a validated policy clears all internal runtime snapshots", asyn
 test("rolling back a policy clears all internal runtime snapshots", async () => {
   const snapshotStore = new RuntimeAccessSnapshotStore();
   const payload = {
-    grants: [{ roleCode: "HQ_ADMIN", permissionCode: "settings", action: "write", scope: "GLOBAL" }]
+    grants: [{ roleCode: "HQ_ADMIN", permissionCode: "permissions.policy", action: "publish", scope: "GLOBAL" }]
   };
   const service = new PermissionsService({
     permissionPolicyVersion: {
       findUnique: async () => ({ id: "policy-1", version: 1, status: PermissionPolicyVersionStatus.PUBLISHED, payload }),
       findFirst: async () => ({ version: 3 }),
+    },
+    permissionDefinition: {
+      findMany: async () => [{ code: "permissions.policy", actions: ["read", "write", "publish"], supportedScopes: ["GLOBAL"] }]
+    },
+    permissionRole: {
+      findUnique: async () => ({ id: "role-hq" }),
+      findMany: async () => [{ id: "role-hq", code: "HQ_ADMIN" }]
+    },
+    permissionRoleBinding: {
+      count: async () => 1,
+      findMany: async () => [{ roleId: "role-hq" }]
     },
     $transaction: async (callback: (transaction: unknown) => Promise<unknown>) => callback({
       permissionPolicyVersion: {
@@ -294,14 +258,14 @@ test("does not combine grant and binding scopes across roles", async () => {
       ]
     }
   });
-  assert.equal(await service.authorize("u1", "inventory.read", "read", { storeId: "s1" }), true);
-  assert.equal(await service.authorize("u1", "inventory.read", "read", { storeId: "s2" }), false);
-  assert.equal(await service.authorize("u1", "finance.read", "read", { storeId: "s2" }), true);
+  assert.equal(await service.authorize("u1", "inventory", "read", { storeId: "s1" }), true);
+  assert.equal(await service.authorize("u1", "inventory", "read", { storeId: "s2" }), false);
+  assert.equal(await service.authorize("u1", "finance", "read", { storeId: "s2" }), true);
 });
 
 test("buildScopeFacts returns canonical store and owner facts without a query shape", async () => {
   const service = buildService();
-  const facts = await service.buildScopeFacts("u1", "orders.read", "read", { storeId: "s1", ownerId: "u1" });
+  const facts = await service.buildScopeFacts("u1", "orders", "read", { storeId: "s1", ownerId: "u1" });
 
   assert.deepEqual(facts, {
     allowed: true,
@@ -316,14 +280,14 @@ test("buildScopeFacts returns canonical store and owner facts without a query sh
 test("buildScopeFacts distinguishes explicit store and owner failures", async () => {
   const service = buildService();
 
-  assert.deepEqual(await service.buildScopeFacts("u1", "orders.read", "read", { storeId: "s2", ownerId: "u1" }), {
+  assert.deepEqual(await service.buildScopeFacts("u1", "orders", "read", { storeId: "s2", ownerId: "u1" }), {
     allowed: false,
     global: false,
     storeIds: ["s1"],
     ownerId: "u1",
     reason: "STORE_OUT_OF_SCOPE"
   });
-  assert.deepEqual(await service.buildScopeFacts("u1", "orders.read", "read", { storeId: "s1", ownerId: "u2" }), {
+  assert.deepEqual(await service.buildScopeFacts("u1", "orders", "read", { storeId: "s1", ownerId: "u2" }), {
     allowed: false,
     global: false,
     storeIds: ["s1"],
@@ -339,10 +303,10 @@ test("HQ GLOBAL facts are global and do not depend on a requested store", async 
       findFirst: async () => ({ updatedAt: new Date("2026-01-01T00:00:00Z") })
     },
     permissionRole: { findMany: async () => [{ id: "hq-role", code: "HQ_ADMIN", name: "总部管理员" }] },
-    permissionRoleGrant: { findMany: async () => [{ roleId: "hq-role", permissionCode: "settings", action: "read", scope: "GLOBAL" }] }
+    permissionRoleGrant: { findMany: async () => [{ roleId: "hq-role", permissionCode: "settings.dictionary", action: "read", scope: "GLOBAL" }] }
   });
 
-  assert.deepEqual(await service.buildScopeFacts("u1", "settings", "read", { storeId: "s99" }), {
+  assert.deepEqual(await service.buildScopeFacts("u1", "settings.dictionary", "read", { storeId: "s99" }), {
     allowed: true,
     global: true,
     storeIds: []

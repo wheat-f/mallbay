@@ -42,6 +42,7 @@ import {
 import { customerApi } from "../../../../src/features/customers/api";
 import { orderApi } from "../../../../src/features/orders/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../../src/features/permissions/use-effective-permissions";
 
 type CustomerSummary = {
   id: string;
@@ -83,6 +84,8 @@ export default function CustomerSettlementPage() {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
+  const activeStoreId = user?.storeMember?.store.id;
+  const permissionsQuery = useEffectivePermissions(activeStoreId);
   const [receiptForm] = Form.useForm<ReceiptFormValues>();
   const [reverseForm] = Form.useForm<ReverseFormValues>();
   const [period, setPeriod] = useState<[Dayjs, Dayjs]>([
@@ -99,11 +102,8 @@ export default function CustomerSettlementPage() {
   const [reversalIdempotencyKey, setReversalIdempotencyKey] = useState<string | null>(null);
 
   const customerId = params.id;
-  const position = user?.storeMember?.position;
-  const canManageReceipts = Boolean(
-    user?.isAuditor || position === "MANAGER" || position === "FINANCE"
-  );
-  const canReverseReceipts = Boolean(user?.isAuditor || position === "FINANCE");
+  const canManageReceipts = hasEffectivePermission(permissionsQuery.data?.permissions, "finance", "write", activeStoreId);
+  const canReverseReceipts = hasEffectivePermission(permissionsQuery.data?.permissions, "finance", "write", activeStoreId);
 
   const customerQuery = useQuery({
     queryKey: ["customer-settlement-customer", customerId],

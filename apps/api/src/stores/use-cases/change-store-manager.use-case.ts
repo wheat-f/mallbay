@@ -41,6 +41,7 @@ export class ChangeStoreManagerUseCase {
 
     await this.stores.changeManager({
       storeId,
+      actorId,
       newManagerId: dto.newManagerId,
       currentManagerId: currentManager?.id,
       existingNewManagerMemberId: newManagerMember?.id

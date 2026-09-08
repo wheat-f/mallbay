@@ -30,6 +30,7 @@ import {
 } from "../../../src/features/inventory/matching";
 import { getProductDisplayName, getProductUnitLabel } from "../../../src/features/products/display";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 
 type ProductOption = {
   id: string;
@@ -110,28 +111,27 @@ function InventoryMatchingContent() {
   const searchParams = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canManageInventory = user?.isAuditor === true ||
-    user?.storeMember?.position === "MANAGER" ||
-    user?.storeMember?.position === "PURCHASING";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManageInventory = hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "write", storeId);
   const [allocationForm] = Form.useForm<AllocationFormValues>();
   const [outboundForm] = Form.useForm<OutboundFormValues>();
 
   const productsQuery = useQuery({
     queryKey: ["inventory-products", storeId],
     queryFn: () => productApi.list({ storeId: storeId!, pageSize: 100 }),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "products", "read", storeId))
   });
 
   const batchesQuery = useQuery({
     queryKey: ["inventory-batches", storeId],
     queryFn: () => inventoryApi.batches({ storeId: storeId! }),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "read", storeId))
   });
 
   const pendingOrdersQuery = useQuery({
     queryKey: ["inventory-pending-match-orders", storeId],
     queryFn: () => inventoryApi.pendingMatchOrders(storeId!),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "read", storeId))
   });
 
   const pendingMatchRows = useMemo(

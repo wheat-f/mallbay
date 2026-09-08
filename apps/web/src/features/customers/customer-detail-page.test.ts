@@ -101,7 +101,8 @@ test("customer detail exposes controlled vehicle lifecycle management", () => {
   assert.match(pageSource, />\s*转移\s*</);
   assert.match(pageSource, /"停用" : "启用"/);
   assert.match(pageSource, /变更历史/);
-  assert.match(pageSource, /const isManager = currentUser\?\.storeMember\?\.position === "MANAGER"/);
+  assert.match(pageSource, /const isManager = hasEffectivePermission\(permissionsQuery\.data\?\.permissions, "store", "write", storeId\)/);
+  assert.doesNotMatch(pageSource, /currentUser\?\.storeMember\?\.position === "MANAGER"/);
   assert.doesNotMatch(pageSource, /删除车辆/);
 
   assert.match(apiSource, /changeVehicleStatus/);

@@ -17,29 +17,30 @@ import { useState } from "react";
 import { financeApi } from "../../../src/features/finance/api";
 import { FinanceApplicationTable } from "../../../src/features/finance/components/finance-application-table";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 
 export default function ReimbursementListPage() {
   const storeId = useAuthStore((s) => s.user?.storeMember?.store.id);
-  const position = useAuthStore((s) => s.user?.storeMember?.position);
+  const permissionsQuery = useEffectivePermissions(storeId);
   const router = useRouter();
   const client = useQueryClient();
   const { message } = App.useApp();
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm();
-  const isManager = position === "MANAGER" || position === "FINANCE";
+  const isManager = hasEffectivePermission(permissionsQuery.data?.permissions, "finance.reimbursement", "review", storeId);
   const scope = isManager ? "all" : "mine";
 
   const expenses = useQuery({
     queryKey: ["finance-expenses-for-reimbursement", storeId, scope],
     queryFn: () =>
       financeApi.expenses({ storeId: storeId!, status: "APPROVED", scope }),
-    enabled: Boolean(storeId),
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "finance", "read", storeId)),
   });
   const query = useQuery({
     queryKey: ["finance-reimbursements", storeId, scope],
     queryFn: () => financeApi.reimbursements({ storeId: storeId!, scope }),
-    enabled: Boolean(storeId),
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "finance", "read", storeId)),
   });
   const create = useMutation({
     mutationFn: (value: {

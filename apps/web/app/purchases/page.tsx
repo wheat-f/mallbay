@@ -8,6 +8,7 @@ import { purchaseApi } from "../../src/lib/api";
 import { PurchaseModuleNav } from "../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
 
 type PurchaseOverview = {
   openRequirementCount?: number;
@@ -21,13 +22,12 @@ type PurchaseOverview = {
 export default function PurchasesOverviewPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canManagePurchase = user?.isAuditor === true ||
-    user?.storeMember?.position === "MANAGER" ||
-    user?.storeMember?.position === "PURCHASING";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManagePurchase = hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "write", storeId);
   const overviewQuery = useQuery({
     queryKey: ["purchases-overview", storeId],
     queryFn: () => purchaseApi.overview(storeId!),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "read", storeId))
   });
   const overview = (overviewQuery.data ?? {}) as PurchaseOverview;
   const requirementCount = overview.openRequirementCount ?? overview.requirements?.length ?? 0;

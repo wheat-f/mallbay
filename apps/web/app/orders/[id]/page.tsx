@@ -37,6 +37,7 @@ import { getAuditActorLabel } from "../../../src/features/audit/display";
 import { getProductUnitLabel } from "../../../src/features/products/display";
 import { OrderPaymentDrawer } from "../../../src/features/orders/order-payment-drawer";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { saveCreateOrderDraft } from "../../../src/features/orders/create-order-draft";
 import { clearLifecycleCommandId, getLifecycleCommandId } from "../../../src/features/construction/api";
 
@@ -173,6 +174,8 @@ export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
+  const storeId = user?.storeMember?.store.id;
+  const permissionsQuery = useEffectivePermissions(storeId);
   const [commercialsOpen, setCommercialsOpen] = useState(false);
   const [amendmentOpen, setAmendmentOpen] = useState(false);
   const [amendmentReviewOpen, setAmendmentReviewOpen] = useState(false);
@@ -247,14 +250,7 @@ export default function OrderDetailPage() {
   const hasPendingAmendment = Boolean(pendingAmendment);
   const hasApprovedAmendment = order?.amendmentRequests?.some((request) => request.status === "APPROVED") ?? false;
   const hasCompletedAmendment = order?.amendmentRequests?.some((request) => request.status === "COMPLETED") ?? false;
-  const canManageOrderAmendment = Boolean(
-    order && user && (
-      user.isAuditor ||
-      user.storeMember?.position === "MANAGER" ||
-      user.storeMember?.position === "CUSTOMER_SERVICE" ||
-      (user.storeMember?.position === "SALES" && user.id === order.salesPersonId)
-    )
-  );
+  const canManageOrderAmendment = Boolean(order && hasEffectivePermission(permissionsQuery.data?.permissions, "orders", "write", order.storeId, { ownerId: order.salesPersonId, userId: user?.id }));
   const canRequestAmendment = Boolean(
     order
       && canManageOrderAmendment
@@ -263,17 +259,8 @@ export default function OrderDetailPage() {
       && !hasApprovedAmendment
       && !hasCompletedAmendment
   );
-  const canReviewAmendment = Boolean(
-    pendingAmendment && (user?.isAuditor || user?.storeMember?.position === "FINANCE")
-  );
-  const canCopyOrder = Boolean(
-    order && user && (
-      user.isAuditor ||
-      user.storeMember?.position === "MANAGER" ||
-      user.storeMember?.position === "CUSTOMER_SERVICE" ||
-      (user.storeMember?.position === "SALES" && user.id === order.salesPersonId)
-    )
-  );
+  const canReviewAmendment = Boolean(pendingAmendment && hasEffectivePermission(permissionsQuery.data?.permissions, "finance", "write", order?.storeId));
+  const canCopyOrder = Boolean(order && hasEffectivePermission(permissionsQuery.data?.permissions, "orders", "write", order.storeId, { ownerId: order.salesPersonId, userId: user?.id }));
   const copyOrderMutation = useMutation({
     mutationFn: (values: CopyOrderFormValues) => orderApi.copyToDraft(params.id, {
       vehicleId: values.vehicleId,

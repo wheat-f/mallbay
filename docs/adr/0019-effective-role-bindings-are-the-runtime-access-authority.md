@@ -1,0 +1,3 @@
+# Effective role bindings are the runtime access authority
+
+MallBay authorizes every protected request from active `PermissionRoleBinding` records and their `PermissionRoleGrant` entries, resolved through `AccessContext`. `StoreMember.position`, `isAuditor`, and frontend route or button rules remain business-display or experience metadata only; they cannot grant runtime access. This replaces the legacy runtime fallback because parallel authority sources had already produced inconsistent menus and API rejections. A deployment preflight must block the switch whenever an active store member lacks the corresponding active store-scoped role binding.

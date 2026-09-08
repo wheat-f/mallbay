@@ -1,4 +1,5 @@
-import type { BusinessOrderSummary, RebateStatus, StorePosition } from "@mallbay/shared";
+import type { BusinessOrderSummary, RebateStatus } from "@mallbay/shared";
+import type { RuntimePermission } from "../workbench/management-menu";
 
 export const REBATE_STATUS_LABELS: Record<string, string> = {
   APPLIED: "待审核",
@@ -14,12 +15,13 @@ export const REBATE_REVIEW_OPTIONS: Array<{ value: RebateStatus; label: string }
   { value: "REJECTED", label: REBATE_STATUS_LABELS.REJECTED }
 ];
 
-export function getRebateReviewOptionsForRole(position?: StorePosition, isAuditor = false) {
-  if (isAuditor) return REBATE_REVIEW_OPTIONS;
-  if (position === "MANAGER") {
+export function getRebateReviewOptionsForPermissions(permissions?: RuntimePermission[]) {
+  const canReview = Boolean(permissions?.some((permission) => permission.code === "rebates" && permission.actions.includes("review")));
+  const canPay = Boolean(permissions?.some((permission) => permission.code === "rebates" && permission.actions.includes("pay")));
+  if (canReview) {
     return REBATE_REVIEW_OPTIONS.filter((option) => option.value === "REVIEWED" || option.value === "REJECTED");
   }
-  if (position === "FINANCE") {
+  if (canPay) {
     return REBATE_REVIEW_OPTIONS.filter((option) => option.value === "APPROVED" || option.value === "REJECTED");
   }
   return [];

@@ -1,0 +1,3 @@
+# Access checks use effective permissions
+
+Server-side authorization decisions use `AccessContext` capability, action, and scope checks exclusively. Client-side menus, controls, page entry points, and query enablement consume the loaded effective permission snapshot and do not fall back to positions, `isAuditor`, or permissive loading states. Position and auditor fields may remain for business identity, notifications, eligibility rules unrelated to access, and presentation, but they cannot decide whether a user may access protected data or perform an operation. The server remains the authoritative enforcement point.

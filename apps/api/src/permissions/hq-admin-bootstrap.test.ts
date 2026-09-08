@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HEADQUARTERS_ADMIN_GRANTS } from "./hq-admin-bootstrap";
+import { ensureHeadquartersAdminRole } from "./hq-admin-bootstrap";
 
-test("HQ administrators retain the product suggested-price write capability", () => {
-  assert.equal(
-    HEADQUARTERS_ADMIN_GRANTS.some(([permissionCode, action, scope]) =>
-      permissionCode === "products" && action === "suggested-price-write" && scope === "GLOBAL"
-    ),
-    true
-  );
+test("HQ bootstrap only ensures the system role and never restores grants", async () => {
+  let grantsTouched = false;
+  const role = await ensureHeadquartersAdminRole({
+    permissionRole: {
+      upsert: async () => ({ id: "hq-role", code: "HQ_ADMIN" })
+    },
+    permissionRoleGrant: {
+      upsert: async () => {
+        grantsTouched = true;
+      }
+    }
+  } as never);
+
+  assert.equal(role.code, "HQ_ADMIN");
+  assert.equal(grantsTouched, false);
 });

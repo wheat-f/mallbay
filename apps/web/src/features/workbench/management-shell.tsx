@@ -7,10 +7,9 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { authApi } from "../../lib/api";
 import { NotificationBell } from "../../components/NotificationBell";
-import { canAccessSystemSettings } from "../settings/access";
 import { useAuthStore } from "../../stores/auth-store";
 import { permissionsApi } from "../permissions/api";
-import { getActiveManagementMenuKey, getManagementMenuGroups, getManagementMenuItems } from "./management-menu";
+import { getActiveManagementMenuKey, getManagementMenuGroups, getManagementMenuItems, hasAnySettingsReadPermission } from "./management-menu";
 
 const POSITION_LABEL: Record<string, string> = {
   MANAGER: "店长",
@@ -101,20 +100,15 @@ export function ManagementShell({ children }: { children: ReactNode }) {
   const permissionsQuery = useQuery({ queryKey: ["auth-permissions", storeMember?.store.id], queryFn: () => permissionsApi.me(storeMember?.store.id), enabled: Boolean(user?.id) });
   const runtimePermissions = permissionsQuery.data?.permissions;
   const isHeadquartersAdmin = Boolean(permissionsQuery.data?.roles.some((role) => role.roleCode === "HQ_ADMIN" && role.scopeType === "HQ"));
+  const canAccessAdmin = Boolean(runtimePermissions?.some((permission) => permission.code === "store" && permission.actions.includes("read") && permission.scopes.includes("GLOBAL")));
   const displayName = user?.nickname ?? user?.username ?? "用户";
   const activeKey = getActiveManagementMenuKey(pathname);
-  const canAccessSettings = runtimePermissions
-    ? runtimePermissions.some((permission) => permission.code === "settings" && permission.actions.includes("read"))
-    : canAccessSystemSettings({ position: storeMember?.position, isHeadquartersAdmin });
+  const canAccessSettings = hasAnySettingsReadPermission(runtimePermissions);
   const menuItems = getManagementMenuItems({
-    position: storeMember?.position,
-    isHeadquartersAdmin,
     storeId: storeMember?.store.id,
     permissions: runtimePermissions
   }).filter((item) => item.key !== "settings" || canAccessSettings);
   const menuGroups = getManagementMenuGroups({
-    position: storeMember?.position,
-    isHeadquartersAdmin,
     storeId: storeMember?.store.id,
     permissions: runtimePermissions
   })
@@ -176,7 +170,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
           }
         ]
       : []),
-    ...(isHeadquartersAdmin
+    ...(canAccessAdmin
       ? [
           { key: "admin", icon: <SwapOutlined />, label: "门店审核", onClick: () => router.push("/admin") }
         ]

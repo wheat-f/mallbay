@@ -67,7 +67,7 @@ export class RebatesService {
     const actor = { userId: user.id } satisfies AccessSubject;
     const rebate = await this.prisma.customerRebate.findUnique({ where: { id } });
     if (!rebate) throw new NotFoundException("返利申请不存在");
-    if (!await this.accessContext.can(actor, "finance", "write", { storeId: rebate.storeId })) throw new ForbiddenException("无权限");
+    if (!await this.accessContext.can(actor, "rebates", "pay", { storeId: rebate.storeId })) throw new ForbiddenException("无权限");
     if (rebate.status !== RebateStatus.APPROVED) {
       throw new BadRequestException("返利审批通过后才能发放");
     }
@@ -91,7 +91,7 @@ export class RebatesService {
 
   async list(user: AuthenticatedRebateUser, query: ListRebatesDto) {
     const actor = { userId: user.id } satisfies AccessSubject;
-    const scope = await this.accessContext.scope(actor, "finance", "write", { storeId: query.storeId, ownerId: actor.userId });
+    const scope = await this.accessContext.scope(actor, "rebates", "read", { storeId: query.storeId, ownerId: actor.userId });
     if (!scope.allowed) throw new ForbiddenException({ code: scope.reason ?? "ACCESS_DENIED", message: "无权限" });
     const where = buildRebateListScope(query.storeId, scope.ownerId);
     return this.prisma.customerRebate.findMany({

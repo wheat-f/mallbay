@@ -17,6 +17,7 @@ import { inventoryApi, productApi } from "../../../src/lib/api";
 import { getInventoryBatchLabel, getInventoryProductLabel } from "../../../src/features/inventory/display";
 import { getProductUnitLabel } from "../../../src/features/products/display";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 
 type ProductOption = {
   id: string;
@@ -78,9 +79,8 @@ function InventoryAdjustmentsWorkspace() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canManageInventory = user?.isAuditor === true ||
-    user?.storeMember?.position === "MANAGER" ||
-    user?.storeMember?.position === "PURCHASING";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManageInventory = hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "write", storeId);
   const [conversionForm] = Form.useForm<ConversionFormValues>();
   const [splitForm] = Form.useForm<SplitFormValues>();
   const [stockForm] = Form.useForm<StockOperationFormValues>();
@@ -89,12 +89,12 @@ function InventoryAdjustmentsWorkspace() {
   const productsQuery = useQuery({
     queryKey: ["inventory-adjustment-products", storeId],
     queryFn: () => productApi.list({ storeId: storeId!, pageSize: 100 }),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "products", "read", storeId))
   });
   const batchesQuery = useQuery({
     queryKey: ["inventory-batches", storeId],
     queryFn: () => inventoryApi.batches({ storeId: storeId! }),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "read", storeId))
   });
 
   const productItems = useMemo(() => (productsQuery.data?.items ?? []) as ProductOption[], [productsQuery.data]);

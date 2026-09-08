@@ -33,6 +33,7 @@ import { clearQuoteCreationCommandId, getQuoteCreationCommandId, salesQuoteApi }
 import { dictionaryApi } from "../../../src/features/settings/api";
 import { storeApi } from "../../../src/features/stores/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { ApiError } from "../../../src/lib/api-error";
 import { getStoreWorkbenchHref } from "../../../src/features/workbench/navigation";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
@@ -98,7 +99,8 @@ function CreateOrderContent() {
   const params = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canAssignSalesPerson = user?.storeMember?.position === "MANAGER";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canAssignSalesPerson = hasEffectivePermission(permissionsQuery.data?.permissions, "store.members", "write", storeId);
   const [customerKeyword, setCustomerKeyword] = useState("");
   const [referrerKeyword, setReferrerKeyword] = useState("");
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);

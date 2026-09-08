@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authApi, storeApi, userApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
 
 const POSITION_LABEL: Record<string, string> = {
   MANAGER: "店长",
@@ -148,6 +149,8 @@ function CreateStoreDrawer({ open, onClose }: { open: boolean; onClose: () => vo
 export default function DashboardPage() {
   const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const user = useAuthStore((state) => state.user);
+  const permissionsQuery = useEffectivePermissions();
+  const isHeadquartersAdmin = hasEffectivePermission(permissionsQuery.data?.permissions, "permissions.policy", "read");
   const setSession = useAuthStore((state) => state.setSession);
   const router = useRouter();
 
@@ -182,7 +185,7 @@ export default function DashboardPage() {
   const storeMember = user.storeMember;
   const roleLabel = storeMember
     ? POSITION_LABEL[storeMember.position] ?? storeMember.position
-    : user.isAuditor
+    : isHeadquartersAdmin
       ? "管理员"
       : "访客";
   const storeStatus = storeMember ? STATUS_CONFIG[storeMember.store.status] : undefined;
@@ -199,7 +202,7 @@ export default function DashboardPage() {
     },
     {
       label: "系统权限",
-      value: user.isAuditor ? "管理员" : storeMember ? "门店成员" : "访客",
+      value: isHeadquartersAdmin ? "管理员" : storeMember ? "门店成员" : "访客",
       description: "按角色展示菜单"
     }
   ];
@@ -246,7 +249,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="dashboard-account-tags">
-            <Tag color={user.isAuditor ? "processing" : undefined}>{roleLabel}</Tag>
+            <Tag color={isHeadquartersAdmin ? "processing" : undefined}>{roleLabel}</Tag>
             {storeMember ? (
               <Tag color={storeStatus?.color}>{storeStatus?.text ?? storeMember.store.status}</Tag>
             ) : (
@@ -297,7 +300,7 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {user.isAuditor ? (
+        {isHeadquartersAdmin ? (
           <Card className="dashboard-action-card dashboard-auditor-panel">
             <div className="dashboard-action-card-head">
               <span className="dashboard-action-icon"><AuditOutlined /></span>

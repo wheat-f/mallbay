@@ -4,6 +4,7 @@ import { Alert, Button, List, Result, Space, Spin, Tag, Typography } from "antd"
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { settingsApi, type ConfigVersion } from "../../../src/features/settings/api";
 import { SettingsVersionEditor } from "../../../src/features/settings/settings-version-editor";
 
@@ -26,12 +27,13 @@ export default function StoreSettingsPage() {
   const user = useAuthStore((s) => s.user);
   const storeId = user?.storeMember?.store.id;
   const [capability, setCapability] = useState<StoreCapability>("store.profile");
+  const permissionsQuery = useEffectivePermissions(storeId);
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get("capability");
     if (isStoreCapability(value)) setCapability(value);
   }, []);
-  if (!storeId && !user?.isAuditor) return <Result status="403" title="未绑定门店" extra={<Button onClick={() => router.push("/settings")}>返回设置</Button>} />;
-  if (user?.isAuditor && !storeId) return <HeadquartersStoreReadOnly onBack={() => router.push("/settings")} />;
+  if (permissionsQuery.isLoading) return <div className="management-page"><Spin description="正在校验设置权限…" /></div>;
+  if (!storeId || !hasEffectivePermission(permissionsQuery.data?.permissions, capability, "read", storeId)) return <Result status="403" title="当前账号无权访问该门店设置" extra={<Button onClick={() => router.push("/settings")}>返回设置</Button>} />;
   const meta = CAPABILITY_META[capability];
   return <div className="management-page settings-workspace"><Space direction="vertical" size={20} style={{ width: "100%" }}>
     <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/settings")}>返回职责工作台</Button>
@@ -52,12 +54,4 @@ function initialFor(capability: StoreCapability): Record<string, unknown> {
   if (capability === "store.notifications") return { recipients: "", smsReminderEnabled: true, ossEndpoint: "", ossAccessKey: "", ossSecretKey: "" };
   if (capability === "store.operations") return { appointmentEnabled: true, inventoryAlertEnabled: true, constructionPhotoRequired: true, smsReminderEnabled: true, disableReason: "" };
   return { inStoreCapacity: 4, outsideCapacity: 1, glassFilmCapacity: 2, reinspectionCapacity: 1 };
-}
-
-function HeadquartersStoreReadOnly({ onBack }: { onBack: () => void }) {
-  const [rows, setRows] = useState<ConfigVersion[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => { Promise.all(READ_ONLY_CAPABILITIES.map((code) => settingsApi.configVersions(code))).then((sets) => setRows(sets.flatMap((set) => set.rows))).catch((reason) => setError(reason instanceof Error ? reason.message : "门店配置加载失败")).finally(() => setLoading(false)); }, []);
-  return <div className="management-page settings-workspace"><Space direction="vertical" size={20} style={{ width: "100%" }}><Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回职责工作台</Button><Typography.Title level={2}>门店运营（总部只读）</Typography.Title>{loading ? <Spin description="正在加载各门店配置…" /> : error ? <Alert type="error" showIcon message={error} /> : <List bordered dataSource={rows} locale={{ emptyText: "暂无门店配置版本" }} renderItem={(row) => <List.Item><List.Item.Meta title={<Space>{row.capabilityCode}<Tag>门店 {row.scopeId}</Tag><Tag color={row.status === "PUBLISHED" ? "green" : "gold"}>{row.status}</Tag></Space>} description={`版本 v${row.version} · ${row.updatedAt ?? "未记录更新时间"}`} /></List.Item>} />}</Space></div>;
 }

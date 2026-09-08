@@ -1,12 +1,16 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
-import { StorePosition, StoreStatus } from "@prisma/client";
+import { StoreStatus } from "@prisma/client";
+import { AccessContext } from "../../permissions/domain/access-context";
 import { SubmitStoreDto } from "../dto/submit-store.dto";
 import { StorePolicy } from "../domain/store-policy";
 import { StoreRepository } from "../repositories/store.repository";
 
 @Injectable()
 export class SubmitStoreForReviewUseCase {
-  constructor(private readonly stores: StoreRepository) {}
+  constructor(
+    private readonly stores: StoreRepository,
+    private readonly accessContext: AccessContext
+  ) {}
 
   async execute(userId: string, storeId: string, dto: SubmitStoreDto) {
     await this.assertStoreManager(userId, storeId);
@@ -33,12 +37,8 @@ export class SubmitStoreForReviewUseCase {
   }
 
   private async assertStoreManager(userId: string, storeId: string) {
-    const member = await this.stores.findMemberByUserId(userId);
-
-    if (!member || member.storeId !== storeId || member.position !== StorePosition.MANAGER) {
-      throw new ForbiddenException("仅店长可执行此操作");
-    }
-
-    return member;
+    const scope = await this.accessContext.scope({ userId }, "store.profile", "write", { storeId });
+    if (!scope.allowed) throw new ForbiddenException("当前角色无权提交门店资料");
+    return scope;
   }
 }

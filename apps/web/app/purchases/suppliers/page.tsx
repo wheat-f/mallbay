@@ -36,6 +36,7 @@ import { purchaseApi } from "../../../src/lib/api";
 import { PurchaseModuleNav } from "../../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { exportRowsToExcel } from "../../../src/lib/export-excel";
 
 type SupplierFormValues = Omit<CreateSupplierPayload, "storeId">;
@@ -55,9 +56,8 @@ export default function InventorySuppliersPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canManagePurchase = user?.isAuditor === true ||
-    user?.storeMember?.position === "MANAGER" ||
-    user?.storeMember?.position === "PURCHASING";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManagePurchase = hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "write", storeId);
   const [supplierForm] = Form.useForm<SupplierFormValues>();
   const [editForm] = Form.useForm<UpdateSupplierPayload>();
   const [keyword, setKeyword] = useState("");
@@ -70,12 +70,12 @@ export default function InventorySuppliersPage() {
   const suppliersQuery = useQuery({
     queryKey: ["purchase-suppliers", storeId],
     queryFn: () => purchaseApi.suppliers(storeId!),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "read", storeId))
   });
   const ordersQuery = useQuery({
     queryKey: ["purchase-orders", storeId],
     queryFn: () => purchaseApi.orders(storeId!),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "read", storeId))
   });
 
   const suppliers = useMemo(() => suppliersQuery.data ?? [], [suppliersQuery.data]);

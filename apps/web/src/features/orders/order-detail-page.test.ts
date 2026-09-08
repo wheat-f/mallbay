@@ -260,15 +260,15 @@ test("finance users cannot modify order business data or operate fulfillment", (
   assert.match(pageSource, /disabled: !capability\.enabled/);
   assert.match(pageSource, /&& canManageOrderAmendment/);
   assert.match(pageSource, /lifecycle\?\.capabilities\.dispatch\?\.enabled/);
-  assert.match(pageSource, /position === "FINANCE"/);
+  assert.match(pageSource, /hasEffectivePermission\(permissionsQuery\.data\?\.permissions, "finance", "write", order\?\.storeId\)/);
 });
 
-test("order detail limits a rejected amendment resubmission to the order owner roles", () => {
+test("order detail delegates rejected amendment resubmission authority to evaluated order permissions", () => {
   const pageSource = readFileSync("app/orders/[id]/page.tsx", "utf8");
 
   assert.match(pageSource, /canManageOrderAmendment/);
-  assert.match(pageSource, /"CUSTOMER_SERVICE"/);
-  assert.match(pageSource, /user\.id === order\.salesPersonId/);
+  assert.match(pageSource, /hasEffectivePermission\(permissionsQuery\.data\?\.permissions, "orders", "write", order\.storeId, \{ ownerId: order\.salesPersonId, userId: user\?\.id \}\)/);
+  assert.doesNotMatch(pageSource, /storeMember\?\.position/);
   assert.match(pageSource, /财务仅负责审批/);
 });
 

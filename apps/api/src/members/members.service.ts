@@ -5,7 +5,7 @@ import {
   Optional,
   NotFoundException
 } from "@nestjs/common";
-import { InvitationStatus, StorePosition, StoreStatus } from "@prisma/client";
+import { InvitationStatus, PermissionBindingStatus, PermissionRoleStatus, PermissionScopeType, StorePosition, StoreStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationDispatcher } from "../notifications/notification-dispatcher";
@@ -17,7 +17,7 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    @Optional() private readonly accessContext?: AccessContext,
+    private readonly accessContext: AccessContext,
     @Optional() private readonly notificationDispatcher?: NotificationDispatcher
   ) {}
 
@@ -123,6 +123,10 @@ export class MembersService {
       const currentMember = await tx.storeMember.findUnique({ where: { userId } });
       if (currentMember) {
         await tx.storeMember.delete({ where: { id: currentMember.id } });
+        await tx.permissionRoleBinding.updateMany({
+          where: { userId, scopeType: PermissionScopeType.STORE, storeId: currentMember.storeId, status: PermissionBindingStatus.ACTIVE },
+          data: { status: PermissionBindingStatus.DISABLED }
+        });
       }
 
       // 加入新门店
@@ -138,6 +142,19 @@ export class MembersService {
       const accepted = await tx.storeInvitation.updateMany({
         where: { id: invitationId, status: InvitationStatus.PENDING },
         data: { status: InvitationStatus.ACCEPTED }
+      });
+
+      const role = await tx.permissionRole.findUnique({ where: { code: invitation.position } });
+      if (!role || role.status !== PermissionRoleStatus.ACTIVE) {
+        throw new BadRequestException("邀请岗位尚未配置有效角色，请联系管理员处理");
+      }
+      const binding = await tx.permissionRoleBinding.upsert({
+        where: { userId_roleId_scopeType_storeId: { userId, roleId: role.id, scopeType: PermissionScopeType.STORE, storeId: invitation.storeId } },
+        update: { status: PermissionBindingStatus.ACTIVE, effectiveAt: new Date(), expiredAt: null },
+        create: { userId, roleId: role.id, scopeType: PermissionScopeType.STORE, storeId: invitation.storeId }
+      });
+      await tx.auditEvent.create({
+        data: { action: "permissions.binding.created", actorId: invitation.invitedById, storeId: invitation.storeId, targetType: "PermissionRoleBinding", targetId: binding.id, metadata: { userId, roleId: role.id, source: "store_invitation" } }
       });
       if (accepted.count !== 1) throw new BadRequestException("该邀请已处理");
     });
@@ -206,7 +223,16 @@ export class MembersService {
       select: { name: true }
     });
 
-    await this.prisma.storeMember.delete({ where: { id: member.id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.storeMember.delete({ where: { id: member.id } });
+      await tx.permissionRoleBinding.updateMany({
+        where: { userId: targetUserId, scopeType: PermissionScopeType.STORE, storeId, status: PermissionBindingStatus.ACTIVE },
+        data: { status: PermissionBindingStatus.DISABLED }
+      });
+      await tx.auditEvent.create({
+        data: { action: "permissions.binding.disabled", actorId: managerId, storeId, targetType: "StoreMember", targetId: member.id, metadata: { userId: targetUserId, source: "store_member_removed" } }
+      });
+    });
 
     await this.dispatchNotification(targetUserId, "REMOVED_FROM_STORE", {
       storeId,
@@ -233,16 +259,9 @@ export class MembersService {
   // ─── 工具：断言当前用户是指定门店的店长 ───────────────────────────────────
 
   private async assertManager(userId: string, storeId: string) {
-    if (this.accessContext) {
-      const scope = await this.accessContext.scope({ userId }, "settings", "write", { storeId });
-      if (scope.allowed) return { userId, storeId, position: StorePosition.MANAGER };
-    }
-    // Test adapters without the production seam retain the resource-level invariant.
-    const member = await this.prisma.storeMember.findUnique({ where: { userId } });
-    if (!member || member.storeId !== storeId || member.position !== StorePosition.MANAGER) {
-      throw new ForbiddenException("仅店长可执行此操作");
-    }
-    return member;
+    const scope = await this.accessContext.scope({ userId }, "store.members", "write", { storeId });
+    if (!scope.allowed) throw new ForbiddenException("当前角色无权管理门店成员");
+    return { userId, storeId, position: StorePosition.MANAGER };
   }
 
   private dispatchNotification(

@@ -10,6 +10,7 @@ import type { ChangeEvent } from "react";
 import { useMemo, useRef, useState } from "react";
 import { productApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import {
   getProductCategoryLabel,
@@ -42,10 +43,11 @@ export default function ProductsPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const position = user?.storeMember?.position;
-  const canManageProductDetails = Boolean(user?.isAuditor || position === "MANAGER" || position === "PURCHASING");
-  const canManageSuggestedPrice = Boolean(user?.isAuditor || position === "MANAGER");
-  const canManageMaterialCost = Boolean(user?.isAuditor || position === "MANAGER" || position === "FINANCE");
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const permissions = permissionsQuery.data?.permissions;
+  const canManageProductDetails = hasEffectivePermission(permissions, "products", "write", storeId);
+  const canManageSuggestedPrice = hasEffectivePermission(permissions, "products", "suggested-price-write", storeId);
+  const canManageMaterialCost = hasEffectivePermission(permissions, "finance.cost", "read", storeId);
   const [editing, setEditing] = useState<ProductRow | null>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -70,7 +72,7 @@ export default function ProductsPage() {
         category: categoryFilter,
         status: statusFilter
       }),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissions, "products", "read", storeId))
   });
 
   const saveMutation = useMutation({

@@ -1,6 +1,6 @@
 "use client";
 
-import type { AfterSaleResponsibility, AfterSaleStatus, AfterSaleSummary, StorePosition } from "@mallbay/shared";
+import type { AfterSaleResponsibility, AfterSaleStatus, AfterSaleSummary } from "@mallbay/shared";
 import type { FormInstance } from "antd";
 import type { UploadFile } from "antd";
 import { App, AutoComplete, Button, Card, Empty, Form, Image, Input, InputNumber, Modal, Select, Skeleton, Tag, Upload } from "antd";
@@ -40,6 +40,7 @@ import {
 } from "../../../src/features/after-sales/display";
 import { getConstructionWorkerLabel } from "../../../src/features/construction/display";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { exportRowsToExcel } from "../../../src/lib/export-excel";
 
 type AfterSaleTimelineItem = {
@@ -95,6 +96,8 @@ export default function AfterSaleDetailPage() {
   const afterSaleId = params.id;
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const permissions = permissionsQuery.data?.permissions;
 
   const afterSaleQuery = useQuery({
     queryKey: ["after-sales", afterSaleId],
@@ -121,19 +124,18 @@ export default function AfterSaleDetailPage() {
   const selectedResponsibility = Form.useWatch("responsibility", judgeForm);
   const hasAssignments = (afterSale?.assignments?.length ?? 0) > 0;
   const hasJudgedResponsibility = Boolean(afterSale && afterSale.responsibility !== "PENDING");
-  const userPosition = user?.storeMember?.position;
-  const isAfterSalesManager = Boolean(user?.isAuditor || isAfterSalesManagerPosition(userPosition));
-  const isStoreManager = Boolean(user?.isAuditor || userPosition === "MANAGER");
-  const isFinance = Boolean(user?.isAuditor || userPosition === "FINANCE");
+  const canManageAfterSales = hasEffectivePermission(permissions, "after-sales", "write", storeId, { requireStoreScope: true });
+  const isStoreManager = hasEffectivePermission(permissions, "store", "write", storeId);
+  const isFinance = hasEffectivePermission(permissions, "finance.cost", "read", storeId);
   const isAssignedAfterSalesWorker = Boolean(
     user?.id &&
-      isAfterSalesWorkerPosition(userPosition) &&
+      hasEffectivePermission(permissions, "after-sales", "write", storeId) &&
       afterSale?.assignments?.some((assignment) => assignment.workerUserId === user.id)
   );
-  const canAssign = afterSale?.capabilities?.canAssign ?? (isAfterSalesManager && (afterSale?.status === "OPEN" || afterSale?.status === "ASSIGNED"));
+  const canAssign = afterSale?.capabilities?.canAssign ?? (canManageAfterSales && (afterSale?.status === "OPEN" || afterSale?.status === "ASSIGNED"));
   const canSubmitEvidence = afterSale?.capabilities?.canSubmitEvidence ?? isAssignedAfterSalesWorker;
-  const canJudgeResponsibility = afterSale?.capabilities?.canJudgeResponsibility ?? (isAfterSalesManager && afterSale?.status === "ASSIGNED");
-  const canClose = afterSale?.capabilities?.canClose ?? (isAfterSalesManager && afterSale?.status === "RESOLVED");
+  const canJudgeResponsibility = afterSale?.capabilities?.canJudgeResponsibility ?? (canManageAfterSales && afterSale?.status === "ASSIGNED");
+  const canClose = afterSale?.capabilities?.canClose ?? (canManageAfterSales && afterSale?.status === "RESOLVED");
 
   useEffect(() => {
     if (!afterSale) return;
@@ -360,7 +362,7 @@ export default function AfterSaleDetailPage() {
                 assignForm={assignForm}
                 judgeForm={judgeForm}
                 evidenceForm={evidenceForm}
-                mode={isAfterSalesManager ? "manager" : "worker"}
+                mode={canManageAfterSales ? "manager" : "worker"}
                 canAssign={canAssign}
                 canSubmitEvidence={canSubmitEvidence}
                 canJudgeResponsibility={canJudgeResponsibility}
@@ -1014,13 +1016,6 @@ function isNonEmptyString(value?: string | null): value is string {
   return Boolean(value);
 }
 
-function isAfterSalesManagerPosition(position?: StorePosition) {
-  return position === "MANAGER" || position === "SCHEDULER" || position === "CUSTOMER_SERVICE";
-}
-
-function isAfterSalesWorkerPosition(position?: StorePosition) {
-  return position === "CONSTRUCTION" || position === "APPRENTICE";
-}
 
 function normalizeUploadFileList(event: { fileList?: UploadFile[] } | UploadFile[]) {
   return Array.isArray(event) ? event.slice(-12) : event?.fileList?.slice(-12) ?? [];

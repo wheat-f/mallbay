@@ -5,6 +5,7 @@ import { CheckOutlined, CloseOutlined, DownloadOutlined, ReloadOutlined } from "
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearQuoteConversionCommandId, getQuoteConversionCommandId, salesQuoteApi, type SalesQuoteRow } from "../../../src/features/sales-quotes/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { exportRowsToExcel } from "../../../src/lib/export-excel";
 
@@ -17,8 +18,9 @@ export default function SalesQuotesPage() {
   const queryClient = useQueryClient();
   const storeId = useAuthStore((state) => state.user?.storeMember?.store.id);
   const actorId = useAuthStore((state) => state.user?.id);
-  const canViewCosts = Boolean(useAuthStore((state) => state.user?.isAuditor || ["MANAGER", "FINANCE"].includes(state.user?.storeMember?.position ?? "")));
-  const query = useQuery({ queryKey: ["sales-quotes", storeId], queryFn: () => salesQuoteApi.list(storeId!), enabled: Boolean(storeId) });
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canViewCosts = hasEffectivePermission(permissionsQuery.data?.permissions, "finance.cost", "read", storeId);
+  const query = useQuery({ queryKey: ["sales-quotes", storeId], queryFn: () => salesQuoteApi.list(storeId!), enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "orders", "read", storeId)) });
   const reviewMutation = useMutation({
     mutationFn: ({ id, approve }: { id: string; approve: boolean }) => approve ? salesQuoteApi.approve(id, storeId!) : salesQuoteApi.reject(id, storeId!),
     onSuccess: () => { message.success("报价状态已更新"); queryClient.invalidateQueries({ queryKey: ["sales-quotes", storeId] }); },

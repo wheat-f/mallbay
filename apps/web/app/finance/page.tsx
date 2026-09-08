@@ -6,12 +6,13 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { financeApi } from "../../src/features/finance/api";
 import { useAuthStore } from "../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 
 export default function FinanceOverviewPage() {
   const storeId = useAuthStore((state) => state.user?.storeMember?.store.id);
-  const position = useAuthStore((state) => state.user?.storeMember?.position);
-  const canManageFinance = position === "MANAGER" || position === "FINANCE";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManageFinance = hasEffectivePermission(permissionsQuery.data?.permissions, "finance", "read", storeId);
   const query = useQuery({ queryKey: ["finance-overview", storeId], queryFn: () => financeApi.overview(storeId!), enabled: Boolean(storeId && canManageFinance) });
   const overview = query.data;
   return <div className="management-page finance-overview-page">

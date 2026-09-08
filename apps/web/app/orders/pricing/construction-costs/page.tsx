@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { pricingApi, type ConstructionStandard, type ConstructionStandardCrewRole, type PricingProtectionPolicy, type PricingRule, type PricingRuleSetSummary } from "../../../../src/features/pricing/api";
 import { dictionaryApi, type DictionaryItem } from "../../../../src/features/settings/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../../src/features/permissions/use-effective-permissions";
 
 type DictionaryOption = { value: string; label: string };
 export type ConstructionCostPageSection = "hub" | "services" | "rates" | "standards";
@@ -148,7 +149,8 @@ export function ConstructionCostConfigPage({ section = "hub" }: { section?: Cons
   const client = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canViewRateAmounts = Boolean(user?.isAuditor || user?.storeMember?.position === "FINANCE");
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canViewRateAmounts = hasEffectivePermission(permissionsQuery.data?.permissions, "finance.cost", "read", storeId);
   const showHub = section === "hub";
   const showServices = section === "services";
   const showRates = section === "rates";

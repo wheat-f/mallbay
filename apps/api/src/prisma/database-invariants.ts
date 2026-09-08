@@ -103,6 +103,27 @@ const databaseInvariantChecks: DatabaseInvariantCheck[] = [
       WHERE orders."customerId" <> vehicle."customerId"
       ORDER BY orders."id"
     `
+  },
+  {
+    invariant: "active_store_member_has_matching_role_binding",
+    message: "每位在职门店成员必须拥有与其岗位对应的有效门店角色绑定",
+    query: `
+      SELECT member."userId", member."storeId", member."position"
+      FROM "StoreMember" member
+      LEFT JOIN "PermissionRole" role
+        ON role."code" = member."position"::text
+       AND role."status" = 'ACTIVE'
+      LEFT JOIN "PermissionRoleBinding" binding
+        ON binding."userId" = member."userId"
+       AND binding."roleId" = role."id"
+       AND binding."scopeType" = 'STORE'
+       AND binding."storeId" = member."storeId"
+       AND binding."status" = 'ACTIVE'
+       AND binding."effectiveAt" <= CURRENT_TIMESTAMP
+       AND (binding."expiredAt" IS NULL OR binding."expiredAt" > CURRENT_TIMESTAMP)
+      WHERE binding."id" IS NULL
+      ORDER BY member."storeId", member."userId"
+    `
   }
 ];
 

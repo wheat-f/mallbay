@@ -30,10 +30,11 @@ test("reports page filters by business dates and actual dimensions", () => {
   assert.doesNotMatch(source, /全部技师/);
 });
 
-test("sales users are restricted to their own performance view", () => {
-  assert.match(source, /const isSales = user\?\.storeMember\?\.position === "SALES"/);
-  assert.match(source, /reportViews\.filter\(\(item\) => item\.key === "sales"\)/);
-  assert.match(source, /isSales \? "我的销售业绩" : "分析报表中心"/);
+test("reports use the evaluated permission snapshot instead of a job-title fallback", () => {
+  assert.match(source, /const canReadReports = hasEffectivePermission\(permissionsQuery\.data\?\.permissions, "reports", "read", storeId\)/);
+  assert.match(source, /enabled: Boolean\(storeId && canReadReports\)/);
+  assert.match(source, /const availableViews = reportViews/);
+  assert.doesNotMatch(source, /storeMember\?\.position === "SALES"/);
 });
 
 test("reports explain cost source, commission states and no-invented construction allocation", () => {

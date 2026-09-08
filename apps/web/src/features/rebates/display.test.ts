@@ -5,7 +5,7 @@ import {
   getRebateBusinessLabel,
   getRebateCustomerLabel,
   getRebateOrderLabel,
-  getRebateReviewOptionsForRole,
+  getRebateReviewOptionsForPermissions,
   getRebateStatusLabel
 } from "./display";
 
@@ -26,17 +26,17 @@ test("rebate review options use display labels", () => {
   ]);
 });
 
-test("rebate review options are scoped by user role", () => {
-  assert.deepEqual(getRebateReviewOptionsForRole("MANAGER", false), [
+test("rebate review options are scoped by effective permissions", () => {
+  assert.deepEqual(getRebateReviewOptionsForPermissions([{ code: "rebates", actions: ["review"] }]), [
     { value: "REVIEWED", label: "业务审核通过" },
     { value: "REJECTED", label: "已驳回" }
   ]);
-  assert.deepEqual(getRebateReviewOptionsForRole("FINANCE", false), [
+  assert.deepEqual(getRebateReviewOptionsForPermissions([{ code: "rebates", actions: ["pay"] }]), [
     { value: "APPROVED", label: "财务审批通过" },
     { value: "REJECTED", label: "已驳回" }
   ]);
-  assert.deepEqual(getRebateReviewOptionsForRole("CUSTOMER_SERVICE", false), []);
-  assert.deepEqual(getRebateReviewOptionsForRole(undefined, true), REBATE_REVIEW_OPTIONS);
+  assert.deepEqual(getRebateReviewOptionsForPermissions([{ code: "rebates", actions: ["read"] }]), []);
+  assert.deepEqual(getRebateReviewOptionsForPermissions(undefined), []);
 });
 
 test("rebate display helpers use order business fields instead of technical ids", () => {

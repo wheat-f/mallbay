@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from "@nestjs/common";
-import { StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
+import { PermissionBindingStatus, PermissionRoleStatus, PermissionScopeType, StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NormalizedSubmissionPhoto } from "../domain/store-policy";
 
@@ -22,6 +22,7 @@ type ReviewableSubmission = {
 
 type ChangeManagerInput = {
   storeId: string;
+  actorId: string;
   newManagerId: string;
   currentManagerId?: string;
   existingNewManagerMemberId?: string;
@@ -180,7 +181,14 @@ export class StoreRepository {
   async changeManager(input: ChangeManagerInput) {
     await this.prisma.$transaction(async (tx) => {
       if (input.currentManagerId) {
+        const currentManager = await tx.storeMember.findUnique({ where: { id: input.currentManagerId }, select: { userId: true } });
         await tx.storeMember.delete({ where: { id: input.currentManagerId } });
+        if (currentManager) {
+          await tx.permissionRoleBinding.updateMany({
+            where: { userId: currentManager.userId, scopeType: PermissionScopeType.STORE, storeId: input.storeId, status: PermissionBindingStatus.ACTIVE },
+            data: { status: PermissionBindingStatus.DISABLED }
+          });
+        }
       }
 
       if (input.existingNewManagerMemberId) {
@@ -197,6 +205,23 @@ export class StoreRepository {
           }
         });
       }
+
+      const managerRole = await tx.permissionRole.findUnique({ where: { code: StorePosition.MANAGER } });
+      if (!managerRole || managerRole.status !== PermissionRoleStatus.ACTIVE) {
+        throw new ConflictException("店长岗位尚未配置有效角色");
+      }
+      await tx.permissionRoleBinding.updateMany({
+        where: { userId: input.newManagerId, scopeType: PermissionScopeType.STORE, storeId: input.storeId, status: PermissionBindingStatus.ACTIVE },
+        data: { status: PermissionBindingStatus.DISABLED }
+      });
+      const binding = await tx.permissionRoleBinding.upsert({
+        where: { userId_roleId_scopeType_storeId: { userId: input.newManagerId, roleId: managerRole.id, scopeType: PermissionScopeType.STORE, storeId: input.storeId } },
+        update: { status: PermissionBindingStatus.ACTIVE, effectiveAt: new Date(), expiredAt: null, createdById: input.actorId },
+        create: { userId: input.newManagerId, roleId: managerRole.id, scopeType: PermissionScopeType.STORE, storeId: input.storeId, createdById: input.actorId }
+      });
+      await tx.auditEvent.create({
+        data: { action: "permissions.binding.changed", actorId: input.actorId, storeId: input.storeId, targetType: "PermissionRoleBinding", targetId: binding.id, metadata: { userId: input.newManagerId, roleId: managerRole.id, source: "store_manager_changed" } }
+      });
     });
   }
 }

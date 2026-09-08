@@ -75,9 +75,9 @@ test("management shell wraps business routes and excludes public and mobile rout
   assert.match(source, /"\/settings"/);
   assert.match(source, /"\/inventory"/);
   assert.match(source, /"\/purchases"/);
-  assert.match(source, /canAccessSystemSettings/);
-  assert.match(source, /const canAccessSettings = runtimePermissions/);
-  assert.match(source, /runtimePermissions\.some/);
+  assert.match(source, /hasAnySettingsReadPermission\(runtimePermissions\)/);
+  assert.match(source, /const canAccessAdmin = Boolean\(runtimePermissions\?\.some/);
+  assert.doesNotMatch(source, /canAccessSystemSettings/);
   assert.doesNotMatch(source, /aria-label="系统设置"/);
   assert.ok(roleMenuStart > -1, "role menu should be declared");
   assert.ok(accountMenuStart > roleMenuStart, "account menu should be declared after role menu");

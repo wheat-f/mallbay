@@ -27,7 +27,8 @@ import { useParams, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import { constructionApi, inventoryApi, memberApi, notificationApi, orderApi, reportsApi, storeApi, warrantiesApi } from "../../../src/lib/api";
-import { getWorkbenchSections, type StorePosition } from "../../../src/features/workbench/navigation";
+import { permissionsApi, type PermissionResult } from "../../../src/features/permissions/api";
+import { getWorkbenchSections } from "../../../src/features/workbench/navigation";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { yuanCurrency } from "../../../src/features/orders/order-display";
 
@@ -273,16 +274,8 @@ function countActiveWarranties(warranties: WarrantySummary[]) {
   return warranties.filter((warranty) => warranty.status === "ACTIVE").length;
 }
 
-function canViewWorkbenchReports(position?: string) {
-  return position === "MANAGER" || position === "SALES" || position === "FINANCE";
-}
-
-function canViewWorkbenchInventory(position?: string) {
-  return position === "MANAGER" || position === "PURCHASING" || position === "CUSTOMER_SERVICE";
-}
-
-function canViewWorkbenchWarranties(position?: string) {
-  return Boolean(position);
+function hasWorkbenchPermission(permissions: PermissionResult["permissions"] | undefined, code: string, action: string) {
+  return Boolean(permissions?.some((permission) => permission.code === code && permission.actions.includes(action)));
 }
 
 // ─── 邀请成员抽屉 ───────────────────────────────────────────────
@@ -597,6 +590,11 @@ export default function WorkbenchPage() {
     queryFn: () => storeApi.myStore(storeId),
     staleTime: 5_000
   });
+  const permissionsQuery = useQuery({
+    queryKey: ["auth-permissions", storeId],
+    queryFn: () => permissionsApi.me(storeId),
+    enabled: Boolean(user?.id && storeId)
+  });
 
   const fallbackStore = !storeQuery.data && user?.storeMember?.store.id === storeId
     ? {
@@ -623,43 +621,47 @@ export default function WorkbenchPage() {
     : null;
   const store = storeQuery.data ?? fallbackStore;
   const statusCfg = store ? (STATUS_CONFIG[store.status] ?? { text: store.status, color: "default" }) : null;
-  const isManager = store?.currentMember.position === "MANAGER";
-  const canManageStore = isManager && store.status !== "PENDING_REVIEW" && store.status !== "FROZEN";
+  const runtimePermissions = permissionsQuery.data?.permissions;
+  const canEditStoreProfile = hasWorkbenchPermission(runtimePermissions, "store.profile", "write");
+  const canManageMembers = hasWorkbenchPermission(runtimePermissions, "store.members", "write");
   const workbenchSections = store
-    ? getWorkbenchSections(store.currentMember.position as StorePosition, store.id)
+    ? getWorkbenchSections(runtimePermissions, store.id)
     : [];
   const todayDate = getTodayDateString();
   const currentPosition = store?.currentMember.position;
-  const canLoadReportSummary = canViewWorkbenchReports(currentPosition);
-  const canLoadInventoryBatches = canViewWorkbenchInventory(currentPosition);
-  const canLoadWarranties = canViewWorkbenchWarranties(currentPosition);
+  const canLoadReportSummary = hasWorkbenchPermission(runtimePermissions, "reports", "read");
+  const canLoadPendingDispatch = hasWorkbenchPermission(runtimePermissions, "orders", "read");
+  const canLoadCapacity = hasWorkbenchPermission(runtimePermissions, "construction", "read");
+  const canLoadInventoryBatches = hasWorkbenchPermission(runtimePermissions, "inventory", "read");
+  const canLoadWarranties = hasWorkbenchPermission(runtimePermissions, "warranties", "read");
+  const canLoadNotifications = Boolean(runtimePermissions?.length);
   const summaryQuery = useQuery({
-    queryKey: ["workbench-summary", storeId, currentPosition],
+    queryKey: ["workbench-summary", storeId, permissionsQuery.data?.bindingVersion],
     queryFn: () => reportsApi.summary(storeId),
     enabled: Boolean(store) && canLoadReportSummary
   });
   const pendingDispatchQuery = useQuery({
     queryKey: ["workbench-pending-dispatch", storeId],
     queryFn: () => orderApi.list({ storeId, status: "PENDING_DISPATCH", page: 1, pageSize: 1 }),
-    enabled: Boolean(store)
+    enabled: Boolean(store) && canLoadPendingDispatch
   });
   const balanceTodoQuery = useQuery({
-    queryKey: ["workbench-balance-todos", storeId, currentPosition],
+    queryKey: ["workbench-balance-todos", storeId, permissionsQuery.data?.bindingVersion],
     queryFn: () => notificationApi.listTodos(1, 20),
-    enabled: Boolean(store)
+    enabled: Boolean(store) && canLoadNotifications
   });
   const capacityQuery = useQuery({
     queryKey: ["workbench-capacity", storeId, todayDate],
     queryFn: () => constructionApi.capacities({ storeId, from: todayDate, to: todayDate }),
-    enabled: Boolean(store)
+    enabled: Boolean(store) && canLoadCapacity
   });
   const inventoryBatchesQuery = useQuery({
-    queryKey: ["workbench-inventory-batches", storeId, currentPosition],
+    queryKey: ["workbench-inventory-batches", storeId, permissionsQuery.data?.bindingVersion],
     queryFn: () => inventoryApi.batches({ storeId }),
     enabled: Boolean(store) && canLoadInventoryBatches
   });
   const warrantiesQuery = useQuery({
-    queryKey: ["workbench-warranties", storeId, currentPosition],
+    queryKey: ["workbench-warranties", storeId, permissionsQuery.data?.bindingVersion],
     queryFn: () => warrantiesApi.list(storeId),
     enabled: Boolean(store) && canLoadWarranties
   });
@@ -750,12 +752,12 @@ export default function WorkbenchPage() {
                 </p>
               </div>
               <div className="workbench-hero-actions">
-                {isManager && store.status !== "PENDING_REVIEW" && store.status !== "FROZEN" ? (
-                  <Button type="primary" disabled={!canManageStore} onClick={() => setSubmitOpen(true)}>
+                {canEditStoreProfile && store.status !== "PENDING_REVIEW" && store.status !== "FROZEN" ? (
+                  <Button type="primary" onClick={() => setSubmitOpen(true)}>
                     编辑并提交审核
                   </Button>
                 ) : null}
-                {isManager ? (
+                {canManageMembers ? (
                   <Button icon={<PlusOutlined />} onClick={() => setInviteOpen(true)}>
                     邀请成员
                   </Button>
@@ -921,7 +923,7 @@ export default function WorkbenchPage() {
                       <small>{store.members.length} 人</small>
                     </span>
                   )}
-                  extra={isManager ? (
+                  extra={canManageMembers ? (
                     <Button size="small" icon={<PlusOutlined />} onClick={() => setInviteOpen(true)}>
                       邀请成员
                     </Button>
@@ -951,7 +953,7 @@ export default function WorkbenchPage() {
                           <Tag color={m.position === "MANAGER" ? "blue" : "default"} style={{ margin: 0 }}>
                             {POSITION_LABEL[m.position] ?? m.position}
                           </Tag>
-                          {isManager && m.position !== "MANAGER" && (
+                          {canManageMembers && m.position !== "MANAGER" && (
                             <Popconfirm
                               title="确认移除"
                               description={`确定将「${m.user.nickname ?? m.user.username}」移出团队吗？`}
@@ -979,7 +981,7 @@ export default function WorkbenchPage() {
         )}
         </div>
 
-      {isManager && (
+      {canManageMembers && (
         <InviteDrawer
           storeId={storeId}
           open={inviteOpen}
@@ -988,7 +990,7 @@ export default function WorkbenchPage() {
         />
       )}
 
-      {store && isManager && submitOpen && (
+      {store && canEditStoreProfile && submitOpen && (
         <SubmitDrawer
           storeId={storeId}
           initialData={store}

@@ -26,7 +26,7 @@ test("checkDatabaseInvariants reports duplicate cover and pending submission ris
 
   const violations = await checkDatabaseInvariants(prisma);
 
-  assert.equal(queries.length, 7);
+  assert.equal(queries.length, 8);
   assert.deepEqual(violations, [
     {
       invariant: "store_photo_single_cover",
@@ -44,6 +44,22 @@ test("checkDatabaseInvariants reports duplicate cover and pending submission ris
       rows: [{ submissionId: "submission-1", count: 2 }]
     }
   ]);
+});
+
+test("checkDatabaseInvariants blocks members without an active matching role binding", async () => {
+  const prisma = {
+    $queryRawUnsafe: async (query: string) => query.includes('"PermissionRoleBinding"')
+      ? [{ userId: "manager-1", storeId: "store-1", position: "MANAGER" }]
+      : []
+  };
+
+  const violations = await checkDatabaseInvariants(prisma);
+
+  assert.deepEqual(violations, [{
+    invariant: "active_store_member_has_matching_role_binding",
+    message: "每位在职门店成员必须拥有与其岗位对应的有效门店角色绑定",
+    rows: [{ userId: "manager-1", storeId: "store-1", position: "MANAGER" }]
+  }]);
 });
 
 test("checkDatabaseInvariants audits customer vehicle identity and ownership", async () => {

@@ -18,8 +18,8 @@ export class SettingsAuditService {
 
   async list(user: SettingsUser, input: AuditQuery) {
     const actor = user;
-    const settingsScope = await this.scope(actor.id, "settings", "read");
-    const financeScope = await this.scope(actor.id, "finance", "read");
+    const settingsScope = await this.scope(actor.id, "settings.audit.global", "read");
+    const financeScope = await this.scope(actor.id, "finance.audit", "read");
     const canGlobal = settingsScope.global;
     const canFinance = financeScope.allowed;
     const accessibleStoreIds = [...new Set([...settingsScope.storeIds, ...financeScope.storeIds])];
@@ -100,7 +100,7 @@ export class SettingsAuditService {
       if (!page.rows.length) break;
     }
     const actor = user;
-    const canGlobal = (await this.scope(actor.id, "settings", "read")).global;
+    const canGlobal = (await this.scope(actor.id, "settings.audit.global", "read")).global;
     await this.prisma.auditEvent.create({
       data: {
         action: "settings.audit.exported",

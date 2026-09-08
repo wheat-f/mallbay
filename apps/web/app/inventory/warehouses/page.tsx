@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { inventoryApi } from "../../../src/lib/api";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 
 type WarehouseFormValues = {
   name: string;
@@ -26,14 +27,13 @@ export default function WarehouseManagementPage() {
   const [editingWarehouse, setEditingWarehouse] = useState<InventoryWarehouseSummary | null>(null);
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canManageInventory = user?.isAuditor === true ||
-    user?.storeMember?.position === "MANAGER" ||
-    user?.storeMember?.position === "PURCHASING";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManageInventory = hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "write", storeId);
 
   const warehousesQuery = useQuery({
     queryKey: ["inventory-warehouses", storeId],
     queryFn: () => inventoryApi.warehouses(storeId!),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "read", storeId))
   });
   const warehouses = (warehousesQuery.data ?? []) as InventoryWarehouseSummary[];
 

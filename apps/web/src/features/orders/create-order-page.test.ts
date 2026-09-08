@@ -138,14 +138,14 @@ test("create order customer history card shows latest order status", () => {
   assert.match(pageSource, /最近订单：/);
 });
 
-test("create order page defaults the salesperson and lets only the manager assign another eligible employee", () => {
+test("create order page defaults the salesperson and lets members with the evaluated member-management grant assign another eligible employee", () => {
   const pageSource = readFileSync("app/orders/create/page.tsx", "utf8");
 
   assert.match(pageSource, /name="salesPersonId"/);
   assert.match(pageSource, /label="销售员"/);
   assert.match(pageSource, /salesPersonId: user\?\.id/);
   assert.match(pageSource, /\["MANAGER", "SALES", "CUSTOMER_SERVICE"\]/);
-  assert.match(pageSource, /const canAssignSalesPerson = user\?\.storeMember\?\.position === "MANAGER"/);
+  assert.match(pageSource, /const canAssignSalesPerson = hasEffectivePermission\(permissionsQuery\.data\?\.permissions, "store\.members", "write", storeId\)/);
   assert.match(pageSource, /disabled=\{!canAssignSalesPerson\}/);
 });
 

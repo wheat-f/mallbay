@@ -19,6 +19,7 @@ import {
 import { getProductDisplayName } from "../../src/features/products/display";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
 
 type PendingMatchOrderRow = {
   id: string;
@@ -56,24 +57,23 @@ type MovementRow = {
 export default function InventoryOverviewPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
-  const canManageInventory = user?.isAuditor === true ||
-    user?.storeMember?.position === "MANAGER" ||
-    user?.storeMember?.position === "PURCHASING";
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canManageInventory = hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "write", storeId);
 
   const batchesQuery = useQuery({
     queryKey: ["inventory-overview-batches", storeId],
     queryFn: () => inventoryApi.batches({ storeId: storeId! }),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "read", storeId))
   });
   const pendingOrdersQuery = useQuery({
     queryKey: ["inventory-overview-pending-orders", storeId],
     queryFn: () => inventoryApi.pendingMatchOrders(storeId!),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "read", storeId))
   });
   const movementsQuery = useQuery({
     queryKey: ["inventory-overview-movements", storeId],
     queryFn: () => inventoryApi.movements({ storeId: storeId! }),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "inventory", "read", storeId))
   });
   const batchRows = useMemo(() => (batchesQuery.data ?? []) as InventoryBatchSummary[], [batchesQuery.data]);
   const pendingRows = useMemo(() => {

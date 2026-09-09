@@ -16,16 +16,7 @@ import { useEffect, useState } from "react";
 import { authApi, storeApi, userApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { hasEffectivePermission, useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
-
-const POSITION_LABEL: Record<string, string> = {
-  MANAGER: "店长",
-  SALES: "销售",
-  PURCHASING: "采购",
-  FINANCE: "财务",
-  SCHEDULER: "排班员",
-  CONSTRUCTION: "施工员",
-  APPRENTICE: "学徒"
-};
+import { getStorePositionLabel } from "../../src/features/members/store-position";
 
 const STATUS_CONFIG: Record<string, { text: string; color: string }> = {
   DRAFTED: { text: "筹办中", color: "default" },
@@ -184,7 +175,7 @@ export default function DashboardPage() {
   const displayName = user.nickname ?? user.username;
   const storeMember = user.storeMember;
   const roleLabel = storeMember
-    ? POSITION_LABEL[storeMember.position] ?? storeMember.position
+    ? getStorePositionLabel(storeMember.position)
     : isHeadquartersAdmin
       ? "管理员"
       : "访客";

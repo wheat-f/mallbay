@@ -30,21 +30,17 @@ import { constructionApi, inventoryApi, memberApi, notificationApi, orderApi, re
 import { permissionsApi, type PermissionResult } from "../../../src/features/permissions/api";
 import { getWorkbenchSections } from "../../../src/features/workbench/navigation";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { getStorePositionLabel } from "../../../src/features/members/store-position";
 import { yuanCurrency } from "../../../src/features/orders/order-display";
 
 const POSITION_OPTIONS = [
   { label: "销售", value: "SALES" },
   { label: "采购", value: "PURCHASING" },
   { label: "财务", value: "FINANCE" },
-  { label: "排班员", value: "SCHEDULER" },
+  { label: "施工主管", value: "SCHEDULER" },
   { label: "施工员", value: "CONSTRUCTION" },
   { label: "学徒", value: "APPRENTICE" }
 ];
-
-const POSITION_LABEL: Record<string, string> = {
-  MANAGER: "店长", SALES: "销售", PURCHASING: "采购",
-  FINANCE: "财务", SCHEDULER: "排班员", CONSTRUCTION: "施工员", APPRENTICE: "学徒"
-};
 
 const STATUS_CONFIG: Record<string, { text: string; color: string }> = {
   DRAFTED: { text: "筹办中", color: "default" },
@@ -166,7 +162,7 @@ function buildWorkbenchKpis({
     {
       label: "团队成员",
       value: String(teamSize),
-      trend: `${POSITION_LABEL[currentPosition] ?? currentPosition}视图`,
+      trend: `${getStorePositionLabel(currentPosition)}视图`,
       tone: "primary",
       icon: <TeamOutlined />
     }
@@ -217,7 +213,7 @@ function buildTaskRows({
 }): TaskRow[] {
   const rows: TaskRow[] = [];
   if (pendingDispatchTotal > 0) {
-    rows.push({ type: "施工派单", ref: `${pendingDispatchTotal} 个待派单订单`, owner: POSITION_LABEL[currentPosition] ?? "主管", due: "尽快处理", status: "待处理" });
+    rows.push({ type: "施工派单", ref: `${pendingDispatchTotal} 个待派单订单`, owner: getStorePositionLabel(currentPosition) || "主管", due: "尽快处理", status: "待处理" });
   }
   if (afterSalesCount > 0) {
     rows.push({ type: "售后跟进", ref: `${afterSalesCount} 个售后单`, owner: "客服/施工主管", due: "持续跟进", status: "处理中" });
@@ -696,7 +692,7 @@ export default function WorkbenchPage() {
   });
   const balanceTodoRows: TaskRow[] = (balanceTodoQuery.data?.items ?? []).map((todo) => {
     const payload = todo.payload as { orderId?: string; orderNo?: string; outstandingCents?: number };
-    return { orderId: payload.orderId, type: "尾款待收", ref: payload.orderNo ?? "订单尾款", owner: POSITION_LABEL[currentPosition ?? ""] ?? "销售/财务", due: payload.outstandingCents ? yuanCurrency(payload.outstandingCents) : "待结清", status: todo.isRead ? "已读未处理" : "待处理" };
+    return { orderId: payload.orderId, type: "尾款待收", ref: payload.orderNo ?? "订单尾款", owner: getStorePositionLabel(currentPosition) || "销售/财务", due: payload.outstandingCents ? yuanCurrency(payload.outstandingCents) : "待结清", status: todo.isRead ? "已读未处理" : "待处理" };
   });
   const allTaskRows = [...balanceTodoRows, ...taskRows];
   const trendBars = buildWorkbenchTrendBars(summary);
@@ -744,7 +740,7 @@ export default function WorkbenchPage() {
               <div>
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   {statusCfg && <Tag color={statusCfg.color}>{statusCfg.text}</Tag>}
-                  <Tag>{POSITION_LABEL[store.currentMember.position] ?? store.currentMember.position}</Tag>
+                  <Tag>{getStorePositionLabel(store.currentMember.position)}</Tag>
                 </div>
                 <h1>运营工作台</h1>
                 <p>
@@ -875,7 +871,7 @@ export default function WorkbenchPage() {
                 <div className="workbench-quick-section">
                   <div className="workbench-panel-heading">
                     <strong>业务快捷入口</strong>
-                    <span>{POSITION_LABEL[store.currentMember.position] ?? store.currentMember.position}可用功能</span>
+                    <span>{getStorePositionLabel(store.currentMember.position)}可用功能</span>
                   </div>
                   <div className="workbench-entry-grid">
                     {workbenchSections.flatMap((section) =>
@@ -951,7 +947,7 @@ export default function WorkbenchPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <Tag color={m.position === "MANAGER" ? "blue" : "default"} style={{ margin: 0 }}>
-                            {POSITION_LABEL[m.position] ?? m.position}
+                            {getStorePositionLabel(m.position)}
                           </Tag>
                           {canManageMembers && m.position !== "MANAGER" && (
                             <Popconfirm

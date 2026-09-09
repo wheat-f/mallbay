@@ -305,7 +305,7 @@ export class ProductsService {
   }
 
   private async assertCanManageProducts(user: AccessSubject, storeId: string) {
-    if (!await this.accessContext.can(user, "products", "suggested-price-write", { storeId })) {
+    if (!await this.accessContext.can(user, "products", "write", { storeId })) {
       throw new ForbiddenException("无权限");
     }
   }
@@ -316,7 +316,7 @@ export class ProductsService {
   }
 
   private async assertCanManageSuggestedPrices(user: AccessSubject, storeId: string) {
-    if (!await this.accessContext.can(user, "products", "write", { storeId })) {
+    if (!await this.accessContext.can(user, "products", "suggested-price-write", { storeId })) {
       throw new ForbiddenException("仅店长可维护产品建议价");
     }
   }

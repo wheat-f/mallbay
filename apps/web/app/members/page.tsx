@@ -6,22 +6,11 @@ import { App, Avatar, Button, Card, Drawer, Empty, Input, Popconfirm, Select, Sp
 import { CalendarOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Suspense, useMemo, useState } from "react";
-import type { StorePosition } from "@mallbay/shared";
 import { memberApi } from "../../src/features/members/api";
+import { getStorePositionLabel, STORE_POSITION_LABELS } from "../../src/features/members/store-position";
 import { storeApi } from "../../src/features/stores/api";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../src/stores/auth-store";
-
-const POSITION_LABEL: Record<StorePosition, string> = {
-  MANAGER: "店长",
-  SALES: "销售",
-  CUSTOMER_SERVICE: "客服",
-  PURCHASING: "采购",
-  FINANCE: "财务",
-  SCHEDULER: "施工主管",
-  CONSTRUCTION: "施工员",
-  APPRENTICE: "学徒"
-};
 
 const INVITE_POSITION_OPTIONS = [
   { label: "销售", value: "SALES" },
@@ -174,7 +163,7 @@ function MembersContent() {
       const matchesKeyword = !normalized || [
         member.user.username,
         member.user.nickname ?? "",
-        POSITION_LABEL[member.position as StorePosition] ?? member.position
+        getStorePositionLabel(member.position)
       ].some((value) => value.toLowerCase().includes(normalized));
       const matchesPosition = positionFilter === "ALL" || member.position === positionFilter;
       return matchesView && matchesKeyword && matchesPosition;
@@ -288,7 +277,7 @@ function MembersContent() {
                 <Select
                   value={positionFilter}
                   onChange={setPositionFilter}
-                  options={[{ label: "全部岗位", value: "ALL" }, ...Object.entries(POSITION_LABEL).map(([value, label]) => ({ value, label }))]}
+                  options={[{ label: "全部岗位", value: "ALL" }, ...Object.entries(STORE_POSITION_LABELS).map(([value, label]) => ({ value, label }))]}
                 />
               </div>
               <div className="orders-filter-item">
@@ -315,7 +304,7 @@ function MembersContent() {
                           <span>@{member.user.username}</span>
                         </div>
                         <Tag color={isManager ? "blue" : "default"}>
-                          {POSITION_LABEL[member.position as StorePosition] ?? member.position}
+                          {getStorePositionLabel(member.position)}
                         </Tag>
                       </div>
                       <dl className="members-mobile-card-fields">
@@ -377,7 +366,7 @@ function MembersContent() {
                   dataIndex: "position",
                   render: (position: string) => (
                     <Tag color={position === "MANAGER" ? "blue" : "default"}>
-                      {POSITION_LABEL[position as StorePosition] ?? position}
+                      {getStorePositionLabel(position)}
                     </Tag>
                   )
                 },

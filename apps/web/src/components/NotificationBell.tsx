@@ -10,6 +10,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { memberApi } from "../features/members/api";
+import { getStorePositionLabel } from "../features/members/store-position";
 import { notificationApi } from "../features/notifications/api";
 import { useAuthStore } from "../stores/auth-store";
 
@@ -27,15 +28,10 @@ const NOTIF_LABEL: Record<string, string> = {
   LEAVE_REJECTED: "请假已驳回"
 };
 
-const POSITION_LABEL: Record<string, string> = {
-  SALES: "销售", PURCHASING: "采购", FINANCE: "财务",
-  SCHEDULER: "施工主管", CONSTRUCTION: "施工员", APPRENTICE: "学徒"
-};
-
 function notifSummary(type: string, payload: Record<string, unknown>): string {
   switch (type) {
     case "STORE_INVITATION":
-      return `「${payload.storeName}」邀请你加入，岗位：${POSITION_LABEL[payload.position as string] ?? payload.position}`;
+      return `「${payload.storeName}」邀请你加入，岗位：${getStorePositionLabel(payload.position as string)}`;
     case "INVITATION_ACCEPTED":
       return `你发出的邀请已被接受（${payload.storeName}）`;
     case "INVITATION_REJECTED":
@@ -108,7 +104,7 @@ function InvitationCard({ inv, onDone }: {
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium text-[var(--mb-text-primary)]">{inv.store.name}</div>
         <div className="mt-0.5 text-xs text-[var(--mb-text-muted)]">
-          {inviterName} 邀请你以「{POSITION_LABEL[inv.position] ?? inv.position}」加入
+          {inviterName} 邀请你以「{getStorePositionLabel(inv.position)}」加入
         </div>
         <div className="mt-2 flex gap-2">
           <Button

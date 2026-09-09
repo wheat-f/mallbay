@@ -155,6 +155,39 @@ test("ProductsService rejects product updates from sales", async () => {
   );
 });
 
+test("ProductsService allows purchasing to update product details without changing suggested price", async () => {
+  const writes: unknown[] = [];
+  const service = new ProductsService({
+    product: {
+      findUnique: async () => ({
+        id: "product-1",
+        storeId: "store-1",
+        basePriceCents: 5000000,
+        salesUnit: ProductUnit.ROLL,
+        unit: ProductUnit.ROLL,
+        metersPerRoll: null,
+        standardCostCents: null
+      }),
+      update: async (args: unknown) => {
+        writes.push(args);
+        return { id: "product-1" };
+      }
+    }
+  } as never, productAccess as never);
+
+  const result = await service.update(
+    { id: "purchasing-1" },
+    "product-1",
+    { name: "漆面保护膜（采购资料更新）" }
+  );
+
+  assert.deepEqual(result, { id: "product-1" });
+  assert.deepEqual(writes, [{
+    where: { id: "product-1" },
+    data: { name: "漆面保护膜（采购资料更新）" }
+  }]);
+});
+
 test("ProductsService rejects customer service product mutations", async () => {
   const service = new ProductsService({
     product: {

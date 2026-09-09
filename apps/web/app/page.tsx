@@ -26,16 +26,7 @@ import { authApi, storeApi } from "../src/lib/api";
 import { NotificationBell } from "../src/components/NotificationBell";
 import { useAuthStore } from "../src/stores/auth-store";
 import { hasEffectivePermission, useEffectivePermissions } from "../src/features/permissions/use-effective-permissions";
-
-const POSITION_LABEL: Record<string, string> = {
-  MANAGER: "店长",
-  SALES: "销售",
-  PURCHASING: "采购",
-  FINANCE: "财务",
-  SCHEDULER: "排班员",
-  CONSTRUCTION: "施工员",
-  APPRENTICE: "学徒"
-};
+import { getStorePositionLabel } from "../src/features/members/store-position";
 
 type StoreLobbyCardProps = {
   store: {
@@ -167,7 +158,7 @@ export default function HomePage() {
                 <span>
                   {storeMember.store.name}
                   <small className="home-lobby-menu-meta">
-                    · {POSITION_LABEL[storeMember.position] ?? storeMember.position}
+                    · {getStorePositionLabel(storeMember.position)}
                   </small>
                 </span>
               </span>

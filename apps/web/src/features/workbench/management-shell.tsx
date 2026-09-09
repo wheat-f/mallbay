@@ -8,19 +8,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { authApi } from "../../lib/api";
 import { NotificationBell } from "../../components/NotificationBell";
 import { useAuthStore } from "../../stores/auth-store";
+import { getStorePositionLabel } from "../members/store-position";
 import { permissionsApi } from "../permissions/api";
 import { getActiveManagementMenuKey, getManagementMenuGroups, getManagementMenuItems, hasAnySettingsReadPermission } from "./management-menu";
-
-const POSITION_LABEL: Record<string, string> = {
-  MANAGER: "店长",
-  SALES: "销售",
-  CUSTOMER_SERVICE: "客服",
-  PURCHASING: "采购",
-  FINANCE: "财务",
-  SCHEDULER: "施工主管",
-  CONSTRUCTION: "施工员",
-  APPRENTICE: "学徒"
-};
 
 const publicPrefixes = ["/auth", "/stores/"];
 const mobilePrefixes = [] as string[];
@@ -165,7 +155,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
           {
             key: "workbench",
             icon: <UserOutlined />,
-            label: `${storeMember.store.name} · ${POSITION_LABEL[storeMember.position] ?? storeMember.position}`,
+            label: `${storeMember.store.name} · ${getStorePositionLabel(storeMember.position)}`,
             onClick: () => router.push(`/workbench/${storeMember.store.id}`)
           }
         ]
@@ -184,7 +174,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
     { key: "logout", icon: <LogoutOutlined />, label: "退出登录", danger: true, onClick: () => logoutMutation.mutate() }
   ];
   const roleSwitcherLabel = storeMember
-    ? POSITION_LABEL[storeMember.position] ?? storeMember.position
+    ? getStorePositionLabel(storeMember.position)
     : isHeadquartersAdmin ? "运营管理" : "角色切换";
 
   return (
@@ -256,7 +246,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
           <div className="min-w-0">
             <div className="management-user-name">{displayName}</div>
             <div className="management-user-role">
-              {storeMember ? POSITION_LABEL[storeMember.position] ?? storeMember.position : isHeadquartersAdmin ? "管理员" : "访客"}
+              {storeMember ? getStorePositionLabel(storeMember.position) : isHeadquartersAdmin ? "管理员" : "访客"}
             </div>
           </div>
         </div>
@@ -268,7 +258,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
             <Typography.Text className="management-store-name">
               {storeMember?.store.name ?? (isHeadquartersAdmin ? "运营管理" : "mallbay")}
             </Typography.Text>
-            {storeMember ? <Tag className="management-role-tag">{POSITION_LABEL[storeMember.position] ?? storeMember.position}</Tag> : null}
+            {storeMember ? <Tag className="management-role-tag">{getStorePositionLabel(storeMember.position)}</Tag> : null}
           </div>
 
           <Input

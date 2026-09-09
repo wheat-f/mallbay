@@ -10,6 +10,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationDispatcher } from "../notifications/notification-dispatcher";
 import { AccessContext } from "../permissions/domain/access-context";
+import { PermissionsService } from "../permissions/permissions.service";
 import { InviteMemberDto } from "./dto/invite-member.dto";
 
 @Injectable()
@@ -18,7 +19,8 @@ export class MembersService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly accessContext: AccessContext,
-    @Optional() private readonly notificationDispatcher?: NotificationDispatcher
+    @Optional() private readonly notificationDispatcher?: NotificationDispatcher,
+    @Optional() private readonly permissions?: PermissionsService
   ) {}
 
   // ─── 店长：搜索可邀请的用户 ────────────────────────────────────────────────
@@ -158,6 +160,7 @@ export class MembersService {
       });
       if (accepted.count !== 1) throw new BadRequestException("该邀请已处理");
     });
+    this.permissions?.invalidateUserCache(userId);
 
     // 通知邀请人
     await this.dispatchNotification(invitation.invitedById, "INVITATION_ACCEPTED", {
@@ -233,6 +236,7 @@ export class MembersService {
         data: { action: "permissions.binding.disabled", actorId: managerId, storeId, targetType: "StoreMember", targetId: member.id, metadata: { userId: targetUserId, source: "store_member_removed" } }
       });
     });
+    this.permissions?.invalidateUserCache(targetUserId);
 
     await this.dispatchNotification(targetUserId, "REMOVED_FROM_STORE", {
       storeId,

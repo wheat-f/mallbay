@@ -114,6 +114,7 @@ test("inviteMember tells managers to contact an administrator when assigning sto
 test("acceptInvitation replaces frozen-store membership, accepts invitation, and notifies inviter", async () => {
   const transactionCalls: string[] = [];
   const notifications: unknown[] = [];
+  const invalidatedUsers: string[] = [];
   const invitation = {
     id: "invitation-1",
     storeId: "store-1",
@@ -214,11 +215,14 @@ test("acceptInvitation replaces frozen-store membership, accepts invitation, and
     send: async (userId: string, type: string, payload: unknown) => {
       notifications.push({ userId, type, payload });
     }
-  } as never, storeMemberWriter as never);
+  } as never, storeMemberWriter as never, undefined, {
+    invalidateUserCache: (userId: string) => invalidatedUsers.push(userId)
+  } as never);
 
   const result = await service.acceptInvitation("user-2", "invitation-1");
 
   assert.deepEqual(result, { success: true });
+  assert.deepEqual(invalidatedUsers, ["user-2"]);
   assert.deepEqual(transactionCalls, [
     "member.findUnique",
     "member.delete",

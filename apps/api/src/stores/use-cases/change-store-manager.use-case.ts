@@ -10,6 +10,7 @@ import { AuditLogService } from "../../observability/audit-log.service";
 import { AuditEventWriter } from "../../observability/audit-event-writer";
 import { ChangeManagerDto } from "../dto/change-manager.dto";
 import { StoreRepository } from "../repositories/store.repository";
+import { PermissionsService } from "../../permissions/permissions.service";
 
 @Injectable()
 export class ChangeStoreManagerUseCase {
@@ -18,7 +19,8 @@ export class ChangeStoreManagerUseCase {
     private readonly notifications: NotificationsService,
     private readonly auditLog: AuditLogService,
     @Optional() private readonly notificationDispatcher?: NotificationDispatcher,
-    @Optional() private readonly auditWriter?: AuditEventWriter
+    @Optional() private readonly auditWriter?: AuditEventWriter,
+    @Optional() private readonly permissions?: PermissionsService
   ) {}
 
   async execute(actorId: string, storeId: string, dto: ChangeManagerDto) {
@@ -46,6 +48,8 @@ export class ChangeStoreManagerUseCase {
       currentManagerId: currentManager?.id,
       existingNewManagerMemberId: newManagerMember?.id
     });
+    this.permissions?.invalidateUserCache(dto.newManagerId);
+    if (currentManager) this.permissions?.invalidateUserCache(currentManager.userId);
     this.writeAudit({
       action: "STORE_MANAGER_CHANGED",
       targetType: "store",

@@ -8,6 +8,7 @@ test("ChangeStoreManagerUseCase replaces current manager and notifies removed ma
   const transactionCalls: string[] = [];
   const notifications: Array<{ userId: string; type: string; payload: unknown }> = [];
   const auditEvents: unknown[] = [];
+  const invalidatedUsers: string[] = [];
   const currentManager = { id: "member-current", userId: "manager-old" };
   const tx = {
     storeMember: {
@@ -109,12 +110,16 @@ test("ChangeStoreManagerUseCase replaces current manager and notifies removed ma
         notifications.push({ userId, type, payload });
       }
     } as never,
-    { record: (event: unknown) => auditEvents.push(event) } as never
+    { record: (event: unknown) => auditEvents.push(event) } as never,
+    undefined,
+    undefined,
+    { invalidateUserCache: (userId: string) => invalidatedUsers.push(userId) } as never
   );
 
   const result = await useCase.execute("admin-1", "store-1", { newManagerId: "manager-new" });
 
   assert.deepEqual(result, { success: true });
+  assert.deepEqual(invalidatedUsers, ["manager-new", "manager-old"]);
   assert.deepEqual(transactionCalls, [
     "member.findUnique",
     "member.delete",

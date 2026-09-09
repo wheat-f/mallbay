@@ -511,7 +511,8 @@ export class PermissionsService {
     return this.prisma.permissionDefinition.findMany({ where: { status: "ACTIVE" }, orderBy: [{ resource: "asc" }, { code: "asc" }] });
   }
 
-  private invalidateUserCache(userId: string) {
+  /** Clears cached access projections after an external role-binding change. */
+  invalidateUserCache(userId: string) {
     for (const key of this.resultCache.keys()) if (key.startsWith(userId + ":")) this.resultCache.delete(key);
     this.snapshotStore.clear(userId);
   }

@@ -100,10 +100,6 @@ export class CustomersService {
 
   async list(user: AuthenticatedCustomerUser, dto: ListCustomersDto) {
     const actor = { userId: user.id } satisfies AccessSubject;
-    if (!await this.canCustomer(actor, "read", dto.storeId)) {
-      throw new ForbiddenException("无权限");
-    }
-
     const { page, pageSize, skip } = normalizePagination(dto.page, dto.pageSize);
     const where = await this.buildScopedWhere(actor, dto.storeId);
     const q = dto.q?.trim();
@@ -145,10 +141,6 @@ export class CustomersService {
 
   async search(user: AuthenticatedCustomerUser, storeId: string, q: string) {
     const actor = { userId: user.id } satisfies AccessSubject;
-    if (!await this.canCustomer(actor, "read", storeId)) {
-      throw new ForbiddenException("无权限");
-    }
-
     const where = await this.buildScopedWhere(actor, storeId);
     const keyword = q?.trim();
     if (keyword) {
@@ -756,8 +748,9 @@ export class CustomersService {
   }
 
   private async buildScopedWhere(user: AccessSubject, storeId: string): Promise<Prisma.CustomerWhereInput> {
-    if (!await this.canCustomer(user, "read", storeId)) throw new ForbiddenException("无权限");
     const scope = await this.accessContext!.scope(user, "customers", "read", { storeId });
+    const canReadOwnCollection = scope.ownerId === user.userId && scope.storeIds.includes(storeId);
+    if (!scope.allowed && !canReadOwnCollection) throw new ForbiddenException("无权限");
     return scope.ownerId ? { storeId, ownerUserId: scope.ownerId } : { storeId };
   }
 

@@ -311,6 +311,54 @@ test("CustomersService search includes car plate and VIN hash conditions", async
   ]);
 });
 
+test("CustomersService lets sales list and search only their own customers", async () => {
+  const capturedWhere: unknown[] = [];
+  const ownReadAccess = {
+    can: async (actor: { userId: string }, capability: string, action: string, context: { ownerId?: string } = {}) => {
+      if (capability !== "customers" || action !== "read") return true;
+      return context.ownerId === actor.userId;
+    },
+    scope: async (actor: { userId: string }) => ({
+      allowed: false,
+      global: false,
+      storeIds: ["store-1"],
+      ownerId: actor.userId
+    })
+  };
+  const service = new CustomersService({
+    customer: {
+      count: async (args: { where: unknown }) => {
+        capturedWhere.push(args.where);
+        return 0;
+      },
+      findMany: async (args: { where: unknown }) => {
+        capturedWhere.push(args.where);
+        return [];
+      }
+    }
+  } as never, undefined, ownReadAccess as never);
+  const user = { id: "sales-1" };
+
+  await service.list(user, { storeId: "store-1", page: 1, pageSize: 20 });
+  await service.search(user, "store-1", "权限回归测试");
+
+  assert.deepEqual(capturedWhere, [
+    { storeId: "store-1", ownerUserId: "sales-1" },
+    { storeId: "store-1", ownerUserId: "sales-1" },
+    {
+      storeId: "store-1",
+      ownerUserId: "sales-1",
+      OR: [
+        { name: { contains: "权限回归测试", mode: "insensitive" } },
+        { companyName: { contains: "权限回归测试", mode: "insensitive" } },
+        { contactPerson: { contains: "权限回归测试", mode: "insensitive" } },
+        { wechat: { contains: "权限回归测试", mode: "insensitive" } },
+        { vehicles: { some: { carPlate: { contains: "权限回归测试", mode: "insensitive" } } } }
+      ]
+    }
+  ]);
+});
+
 test("CustomersService detail returns generated archive summary from orders warranties and after-sales", async () => {
   const amountAggregateArgs: unknown[] = [];
   const prisma = {

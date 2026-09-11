@@ -21,6 +21,7 @@ export const SETTINGS_CAPABILITIES: readonly SettingsCapability[] = [
   { code: "store.operations", name: "业务开关与容量", domain: "STORE", actions: ["view", "create", "edit", "validate", "publish"], scope: "store" },
   { code: "store.notifications", name: "通知与 OSS", domain: "STORE", actions: ["view", "create", "edit", "validate", "publish"], scope: "store" },
   { code: "store.capacity", name: "预约与容量默认值", domain: "STORE", actions: ["view", "create", "edit", "validate", "publish"], scope: "store" },
+  { code: "settings.audit.store", name: "门店审计", domain: "STORE", actions: ["view", "audit"], scope: "store" },
   { code: "finance.labor_cost", name: "岗位小时成本", domain: "FINANCE", actions: ["view", "create", "edit", "validate", "publish"], scope: "store" },
   { code: "finance.settlement", name: "成本与结算规则", domain: "FINANCE", actions: ["view", "create", "edit", "validate", "publish"], scope: "store" },
   { code: "finance.accounts", name: "收款账户", domain: "FINANCE", actions: ["view", "create", "edit", "validate", "publish"], scope: "store" },

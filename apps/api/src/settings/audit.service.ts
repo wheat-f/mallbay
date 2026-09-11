@@ -19,18 +19,24 @@ export class SettingsAuditService {
   async list(user: SettingsUser, input: AuditQuery) {
     const actor = user;
     const settingsScope = await this.scope(actor.id, "settings.audit.global", "read");
+    const storeSettingsScope = await this.scope(actor.id, "settings.audit.store", "read");
     const financeScope = await this.scope(actor.id, "finance.audit", "read");
     const canGlobal = settingsScope.global;
+    const canStoreSettings = storeSettingsScope.allowed;
     const canFinance = financeScope.allowed;
-    const accessibleStoreIds = [...new Set([...settingsScope.storeIds, ...financeScope.storeIds])];
-    if (!canGlobal && !canFinance && !accessibleStoreIds.length) throw new ForbiddenException({ code: "SCOPE_UNRESOLVED", message: "当前用户没有可访问的审计范围" });
+    const accessibleStoreIds = [...new Set([...settingsScope.storeIds, ...storeSettingsScope.storeIds, ...financeScope.storeIds])];
+    if (!canGlobal && !canStoreSettings && !canFinance && !accessibleStoreIds.length) throw new ForbiddenException({ code: "SCOPE_UNRESOLVED", message: "当前用户没有可访问的审计范围" });
     const requestedDomain = input.domain?.trim().toUpperCase();
+    if (requestedDomain) input = { ...input, domain: requestedDomain };
     // Legacy position === "FINANCE" && requestedDomain !== "FINANCE" rule is now permission-backed.
     if (requestedDomain && !canGlobal && canFinance && requestedDomain !== "FINANCE") {
       throw new ForbiddenException("财务只能访问财务审计");
     }
     if (requestedDomain === "FINANCE" && !canGlobal && !canFinance) {
       throw new ForbiddenException("当前角色无权访问财务审计");
+    }
+    if (requestedDomain && requestedDomain !== "FINANCE" && !canGlobal && !canStoreSettings) {
+      throw new ForbiddenException("当前角色无权访问门店审计");
     }
     if (!canGlobal && canFinance && !requestedDomain) {
       input = { ...input, domain: "FINANCE" };
@@ -44,7 +50,14 @@ export class SettingsAuditService {
     if (input.from || input.to) {
       predicates.push({ createdAt: { ...(input.from ? { gte: new Date(input.from) } : {}), ...(input.to ? { lte: new Date(input.to) } : {}) } });
     }
-    if (input.domain) predicates.push({ action: { contains: `settings.${input.domain.toLowerCase()}` } });
+    if (input.domain === "FINANCE") {
+      predicates.push({
+        OR: [
+          { action: { contains: "settings.finance" } },
+          { metadata: { path: ["capabilityCode"], string_starts_with: "finance." } }
+        ]
+      });
+    }
     const where: Prisma.AuditEventWhereInput = {
       ...(predicates.length ? { AND: predicates } : {}),
       ...(!canGlobal ? { storeId: { in: accessibleStoreIds.length ? accessibleStoreIds : ["__NO_SCOPE__"] } } : {})

@@ -19,6 +19,7 @@ const PATHS: Record<string, string> = {
   "store.operations": "/settings/store?capability=store.operations",
   "store.notifications": "/settings/store?capability=store.notifications",
   "store.capacity": "/settings/store?capability=store.capacity",
+  "settings.audit.store": "/settings/audit",
   "settings.audit.global": "/settings/audit",
   "finance.audit": "/settings/audit?domain=FINANCE",
   "finance.labor_cost": "/settings/finance",
@@ -42,7 +43,8 @@ export default function SettingsPage() {
     let cancelled = false;
     setLoading(true);
     try { setRecentAccess(JSON.parse(window.localStorage.getItem("settings-recent-access") ?? "[]")); } catch { setRecentAccess([]); }
-    Promise.all([settingsApi.capabilities(), settingsApi.summary(), settingsApi.audit("limit=5")]).then(([data, summary, audit]) => {
+    Promise.all([settingsApi.capabilities(), settingsApi.summary()]).then(async ([data, summary]) => {
+      const audit = await settingsApi.audit("limit=5").catch(() => ({ rows: [], total: 0 }));
       if (!cancelled) { setCapabilities(data); setSummaryByCode(Object.fromEntries(summary.cards.map((card) => [card.code, card]))); setRecentChanges(audit.rows); setError(null); }
     }).catch((reason) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : "设置能力加载失败");

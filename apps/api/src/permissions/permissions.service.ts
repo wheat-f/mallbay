@@ -203,13 +203,15 @@ export class PermissionsService {
       }
     }
 
-    const requestedStoreIsKnown = context.storeId === undefined || global || storeIds.has(context.storeId);
-    const storeAllowed = global || (context.storeId === undefined ? storeIds.size > 0 : storeIds.has(context.storeId));
     const ownOnlyRequest = hasOwnGrant && !hasStoreGrant;
     // An OWN-only capability cannot authorize an unspecified target. Callers
     // must provide the resource owner so list/detail mappings cannot silently
     // widen a personal scope into a store-wide query.
     const ownerAllowed = !ownOnlyRequest || context.ownerId === userId;
+    const requestedStoreIsKnown = context.storeId === undefined || global || storeIds.has(context.storeId);
+    const storeAllowed = ownOnlyRequest && context.storeId === undefined
+      ? true
+      : global || (context.storeId === undefined ? storeIds.size > 0 : storeIds.has(context.storeId));
     const allowed = requestedStoreIsKnown && storeAllowed && (!ownOnlyRequest || ownerAllowed);
     let reason: AccessDenialReason | undefined;
     if (!allowed) {

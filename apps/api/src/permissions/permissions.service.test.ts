@@ -76,6 +76,20 @@ test("legacy isAuditor users do not receive HQ permissions without an active HQ 
   assert.equal(await service.authorize("auditor-1", "permissions.policy", "read"), false);
 });
 
+test("OWN-only permissions work for HQ-bound users when the owner is explicit", async () => {
+  const service = buildService({
+    user: { findUnique: async () => ({ id: "hq-1", isAuditor: false, storeMembers: [] }) },
+    permissionRoleBinding: {
+      findMany: async () => [{ id: "hq-binding", roleId: "hq-role", scopeType: "HQ", storeId: null }],
+      findFirst: async () => null
+    },
+    permissionRole: { findMany: async () => [{ id: "hq-role", code: "HQ_ADMIN", name: "总部管理员" }] },
+    permissionRoleGrant: { findMany: async () => [{ roleId: "hq-role", permissionCode: "account.profile", action: "read", scope: "OWN" }] }
+  });
+  assert.equal(await service.authorize("hq-1", "account.profile", "read", { ownerId: "hq-1" }), true);
+  assert.equal(await service.authorize("hq-1", "account.profile", "read", { ownerId: "other-user" }), false);
+});
+
 test("policy administrators may manage explicit role bindings", async () => {
   const service = buildService({
     user: { findUnique: async () => ({ id: "hq-1", isAuditor: false, storeMembers: [] }) },

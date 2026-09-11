@@ -31,6 +31,7 @@ const settingsReadRequirements: PermissionRequirement[] = [
   { code: "permissions.policy", action: "read", global: true }, { code: "settings.dictionary", action: "read", global: true },
   { code: "settings.security", action: "read", global: true }, { code: "customer.tags", action: "read", global: true },
   { code: "settings.audit.global", action: "read", global: true }, { code: "store.dictionary", action: "read" },
+  { code: "settings.audit.store", action: "read" },
   { code: "store.members", action: "read" }, { code: "store.profile", action: "read" },
   { code: "store.operations", action: "read" }, { code: "store.notifications", action: "read" },
   { code: "store.capacity", action: "read" }, { code: "finance.labor_cost", action: "read" },

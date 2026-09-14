@@ -4,9 +4,9 @@ import { getStoreWorkbenchHref, getWorkbenchSections } from "./navigation";
 
 test("workbench links use the effective permission snapshot instead of StoreMember position", () => {
   const sections = getWorkbenchSections([
-    { code: "products", actions: ["read"], bindingScopes: [{ scopeType: "STORE" as const, scopeIds: ["store-1"] }] },
-    { code: "inventory", actions: ["read"], bindingScopes: [{ scopeType: "STORE" as const, scopeIds: ["store-1"] }] },
-    { code: "store.members", actions: ["write"], bindingScopes: [{ scopeType: "STORE" as const, scopeIds: ["store-1"] }] }
+    { code: "products", actions: ["read"], scopes: ["STORE"], bindingScopes: [{ scopeType: "STORE" as const, scopeIds: ["store-1"] }] },
+    { code: "inventory", actions: ["read"], scopes: ["STORE"], bindingScopes: [{ scopeType: "STORE" as const, scopeIds: ["store-1"] }] },
+    { code: "store.members", actions: ["write"], scopes: ["STORE"], bindingScopes: [{ scopeType: "STORE" as const, scopeIds: ["store-1"] }] }
   ], "store-1");
 
   assert.deepEqual(sections.map((section) => section.title), ["履约与供应链"]);
@@ -19,7 +19,7 @@ test("workbench hides all entries until an effective permission snapshot is avai
 });
 
 test("workbench action visibility checks the requested action as well as the capability", () => {
-  const sections = getWorkbenchSections([{ code: "orders", actions: ["read"], bindingScopes: [{ scopeType: "STORE" as const, scopeIds: ["store-1"] }] }], "store-1");
+  const sections = getWorkbenchSections([{ code: "orders", actions: ["read"], scopes: ["STORE"], bindingScopes: [{ scopeType: "STORE" as const, scopeIds: ["store-1"] }] }], "store-1");
   const actions = sections.flatMap((section) => section.items).map((item) => item.label);
 
   assert.deepEqual(actions, ["订单管理"]);

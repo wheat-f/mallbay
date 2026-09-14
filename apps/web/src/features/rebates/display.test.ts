@@ -27,15 +27,15 @@ test("rebate review options use display labels", () => {
 });
 
 test("rebate review options are scoped by effective permissions", () => {
-  assert.deepEqual(getRebateReviewOptionsForPermissions([{ code: "rebates", actions: ["review"] }]), [
+  assert.deepEqual(getRebateReviewOptionsForPermissions([{ code: "rebates", actions: ["review"], scopes: ["STORE"] }]), [
     { value: "REVIEWED", label: "业务审核通过" },
     { value: "REJECTED", label: "已驳回" }
   ]);
-  assert.deepEqual(getRebateReviewOptionsForPermissions([{ code: "rebates", actions: ["pay"] }]), [
+  assert.deepEqual(getRebateReviewOptionsForPermissions([{ code: "rebates", actions: ["pay"], scopes: ["STORE"] }]), [
     { value: "APPROVED", label: "财务审批通过" },
     { value: "REJECTED", label: "已驳回" }
   ]);
-  assert.deepEqual(getRebateReviewOptionsForPermissions([{ code: "rebates", actions: ["read"] }]), []);
+  assert.deepEqual(getRebateReviewOptionsForPermissions([{ code: "rebates", actions: ["read"], scopes: ["STORE"] }]), []);
   assert.deepEqual(getRebateReviewOptionsForPermissions(undefined), []);
 });
 

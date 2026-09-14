@@ -13,7 +13,7 @@ import {
 export type RuntimePermission = {
   code: string;
   actions: string[];
-  scopes?: string[];
+  scopes: string[];
   bindingScopes?: Array<{ scopeType: "HQ" | "STORE"; scopeIds: string[] }>;
 };
 type PermissionRequirement = { code: string; action?: string; global?: boolean };

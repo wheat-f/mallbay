@@ -28,7 +28,7 @@ export class ProductsService {
     const actor = { userId: user.id } satisfies AccessSubject;
     await this.assertCanManageProducts(actor, dto.storeId);
     await this.assertCanManageSuggestedPrices(actor, dto.storeId);
-    if (dto.standardCostCents !== undefined && !await this.accessContext.can(actor, "finance", "write", { storeId: dto.storeId })) {
+    if (dto.standardCostCents !== undefined && !await this.accessContext.can(actor, "finance.cost", "write", { storeId: dto.storeId })) {
       throw new ForbiddenException("仅财务或店长可维护材料成本");
     }
 
@@ -41,8 +41,8 @@ export class ProductsService {
         category: dto.category,
         specification: dto.specification,
         unit: dto.unit,
-        ...(dto.inventoryUnit !== undefined ? { inventoryUnit: dto.inventoryUnit } : {}),
-        ...(dto.salesUnit !== undefined ? { salesUnit: dto.salesUnit } : {}),
+        inventoryUnit: dto.inventoryUnit,
+        salesUnit: dto.salesUnit,
         ...(dto.rollWidthMeters !== undefined ? { rollWidthMeters: dto.rollWidthMeters } : {}),
         ...(dto.rollLengthMeters !== undefined ? { rollLengthMeters: dto.rollLengthMeters } : {}),
         ...(dto.metersPerRoll !== undefined ? { metersPerRoll: dto.metersPerRoll } : {}),
@@ -102,7 +102,7 @@ export class ProductsService {
       })
     ]);
 
-    const canViewInternalCost = await this.accessContext.can(actor, "finance", "write", { storeId: dto.storeId });
+    const canViewInternalCost = await this.accessContext.can(actor, "finance.cost", "read", { storeId: dto.storeId });
     return {
       total,
       page,
@@ -125,7 +125,7 @@ export class ProductsService {
     if (!await this.accessContext.can(actor, "products", "read", { storeId: product.storeId })) {
       throw new ForbiddenException("无权限");
     }
-    if (!await this.accessContext.can(actor, "finance", "write", { storeId: product.storeId })) {
+    if (!await this.accessContext.can(actor, "finance.cost", "read", { storeId: product.storeId })) {
       const { standardCostCents: _standardCostCents, ...safeProduct } = product;
       return safeProduct;
     }
@@ -146,7 +146,7 @@ export class ProductsService {
       (dto.metersPerRoll !== undefined && Number(dto.metersPerRoll) !== Number(product.metersPerRoll ?? 0))
     );
     if (changesSuggestedPriceBasis) await this.assertCanManageSuggestedPrices(actor, product.storeId);
-    if (dto.standardCostCents !== undefined && !await this.accessContext.can(actor, "finance", "write", { storeId: product.storeId })) {
+    if (dto.standardCostCents !== undefined && !await this.accessContext.can(actor, "finance.cost", "write", { storeId: product.storeId })) {
       throw new ForbiddenException("仅财务或店长可维护材料成本");
     }
 
@@ -196,7 +196,7 @@ export class ProductsService {
       include: { unitSuggestedPrices: { orderBy: { salesUnit: "asc" } } }
     });
     if (!product) throw new NotFoundException("产品不存在");
-    if (!await this.accessContext.can(actor, "finance", "write", { storeId: product.storeId })) {
+    if (!await this.accessContext.can(actor, "finance.cost", "write", { storeId: product.storeId })) {
       throw new ForbiddenException("仅财务或店长可维护材料成本");
     }
     const updated = await this.prisma.product.update({ where: { id }, data: { standardCostCents } });
@@ -291,17 +291,40 @@ export class ProductsService {
   }
 
   async remove(user: AuthenticatedProductUser, id: string) {
+    return this.changeStatus(user, id, ProductStatus.INACTIVE);
+  }
+
+  async disable(user: AuthenticatedProductUser, id: string) {
+    return this.changeStatus(user, id, ProductStatus.INACTIVE);
+  }
+
+  async enable(user: AuthenticatedProductUser, id: string) {
+    return this.changeStatus(user, id, ProductStatus.ACTIVE);
+  }
+
+  private async changeStatus(user: AuthenticatedProductUser, id: string, status: ProductStatus) {
     const actor = { userId: user.id } satisfies AccessSubject;
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) {
       throw new NotFoundException("产品不存在");
     }
-    await this.assertCanManageProducts(actor, product.storeId);
+    if (!await this.accessContext.can(actor, "products", status === ProductStatus.ACTIVE ? "enable" : "disable", { storeId: product.storeId })) {
+      throw new ForbiddenException("无权限");
+    }
 
-    return this.prisma.product.update({
+    if (product.status === status) return product;
+    const updated = await this.prisma.product.update({
       where: { id },
-      data: { status: ProductStatus.INACTIVE }
+      data: { status }
     });
+    await this.recordAudit({
+      action: status === ProductStatus.ACTIVE ? "product_enabled" : "product_disabled",
+      actorId: actor.userId,
+      targetType: "Product",
+      targetId: id,
+      metadata: { storeId: product.storeId, previousStatus: product.status, nextStatus: status }
+    });
+    return updated;
   }
 
   private async assertCanManageProducts(user: AccessSubject, storeId: string) {

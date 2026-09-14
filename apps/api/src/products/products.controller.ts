@@ -49,8 +49,19 @@ export class ProductsController {
     return this.products.update(req.user, id, dto);
   }
 
+  /** @deprecated Use POST /products/:id/disable. */
   @Delete(":id")
   remove(@Req() req: AuthRequest, @Param("id") id: string) {
     return this.products.remove(req.user, id);
+  }
+
+  @Post(":id/disable")
+  disable(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.products.disable(req.user, id);
+  }
+
+  @Post(":id/enable")
+  enable(@Req() req: AuthRequest, @Param("id") id: string) {
+    return this.products.enable(req.user, id);
   }
 }

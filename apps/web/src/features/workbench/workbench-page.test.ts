@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-test("workbench page falls back to the current session store instead of rendering an empty shell", () => {
+test("workbench page resolves role and store data from the effective context", () => {
   const pageSource = readFileSync("app/workbench/[storeId]/page.tsx", "utf8");
 
-  assert.match(pageSource, /useAuthStore/);
-  assert.match(pageSource, /fallbackStore/);
-  assert.match(pageSource, /user\?\.storeMember\?\.store\.id === storeId/);
-  assert.match(pageSource, /permissionsApi\.me\(storeId\)/);
+  assert.match(pageSource, /useCurrentStoreContext\(storeId\)/);
+  assert.doesNotMatch(pageSource, /fallbackStore/);
+  assert.match(pageSource, /effectiveRoles/);
+  assert.match(pageSource, /useEffectivePermissions\(storeId\)/);
   assert.match(pageSource, /getWorkbenchSections\(runtimePermissions, store\.id\)/);
   assert.match(pageSource, /workbench-data-alert/);
 });
@@ -144,12 +144,12 @@ test("workbench dashboard queries are gated by effective permissions", () => {
   assert.match(workbenchSource, /const canLoadCapacity =/);
   assert.match(workbenchSource, /const canLoadInventoryBatches =/);
   assert.match(workbenchSource, /const canLoadWarranties =/);
-  assert.match(workbenchSource, /hasWorkbenchPermission\(runtimePermissions, "reports", "read"\)/);
-  assert.match(workbenchSource, /hasWorkbenchPermission\(runtimePermissions, "inventory", "read"\)/);
-  assert.match(workbenchSource, /hasWorkbenchPermission\(runtimePermissions, "warranties", "read"\)/);
-  assert.match(workbenchSource, /queryKey: \["workbench-summary", storeId, permissionsQuery\.data\?\.bindingVersion\]/);
-  assert.match(workbenchSource, /queryKey: \["workbench-inventory-batches", storeId, permissionsQuery\.data\?\.bindingVersion\]/);
-  assert.match(workbenchSource, /queryKey: \["workbench-warranties", storeId, permissionsQuery\.data\?\.bindingVersion\]/);
+  assert.match(workbenchSource, /hasWorkbenchPermission\(runtimePermissions, "reports", "read", storeId\)/);
+  assert.match(workbenchSource, /hasWorkbenchPermission\(runtimePermissions, "inventory", "read", storeId\)/);
+  assert.match(workbenchSource, /hasWorkbenchPermission\(runtimePermissions, "warranties", "read", storeId\)/);
+  assert.match(workbenchSource, /queryKey: \["workbench-summary", storeId, permissionsQuery\.data\?\.policyVersion, permissionsQuery\.data\?\.bindingVersion\]/);
+  assert.match(workbenchSource, /queryKey: \["workbench-inventory-batches", storeId, permissionsQuery\.data\?\.policyVersion, permissionsQuery\.data\?\.bindingVersion\]/);
+  assert.match(workbenchSource, /queryKey: \["workbench-warranties", storeId, permissionsQuery\.data\?\.policyVersion, permissionsQuery\.data\?\.bindingVersion\]/);
   assert.match(workbenchSource, /enabled: Boolean\(store\) && canLoadReportSummary/);
   assert.match(workbenchSource, /enabled: Boolean\(store\) && canLoadInventoryBatches/);
   assert.match(workbenchSource, /enabled: Boolean\(store\) && canLoadWarranties/);

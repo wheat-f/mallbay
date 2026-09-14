@@ -34,8 +34,10 @@ export function toProductPayload(storeId: string, values: ProductFormValues): Cr
     category: values.category ?? "OTHER",
     specification: values.specification,
     unit: values.unit ?? "PIECE",
-    inventoryUnit: values.inventoryUnit,
-    salesUnit: values.salesUnit,
+    // Always send both operational units. This prevents Prisma's ROLL default
+    // from silently overriding a form that intentionally selected another base unit.
+    inventoryUnit: values.inventoryUnit ?? values.unit,
+    salesUnit: values.salesUnit ?? values.unit,
     rollWidthMeters: values.rollWidthMeters,
     rollLengthMeters: values.rollLengthMeters,
     metersPerRoll: values.metersPerRoll,
@@ -59,8 +61,8 @@ export function toProductFormValues(product: ProductPayloadLike): ProductFormVal
     category: product.category,
     specification: product.specification,
     unit: product.unit,
-    inventoryUnit: product.inventoryUnit,
-    salesUnit: product.salesUnit,
+    inventoryUnit: product.inventoryUnit ?? product.unit,
+    salesUnit: product.salesUnit ?? product.unit,
     rollWidthMeters: product.rollWidthMeters,
     rollLengthMeters: product.rollLengthMeters,
     metersPerRoll: product.metersPerRoll,

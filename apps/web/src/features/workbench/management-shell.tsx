@@ -3,13 +3,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Avatar, Dropdown, Input, Space, Tag, Typography } from "antd";
 import { HomeOutlined, LogoutOutlined, SearchOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined } from "@ant-design/icons";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { authApi } from "../../lib/api";
 import { NotificationBell } from "../../components/NotificationBell";
 import { useAuthStore } from "../../stores/auth-store";
-import { getStorePositionLabel } from "../members/store-position";
-import { permissionsApi } from "../permissions/api";
+import { useEffectivePermissions } from "../permissions/use-effective-permissions";
+import { useCurrentStoreContext } from "./store-context";
 import { getActiveManagementMenuKey, getManagementMenuGroups, getManagementMenuItems, hasAnySettingsReadPermission } from "./management-menu";
 
 const publicPrefixes = ["/auth", "/stores/"];
@@ -86,20 +86,26 @@ export function ManagementShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const clearSession = useAuthStore((state) => state.clearSession);
-  const storeMember = user?.storeMember;
-  const permissionsQuery = useQuery({ queryKey: ["auth-permissions", storeMember?.store.id], queryFn: () => permissionsApi.me(storeMember?.store.id), enabled: Boolean(user?.id) });
+  const { storeId, store } = useCurrentStoreContext();
+  const permissionsQuery = useEffectivePermissions(storeId);
   const runtimePermissions = permissionsQuery.data?.permissions;
   const isHeadquartersAdmin = Boolean(permissionsQuery.data?.roles.some((role) => role.roleCode === "HQ_ADMIN" && role.scopeType === "HQ"));
   const canAccessAdmin = Boolean(runtimePermissions?.some((permission) => permission.code === "store" && permission.actions.includes("read") && permission.scopes.includes("GLOBAL")));
+  const effectiveRoleLabel = permissionsQuery.data?.roles
+    .filter((role) => role.scopeType === "HQ" || role.scopeIds.includes(storeId ?? ""))
+    .sort((left, right) => left.roleCode.localeCompare(right.roleCode))
+    .map((role) => role.roleName)
+    .filter(Boolean)
+    .join("、") || (isHeadquartersAdmin ? "管理员" : "访客");
   const displayName = user?.nickname ?? user?.username ?? "用户";
   const activeKey = getActiveManagementMenuKey(pathname);
-  const canAccessSettings = hasAnySettingsReadPermission(runtimePermissions);
+  const canAccessSettings = hasAnySettingsReadPermission(runtimePermissions, storeId);
   const menuItems = getManagementMenuItems({
-    storeId: storeMember?.store.id,
+    storeId,
     permissions: runtimePermissions
   }).filter((item) => item.key !== "settings" || canAccessSettings);
   const menuGroups = getManagementMenuGroups({
-    storeId: storeMember?.store.id,
+    storeId,
     permissions: runtimePermissions
   })
     .map((group) => ({
@@ -150,13 +156,13 @@ export function ManagementShell({ children }: { children: ReactNode }) {
     }
   });
   const roleMenuItems = [
-    ...(storeMember
+    ...(store
       ? [
           {
             key: "workbench",
             icon: <UserOutlined />,
-            label: `${storeMember.store.name} · ${getStorePositionLabel(storeMember.position)}`,
-            onClick: () => router.push(`/workbench/${storeMember.store.id}`)
+            label: `${store.name} · ${effectiveRoleLabel}`,
+            onClick: () => router.push(`/workbench/${store.id}`)
           }
         ]
       : []),
@@ -173,9 +179,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
     { type: "divider" as const },
     { key: "logout", icon: <LogoutOutlined />, label: "退出登录", danger: true, onClick: () => logoutMutation.mutate() }
   ];
-  const roleSwitcherLabel = storeMember
-    ? getStorePositionLabel(storeMember.position)
-    : isHeadquartersAdmin ? "运营管理" : "角色切换";
+  const roleSwitcherLabel = store ? effectiveRoleLabel : isHeadquartersAdmin ? "运营管理" : "角色切换";
 
   return (
     <div className="management-shell">
@@ -246,7 +250,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
           <div className="min-w-0">
             <div className="management-user-name">{displayName}</div>
             <div className="management-user-role">
-              {storeMember ? getStorePositionLabel(storeMember.position) : isHeadquartersAdmin ? "管理员" : "访客"}
+              {effectiveRoleLabel}
             </div>
           </div>
         </div>
@@ -256,9 +260,9 @@ export function ManagementShell({ children }: { children: ReactNode }) {
         <header className="management-topbar">
           <div className="management-topbar-left">
             <Typography.Text className="management-store-name">
-              {storeMember?.store.name ?? (isHeadquartersAdmin ? "运营管理" : "mallbay")}
+              {store?.name ?? (isHeadquartersAdmin ? "运营管理" : "mallbay")}
             </Typography.Text>
-            {storeMember ? <Tag className="management-role-tag">{getStorePositionLabel(storeMember.position)}</Tag> : null}
+            {store ? <Tag className="management-role-tag">{effectiveRoleLabel}</Tag> : null}
           </div>
 
           <Input

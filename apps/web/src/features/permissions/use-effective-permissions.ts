@@ -36,9 +36,11 @@ export function hasEffectivePermission(
 export function useEffectivePermissions(storeId?: string) {
   const userId = useAuthStore((state) => state.user?.id);
   return useQuery({
-    queryKey: ["auth-permissions", storeId ?? "headquarters"],
+    queryKey: ["auth-permissions", userId ?? "anonymous", storeId ?? "headquarters"],
     queryFn: () => permissionsApi.me(storeId),
     enabled: Boolean(userId),
-    staleTime: 15_000
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true
   });
 }

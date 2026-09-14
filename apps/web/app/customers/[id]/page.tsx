@@ -42,8 +42,9 @@ import type {
   CustomerVehicleHistoryItem,
   UpdateVehiclePayload
 } from "../../../src/features/customers/api";
-import { useAuthStore } from "../../../src/stores/auth-store";
-import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
+import { hasAffordancePermission, AFFORDANCE_DEFINITIONS } from "../../../src/features/permissions/affordances";
+import { useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
+import { useCurrentStoreContext } from "../../../src/features/workbench/store-context";
 import {
   getAfterSaleResponsibilityLabel,
   getAfterSaleStatusLabel,
@@ -56,6 +57,9 @@ import { getOrderStatusLabel } from "../../../src/features/orders/order-display"
 type CustomerDetail = {
   id: string;
   storeId: string;
+  status?: "ACTIVE" | "ARCHIVED";
+  archivedAt?: string | null;
+  archivedReason?: string | null;
   customerType: "PERSONAL" | "COMPANY";
   name?: string | null;
   phone?: string | null;
@@ -258,16 +262,20 @@ export default function CustomerDetailPage() {
   const [transferVehicle, setTransferVehicle] = useState<CustomerVehicle | null>(null);
   const [historyVehicle, setHistoryVehicle] = useState<CustomerVehicle | null>(null);
   const [vehiclePhotoUploading, setVehiclePhotoUploading] = useState(false);
-  const currentUser = useAuthStore((state) => state.user);
-  const storeId = currentUser?.storeMember?.store.id;
+  const { storeId } = useCurrentStoreContext();
   const permissionsQuery = useEffectivePermissions(storeId);
-  const isManager = hasEffectivePermission(permissionsQuery.data?.permissions, "store", "write", storeId);
+  const canReadCustomers = hasAffordancePermission(permissionsQuery.data?.permissions, AFFORDANCE_DEFINITIONS.customerView, storeId);
+  const canWriteCustomers = hasAffordancePermission(permissionsQuery.data?.permissions, AFFORDANCE_DEFINITIONS.customerEdit, storeId);
+  const canManageVehicleLifecycle = hasAffordancePermission(permissionsQuery.data?.permissions, AFFORDANCE_DEFINITIONS.customerVehicleLifecycle, storeId);
+  const canArchiveCustomers = hasAffordancePermission(permissionsQuery.data?.permissions, AFFORDANCE_DEFINITIONS.customerArchive, storeId);
+  const canRestoreCustomers = hasAffordancePermission(permissionsQuery.data?.permissions, AFFORDANCE_DEFINITIONS.customerRestore, storeId);
   const customerId = params.id;
-  const detailQueryKey = ["customer-detail", customerId];
+  const detailQueryKey = ["customer-detail", customerId, storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion];
 
   const customerQuery = useQuery({
     queryKey: detailQueryKey,
-    queryFn: () => customerApi.detail(customerId)
+    queryFn: () => customerApi.detail(customerId),
+    enabled: Boolean(storeId && canReadCustomers)
   });
   const customer = customerQuery.data as CustomerDetail | undefined;
   const summary = customer?.archiveSummary;
@@ -281,6 +289,18 @@ export default function CustomerDetailPage() {
       message.success("客户基础信息已更新");
       setEditDrawerOpen(false);
       queryClient.invalidateQueries({ queryKey: detailQueryKey });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
+  const customerLifecycleMutation = useMutation({
+    mutationFn: (status: "ACTIVE" | "ARCHIVED") => status === "ACTIVE"
+      ? customerApi.restore(customerId)
+      : customerApi.archive(customerId),
+    onSuccess: () => {
+      message.success(customer?.status === "ARCHIVED" ? "客户已恢复" : "客户已归档");
+      queryClient.invalidateQueries({ queryKey: detailQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
     },
     onError: (error: Error) => message.error(error.message)
   });
@@ -304,15 +324,15 @@ export default function CustomerDetailPage() {
 
 
   const transferTargetsQuery = useQuery({
-    queryKey: ["customer-transfer-targets", customer?.storeId],
+    queryKey: ["customer-transfer-targets", customer?.storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => customerApi.list({ storeId: customer!.storeId, page: 1, pageSize: 100 }),
-    enabled: Boolean(transferVehicle && customer?.storeId)
+    enabled: Boolean(transferVehicle && customer?.storeId && canManageVehicleLifecycle)
   });
 
   const vehicleHistoryQuery = useQuery({
-    queryKey: ["customer-vehicle-history", historyVehicle?.id],
+    queryKey: ["customer-vehicle-history", historyVehicle?.id, storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => customerApi.vehicleHistory(historyVehicle!.id),
-    enabled: Boolean(historyVehicle)
+    enabled: Boolean(historyVehicle && canReadCustomers)
   });
 
   const lifecycleMutation = useMutation({
@@ -476,6 +496,9 @@ export default function CustomerDetailPage() {
               <div className="customer-detail-title-row">
                 <h1>{getCustomerDisplayName(customer)}</h1>
                 <Tag>{customer.customerType === "COMPANY" ? "企业客户" : "个人客户"}</Tag>
+                <Tag color={customer.status === "ARCHIVED" ? "default" : "green"}>
+                  {customer.status === "ARCHIVED" ? "已归档" : "正常"}
+                </Tag>
                 {(customer.systemTags ?? summary?.systemTags ?? []).map((tag) => (
                   <Tag key={tag.code} color={tag.code === "KEY_FOLLOW_UP" ? "red" : "blue"}>
                     {tag.label}
@@ -492,9 +515,27 @@ export default function CustomerDetailPage() {
               <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/customers")}>
                 返回客户列表
               </Button>
-              <Button icon={<EditOutlined />} disabled={!customer} onClick={openEditDrawer}>
+              <Button icon={<EditOutlined />} disabled={!customer || !canWriteCustomers} onClick={openEditDrawer}>
                 编辑资料
               </Button>
+              {customer.status === "ARCHIVED" ? (
+                <Button
+                  disabled={!canRestoreCustomers}
+                  loading={customerLifecycleMutation.isPending}
+                  onClick={() => customerLifecycleMutation.mutate("ACTIVE")}
+                >
+                  恢复客户
+                </Button>
+              ) : (
+                <Button
+                  danger
+                  disabled={!canArchiveCustomers}
+                  loading={customerLifecycleMutation.isPending}
+                  onClick={() => customerLifecycleMutation.mutate("ARCHIVED")}
+                >
+                  归档客户
+                </Button>
+              )}
               {customer.customerType === "COMPANY" ? (
                 <Button
                   icon={<BankOutlined />}
@@ -506,7 +547,7 @@ export default function CustomerDetailPage() {
               <Button
                 type="primary"
                 icon={<FileTextOutlined />}
-                disabled={!customer}
+                disabled={!customer || customer.status === "ARCHIVED"}
                 onClick={() => router.push(`/orders/create?customerId=${customerId}`)}
               >
                 新建订单
@@ -532,7 +573,7 @@ export default function CustomerDetailPage() {
                 className="customer-detail-card customer-vehicle-card"
                 title="车辆信息"
                 extra={
-                  <Button size="small" icon={<PlusOutlined />} onClick={() => openVehicleDrawer()}>
+                  <Button size="small" icon={<PlusOutlined />} disabled={!canWriteCustomers} onClick={() => openVehicleDrawer()}>
                     新增车辆
                   </Button>
                 }
@@ -575,13 +616,13 @@ export default function CustomerDetailPage() {
                           <Typography.Text type="secondary" className="block text-xs">停用原因：{vehicle.disabledReason}</Typography.Text>
                         ) : null}
                         <div className="mt-2 flex flex-wrap gap-1">
-                          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openVehicleDrawer(vehicle)}>
+                          <Button size="small" type="text" icon={<EditOutlined />} disabled={!canWriteCustomers} onClick={() => openVehicleDrawer(vehicle)}>
                             编辑
                           </Button>
                           <Button size="small" type="text" icon={<HistoryOutlined />} onClick={() => setHistoryVehicle(vehicle)}>
                             历史
                           </Button>
-                          {isManager ? (
+                          {canManageVehicleLifecycle ? (
                             <>
                               <Button size="small" type="text" icon={<SwapOutlined />} onClick={() => setTransferVehicle(vehicle)}>
                                 转移
@@ -816,7 +857,7 @@ export default function CustomerDetailPage() {
                   <Form.Item name="label" rules={[{ required: true, whitespace: true, message: "请输入标签" }]}>
                     <Input maxLength={30} placeholder="例如 老客户、商务车队" />
                   </Form.Item>
-                  <Button htmlType="submit" loading={tagMutation.isPending} block>
+                  <Button htmlType="submit" loading={tagMutation.isPending} disabled={!canWriteCustomers} block>
                     添加标签
                   </Button>
                 </Form>
@@ -841,7 +882,7 @@ export default function CustomerDetailPage() {
                   <Form.Item name="content" rules={[{ required: true, whitespace: true, message: "请输入跟进内容" }]}>
                     <Input.TextArea rows={3} maxLength={1000} placeholder="记录偏好、特殊要求或沟通内容" />
                   </Form.Item>
-                  <Button type="primary" htmlType="submit" loading={noteMutation.isPending} block>
+                  <Button type="primary" htmlType="submit" loading={noteMutation.isPending} disabled={!canWriteCustomers} block>
                     添加记录
                   </Button>
                 </Form>
@@ -873,7 +914,7 @@ export default function CustomerDetailPage() {
             footer={(
               <div className="customer-detail-drawer-footer">
                 <Button onClick={() => setEditDrawerOpen(false)}>取消</Button>
-                <Button type="primary" loading={updateMutation.isPending} onClick={submitEditDrawer}>
+                <Button type="primary" loading={updateMutation.isPending} disabled={!canWriteCustomers} onClick={submitEditDrawer}>
                   保存
                 </Button>
               </div>
@@ -984,7 +1025,7 @@ export default function CustomerDetailPage() {
             footer={(
               <div className="customer-detail-drawer-footer">
                 <Button onClick={closeVehicleDrawer}>取消</Button>
-                <Button type="primary" loading={vehicleMutation.isPending} onClick={submitVehicleDrawer}>
+                <Button type="primary" loading={vehicleMutation.isPending} disabled={!canWriteCustomers} onClick={submitVehicleDrawer}>
                   保存
                 </Button>
               </div>
@@ -1117,7 +1158,7 @@ export default function CustomerDetailPage() {
             footer={(
               <div className="customer-detail-drawer-footer">
                 <Button onClick={() => setTransferVehicle(null)}>取消</Button>
-                <Button type="primary" loading={transferMutation.isPending} onClick={submitVehicleTransfer}>
+                <Button type="primary" loading={transferMutation.isPending} disabled={!canManageVehicleLifecycle} onClick={submitVehicleTransfer}>
                   确认转移
                 </Button>
               </div>

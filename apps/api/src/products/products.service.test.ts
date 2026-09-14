@@ -26,6 +26,8 @@ test("ProductsService creates active products for store managers", async () => {
             category: ProductCategory.PPF,
             specification: "1.52*15m",
             unit: ProductUnit.ROLL,
+            inventoryUnit: ProductUnit.ROLL,
+            salesUnit: ProductUnit.ROLL,
             warrantyYears: 10,
             basePriceCents: 5000000,
             status: ProductStatus.ACTIVE
@@ -47,6 +49,8 @@ test("ProductsService creates active products for store managers", async () => {
       category: ProductCategory.PPF,
       specification: "1.52*15m",
       unit: ProductUnit.ROLL,
+      inventoryUnit: ProductUnit.ROLL,
+      salesUnit: ProductUnit.ROLL,
       warrantyYears: 10,
       basePriceCents: 5000000
     }
@@ -129,6 +133,8 @@ test("ProductsService prevents purchasing from creating a product with a suggest
         model: "L-100",
         category: ProductCategory.PPF,
         unit: ProductUnit.ROLL,
+        inventoryUnit: ProductUnit.ROLL,
+        salesUnit: ProductUnit.ROLL,
         basePriceCents: 4200000
       }
     ),
@@ -213,6 +219,8 @@ test("ProductsService rejects customer service product mutations", async () => {
         model: "PPF-100",
         category: ProductCategory.PPF,
         unit: ProductUnit.ROLL,
+        inventoryUnit: ProductUnit.ROLL,
+        salesUnit: ProductUnit.ROLL,
         basePriceCents: 5000000
       }),
     { name: "ForbiddenException" }
@@ -221,4 +229,26 @@ test("ProductsService rejects customer service product mutations", async () => {
     () => service.update(user, "product-1", { name: "新名称" }),
     { name: "ForbiddenException" }
   );
+});
+
+test("ProductsService uses explicit disable and enable lifecycle actions with audit records", async () => {
+  const auditActions: string[] = [];
+  const updates: unknown[] = [];
+  const buildPrisma = (status: ProductStatus) => ({
+    product: {
+      findUnique: async () => ({ id: "product-1", storeId: "store-1", status }),
+      update: async (args: unknown) => { updates.push(args); return { id: "product-1", ...args }; }
+    },
+    auditEvent: {
+      create: async (args: { data: { action: string } }) => { auditActions.push(args.data.action); return { id: "audit-1" }; }
+    }
+  });
+
+  const service = new ProductsService(buildPrisma(ProductStatus.ACTIVE) as never, productAccess as never);
+  await service.disable({ id: "manager-1" }, "product-1");
+  const enableService = new ProductsService(buildPrisma(ProductStatus.INACTIVE) as never, productAccess as never);
+  await enableService.enable({ id: "manager-1" }, "product-1");
+
+  assert.deepEqual((updates as Array<{ data: { status: ProductStatus } }>).map((item) => item.data.status), [ProductStatus.INACTIVE, ProductStatus.ACTIVE]);
+  assert.deepEqual(auditActions, ["product_disabled", "product_enabled"]);
 });

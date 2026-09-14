@@ -1,4 +1,4 @@
-import type { CustomerNoteType, CustomerSourceType, CustomerType, Gender } from "@mallbay/shared";
+import type { CustomerNoteType, CustomerSourceType, CustomerStatus, CustomerType, Gender } from "@mallbay/shared";
 import { request, requestMultipart } from "../../lib/request";
 
 export type CreateCustomerPayload = {
@@ -76,6 +76,7 @@ export type CustomerListQuery = {
   pageSize?: number;
   systemTag?: string;
   customTagId?: string;
+  status?: CustomerStatus;
 };
 
 export type CustomerOrderContext = {
@@ -150,6 +151,18 @@ export const customerApi = {
     request<CreatedVehicle>("/customers/vehicles", {
       method: "POST",
       body: JSON.stringify(payload)
+    }),
+
+  archive: (id: string, reason = "业务归档") =>
+    request<unknown>(`/customers/${id}/archive`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    }),
+
+  restore: (id: string, reason = "恢复使用") =>
+    request<unknown>(`/customers/${id}/restore`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
     }),
 
   updateVehicle: (id: string, payload: UpdateVehiclePayload) =>

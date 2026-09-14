@@ -12,6 +12,8 @@ export type StoreStatus = "DRAFTED" | "PENDING_REVIEW" | "PUBLISHED" | "FROZEN";
 
 export type CustomerType = "PERSONAL" | "COMPANY";
 
+export type CustomerStatus = "ACTIVE" | "ARCHIVED";
+
 export type Gender = "MALE" | "FEMALE" | "UNKNOWN";
 
 export type CustomerSourceType =
@@ -723,11 +725,15 @@ export type AuthUser = {
   wechatOpenId: string | null;
   alipayUserId: string | null;
   isAuditor: boolean;
-  // 登录、刷新和 /auth/me 均返回当前默认门店身份；无门店身份时为 null
+  // 保留默认身份兼容旧页面；新的门店上下文必须从 storeMembers/路由门店解析。
   storeMember?: {
     position: StorePosition;
     store: { id: string; name: string; status: StoreStatus };
   } | null;
+  storeMembers?: Array<{
+    position: StorePosition;
+    store: { id: string; name: string; status: StoreStatus };
+  }>;
 };
 
 export type AuthTokens = {

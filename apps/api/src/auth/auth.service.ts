@@ -214,7 +214,8 @@ export class AuthService {
       ...this.toAuthUser(user, isHeadquartersAdmin),
       storeMember: member
         ? { position: member.position, store: member.store }
-        : null
+        : null,
+      storeMembers: user.storeMembers.map((item) => ({ position: item.position, store: item.store }))
     };
   }
 
@@ -285,7 +286,8 @@ export class AuthService {
         ...this.toAuthUser(user, isHeadquartersAdmin),
         storeMember: member
           ? { position: member.position, store: member.store }
-          : null
+          : null,
+        storeMembers: user.storeMembers.map((item) => ({ position: item.position, store: item.store }))
       },
       accessToken,
       refreshToken

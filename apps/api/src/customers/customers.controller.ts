@@ -26,6 +26,7 @@ import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
 import { CreateCustomerTagDto } from "./dto/create-customer-tag.dto";
 import { CreateCustomerUserForCustomerDto } from "./dto/create-customer-user.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
+import { CustomerLifecycleDto } from "./dto/customer-lifecycle.dto";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
 import { ListCustomersDto } from "./dto/list-customers.dto";
 import { UpdateCustomerDto } from "./dto/update-customer.dto";
@@ -81,6 +82,16 @@ export class CustomersController {
   @Patch(":id")
   update(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: UpdateCustomerDto) {
     return this.customerAccount.updateCustomer(req.user, id, dto);
+  }
+
+  @Post(":id/archive")
+  archive(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: CustomerLifecycleDto) {
+    return this.customerAccount.archiveCustomer(req.user, id, dto);
+  }
+
+  @Post(":id/restore")
+  restore(@Req() req: AuthRequest, @Param("id") id: string, @Body() dto: CustomerLifecycleDto) {
+    return this.customerAccount.restoreCustomer(req.user, id, dto);
   }
 
   @Post("vehicles")

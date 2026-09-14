@@ -16,7 +16,7 @@ import { useEffect, useState } from "react";
 import { authApi, storeApi, userApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { hasEffectivePermission, useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
-import { getStorePositionLabel } from "../../src/features/members/store-position";
+import { useCurrentStoreContext } from "../../src/features/workbench/store-context";
 
 const STATUS_CONFIG: Record<string, { text: string; color: string }> = {
   DRAFTED: { text: "筹办中", color: "default" },
@@ -140,14 +140,15 @@ function CreateStoreDrawer({ open, onClose }: { open: boolean; onClose: () => vo
 export default function DashboardPage() {
   const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const user = useAuthStore((state) => state.user);
-  const permissionsQuery = useEffectivePermissions();
-  const isHeadquartersAdmin = hasEffectivePermission(permissionsQuery.data?.permissions, "permissions.policy", "read");
+  const { storeId, store: currentStore } = useCurrentStoreContext();
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const isHeadquartersAdmin = hasEffectivePermission(permissionsQuery.data?.permissions, "permissions.policy", "read", storeId);
   const setSession = useAuthStore((state) => state.setSession);
   const router = useRouter();
 
   const [createStoreOpen, setCreateStoreOpen] = useState(false);
 
-  // 拉取最新用户信息（含 storeMember）
+  // 拉取最新用户信息（含全部门店成员关系）
   const meQuery = useQuery({
     queryKey: ["me"],
     queryFn: authApi.me,
@@ -173,27 +174,25 @@ export default function DashboardPage() {
   if (!hasHydrated || !user || !user.username) return null;
 
   const displayName = user.nickname ?? user.username;
-  const storeMember = user.storeMember;
-  const roleLabel = storeMember
-    ? getStorePositionLabel(storeMember.position)
-    : isHeadquartersAdmin
-      ? "管理员"
-      : "访客";
-  const storeStatus = storeMember ? STATUS_CONFIG[storeMember.store.status] : undefined;
+  const effectiveRoles = permissionsQuery.data?.roles
+    .filter((role) => role.scopeType === "HQ" || role.scopeIds.includes(storeId ?? ""))
+    .sort((left, right) => left.roleCode.localeCompare(right.roleCode)) ?? [];
+  const roleLabel = effectiveRoles.map((role) => role.roleName).filter(Boolean).join("、") || (isHeadquartersAdmin ? "管理员" : "访客");
+  const storeStatus = currentStore ? STATUS_CONFIG[currentStore.status] : undefined;
   const metrics = [
     {
       label: "当前门店",
-      value: storeMember?.store.name ?? "暂无门店",
-      description: storeMember ? roleLabel : "等待店长邀请"
+      value: currentStore?.name ?? "暂无门店",
+      description: currentStore ? roleLabel : "等待门店邀请"
     },
     {
       label: "门店状态",
-      value: storeMember ? storeStatus?.text ?? storeMember.store.status : "-",
+      value: currentStore ? storeStatus?.text ?? currentStore.status : "-",
       description: "运营访问状态"
     },
     {
       label: "系统权限",
-      value: isHeadquartersAdmin ? "管理员" : storeMember ? "门店成员" : "访客",
+      value: isHeadquartersAdmin ? "管理员" : currentStore ? "门店成员" : "访客",
       description: "按角色展示菜单"
     }
   ];
@@ -210,12 +209,12 @@ export default function DashboardPage() {
             选择门店运营、客户浏览或系统审核入口。当前账号会按角色自动展示可用功能。
           </Typography.Paragraph>
           <div className="dashboard-entry-actions">
-            {storeMember ? (
+            {currentStore ? (
               <>
                 <Button
                   type="primary"
                   icon={<ArrowRightOutlined />}
-                  onClick={() => router.push(`/workbench/${storeMember.store.id}`)}
+                  onClick={() => router.push(`/workbench/${storeId}`)}
                 >
                   进入工作台
                 </Button>
@@ -241,8 +240,8 @@ export default function DashboardPage() {
           </div>
           <div className="dashboard-account-tags">
             <Tag color={isHeadquartersAdmin ? "processing" : undefined}>{roleLabel}</Tag>
-            {storeMember ? (
-              <Tag color={storeStatus?.color}>{storeStatus?.text ?? storeMember.store.status}</Tag>
+            {currentStore ? (
+              <Tag color={storeStatus?.color}>{storeStatus?.text ?? currentStore.status}</Tag>
             ) : (
               <Tag>未加入门店</Tag>
             )}
@@ -265,12 +264,12 @@ export default function DashboardPage() {
           <div className="dashboard-action-card-head">
             <span className="dashboard-action-icon"><TeamOutlined /></span>
             <div>
-              <Typography.Title level={4}>{storeMember ? storeMember.store.name : "门店工作台"}</Typography.Title>
+              <Typography.Title level={4}>{currentStore ? currentStore.name : "门店工作台"}</Typography.Title>
               <Typography.Text>客户、订单、施工、库存和报表统一入口</Typography.Text>
             </div>
           </div>
           <div className="dashboard-action-card-body">
-            {storeMember ? (
+            {currentStore ? (
               <div className="detail-status-strip">
                 <Tag>{roleLabel}</Tag>
                 <Tag color={storeStatus?.color}>{storeStatus?.text}</Tag>
@@ -283,10 +282,10 @@ export default function DashboardPage() {
             <Button
               type="primary"
               block
-              disabled={!storeMember}
-              onClick={() => storeMember && router.push(`/workbench/${storeMember.store.id}`)}
+              disabled={!currentStore || !storeId}
+              onClick={() => currentStore && storeId && router.push(`/workbench/${storeId}`)}
             >
-              {storeMember ? "进入工作台" : "等待门店邀请"}
+              {currentStore ? "进入工作台" : "等待门店邀请"}
             </Button>
           </div>
         </Card>

@@ -26,7 +26,7 @@ import { authApi, storeApi } from "../src/lib/api";
 import { NotificationBell } from "../src/components/NotificationBell";
 import { useAuthStore } from "../src/stores/auth-store";
 import { hasEffectivePermission, useEffectivePermissions } from "../src/features/permissions/use-effective-permissions";
-import { getStorePositionLabel } from "../src/features/members/store-position";
+import { useCurrentStoreContext } from "../src/features/workbench/store-context";
 
 type StoreLobbyCardProps = {
   store: {
@@ -83,8 +83,9 @@ export default function HomePage() {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const permissionsQuery = useEffectivePermissions();
-  const canAccessOperations = hasEffectivePermission(permissionsQuery.data?.permissions, "permissions.policy", "read");
+  const { storeId, store: currentStore } = useCurrentStoreContext();
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canAccessOperations = hasEffectivePermission(permissionsQuery.data?.permissions, "permissions.policy", "read", storeId);
 
   const meQuery = useQuery({
     queryKey: ["me"],
@@ -131,7 +132,6 @@ export default function HomePage() {
 
   const isLoggedIn = hasHydrated && Boolean(user?.username);
   const displayName = user ? (user.nickname ?? user.username) : "";
-  const storeMember = user?.storeMember;
 
   const dropdownItems = [
     ...(canAccessOperations
@@ -148,7 +148,7 @@ export default function HomePage() {
           }
         ]
       : []),
-    ...(storeMember
+    ...(currentStore && storeId
       ? [
           {
             key: "workbench",
@@ -156,18 +156,16 @@ export default function HomePage() {
               <span className="home-lobby-menu-item">
                 <TeamOutlined />
                 <span>
-                  {storeMember.store.name}
-                  <small className="home-lobby-menu-meta">
-                    · {getStorePositionLabel(storeMember.position)}
-                  </small>
+                  {currentStore.name}
+                  <small className="home-lobby-menu-meta">· 当前门店</small>
                 </span>
               </span>
             ),
-            onClick: () => router.push(`/workbench/${storeMember.store.id}`)
+            onClick: () => router.push(`/workbench/${storeId}`)
           }
         ]
       : []),
-    ...((canAccessOperations || storeMember) ? [{ type: "divider" as const }] : []),
+    ...((canAccessOperations || currentStore) ? [{ type: "divider" as const }] : []),
     { key: "profile", label: "个人设置", icon: <UserOutlined />, onClick: () => router.push("/profile") },
     { type: "divider" as const },
     {

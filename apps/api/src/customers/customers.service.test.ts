@@ -125,6 +125,44 @@ test("CustomersService creates company customer contacts with safe role defaults
   });
 });
 
+test("CustomersService archives and restores a customer without deleting its record", async () => {
+  const lifecycleWrites: Record<string, unknown>[] = [];
+  const auditActions: string[] = [];
+  const activeCustomer = { id: "customer-1", storeId: "store-1", ownerUserId: "manager-1", status: "ACTIVE" };
+  const buildPrisma = (status: string) => ({
+    customer: { findUnique: async () => ({ ...activeCustomer, status }) },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      customer: {
+        update: async (args: { data: Record<string, unknown> }) => {
+          lifecycleWrites.push(args.data);
+          return { ...activeCustomer, ...args.data };
+        }
+      },
+      auditEvent: {
+        create: async (args: { data: { action: string } }) => {
+          auditActions.push(args.data.action);
+          return { id: "audit-1" };
+        }
+      }
+    })
+  });
+  const user = { id: "manager-1" };
+
+  const service = new CustomersService(buildPrisma("ACTIVE") as never, undefined, customerAccess as never);
+  const archived = await service.archive(user, "customer-1", { reason: "长期未使用" });
+  assert.equal((archived as { status: string }).status, "ARCHIVED");
+  assert.equal(lifecycleWrites[0]?.status, "ARCHIVED");
+  assert.equal(lifecycleWrites[0]?.archivedById, "manager-1");
+  assert.equal(lifecycleWrites[0]?.archivedReason, "长期未使用");
+
+  const restoreService = new CustomersService(buildPrisma("ARCHIVED") as never, undefined, customerAccess as never);
+  const restored = await restoreService.restore(user, "customer-1", { reason: "重新启用" });
+  assert.equal((restored as { status: string }).status, "ACTIVE");
+  assert.equal(lifecycleWrites[1]?.status, "ACTIVE");
+  assert.equal(lifecycleWrites[1]?.archivedAt, null);
+  assert.deepEqual(auditActions, ["customer.archived", "customer.restored"]);
+});
+
 test("CustomersService rejects duplicate phone in the same store", async () => {
   const service = new CustomersService({
     customer: {

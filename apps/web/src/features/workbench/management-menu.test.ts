@@ -2,20 +2,21 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getActiveManagementMenuKey, getManagementMenuGroups, getManagementMenuItems, hasAnySettingsReadPermission } from "./management-menu";
 
+const storeBinding = { scopeType: "STORE" as const, scopeIds: ["store-1"] };
 const managerPermissions = [
-  { code: "customers", actions: ["read", "write"], scopes: ["STORE"] },
-  { code: "orders", actions: ["read", "write"], scopes: ["STORE"] },
-  { code: "products", actions: ["read", "write", "suggested-price-write"], scopes: ["STORE"] },
-  { code: "construction", actions: ["read", "write"], scopes: ["STORE"] },
-  { code: "inventory", actions: ["read", "write"], scopes: ["STORE"] },
-  { code: "purchase", actions: ["read", "write"], scopes: ["STORE"] },
-  { code: "warranties", actions: ["read", "write"], scopes: ["STORE"] },
-  { code: "after-sales", actions: ["read", "write"], scopes: ["STORE"] },
-  { code: "finance", actions: ["read"], scopes: ["STORE"] },
-  { code: "finance.application", actions: ["submit"], scopes: ["OWN"] },
-  { code: "reports", actions: ["read"], scopes: ["STORE"] },
-  { code: "store.members", actions: ["read", "write"], scopes: ["STORE"] },
-  { code: "store.dictionary", actions: ["read", "write"], scopes: ["STORE"] }
+  { code: "customers", actions: ["read", "write"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "orders", actions: ["read", "write"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "products", actions: ["read", "write", "suggested-price-write"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "construction", actions: ["read", "write"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "inventory", actions: ["read", "write"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "purchase", actions: ["read", "write"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "warranties", actions: ["read", "write"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "after-sales", actions: ["read", "write"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "finance", actions: ["read"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "finance.application", actions: ["submit"], scopes: ["OWN"], bindingScopes: [storeBinding] },
+  { code: "reports", actions: ["read"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "store.members", actions: ["read", "write"], scopes: ["STORE"], bindingScopes: [storeBinding] },
+  { code: "store.dictionary", actions: ["read", "write"], scopes: ["STORE"], bindingScopes: [storeBinding] }
 ];
 
 test("management menu is empty until the runtime permission snapshot loads", () => {
@@ -35,7 +36,7 @@ test("management menu consumes effective permissions instead of a position", () 
 
 test("global administration is visible only with the global store capability", () => {
   const labels = getManagementMenuItems({
-    permissions: [{ code: "store", actions: ["read"], scopes: ["GLOBAL"] }]
+    permissions: [{ code: "store", actions: ["read"], scopes: ["GLOBAL"], bindingScopes: [{ scopeType: "HQ", scopeIds: [] }] }]
   }).map((item) => item.label);
 
   assert.equal(labels.includes("门店审核"), true);
@@ -43,9 +44,9 @@ test("global administration is visible only with the global store capability", (
 });
 
 test("settings menu requires a specific settings capability", () => {
-  assert.equal(hasAnySettingsReadPermission([{ code: "settings.dictionary", actions: ["read"], scopes: ["GLOBAL"] }]), true);
-  assert.equal(hasAnySettingsReadPermission([{ code: "settings.dictionary", actions: ["read"], scopes: ["STORE"] }]), false);
-  assert.equal(hasAnySettingsReadPermission([{ code: "orders", actions: ["read"], scopes: ["STORE"] }]), false);
+  assert.equal(hasAnySettingsReadPermission([{ code: "settings.dictionary", actions: ["read"], scopes: ["GLOBAL"], bindingScopes: [{ scopeType: "HQ", scopeIds: [] }] }]), true);
+  assert.equal(hasAnySettingsReadPermission([{ code: "settings.dictionary", actions: ["read"], scopes: ["STORE"], bindingScopes: [storeBinding] }], "store-1"), false);
+  assert.equal(hasAnySettingsReadPermission([{ code: "orders", actions: ["read"], scopes: ["STORE"], bindingScopes: [storeBinding] }], "store-1"), false);
 });
 
 test("management menu groups only contain permission-authorized items", () => {

@@ -75,7 +75,7 @@ test("management shell wraps business routes and excludes public and mobile rout
   assert.match(source, /"\/settings"/);
   assert.match(source, /"\/inventory"/);
   assert.match(source, /"\/purchases"/);
-  assert.match(source, /hasAnySettingsReadPermission\(runtimePermissions\)/);
+  assert.match(source, /hasAnySettingsReadPermission\(runtimePermissions, storeId\)/);
   assert.match(source, /const canAccessAdmin = Boolean\(runtimePermissions\?\.some/);
   assert.doesNotMatch(source, /canAccessSystemSettings/);
   assert.doesNotMatch(source, /aria-label="系统设置"/);

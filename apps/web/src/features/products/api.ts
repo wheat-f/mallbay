@@ -67,7 +67,9 @@ export const productApi = {
       body: JSON.stringify({ prices })
     }),
 
-  remove: (id: string) => request<unknown>(`/products/${id}`, { method: "DELETE" })
+  remove: (id: string) => request<unknown>(`/products/${id}`, { method: "DELETE" }),
+  disable: (id: string) => request<unknown>(`/products/${id}/disable`, { method: "POST" }),
+  enable: (id: string) => request<unknown>(`/products/${id}/enable`, { method: "POST" })
 };
 
 function toQueryString(query: Record<string, string | number | undefined>) {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { hasEffectivePermission } from "./use-effective-permissions";
+import { AFFORDANCE_DEFINITIONS, hasAffordancePermission } from "./affordances";
 
 test("effective permission helper accepts only matching action and bound scope", () => {
   const permissions = [{
@@ -38,4 +39,16 @@ test("effective permission helper recognizes HQ-bound global authority only", ()
 
   assert.equal(hasEffectivePermission(permissions, "permissions.policy", "read"), true);
   assert.equal(hasEffectivePermission(permissions, "permissions.policy", "publish"), false);
+});
+
+test("affordance directory maps customer and product lifecycle actions", () => {
+  const permissions = [
+    { code: "customers", actions: ["read", "write", "archive"], scopes: ["STORE"], bindingScopes: [{ scopeType: "STORE" as const, scopeIds: ["store-a"] }] },
+    { code: "products", actions: ["read", "disable"], scopes: ["STORE"], bindingScopes: [{ scopeType: "STORE" as const, scopeIds: ["store-a"] }] }
+  ];
+
+  assert.equal(hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.customerArchive, "store-a"), true);
+  assert.equal(hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.customerRestore, "store-a"), false);
+  assert.equal(hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.productDisable, "store-a"), true);
+  assert.equal(hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.productDisable, "store-b"), false);
 });

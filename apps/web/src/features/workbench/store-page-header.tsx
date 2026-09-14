@@ -4,9 +4,9 @@ import type { ReactNode } from "react";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { Button, Space, Typography } from "antd";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuthStore } from "../../stores/auth-store";
 import { getStoreWorkbenchHref } from "./navigation";
 import { shouldUseManagementShell } from "./management-shell";
+import { useCurrentStoreContext } from "./store-context";
 
 type StorePageHeaderProps = {
   title: ReactNode;
@@ -18,7 +18,7 @@ type StorePageHeaderProps = {
 export function StorePageHeader({ title, description, children, actions }: StorePageHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const storeId = useAuthStore((state) => state.user?.storeMember?.store.id);
+  const { storeId } = useCurrentStoreContext();
   const showWorkbenchBack = !shouldUseManagementShell(pathname);
   const showFinanceBack = pathname.startsWith("/finance/");
 

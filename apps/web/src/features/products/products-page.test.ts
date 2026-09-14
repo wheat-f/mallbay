@@ -21,7 +21,8 @@ test("products page follows the prototype product catalog layout", () => {
   assert.match(pageSource, /分类数量/);
   assert.match(pageSource, /库存预警/);
   assert.match(pageSource, /本月新增/);
-  assert.doesNotMatch(pageSource, /启用产品/);
+  assert.match(pageSource, /启用产品/);
+  assert.match(pageSource, /产品已停用/);
   assert.doesNotMatch(pageSource, /质保产品/);
   assert.match(pageSource, /products-filter-card/);
   assert.match(pageSource, /products-filter-grid/);

@@ -32,8 +32,20 @@ export class PermissionsService {
     const cacheKey = userId + ":" + (context.storeId ?? "*");
     const cached = this.resultCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
-      this.snapshotStore.set(userId, { permissions: cached.result.permissions, roles: cached.result.roles });
-      return cached.result;
+      const [published, bindingVersion] = await Promise.all([
+        this.prisma.permissionPolicyVersion.findFirst({
+          where: { status: PermissionPolicyVersionStatus.PUBLISHED },
+          orderBy: { version: "desc" },
+          select: { version: true }
+        }),
+        this.bindingVersion(userId)
+      ]);
+      const policyVersion = published?.version ?? 0;
+      if (policyVersion === cached.result.policyVersion && bindingVersion === cached.result.bindingVersion) {
+        this.snapshotStore.set(userId, { permissions: cached.result.permissions, roles: cached.result.roles });
+        return cached.result;
+      }
+      this.resultCache.delete(cacheKey);
     }
     const now = new Date();
     const [user, bindings, published] = await Promise.all([

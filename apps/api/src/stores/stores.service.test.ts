@@ -65,9 +65,9 @@ test("StoresService receives PrismaService through Nest injection", async () => 
 
 test("getWorkbenchStore allows non-manager store members to view their store", async () => {
   const prisma = {
-    storeMember: {
-      findUnique: async (args: unknown) => {
-        assert.deepEqual(args, { where: { userId: "sales-1" } });
+      storeMember: {
+        findUnique: async (args: unknown) => {
+        assert.deepEqual(args, { where: { userId_storeId: { userId: "sales-1", storeId: "store-1" } } });
         return {
           id: "member-sales",
           storeId: "store-1",
@@ -340,7 +340,7 @@ function createStoresService(prisma: unknown, notifications: unknown, auditLog: 
     new ChangeStoreManagerUseCase(storeRepository, notifications as never, auditLog as never),
     new SetStoreFrozenUseCase(storeRepository, notifications as never, auditLog as never),
     {} as never,
-    { scope: async () => ({ allowed: true, global: true, storeIds: [] }) } as never,
+    { scope: async () => ({ allowed: true, global: true, storeIds: [] }), can: async () => true } as never,
     { invalidateUserCache: () => undefined } as never
   );
 }

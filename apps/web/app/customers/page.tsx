@@ -14,6 +14,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import type { CustomerStatus } from "@mallbay/shared";
 import type { UploadProps } from "antd";
 import { customerApi } from "../../src/lib/api";
 import {
@@ -23,13 +24,16 @@ import {
 } from "../../src/features/customers/create-customer-form";
 import type { UpdateVehiclePayload } from "../../src/features/customers/api";
 import { getCustomerAutoArchiveMetrics, type CustomerArchiveLike } from "../../src/features/customers/display";
-import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { dictionaryApi } from "../../src/features/settings/api";
+import { useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
+import { AFFORDANCE_DEFINITIONS, hasAffordancePermission } from "../../src/features/permissions/affordances";
+import { useCurrentStoreContext } from "../../src/features/workbench/store-context";
 
 type CustomerRow = CustomerArchiveLike & {
   id: string;
   customerType: string;
+  status?: CustomerStatus;
   name?: string | null;
   companyName?: string | null;
   contactPerson?: string | null;
@@ -94,12 +98,18 @@ export default function CustomersPage() {
   const router = useRouter();
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const user = useAuthStore((state) => state.user);
-  const storeId = user?.storeMember?.store.id;
+  const { storeId } = useCurrentStoreContext();
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const permissions = permissionsQuery.data?.permissions;
+  const canReadCustomers = hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.customerView, storeId);
+  const canWriteCustomers = hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.customerEdit, storeId);
+  const canArchiveCustomers = hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.customerArchive, storeId);
+  const canRestoreCustomers = hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.customerRestore, storeId);
   const [search, setSearch] = useState("");
   const [quickSearchMode, setQuickSearchMode] = useState(quickSearchModes[0]?.label ?? "手机号");
   const [customerTypeFilter, setCustomerTypeFilter] = useState<string>();
   const [tagFilter, setTagFilter] = useState<string>();
+  const [statusFilter, setStatusFilter] = useState<CustomerStatus>("ACTIVE");
   const [valueFilter, setValueFilter] = useState<string>();
   const [warrantyFilter, setWarrantyFilter] = useState<string>();
   const [recentFilter, setRecentFilter] = useState<string>();
@@ -117,23 +127,23 @@ export default function CustomersPage() {
   const [editForm] = Form.useForm<EditCustomerFormValues>();
   const [vehicleForm] = Form.useForm<VehicleFormValues>();
   const selectedCustomerDetailQuery = useQuery({
-    queryKey: ["customer-detail-drawer", selectedCustomer?.id],
+    queryKey: ["customer-detail-drawer", selectedCustomer?.id, storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => customerApi.detail(selectedCustomer!.id) as Promise<CustomerRow>,
-    enabled: Boolean(selectedCustomer?.id),
+    enabled: Boolean(selectedCustomer?.id && canReadCustomers),
     staleTime: 15_000
   });
 
   const customersQuery = useQuery({
-    queryKey: ["customers", storeId, search, tagFilter],
-    queryFn: () => customerApi.list({ storeId: storeId!, page: 1, pageSize: 20, q: search, systemTag: tagFilter }),
-    enabled: Boolean(storeId),
+    queryKey: ["customers", storeId, search, tagFilter, statusFilter, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
+    queryFn: () => customerApi.list({ storeId: storeId!, page: 1, pageSize: 20, q: search, systemTag: tagFilter, status: statusFilter }),
+    enabled: Boolean(storeId && canReadCustomers),
     staleTime: 10_000
   });
 
   const referrersQuery = useQuery({
     queryKey: ["customer-referrer-search", storeId, referrerKeyword],
     queryFn: () => customerApi.search(storeId!, referrerKeyword),
-    enabled: Boolean(storeId) && referrerKeyword.length > 0
+    enabled: Boolean(storeId && canReadCustomers) && referrerKeyword.length > 0
   });
 
   const rows = useMemo(() => (customersQuery.data?.items ?? []) as CustomerRow[], [customersQuery.data]);
@@ -191,7 +201,7 @@ export default function CustomersPage() {
   const vehicleTypesQuery = useQuery({
     queryKey: ["system-dictionary", storeId, "VEHICLE_TYPE"],
     queryFn: () => dictionaryApi.list(storeId!),
-    enabled: Boolean(storeId),
+    enabled: Boolean(storeId && canReadCustomers),
     staleTime: 60_000
   });
   const vehicleTypeOptions = useMemo(() => {
@@ -214,6 +224,17 @@ export default function CustomersPage() {
       setEditCustomerType("PERSONAL");
       editForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ["customers", storeId] });
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
+  const lifecycleMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: CustomerStatus }) =>
+      status === "ARCHIVED" ? customerApi.archive(id) : customerApi.restore(id),
+    onSuccess: async (_, variables) => {
+      message.success(variables.status === "ARCHIVED" ? "客户已归档" : "客户已恢复");
+      setSelectedCustomer((current) => current ? { ...current, status: variables.status } : current);
+      await queryClient.invalidateQueries({ queryKey: ["customers", storeId] });
     },
     onError: (error: Error) => message.error(error.message)
   });
@@ -338,7 +359,7 @@ export default function CustomersPage() {
     <>
       <div className="management-page">
         <StorePageHeader title="客户管理" description="管理所有个人与企业客户信息及相关业务记录">
-          <Button type="primary" icon={<PlusOutlined />} disabled={!storeId} onClick={() => setCreateOpen(true)}>
+          <Button type="primary" icon={<PlusOutlined />} disabled={!storeId || !canWriteCustomers} onClick={() => setCreateOpen(true)}>
             新建客户
           </Button>
         </StorePageHeader>
@@ -384,6 +405,17 @@ export default function CustomersPage() {
           </div>
 
           <div className="customers-filter-grid management-filter-grid">
+            <div className="orders-filter-item">
+              <span className="orders-filter-label">档案状态</span>
+              <Select
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value)}
+                options={[
+                  { label: "正常", value: "ACTIVE" },
+                  { label: "已归档", value: "ARCHIVED" }
+                ]}
+              />
+            </div>
             <div className="orders-filter-item">
               <span className="orders-filter-label">客户类型</span>
               <Select
@@ -521,6 +553,7 @@ export default function CustomersPage() {
                         <Button
                           size="small"
                           icon={<EditOutlined />}
+                          disabled={!canWriteCustomers}
                           onClick={(event) => {
                             event.stopPropagation();
                             openEditCustomer(row);
@@ -531,6 +564,7 @@ export default function CustomersPage() {
                         <Button
                           size="small"
                           icon={<CarOutlined />}
+                          disabled={!canWriteCustomers}
                           onClick={(event) => {
                             event.stopPropagation();
                             openVehicleDrawer(row);
@@ -551,6 +585,7 @@ export default function CustomersPage() {
                         <Button
                           size="small"
                           icon={<FileTextOutlined />}
+                          disabled={row.status === "ARCHIVED"}
                           onClick={(event) => {
                             event.stopPropagation();
                             router.push(`/orders/create?customerId=${row.id}`);
@@ -676,6 +711,7 @@ export default function CustomersPage() {
                           aria-label="编辑客户"
                           type="text"
                           icon={<EditOutlined />}
+                          disabled={!canWriteCustomers}
                           onClick={(event) => {
                             event.stopPropagation();
                             openEditCustomer(row);
@@ -687,6 +723,7 @@ export default function CustomersPage() {
                           aria-label={getVehicleActionLabel(row)}
                           type="text"
                           icon={<CarOutlined />}
+                          disabled={!canWriteCustomers}
                           onClick={(event) => {
                             event.stopPropagation();
                             openVehicleDrawer(row);
@@ -698,6 +735,7 @@ export default function CustomersPage() {
                           aria-label="新建订单"
                           type="text"
                           icon={<FileTextOutlined />}
+                          disabled={row.status === "ARCHIVED"}
                           onClick={(event) => {
                             event.stopPropagation();
                             router.push(`/orders/create?customerId=${row.id}`);
@@ -722,21 +760,30 @@ export default function CustomersPage() {
           footer={
             selectedCustomer ? (
               <div className="customers-drawer-footer">
-                <Button icon={<EditOutlined />} onClick={() => openEditCustomer(selectedCustomer)}>
+                <Button icon={<EditOutlined />} disabled={!canWriteCustomers} onClick={() => openEditCustomer(selectedCustomer)}>
                   编辑客户
                 </Button>
-                <Button icon={<CarOutlined />} onClick={() => openVehicleDrawer(selectedCustomer)}>
+                <Button icon={<CarOutlined />} disabled={!canWriteCustomers} onClick={() => openVehicleDrawer(selectedCustomer)}>
                   {getVehicleActionLabel(selectedCustomer)}
                 </Button>
                 <Button onClick={() => router.push(`/customers/${selectedCustomer.id}`)}>
                   查看完整历史
                 </Button>
-                <Button type="primary" icon={<FileTextOutlined />} onClick={() => router.push(`/orders/create?customerId=${selectedCustomer.id}`)}>
+                <Button type="primary" icon={<FileTextOutlined />} disabled={selectedCustomer.status === "ARCHIVED"} onClick={() => router.push(`/orders/create?customerId=${selectedCustomer.id}`)}>
                   新建订单
                 </Button>
-                <Button icon={<TagOutlined />} onClick={() => router.push(`/customers/${selectedCustomer.id}`)}>
+                <Button icon={<TagOutlined />} disabled={!canWriteCustomers} onClick={() => router.push(`/customers/${selectedCustomer.id}`)}>
                   维护人工标签
                 </Button>
+                {selectedCustomer.status === "ARCHIVED" ? (
+                  <Button disabled={!canRestoreCustomers} loading={lifecycleMutation.isPending} onClick={() => lifecycleMutation.mutate({ id: selectedCustomer.id, status: "ACTIVE" })}>
+                    恢复客户
+                  </Button>
+                ) : (
+                  <Button danger disabled={!canArchiveCustomers} loading={lifecycleMutation.isPending} onClick={() => lifecycleMutation.mutate({ id: selectedCustomer.id, status: "ARCHIVED" })}>
+                    归档客户
+                  </Button>
+                )}
               </div>
             ) : null
           }
@@ -755,7 +802,7 @@ export default function CustomersPage() {
           footer={
             <div className="customers-create-drawer-footer">
               <Button onClick={closeEditDrawer}>取消</Button>
-              <Button type="primary" loading={updateMutation.isPending} onClick={() => editForm.submit()}>
+              <Button type="primary" loading={updateMutation.isPending} disabled={!canWriteCustomers} onClick={() => editForm.submit()}>
                 保存修改
               </Button>
             </div>
@@ -869,7 +916,7 @@ export default function CustomersPage() {
           footer={
             <div className="customers-create-drawer-footer">
               <Button onClick={closeVehicleDrawer}>取消</Button>
-              <Button type="primary" loading={vehicleMutation.isPending} onClick={() => vehicleForm.submit()}>
+              <Button type="primary" loading={vehicleMutation.isPending} disabled={!canWriteCustomers} onClick={() => vehicleForm.submit()}>
                 保存车辆
               </Button>
             </div>
@@ -885,7 +932,7 @@ export default function CustomersPage() {
               <section className="customers-form-section customers-vehicle-list">
                 <div className="customers-form-section-title">
                   <h4>已有车辆</h4>
-                  <Button size="small" icon={<PlusOutlined />} onClick={() => openVehicleDrawer(vehicleCustomer)}>
+                  <Button size="small" icon={<PlusOutlined />} disabled={!canWriteCustomers} onClick={() => openVehicleDrawer(vehicleCustomer)}>
                     新增车辆
                   </Button>
                 </div>
@@ -896,7 +943,7 @@ export default function CustomersPage() {
                         <strong>{vehicle.carPlate ?? "未录车牌"}</strong>
                         <span>{[vehicle.carModel, vehicleTypeOptions.find((item) => item.value === vehicle.vehicleTypeCode)?.label, vehicle.carColor].filter(Boolean).join(" / ") || "车辆信息待完善"}</span>
                       </div>
-                      <Button size="small" onClick={() => openVehicleDrawer(vehicleCustomer, vehicle)}>
+                      <Button size="small" disabled={!canWriteCustomers} onClick={() => openVehicleDrawer(vehicleCustomer, vehicle)}>
                         编辑车辆
                       </Button>
                     </article>
@@ -968,7 +1015,7 @@ export default function CustomersPage() {
           footer={
             <div className="customers-create-drawer-footer">
               <Button onClick={closeCreateDrawer}>取消</Button>
-              <Button type="primary" loading={createMutation.isPending} onClick={() => createForm.submit()}>
+              <Button type="primary" loading={createMutation.isPending} disabled={!canWriteCustomers} onClick={() => createForm.submit()}>
                 创建客户
               </Button>
             </div>

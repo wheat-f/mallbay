@@ -15,7 +15,9 @@ test("ProductCatalog exposes product master-data and lifecycle capabilities thro
     update: async () => { calls.push("update"); return { id: "product-1" }; },
     updateStandardCost: async () => { calls.push("standard-cost"); return { id: "product-1" }; },
     updateUnitSuggestedPrices: async () => { calls.push("unit-suggested-prices"); return { id: "product-1" }; },
-    remove: async () => { calls.push("remove"); return { id: "product-1" }; }
+    remove: async () => { calls.push("remove"); return { id: "product-1" }; },
+    disable: async () => { calls.push("disable"); return { id: "product-1" }; },
+    enable: async () => { calls.push("enable"); return { id: "product-1" }; }
   } as never;
   const catalog = new ProductCatalog(implementation);
   const user = { id: "manager-1" } as never;
@@ -27,6 +29,8 @@ test("ProductCatalog exposes product master-data and lifecycle capabilities thro
   await catalog.updateStandardCost(user, "product-1", 1200);
   await catalog.updateUnitSuggestedPrices(user, "product-1", []);
   await catalog.remove(user, "product-1");
+  await catalog.disable(user, "product-1");
+  await catalog.enable(user, "product-1");
 
   assert.deepEqual(calls, [
     "create",
@@ -35,7 +39,9 @@ test("ProductCatalog exposes product master-data and lifecycle capabilities thro
     "update",
     "standard-cost",
     "unit-suggested-prices",
-    "remove"
+    "remove",
+    "disable",
+    "enable"
   ]);
 });
 

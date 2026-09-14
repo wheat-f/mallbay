@@ -209,7 +209,7 @@ test("construction profile page shows worker archive instead of offline settings
   assert.match(pageSource, /constructionApi\.assignments/);
   assert.match(pageSource, /getWorkerTaskStatusLabel/);
   assert.match(pageSource, /getWorkerPhotoStageLabel/);
-  assert.match(pageSource, /storeMember\?\.store\.name \?\? "未加入门店"/);
+  assert.match(pageSource, /currentStore\?\.name \?\? "未加入门店"/);
   assert.match(navigationSource, /查看施工记录、照片和质检档案/);
   assert.match(shellSource, /搜索工单、照片或质检记录/);
   assert.doesNotMatch(pageSource, /连接与离线设置/);
@@ -482,7 +482,7 @@ test("construction profile page follows the archive workspace", () => {
   assert.match(pageSource, /照片阶段统计/);
   assert.match(pageSource, /router\.push\("\/construction\/tasks"\)/);
   assert.match(pageSource, /router\.push\("\/construction\/schedules"\)/);
-  assert.match(pageSource, /router\.push\(`\/workbench\/\$\{storeMember\.store\.id\}`\)/);
+  assert.match(pageSource, /router\.push\(`\/workbench\/\$\{storeId\}`\)/);
   assert.doesNotMatch(pageSource, /查看离线队列/);
   assert.doesNotMatch(pageSource, /立即同步/);
   assert.doesNotMatch(pageSource, /清理缓存/);

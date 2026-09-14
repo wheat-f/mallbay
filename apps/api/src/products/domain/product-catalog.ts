@@ -49,4 +49,12 @@ export class ProductCatalog {
   remove(user: AuthenticatedProductUser, id: string) {
     return this.implementation.remove(user, id);
   }
+
+  disable(user: AuthenticatedProductUser, id: string) {
+    return this.implementation.disable(user, id);
+  }
+
+  enable(user: AuthenticatedProductUser, id: string) {
+    return this.implementation.enable(user, id);
+  }
 }

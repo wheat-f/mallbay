@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
-import { IsInt, IsOptional, IsString, Min } from "class-validator";
+import { IsEnum, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { CustomerStatus } from "@prisma/client";
 
 export class ListCustomersDto {
   @IsString()
@@ -28,4 +29,8 @@ export class ListCustomersDto {
   @IsOptional()
   @IsString()
   customTagId?: string;
+
+  @IsOptional()
+  @IsEnum(CustomerStatus)
+  status?: CustomerStatus = CustomerStatus.ACTIVE;
 }

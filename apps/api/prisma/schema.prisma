@@ -52,6 +52,7 @@ model User {
   submittedPricingApprovals      PricingApproval[]            @relation("PricingApprovalSubmittedBy")
   reviewedPricingApprovals       PricingApproval[]            @relation("PricingApprovalReviewedBy")
   ownedCustomers                 Customer[]                   @relation("CustomerOwner")
+  archivedCustomers              Customer[]                   @relation("CustomerArchivedBy")
   customerNotes                  CustomerNote[]               @relation("CustomerNoteCreatedBy")
   customerTags                   CustomerTag[]                @relation("CustomerTagCreatedBy")
   vehicleChanges                 VehicleOwnershipHistory[]    @relation("VehicleChangeOperatedBy")
@@ -659,6 +660,11 @@ enum CustomerType {
   COMPANY
 }
 
+enum CustomerStatus {
+  ACTIVE
+  ARCHIVED
+}
+
 enum CustomerVehicleStatus {
   ACTIVE
   INACTIVE
@@ -984,6 +990,7 @@ model Customer {
   storeId        String
   ownerUserId    String
   customerType   CustomerType
+  status         CustomerStatus      @default(ACTIVE)
   name           String?
   gender         Gender?
   birthday       DateTime?
@@ -995,11 +1002,15 @@ model Customer {
   sourceType     CustomerSourceType?
   sourceDetail   String?
   referrerId     String?
+  archivedAt     DateTime?
+  archivedById   String?
+  archivedReason String?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
   store              Store                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   owner              User                      @relation("CustomerOwner", fields: [ownerUserId], references: [id])
+  archivedBy         User?                     @relation("CustomerArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
   referrer           Customer?                 @relation("CustomerReferrals", fields: [referrerId], references: [id])
   referrals          Customer[]                @relation("CustomerReferrals")
   vehicles           CustomerVehicle[]
@@ -1018,6 +1029,7 @@ model Customer {
 
   @@unique([storeId, phoneHash])
   @@index([storeId, ownerUserId])
+  @@index([storeId, status])
   @@index([storeId, name])
   @@index([storeId, companyName])
 }

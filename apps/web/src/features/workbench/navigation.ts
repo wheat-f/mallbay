@@ -1,4 +1,5 @@
 import type { RuntimePermission } from "./management-menu";
+import { hasEffectivePermission } from "../permissions/use-effective-permissions";
 
 type PermissionRequirement = { code: string; action: string };
 
@@ -59,15 +60,15 @@ const sections: WorkbenchSection[] = [
   }
 ];
 
-function hasPermission(permissions: RuntimePermission[], requirement: PermissionRequirement) {
-  return permissions.some((permission) => permission.code === requirement.code && permission.actions.includes(requirement.action));
+function hasPermission(permissions: RuntimePermission[], requirement: PermissionRequirement, storeId: string) {
+  return hasEffectivePermission(permissions, requirement.code, requirement.action, storeId);
 }
 
 /** Workbench shortcuts are a presentation of the effective permission snapshot, never a StoreMember position. */
 export function getWorkbenchSections(permissions: RuntimePermission[] | undefined, storeId: string): WorkbenchSection[] {
   if (!permissions) return [];
   return sections
-    .map((section) => ({ ...section, items: section.items.filter((item) => item.anyOf.some((requirement) => hasPermission(permissions, requirement))) }))
+    .map((section) => ({ ...section, items: section.items.filter((item) => item.anyOf.some((requirement) => hasPermission(permissions, requirement, storeId))) }))
     .filter((section) => section.items.length > 0)
     .map((section) => ({ ...section, items: section.items.map((item) => ({ ...item, href: item.href === "/workbench" ? getStoreWorkbenchHref(storeId) : item.href })) }));
 }

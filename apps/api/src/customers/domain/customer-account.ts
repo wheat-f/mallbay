@@ -7,6 +7,7 @@ import type { CreateCustomerNoteDto } from "../dto/create-customer-note.dto";
 import type { CreateCustomerTagDto } from "../dto/create-customer-tag.dto";
 import type { CreateCustomerUserForCustomerDto } from "../dto/create-customer-user.dto";
 import type { CreateCustomerDto } from "../dto/create-customer.dto";
+import type { CustomerLifecycleDto } from "../dto/customer-lifecycle.dto";
 import type { CreateVehicleDto } from "../dto/create-vehicle.dto";
 import type { ListCustomersDto } from "../dto/list-customers.dto";
 import type { UpdateCustomerDto } from "../dto/update-customer.dto";
@@ -30,6 +31,8 @@ type CustomerAccountImplementation = Pick<
   | "search"
   | "detail"
   | "update"
+  | "archive"
+  | "restore"
   | "createVehicle"
   | "updateVehicle"
   | "listVehicles"
@@ -72,6 +75,14 @@ export class CustomerAccount {
 
   updateCustomer(user: AuthenticatedCustomerUser, customerId: string, dto: UpdateCustomerDto) {
     return this.implementation.update(user, customerId, dto);
+  }
+
+  archiveCustomer(user: AuthenticatedCustomerUser, customerId: string, dto: CustomerLifecycleDto) {
+    return this.implementation.archive(user, customerId, dto);
+  }
+
+  restoreCustomer(user: AuthenticatedCustomerUser, customerId: string, dto: CustomerLifecycleDto) {
+    return this.implementation.restore(user, customerId, dto);
   }
 
   createVehicle(user: AuthenticatedCustomerUser, dto: CreateVehicleDto) {

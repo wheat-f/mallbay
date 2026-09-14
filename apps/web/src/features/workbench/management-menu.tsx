@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import React from "react";
+import { hasEffectivePermission } from "../permissions/use-effective-permissions";
 import {
   AppstoreOutlined, AuditOutlined, CalendarOutlined, DashboardOutlined,
   FileDoneOutlined, FileProtectOutlined, FormOutlined, GiftOutlined,
@@ -9,7 +10,12 @@ import {
   ShoppingCartOutlined, TeamOutlined, ToolOutlined, WalletOutlined
 } from "@ant-design/icons";
 
-export type RuntimePermission = { code: string; actions: string[]; scopes?: string[] };
+export type RuntimePermission = {
+  code: string;
+  actions: string[];
+  scopes?: string[];
+  bindingScopes?: Array<{ scopeType: "HQ" | "STORE"; scopeIds: string[] }>;
+};
 type PermissionRequirement = { code: string; action?: string; global?: boolean };
 
 export type ManagementMenuItem = {
@@ -82,21 +88,26 @@ const managementMenuGroupDefinitions: Array<{ key: string; label: string; icon: 
   { key: "people-system", label: "人员与系统", icon: <SettingOutlined />, itemKeys: ["members", "admin", "settings"] }
 ];
 
-function satisfiesRequirement(permissions: RuntimePermission[], requirement: PermissionRequirement) {
-  return permissions.some((permission) => permission.code === requirement.code
-    && (!requirement.action || permission.actions.includes(requirement.action))
-    && (!requirement.global || permission.scopes?.includes("GLOBAL")));
+function satisfiesRequirement(permissions: RuntimePermission[], requirement: PermissionRequirement, storeId?: string | null) {
+  if (!requirement.action) return permissions.some((permission) => permission.code === requirement.code);
+  if (requirement.global) {
+    return permissions.some((permission) => permission.code === requirement.code
+      && permission.actions.includes(requirement.action!)
+      && permission.scopes?.includes("GLOBAL")
+      && permission.bindingScopes?.some((binding) => binding.scopeType === "HQ"));
+  }
+  return hasEffectivePermission(permissions, requirement.code, requirement.action, storeId ?? undefined);
 }
 
-export function hasAnySettingsReadPermission(permissions?: RuntimePermission[]) {
-  return Boolean(permissions && settingsReadRequirements.some((requirement) => satisfiesRequirement(permissions, requirement)));
+export function hasAnySettingsReadPermission(permissions?: RuntimePermission[], storeId?: string | null) {
+  return Boolean(permissions && settingsReadRequirements.some((requirement) => satisfiesRequirement(permissions, requirement, storeId)));
 }
 
 export function getManagementMenuItems(input: { storeId?: string | null; permissions?: RuntimePermission[] }) {
   const { storeId, permissions } = input;
   if (!permissions) return [];
   return managementMenuItems
-    .filter((item) => item.key === "workbench" ? permissions.length > 0 : Boolean(item.anyOf?.some((requirement) => satisfiesRequirement(permissions, requirement))))
+    .filter((item) => item.key === "workbench" ? Boolean(storeId && permissions.length > 0) : Boolean(item.anyOf?.some((requirement) => satisfiesRequirement(permissions, requirement, storeId))))
     .map((item) => ({ ...item, href: item.key === "workbench" && storeId ? `/workbench/${storeId}` : item.href }));
 }
 

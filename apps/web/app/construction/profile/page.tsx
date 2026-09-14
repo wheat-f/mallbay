@@ -17,6 +17,8 @@ import { useRouter } from "next/navigation";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
 import { constructionApi } from "../../../src/lib/api";
 import { useAuthStore } from "../../../src/stores/auth-store";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
+import { useCurrentStoreContext } from "../../../src/features/workbench/store-context";
 
 type ArchiveRecord = {
   id: string;
@@ -43,13 +45,20 @@ const photoStages = ["BEFORE", "DURING", "AFTER"] as const;
 export default function ConstructionProfilePage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
-  const storeMember = user?.storeMember;
-  const storeId = storeMember?.store.id;
+  const { storeId, store: currentStore } = useCurrentStoreContext();
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canReadConstruction = hasEffectivePermission(permissionsQuery.data?.permissions, "construction", "read", storeId);
+  const effectiveRoleLabel = permissionsQuery.data?.roles
+    .filter((role) => role.scopeType === "HQ" || role.scopeIds.includes(storeId ?? ""))
+    .sort((left, right) => left.roleCode.localeCompare(right.roleCode))
+    .map((role) => role.roleName)
+    .filter(Boolean)
+    .join("、") || "施工身份待确认";
 
   const archiveQuery = useQuery({
-    queryKey: ["construction-worker-archive", storeId],
+    queryKey: ["construction-worker-archive", storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => constructionApi.assignments({ storeId: storeId! }),
-    enabled: Boolean(storeId)
+    enabled: Boolean(storeId && canReadConstruction)
   });
 
   const records = useMemo(() => (archiveQuery.data ?? []) as ArchiveRecord[], [archiveQuery.data]);
@@ -83,14 +92,14 @@ export default function ConstructionProfilePage() {
           <Tag color="processing">施工履约档案</Tag>
           <h2>{user?.nickname ?? user?.username ?? "施工人员"}</h2>
           <p>
-            {storeMember?.store.name ?? "未加入门店"} · {getPositionLabel(storeMember?.position)} ·
+            {currentStore?.name ?? "未加入门店"} · {effectiveRoleLabel} ·
             真实记录来自已分配施工工单、照片和质检结果。
           </p>
         </div>
         <Button
           icon={<ShopOutlined />}
-          disabled={!storeMember}
-          onClick={() => storeMember && router.push(`/workbench/${storeMember.store.id}`)}
+          disabled={!currentStore || !storeId}
+          onClick={() => currentStore && storeId && router.push(`/workbench/${storeId}`)}
         >
           进入门店工作台
         </Button>
@@ -173,14 +182,14 @@ export default function ConstructionProfilePage() {
               <div>
                 <UserOutlined />
                 <span>
-                  <strong>{getPositionLabel(storeMember?.position)}</strong>
+                  <strong>{effectiveRoleLabel}</strong>
                   <em>当前施工身份</em>
                 </span>
               </div>
               <div>
                 <ShopOutlined />
                 <span>
-                  <strong>{storeMember?.store.name ?? "未加入门店"}</strong>
+                  <strong>{currentStore?.name ?? "未加入门店"}</strong>
                   <em>所属门店</em>
                 </span>
               </div>
@@ -207,11 +216,4 @@ function getStatusColor(status: string) {
   if (status === "IN_CONSTRUCTION") return "processing";
   if (status === "DISPATCHED") return "warning";
   return "default";
-}
-
-function getPositionLabel(position?: string) {
-  if (position === "CONSTRUCTION") return "施工员";
-  if (position === "APPRENTICE") return "学徒";
-  if (position === "SCHEDULER") return "施工主管";
-  return "施工身份待确认";
 }

@@ -17,19 +17,19 @@ const STORE = ["STORE"] as const;
 const OWN = ["OWN"] as const;
 
 export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
-  { code: "customers", name: "客户", resource: "customers", actions: ["read", "write"], supportedScopes: OWN_STORE_GLOBAL },
+  { code: "customers", name: "客户", resource: "customers", actions: ["read", "write", "archive", "restore"], supportedScopes: OWN_STORE_GLOBAL },
   { code: "orders", name: "订单", resource: "orders", actions: ["read", "write"], supportedScopes: OWN_STORE_GLOBAL },
   { code: "orders.lifecycle", name: "订单生命周期", resource: "orders", actions: ["finalize", "cancel", "cross_store_source_manage", "verification_view", "verification_resolve"], supportedScopes: STORE_GLOBAL },
   { code: "warranties", name: "质保", resource: "warranties", actions: ["read", "write"], supportedScopes: STORE_GLOBAL },
   { code: "construction", name: "施工", resource: "construction", actions: ["read", "write"], supportedScopes: OWN_STORE_GLOBAL },
-  { code: "products", name: "产品", resource: "products", actions: ["read", "write", "suggested-price-write"], supportedScopes: STORE_GLOBAL },
+  { code: "products", name: "产品", resource: "products", actions: ["read", "write", "suggested-price-write", "disable", "enable"], supportedScopes: STORE_GLOBAL },
   { code: "pricing.template", name: "定价模板", resource: "pricing", actions: ["write"], supportedScopes: GLOBAL },
   { code: "inventory", name: "库存", resource: "inventory", actions: ["read", "write"], supportedScopes: STORE_GLOBAL },
   { code: "purchase", name: "采购", resource: "purchase", actions: ["read", "write"], supportedScopes: STORE_GLOBAL },
   { code: "after-sales", name: "售后", resource: "after-sales", actions: ["read", "write"], supportedScopes: OWN_STORE_GLOBAL },
   { code: "reports", name: "报表", resource: "reports", actions: ["read"], supportedScopes: OWN_STORE_GLOBAL },
   { code: "finance", name: "财务", resource: "finance", actions: ["read", "write"], supportedScopes: OWN_STORE_GLOBAL },
-  { code: "finance.cost", name: "财务成本", resource: "finance", actions: ["read"], supportedScopes: STORE_GLOBAL },
+  { code: "finance.cost", name: "财务成本", resource: "finance", actions: ["read", "write"], supportedScopes: STORE_GLOBAL },
   { code: "finance.application", name: "财务申请", resource: "finance", actions: ["submit"], supportedScopes: OWN_STORE_GLOBAL },
   { code: "finance.document", name: "财务单据", resource: "finance", actions: ["read", "attach"], supportedScopes: OWN_STORE_GLOBAL },
   { code: "finance.expense", name: "费用审批", resource: "finance", actions: ["review"], supportedScopes: STORE_GLOBAL },

@@ -27,10 +27,11 @@ import { useParams, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import { constructionApi, inventoryApi, memberApi, notificationApi, orderApi, reportsApi, storeApi, warrantiesApi } from "../../../src/lib/api";
-import { permissionsApi, type PermissionResult } from "../../../src/features/permissions/api";
+import type { PermissionResult } from "../../../src/features/permissions/api";
+import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { getWorkbenchSections } from "../../../src/features/workbench/navigation";
-import { useAuthStore } from "../../../src/stores/auth-store";
 import { getStorePositionLabel } from "../../../src/features/members/store-position";
+import { useCurrentStoreContext } from "../../../src/features/workbench/store-context";
 import { yuanCurrency } from "../../../src/features/orders/order-display";
 
 const POSITION_OPTIONS = [
@@ -270,8 +271,8 @@ function countActiveWarranties(warranties: WarrantySummary[]) {
   return warranties.filter((warranty) => warranty.status === "ACTIVE").length;
 }
 
-function hasWorkbenchPermission(permissions: PermissionResult["permissions"] | undefined, code: string, action: string) {
-  return Boolean(permissions?.some((permission) => permission.code === code && permission.actions.includes(action)));
+function hasWorkbenchPermission(permissions: PermissionResult["permissions"] | undefined, code: string, action: string, storeId?: string) {
+  return hasEffectivePermission(permissions, code, action, storeId);
 }
 
 // ─── 邀请成员抽屉 ───────────────────────────────────────────────
@@ -576,88 +577,65 @@ export default function WorkbenchPage() {
   const router = useRouter();
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const user = useAuthStore((state) => state.user);
+  const storeContext = useCurrentStoreContext(storeId);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
 
+  const permissionsQuery = useEffectivePermissions(storeId);
   const storeQuery = useQuery({
-    queryKey: ["workbench-store", storeId],
+    queryKey: ["workbench-store", storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => storeApi.myStore(storeId),
-    staleTime: 5_000
+    staleTime: 5_000,
+    enabled: storeContext.storeId === storeId && permissionsQuery.isFetched
   });
-  const permissionsQuery = useQuery({
-    queryKey: ["auth-permissions", storeId],
-    queryFn: () => permissionsApi.me(storeId),
-    enabled: Boolean(user?.id && storeId)
-  });
-
-  const fallbackStore = !storeQuery.data && user?.storeMember?.store.id === storeId
-    ? {
-        id: user.storeMember.store.id,
-        name: user.storeMember.store.name,
-        status: user.storeMember.store.status,
-        address: null,
-        description: null,
-        photos: [],
-        currentMember: { id: user.id, position: user.storeMember.position },
-        members: [
-          {
-            id: user.id,
-            position: user.storeMember.position,
-            user: {
-              id: user.id,
-              username: user.username,
-              nickname: user.nickname,
-              avatarUrl: user.avatarUrl
-            }
-          }
-        ]
-      }
-    : null;
-  const store = storeQuery.data ?? fallbackStore;
+  const store = storeQuery.data;
   const statusCfg = store ? (STATUS_CONFIG[store.status] ?? { text: store.status, color: "default" }) : null;
   const runtimePermissions = permissionsQuery.data?.permissions;
-  const canEditStoreProfile = hasWorkbenchPermission(runtimePermissions, "store.profile", "write");
-  const canManageMembers = hasWorkbenchPermission(runtimePermissions, "store.members", "write");
+  const canEditStoreProfile = hasWorkbenchPermission(runtimePermissions, "store.profile", "write", storeId);
+  const canManageMembers = hasWorkbenchPermission(runtimePermissions, "store.members", "write", storeId);
   const workbenchSections = store
     ? getWorkbenchSections(runtimePermissions, store.id)
     : [];
   const todayDate = getTodayDateString();
-  const currentPosition = store?.currentMember.position;
-  const canLoadReportSummary = hasWorkbenchPermission(runtimePermissions, "reports", "read");
-  const canLoadPendingDispatch = hasWorkbenchPermission(runtimePermissions, "orders", "read");
-  const canLoadCapacity = hasWorkbenchPermission(runtimePermissions, "construction", "read");
-  const canLoadInventoryBatches = hasWorkbenchPermission(runtimePermissions, "inventory", "read");
-  const canLoadWarranties = hasWorkbenchPermission(runtimePermissions, "warranties", "read");
-  const canLoadNotifications = Boolean(runtimePermissions?.length);
+  const effectiveRoles = permissionsQuery.data?.roles
+    .filter((role) => role.scopeType === "HQ" || role.scopeIds.includes(storeId))
+    .sort((left, right) => left.roleCode.localeCompare(right.roleCode)) ?? [];
+  const currentPosition = effectiveRoles[0]?.roleCode ?? "";
+  const effectiveRoleLabel = effectiveRoles.map((role) => role.roleName).filter(Boolean).join("、") || "权限加载中";
+  const canLoadReportSummary = hasWorkbenchPermission(runtimePermissions, "reports", "read", storeId);
+  const canLoadPendingDispatch = hasWorkbenchPermission(runtimePermissions, "orders", "read", storeId);
+  const canLoadCapacity = hasWorkbenchPermission(runtimePermissions, "construction", "read", storeId);
+  const canLoadInventoryBatches = hasWorkbenchPermission(runtimePermissions, "inventory", "read", storeId);
+  const canLoadWarranties = hasWorkbenchPermission(runtimePermissions, "warranties", "read", storeId);
+  const canLoadNotifications = hasWorkbenchPermission(runtimePermissions, "store.notifications", "read", storeId);
   const summaryQuery = useQuery({
-    queryKey: ["workbench-summary", storeId, permissionsQuery.data?.bindingVersion],
+    queryKey: ["workbench-summary", storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => reportsApi.summary(storeId),
     enabled: Boolean(store) && canLoadReportSummary
   });
   const pendingDispatchQuery = useQuery({
-    queryKey: ["workbench-pending-dispatch", storeId],
+    queryKey: ["workbench-pending-dispatch", storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => orderApi.list({ storeId, status: "PENDING_DISPATCH", page: 1, pageSize: 1 }),
     enabled: Boolean(store) && canLoadPendingDispatch
   });
   const balanceTodoQuery = useQuery({
-    queryKey: ["workbench-balance-todos", storeId, permissionsQuery.data?.bindingVersion],
+    queryKey: ["workbench-balance-todos", storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => notificationApi.listTodos(1, 20),
     enabled: Boolean(store) && canLoadNotifications
   });
   const capacityQuery = useQuery({
-    queryKey: ["workbench-capacity", storeId, todayDate],
+    queryKey: ["workbench-capacity", storeId, todayDate, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => constructionApi.capacities({ storeId, from: todayDate, to: todayDate }),
     enabled: Boolean(store) && canLoadCapacity
   });
   const inventoryBatchesQuery = useQuery({
-    queryKey: ["workbench-inventory-batches", storeId, permissionsQuery.data?.bindingVersion],
+    queryKey: ["workbench-inventory-batches", storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => inventoryApi.batches({ storeId }),
     enabled: Boolean(store) && canLoadInventoryBatches
   });
   const warrantiesQuery = useQuery({
-    queryKey: ["workbench-warranties", storeId, permissionsQuery.data?.bindingVersion],
+    queryKey: ["workbench-warranties", storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () => warrantiesApi.list(storeId),
     enabled: Boolean(store) && canLoadWarranties
   });
@@ -675,7 +653,7 @@ export default function WorkbenchPage() {
         activeWarrantyCount,
         lowStockCount,
         teamSize: store.members.length,
-        currentPosition: store.currentMember.position
+        currentPosition
       })
     : [];
   const capacityItems = buildCapacityItems(todayCapacity);
@@ -688,7 +666,7 @@ export default function WorkbenchPage() {
     pendingDispatchTotal,
     financeApplicationAmountCents,
     afterSalesCount: summary?.afterSales ?? 0,
-    currentPosition: store?.currentMember.position ?? ""
+    currentPosition
   });
   const balanceTodoRows: TaskRow[] = (balanceTodoQuery.data?.items ?? []).map((todo) => {
     const payload = todo.payload as { orderId?: string; orderNo?: string; outstandingCents?: number };
@@ -712,17 +690,17 @@ export default function WorkbenchPage() {
           <div className="flex justify-center pt-16"><Spin size="large" /></div>
         )}
 
-        {storeQuery.isError && fallbackStore && (
+        {(storeQuery.isError || permissionsQuery.isError || storeContext.storeId !== storeId) && (
           <Alert
             className="workbench-data-alert"
             type="warning"
             showIcon
             title="门店详情暂时未完整加载"
-            description="已使用当前登录身份展示可用业务入口。请稍后刷新以同步门店资料、照片和完整成员列表。"
+            description="门店资料未加载完成，已停止展示可能过期的角色和业务入口。请稍后刷新。"
           />
         )}
 
-        {storeQuery.isError && !fallbackStore && (
+        {storeQuery.isError && (
           <section className="workbench-empty-panel workbench-empty-state">
             <Typography.Title level={4}>无法加载门店工作台</Typography.Title>
             <Typography.Text type="secondary">
@@ -734,13 +712,13 @@ export default function WorkbenchPage() {
           </section>
         )}
 
-        {store && (
+        {store && permissionsQuery.isFetched && storeContext.storeId === storeId && (
           <>
             <section className="workbench-hero workbench-operations-dashboard">
               <div>
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   {statusCfg && <Tag color={statusCfg.color}>{statusCfg.text}</Tag>}
-                  <Tag>{getStorePositionLabel(store.currentMember.position)}</Tag>
+                  <Tag>{effectiveRoleLabel}</Tag>
                 </div>
                 <h1>运营工作台</h1>
                 <p>
@@ -871,7 +849,7 @@ export default function WorkbenchPage() {
                 <div className="workbench-quick-section">
                   <div className="workbench-panel-heading">
                     <strong>业务快捷入口</strong>
-                    <span>{getStorePositionLabel(store.currentMember.position)}可用功能</span>
+                    <span>{effectiveRoleLabel}可用功能</span>
                   </div>
                   <div className="workbench-entry-grid">
                     {workbenchSections.flatMap((section) =>

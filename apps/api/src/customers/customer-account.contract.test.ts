@@ -27,6 +27,8 @@ test("CustomerAccount exposes the complete customer and vehicle account seam", a
   await account.searchCustomers(user, "store-1", "京A");
   await account.getCustomerSummary(user, "customer-1");
   await account.updateCustomer(user, "customer-1", { name: "新客户" } as never);
+  await account.archiveCustomer(user, "customer-1", { reason: "清理" } as never);
+  await account.restoreCustomer(user, "customer-1", { reason: "恢复" } as never);
   await account.createVehicle(user, vehicleDto);
   await account.getVehicleSummary(user, "customer-1", vehicleQuery);
   await account.updateVehicle(user, "vehicle-1", vehicleDto);
@@ -44,6 +46,8 @@ test("CustomerAccount exposes the complete customer and vehicle account seam", a
     "search",
     "detail",
     "update",
+    "archive",
+    "restore",
     "createVehicle",
     "listVehicles",
     "updateVehicle",
@@ -55,9 +59,9 @@ test("CustomerAccount exposes the complete customer and vehicle account seam", a
     "createTag",
     "deleteTag"
   ]);
-  assert.deepEqual(calls[8]?.args, [user, "vehicle-1", "INACTIVE", { reason: "停用" }]);
-  assert.deepEqual(calls[13]?.args, [user, tagDto]);
-  assert.deepEqual(calls[14]?.args, [user, "tag-1"]);
+  assert.deepEqual(calls[10]?.args, [user, "vehicle-1", "INACTIVE", { reason: "停用" }]);
+  assert.deepEqual(calls[15]?.args, [user, tagDto]);
+  assert.deepEqual(calls[16]?.args, [user, "tag-1"]);
   assert.equal("orderContext" in account, false);
 });
 
@@ -72,6 +76,8 @@ test("CustomersController routes account operations through CustomerAccount and 
     "searchCustomers",
     "getCustomerSummary",
     "updateCustomer",
+    "archiveCustomer",
+    "restoreCustomer",
     "createVehicle",
     "getVehicleSummary",
     "createCustomerUser",

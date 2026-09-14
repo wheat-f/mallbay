@@ -158,6 +158,9 @@ export class CreateOrderUseCase {
       if (!customer || customer.storeId !== dto.storeId) {
         throw new NotFoundException("客户不存在");
       }
+      if (customer.status === "ARCHIVED") {
+        throw new BadRequestException("客户已归档，请先恢复后再创建订单");
+      }
       if (!await this.accessContext.can({ userId: user.id }, "customers", "read", { storeId: customer.storeId, ownerId: customer.ownerUserId })) {
         throw new ForbiddenException("无权限");
       }

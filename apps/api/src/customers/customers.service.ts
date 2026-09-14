@@ -8,7 +8,7 @@ import {
   NotFoundException,
   Optional
 } from "@nestjs/common";
-import { CustomerNoteType, Gender, OrderStatus, Prisma, SettingsConfigStatus } from "@prisma/client";
+import { CustomerNoteType, CustomerStatus, Gender, OrderStatus, Prisma, SettingsConfigStatus } from "@prisma/client";
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { normalizePagination } from "../common/pagination";
 import { AccessContext, type AccessSubject } from "../permissions/domain/access-context";
@@ -17,6 +17,7 @@ import { CreateCustomerNoteDto } from "./dto/create-customer-note.dto";
 import { CreateCustomerTagDto } from "./dto/create-customer-tag.dto";
 import { CreateCustomerUserForCustomerDto } from "./dto/create-customer-user.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
+import { CustomerLifecycleDto } from "./dto/customer-lifecycle.dto";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
 import { ListCustomersDto } from "./dto/list-customers.dto";
 import { UpdateCustomerDto } from "./dto/update-customer.dto";
@@ -102,6 +103,7 @@ export class CustomersService {
     const actor = { userId: user.id } satisfies AccessSubject;
     const { page, pageSize, skip } = normalizePagination(dto.page, dto.pageSize);
     const where = await this.buildScopedWhere(actor, dto.storeId);
+    where.status = dto.status ?? CustomerStatus.ACTIVE;
     const q = dto.q?.trim();
     if (q) {
       where.OR = this.buildSearchConditions(q);
@@ -142,6 +144,7 @@ export class CustomersService {
   async search(user: AuthenticatedCustomerUser, storeId: string, q: string) {
     const actor = { userId: user.id } satisfies AccessSubject;
     const where = await this.buildScopedWhere(actor, storeId);
+    where.status = CustomerStatus.ACTIVE;
     const keyword = q?.trim();
     if (keyword) {
       where.OR = this.buildSearchConditions(keyword);
@@ -260,6 +263,9 @@ export class CustomersService {
 
   async orderContext(user: AuthenticatedCustomerUser, customerId: string, vehicleId?: string) {
     const customer = await this.assertCanViewCustomer(user, customerId);
+    if (customer.status === CustomerStatus.ARCHIVED) {
+      throw new BadRequestException("客户已归档，请先恢复后再创建订单");
+    }
     const vehicle = vehicleId
       ? await this.prisma.customerVehicle.findUnique({
           where: { id: vehicleId },
@@ -423,6 +429,53 @@ export class CustomersService {
     const updated = await this.prisma.customer.update({
       where: { id },
       data
+    });
+    return this.sanitizeCustomer(updated);
+  }
+
+  async archive(user: AuthenticatedCustomerUser, id: string, dto: CustomerLifecycleDto) {
+    return this.changeLifecycle(user, id, CustomerStatus.ARCHIVED, dto.reason?.trim() || "业务归档");
+  }
+
+  async restore(user: AuthenticatedCustomerUser, id: string, dto: CustomerLifecycleDto) {
+    return this.changeLifecycle(user, id, CustomerStatus.ACTIVE, dto.reason?.trim() || "恢复使用");
+  }
+
+  private async changeLifecycle(
+    user: AuthenticatedCustomerUser,
+    id: string,
+    status: CustomerStatus,
+    reason: string
+  ) {
+    const actor = { userId: user.id } satisfies AccessSubject;
+    const customer = await this.prisma.customer.findUnique({ where: { id } });
+    if (!customer) throw new NotFoundException("客户不存在");
+    const action = status === CustomerStatus.ARCHIVED ? "archive" : "restore";
+    if (!await this.canCustomer(actor, action, customer.storeId, customer.ownerUserId)) {
+      throw new ForbiddenException("无权限");
+    }
+    if (customer.status === status) return this.sanitizeCustomer(customer);
+
+    const updated = await this.runTransaction(async (tx: any) => {
+      const result = await tx.customer.update({
+        where: { id },
+        data: status === CustomerStatus.ARCHIVED
+          ? { status, archivedAt: new Date(), archivedById: user.id, archivedReason: reason }
+          : { status, archivedAt: null, archivedById: null, archivedReason: null }
+      });
+      if (tx.auditEvent?.create) {
+        await tx.auditEvent.create({
+          data: {
+            action: status === CustomerStatus.ARCHIVED ? "customer.archived" : "customer.restored",
+            actorId: user.id,
+            storeId: customer.storeId,
+            targetType: "Customer",
+            targetId: id,
+            metadata: { previousStatus: customer.status, nextStatus: status, reason }
+          }
+        });
+      }
+      return result;
     });
     return this.sanitizeCustomer(updated);
   }
@@ -754,7 +807,7 @@ export class CustomersService {
     return scope.ownerId ? { storeId, ownerUserId: scope.ownerId } : { storeId };
   }
 
-  private async canCustomer(user: AccessSubject, action: "read" | "write", storeId: string, ownerId?: string) {
+  private async canCustomer(user: AccessSubject, action: string, storeId: string, ownerId?: string) {
     if (!this.accessContext) throw new Error("CustomersService access context is not configured");
     return this.accessContext.can(user, "customers", action, { storeId, ownerId });
   }

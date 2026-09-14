@@ -29,13 +29,11 @@ export class CreateProductDto {
   @IsEnum(ProductUnit)
   unit!: ProductUnit;
 
-  @IsOptional()
   @IsEnum(ProductUnit)
-  inventoryUnit?: ProductUnit;
+  inventoryUnit!: ProductUnit;
 
-  @IsOptional()
   @IsEnum(ProductUnit)
-  salesUnit?: ProductUnit;
+  salesUnit!: ProductUnit;
 
   @IsOptional()
   @Type(() => Number)

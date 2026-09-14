@@ -9,9 +9,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChangeEvent } from "react";
 import { useMemo, useRef, useState } from "react";
 import { productApi } from "../../src/lib/api";
-import { useAuthStore } from "../../src/stores/auth-store";
-import { hasEffectivePermission, useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
+import { useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
+import { AFFORDANCE_DEFINITIONS, hasAffordancePermission } from "../../src/features/permissions/affordances";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
+import { useCurrentStoreContext } from "../../src/features/workbench/store-context";
 import {
   getProductCategoryLabel,
   getProductDisplayName,
@@ -41,13 +42,14 @@ type ProductRow = CreateProductPayload & {
 export default function ProductsPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const user = useAuthStore((state) => state.user);
-  const storeId = user?.storeMember?.store.id;
+  const { storeId } = useCurrentStoreContext();
   const permissionsQuery = useEffectivePermissions(storeId);
   const permissions = permissionsQuery.data?.permissions;
-  const canManageProductDetails = hasEffectivePermission(permissions, "products", "write", storeId);
-  const canManageSuggestedPrice = hasEffectivePermission(permissions, "products", "suggested-price-write", storeId);
-  const canManageMaterialCost = hasEffectivePermission(permissions, "finance.cost", "read", storeId);
+  const canManageProductDetails = hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.productEdit, storeId);
+  const canManageSuggestedPrice = hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.productSuggestedPrice, storeId);
+  const canManageMaterialCost = hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.productMaterialCost, storeId);
+  const canDisableProduct = hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.productDisable, storeId);
+  const canEnableProduct = hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.productEnable, storeId);
   const [editing, setEditing] = useState<ProductRow | null>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -62,7 +64,7 @@ export default function ProductsPage() {
   const [importExecution, setImportExecution] = useState<ProductImportExecutionResult | null>(null);
 
   const productsQuery = useQuery({
-    queryKey: ["products", storeId, search, categoryFilter, statusFilter],
+    queryKey: ["products", storeId, search, categoryFilter, statusFilter, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
     queryFn: () =>
       productApi.list({
         storeId: storeId!,
@@ -72,7 +74,7 @@ export default function ProductsPage() {
         category: categoryFilter,
         status: statusFilter
       }),
-    enabled: Boolean(storeId && hasEffectivePermission(permissions, "products", "read", storeId))
+    enabled: Boolean(storeId && hasAffordancePermission(permissions, AFFORDANCE_DEFINITIONS.productView, storeId))
   });
 
   const saveMutation = useMutation({
@@ -113,10 +115,11 @@ export default function ProductsPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
-  const disableMutation = useMutation({
-    mutationFn: (id: string) => productApi.remove(id),
-    onSuccess: async () => {
-      message.success("产品已停用");
+  const lifecycleMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: ProductStatus }) =>
+      status === "ACTIVE" ? productApi.enable(id) : productApi.disable(id),
+    onSuccess: async (_, variables) => {
+      message.success(variables.status === "ACTIVE" ? "产品已启用" : "产品已停用");
       await queryClient.invalidateQueries({ queryKey: ["products", storeId] });
     },
     onError: (error: Error) => message.error(error.message)
@@ -224,6 +227,7 @@ export default function ProductsPage() {
             onClick={() => {
               setEditing(null);
               form.resetFields();
+              form.setFieldsValue({ unit: "ROLL", inventoryUnit: "ROLL", salesUnit: "ROLL" });
               setOpen(true);
             }}
           >
@@ -342,6 +346,7 @@ export default function ProductsPage() {
                     <Button
                       size="small"
                       icon={<EditOutlined />}
+                      disabled={!canManageProductDetails && !canManageMaterialCost}
                       onClick={() => {
                         setEditing(row);
                         form.setFieldsValue(toProductFormValues(row));
@@ -352,12 +357,12 @@ export default function ProductsPage() {
                     </Button>
                     <Button
                       size="small"
-                      danger
+                      danger={row.status === "ACTIVE"}
                       icon={<StopOutlined />}
-                      disabled={!canManageProductDetails}
-                      onClick={() => disableMutation.mutate(row.id)}
+                      disabled={row.status === "ACTIVE" ? !canDisableProduct : !canEnableProduct}
+                      onClick={() => lifecycleMutation.mutate({ id: row.id, status: row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE" })}
                     >
-                      停用
+                      {row.status === "ACTIVE" ? "停用" : "启用"}
                     </Button>
                   </div>
                 </article>
@@ -436,6 +441,7 @@ export default function ProductsPage() {
                         aria-label="编辑产品"
                         type="text"
                         icon={<EditOutlined />}
+                        disabled={!canManageProductDetails && !canManageMaterialCost}
                         onClick={() => {
                           setEditing(row);
                           form.setFieldsValue(toProductFormValues(row));
@@ -443,14 +449,14 @@ export default function ProductsPage() {
                         }}
                       />
                     </Tooltip>
-                    <Tooltip title="停用产品">
+                    <Tooltip title={row.status === "ACTIVE" ? "停用产品" : "启用产品"}>
                       <Button
-                        aria-label="停用产品"
+                        aria-label={row.status === "ACTIVE" ? "停用产品" : "启用产品"}
                         type="text"
-                        danger
-                        disabled={!canManageProductDetails}
+                        danger={row.status === "ACTIVE"}
+                        disabled={row.status === "ACTIVE" ? !canDisableProduct : !canEnableProduct}
                         icon={<StopOutlined />}
-                        onClick={() => disableMutation.mutate(row.id)}
+                        onClick={() => lifecycleMutation.mutate({ id: row.id, status: row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE" })}
                       />
                     </Tooltip>
                   </Space>
@@ -470,7 +476,7 @@ export default function ProductsPage() {
           footer={
             <div className="products-form-drawer-footer">
               <Button onClick={() => setOpen(false)}>取消</Button>
-              <Button type="primary" loading={saveMutation.isPending} onClick={() => form.submit()}>
+              <Button type="primary" loading={saveMutation.isPending} disabled={!canManageProductDetails && !canManageMaterialCost} onClick={() => form.submit()}>
                 {canManageProductDetails ? "保存产品" : "保存材料成本"}
               </Button>
             </div>
@@ -495,10 +501,10 @@ export default function ProductsPage() {
             <Form.Item name="unit" label="单位" rules={[{ required: true, message: "请选择单位" }]}>
               <Select disabled={!canManageSuggestedPrice} options={PRODUCT_UNIT_OPTIONS} />
             </Form.Item>
-            <Form.Item name="inventoryUnit" label="库存单位">
+            <Form.Item name="inventoryUnit" label="库存单位" rules={[{ required: true, message: "请选择库存单位" }]}>
               <Select disabled={!canManageProductDetails} options={PRODUCT_UNIT_OPTIONS} allowClear />
             </Form.Item>
-            <Form.Item name="salesUnit" label="销售单位">
+            <Form.Item name="salesUnit" label="销售单位" rules={[{ required: true, message: "请选择销售单位" }]}>
               <Select disabled={!canManageSuggestedPrice} options={PRODUCT_UNIT_OPTIONS} allowClear />
             </Form.Item>
             <Form.Item name="rollWidthMeters" label="卷宽（米）">

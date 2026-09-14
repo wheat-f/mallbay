@@ -208,14 +208,15 @@ export class AuthService {
       }
     });
 
-    const member = user.storeMembers[0] ?? null;
+    const storeMembers = user.storeMembers ?? [];
+    const member = storeMembers[0] ?? null;
     const isHeadquartersAdmin = await this.isEffectiveHeadquartersAdmin(user.id);
     return {
       ...this.toAuthUser(user, isHeadquartersAdmin),
       storeMember: member
         ? { position: member.position, store: member.store }
         : null,
-      storeMembers: user.storeMembers.map((item) => ({ position: item.position, store: item.store }))
+      storeMembers: storeMembers.map((item) => ({ position: item.position, store: item.store }))
     };
   }
 
@@ -249,7 +250,8 @@ export class AuthService {
         }
       }
     });
-    const member = user.storeMembers?.[0] ?? null;
+    const storeMembers = user.storeMembers ?? [];
+    const member = storeMembers[0] ?? null;
 
     const sessionId = context.sessionIdToReplace ?? randomUUID();
     const payload: TokenPayload = {
@@ -287,7 +289,7 @@ export class AuthService {
         storeMember: member
           ? { position: member.position, store: member.store }
           : null,
-        storeMembers: user.storeMembers.map((item) => ({ position: item.position, store: item.store }))
+        storeMembers: storeMembers.map((item) => ({ position: item.position, store: item.store }))
       },
       accessToken,
       refreshToken

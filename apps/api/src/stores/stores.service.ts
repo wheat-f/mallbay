@@ -338,7 +338,7 @@ export class StoresService {
   // ─── 门店成员：工作台门店详情（含成员列表）────────────────────────────────
 
   async getWorkbenchStore(userId: string, storeId: string) {
-    const member = await this.prisma.storeMember.findUnique({ where: { userId_storeId: { userId, storeId } } });
+    const member = await this.prisma.storeMember.findUnique({ where: { storeId_userId: { storeId, userId } } });
     if (!member) {
       throw new ForbiddenException("仅本店成员可访问");
     }

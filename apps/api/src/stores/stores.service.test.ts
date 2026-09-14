@@ -67,7 +67,7 @@ test("getWorkbenchStore allows non-manager store members to view their store", a
   const prisma = {
       storeMember: {
         findUnique: async (args: unknown) => {
-        assert.deepEqual(args, { where: { userId_storeId: { userId: "sales-1", storeId: "store-1" } } });
+        assert.deepEqual(args, { where: { storeId_userId: { storeId: "store-1", userId: "sales-1" } } });
         return {
           id: "member-sales",
           storeId: "store-1",

@@ -326,6 +326,7 @@ test("CustomersService search includes car plate and VIN hash conditions", async
     {
       storeId: "store-1",
       ownerUserId: "sales-1",
+      status: "ACTIVE",
       OR: [
         { name: { contains: "湘A12345", mode: "insensitive" } },
         { companyName: { contains: "湘A12345", mode: "insensitive" } },
@@ -381,11 +382,12 @@ test("CustomersService lets sales list and search only their own customers", asy
   await service.search(user, "store-1", "权限回归测试");
 
   assert.deepEqual(capturedWhere, [
-    { storeId: "store-1", ownerUserId: "sales-1" },
-    { storeId: "store-1", ownerUserId: "sales-1" },
+    { storeId: "store-1", ownerUserId: "sales-1", status: "ACTIVE" },
+    { storeId: "store-1", ownerUserId: "sales-1", status: "ACTIVE" },
     {
       storeId: "store-1",
       ownerUserId: "sales-1",
+      status: "ACTIVE",
       OR: [
         { name: { contains: "权限回归测试", mode: "insensitive" } },
         { companyName: { contains: "权限回归测试", mode: "insensitive" } },

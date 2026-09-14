@@ -24,6 +24,8 @@ test("toProductPayload converts yuan display price to cents payload", () => {
       category: "PPF",
       specification: "1.52*15米",
       unit: "ROLL",
+      inventoryUnit: "ROLL",
+      salesUnit: "ROLL",
       warrantyYears: 10,
       basePriceCents: 1234
     }

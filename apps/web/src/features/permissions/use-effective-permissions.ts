@@ -21,14 +21,15 @@ export function hasEffectivePermission(
 ) {
   return Boolean(permissions?.some((permission) => {
     if (permission.code !== code || !permission.actions.includes(action)) return false;
+    const scopes = permission.scopes ?? [];
     const bindings = permission.bindingScopes ?? [];
-    if (permission.scopes.includes("GLOBAL") && bindings.some((binding) => binding.scopeType === "HQ")) return true;
+    if (scopes.includes("GLOBAL") && bindings.some((binding) => binding.scopeType === "HQ")) return true;
     const hasMatchingStoreBinding = bindings.some((binding) =>
       binding.scopeType === "STORE" && (storeId ? binding.scopeIds.includes(storeId) : binding.scopeIds.length > 0)
     );
     if (!hasMatchingStoreBinding) return false;
-    if (permission.scopes.includes("STORE")) return true;
-    if (options.requireStoreScope || !permission.scopes.includes("OWN")) return false;
+    if (scopes.includes("STORE")) return true;
+    if (options.requireStoreScope || !scopes.includes("OWN")) return false;
     return !options.ownerId || !options.userId || options.ownerId === options.userId;
   }));
 }

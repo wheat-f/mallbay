@@ -338,6 +338,7 @@ test("CustomersService search includes car plate and VIN hash conditions", async
     {
       storeId: "store-1",
       ownerUserId: "sales-1",
+      status: "ACTIVE",
       OR: [
         { name: { contains: "LSVNV2182E2123456", mode: "insensitive" } },
         { companyName: { contains: "LSVNV2182E2123456", mode: "insensitive" } },

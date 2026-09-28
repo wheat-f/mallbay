@@ -1,16 +1,19 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Optional,
   NotFoundException
 } from "@nestjs/common";
-import { InvitationStatus, PermissionBindingStatus, PermissionRoleStatus, PermissionScopeType, StorePosition, StoreStatus } from "@prisma/client";
+import { InvitationStatus, PermissionRoleStatus, StorePosition, StoreStatus } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationDispatcher } from "../notifications/notification-dispatcher";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PermissionsService } from "../permissions/permissions.service";
+import { StoreBindingChanges, type StoreBindingAction } from "../permissions/store-binding-changes";
 import { InviteMemberDto } from "./dto/invite-member.dto";
 
 @Injectable()
@@ -20,7 +23,8 @@ export class MembersService {
     private readonly notifications: NotificationsService,
     private readonly accessContext: AccessContext,
     @Optional() private readonly notificationDispatcher?: NotificationDispatcher,
-    @Optional() private readonly permissions?: PermissionsService
+    @Optional() private readonly permissions?: PermissionsService,
+    @Inject(StoreBindingChanges) private readonly bindingChanges?: StoreBindingChanges
   ) {}
 
   // ─── 店长：搜索可邀请的用户 ────────────────────────────────────────────────
@@ -108,7 +112,7 @@ export class MembersService {
 
   // ─── 用户：接受邀请 ────────────────────────────────────────────────────────
 
-  async acceptInvitation(userId: string, invitationId: string) {
+  async acceptInvitation(userId: string, invitationId: string, commandId: string = randomUUID()) {
     const invitation = await this.prisma.storeInvitation.findUnique({
       where: { id: invitationId },
       include: { store: true }
@@ -116,27 +120,32 @@ export class MembersService {
 
     if (!invitation) throw new NotFoundException("邀请不存在");
     if (invitation.invitedUserId !== userId) throw new ForbiddenException("无权操作");
-    if (invitation.status !== InvitationStatus.PENDING) {
-      throw new BadRequestException("该邀请已处理");
-    }
-
-    await this.prisma.$transaction(async (tx) => {
+    if (!this.bindingChanges) throw new Error("门店角色绑定变更模块未配置");
+    const committed = await this.bindingChanges.commit({
+      commandId,
+      actorId: userId,
+      authority: "invitationAccept",
+      intent: { operation: "acceptInvitation", userId, invitationId },
+      compose: async (tx) => {
+      const currentInvitation = await tx.storeInvitation.findUnique({ where: { id: invitationId } });
+      if (currentInvitation?.status !== InvitationStatus.PENDING) throw new BadRequestException("该邀请已处理");
+      if (currentInvitation.invitedUserId !== userId) throw new ForbiddenException("无权操作");
+      const actions: StoreBindingAction[] = [];
       // 若用户当前在冻结门店，先退出
       const currentMember = await tx.storeMember.findUnique({ where: { userId } });
       if (currentMember) {
+        const oldStore = await tx.store.findUnique({ where: { id: currentMember.storeId }, select: { status: true } });
+        if (oldStore?.status !== StoreStatus.FROZEN) throw new BadRequestException("该用户已是其他门店的成员");
         await tx.storeMember.delete({ where: { id: currentMember.id } });
-        await tx.permissionRoleBinding.updateMany({
-          where: { userId, scopeType: PermissionScopeType.STORE, storeId: currentMember.storeId, status: PermissionBindingStatus.ACTIVE },
-          data: { status: PermissionBindingStatus.DISABLED }
-        });
+        actions.push({ kind: "disableAll", userId, storeId: currentMember.storeId });
       }
 
       // 加入新门店
       await tx.storeMember.create({
         data: {
-          storeId: invitation.storeId,
+          storeId: currentInvitation.storeId,
           userId,
-          position: invitation.position
+          position: currentInvitation.position
         }
       });
 
@@ -146,21 +155,26 @@ export class MembersService {
         data: { status: InvitationStatus.ACCEPTED }
       });
 
-      const role = await tx.permissionRole.findUnique({ where: { code: invitation.position } });
+      const role = await tx.permissionRole.findUnique({ where: { code: currentInvitation.position } });
       if (!role || role.status !== PermissionRoleStatus.ACTIVE) {
         throw new BadRequestException("邀请岗位尚未配置有效角色，请联系管理员处理");
       }
-      const binding = await tx.permissionRoleBinding.upsert({
-        where: { userId_roleId_scopeType_storeId: { userId, roleId: role.id, scopeType: PermissionScopeType.STORE, storeId: invitation.storeId } },
-        update: { status: PermissionBindingStatus.ACTIVE, effectiveAt: new Date(), expiredAt: null },
-        create: { userId, roleId: role.id, scopeType: PermissionScopeType.STORE, storeId: invitation.storeId }
-      });
-      await tx.auditEvent.create({
-        data: { action: "permissions.binding.created", actorId: invitation.invitedById, storeId: invitation.storeId, targetType: "PermissionRoleBinding", targetId: binding.id, metadata: { userId, roleId: role.id, source: "store_invitation" } }
-      });
       if (accepted.count !== 1) throw new BadRequestException("该邀请已处理");
+      actions.push({ kind: "grant", userId, storeId: currentInvitation.storeId, roleId: role.id });
+      return {
+        result: { success: true },
+        actions,
+        summary: {
+          action: "STORE_INVITATION_ACCEPTED",
+          targetType: "StoreInvitation",
+          targetId: invitationId,
+          storeId: currentInvitation.storeId,
+          metadata: { userId }
+        }
+      };
+      }
     });
-    this.permissions?.invalidateUserCache(userId);
+    if (!committed.replayed) this.permissions?.invalidateUserCache(userId);
 
     // 通知邀请人
     await this.dispatchNotification(invitation.invitedById, "INVITATION_ACCEPTED", {
@@ -169,7 +183,7 @@ export class MembersService {
       invitedUserId: userId
     }, `store-invitation:${invitation.id}:accepted`);
 
-    return { success: true };
+    return committed.value;
   }
 
   // ─── 用户：拒绝邀请 ────────────────────────────────────────────────────────
@@ -202,22 +216,15 @@ export class MembersService {
 
   // ─── 店长：开除成员 ────────────────────────────────────────────────────────
 
-  async removeMember(managerId: string, storeId: string, targetUserId: string) {
+  async removeMember(managerId: string, storeId: string, targetUserId: string, commandId: string = randomUUID()) {
     await this.assertManager(managerId, storeId);
 
     if (managerId === targetUserId) {
       throw new BadRequestException("不能开除自己");
     }
 
-    const member = await this.prisma.storeMember.findUnique({
-      where: { userId: targetUserId }
-    });
-
-    if (!member || member.storeId !== storeId) {
-      throw new NotFoundException("该用户不是本门店成员");
-    }
-
-    if (member.position === StorePosition.MANAGER) {
+    const currentMember = await this.prisma.storeMember.findUnique({ where: { userId: targetUserId } });
+    if (currentMember?.storeId === storeId && currentMember.position === StorePosition.MANAGER) {
       throw new BadRequestException("不能开除店长，请联系管理员变更");
     }
 
@@ -226,23 +233,39 @@ export class MembersService {
       select: { name: true }
     });
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.storeMember.delete({ where: { id: member.id } });
-      await tx.permissionRoleBinding.updateMany({
-        where: { userId: targetUserId, scopeType: PermissionScopeType.STORE, storeId, status: PermissionBindingStatus.ACTIVE },
-        data: { status: PermissionBindingStatus.DISABLED }
-      });
-      await tx.auditEvent.create({
-        data: { action: "permissions.binding.disabled", actorId: managerId, storeId, targetType: "StoreMember", targetId: member.id, metadata: { userId: targetUserId, source: "store_member_removed" } }
-      });
+    if (!this.bindingChanges) throw new Error("门店角色绑定变更模块未配置");
+    const committed = await this.bindingChanges.commit({
+      commandId,
+      actorId: managerId,
+      authority: "memberLeave",
+      intent: { operation: "removeMember", storeId, targetUserId },
+      compose: async (tx) => {
+        const member = await tx.storeMember.findUnique({ where: { userId: targetUserId } });
+        if (!member || member.storeId !== storeId) throw new NotFoundException("该用户不是本门店成员");
+        if (member.position === StorePosition.MANAGER) {
+          throw new BadRequestException("不能开除店长，请联系管理员变更");
+        }
+        await tx.storeMember.delete({ where: { id: member.id } });
+        return {
+          result: { success: true, memberId: member.id },
+          actions: [{ kind: "disableAll" as const, userId: targetUserId, storeId }],
+          summary: {
+            action: "STORE_MEMBER_REMOVED",
+            targetType: "StoreMember",
+            targetId: member.id,
+            storeId,
+            metadata: { userId: targetUserId }
+          }
+        };
+      }
     });
-    this.permissions?.invalidateUserCache(targetUserId);
+    if (!committed.replayed) this.permissions?.invalidateUserCache(targetUserId);
 
     await this.dispatchNotification(targetUserId, "REMOVED_FROM_STORE", {
       storeId,
       storeName: store.name,
       reason: "已被店长移出门店"
-    }, `store-member:${member.id}:removed`);
+    }, `store-member:${committed.value.memberId}:removed`);
 
     return { success: true };
   }

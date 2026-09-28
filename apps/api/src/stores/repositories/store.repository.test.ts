@@ -281,7 +281,7 @@ test("StoreRepository converts approved cover invariant conflicts to ConflictExc
   );
 });
 
-test("StoreRepository delegates store admin persistence to Prisma", async () => {
+test("StoreRepository sends manager changes through the binding plan", async () => {
   const calls: string[] = [];
   const tx = {
     storeMember: {
@@ -394,7 +394,16 @@ test("StoreRepository delegates store admin persistence to Prisma", async () => 
       }
     }
   };
-  const repository = new StoreRepository(prisma as never);
+  const repository = new StoreRepository(prisma as never, {
+    commit: async (command: { compose: (tx: unknown) => Promise<{ result: unknown; actions: unknown[] }> }) => {
+      const composed = await command.compose(tx);
+      assert.deepEqual(composed.actions, [
+        { kind: "disableAll", userId: "manager-old", storeId: "store-1" },
+        { kind: "replace", userId: "manager-new", storeId: "store-1", roleIds: ["role-manager"] }
+      ]);
+      return { value: composed.result, changes: [], replayed: false };
+    }
+  } as never);
 
   assert.deepEqual(await repository.findStore("store-1"), {
     id: "store-1",
@@ -416,6 +425,7 @@ test("StoreRepository delegates store admin persistence to Prisma", async () => 
     actorId: "admin-1",
     newManagerId: "manager-new",
     currentManagerId: "member-current",
+    currentManagerUserId: "manager-old",
     existingNewManagerMemberId: "member-new"
   });
   await repository.updateStoreStatus("store-1", StoreStatus.FROZEN);
@@ -426,14 +436,9 @@ test("StoreRepository delegates store admin persistence to Prisma", async () => 
     "user.findUnique",
     "member.findFirst",
     "member.findUnique",
-    "tx.member.findUnique",
     "tx.member.delete",
-    "tx.binding.disable:manager-old",
     "tx.member.update",
     "tx.role.findUnique",
-    "tx.binding.disable:manager-new",
-    "tx.binding.upsert",
-    "tx.audit.create",
     "store.update",
     "member.findMany"
   ]);

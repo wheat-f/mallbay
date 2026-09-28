@@ -105,24 +105,73 @@ const databaseInvariantChecks: DatabaseInvariantCheck[] = [
     `
   },
   {
-    invariant: "active_store_member_has_matching_role_binding",
-    message: "每位在职门店成员必须拥有与其岗位对应的有效门店角色绑定",
+    invariant: "active_store_member_has_store_role_binding",
+    message: "每位在职门店成员必须拥有至少一个有效的本店角色绑定",
     query: `
       SELECT member."userId", member."storeId", member."position"
       FROM "StoreMember" member
+      WHERE NOT EXISTS (
+        SELECT 1 FROM "PermissionRoleBinding" binding
+        JOIN "PermissionRole" role ON role."id" = binding."roleId" AND role."status" = 'ACTIVE'
+        WHERE binding."userId" = member."userId"
+          AND binding."scopeType" = 'STORE'
+          AND binding."storeId" = member."storeId"
+          AND binding."status" = 'ACTIVE'
+          AND binding."effectiveAt" <= CURRENT_TIMESTAMP
+          AND (binding."expiredAt" IS NULL OR binding."expiredAt" > CURRENT_TIMESTAMP)
+      )
+      ORDER BY member."storeId", member."userId"
+    `
+  },
+  {
+    invariant: "store_single_manager",
+    message: "每家门店必须恰有一名店长",
+    query: `
+      SELECT store."id" AS "storeId", COUNT(member."id")::int AS "managerCount"
+      FROM "Store" store
+      LEFT JOIN "StoreMember" member
+        ON member."storeId" = store."id" AND member."position" = 'MANAGER'
+      GROUP BY store."id"
+      HAVING COUNT(member."id") <> 1
+      ORDER BY store."id"
+    `
+  },
+  {
+    invariant: "store_manager_binding_consistency",
+    message: "门店必须恰有一条属于店长的有效 MANAGER 绑定",
+    query: `
+      SELECT store."id" AS "storeId", member."userId" AS "managerUserId",
+             COUNT(binding."id")::int AS "managerBindingCount"
+      FROM "Store" store
+      LEFT JOIN "StoreMember" member
+        ON member."storeId" = store."id" AND member."position" = 'MANAGER'
       LEFT JOIN "PermissionRole" role
-        ON role."code" = member."position"::text
-       AND role."status" = 'ACTIVE'
+        ON role."code" = 'MANAGER' AND role."status" = 'ACTIVE'
       LEFT JOIN "PermissionRoleBinding" binding
-        ON binding."userId" = member."userId"
+        ON binding."storeId" = store."id"
        AND binding."roleId" = role."id"
        AND binding."scopeType" = 'STORE'
-       AND binding."storeId" = member."storeId"
        AND binding."status" = 'ACTIVE'
        AND binding."effectiveAt" <= CURRENT_TIMESTAMP
        AND (binding."expiredAt" IS NULL OR binding."expiredAt" > CURRENT_TIMESTAMP)
-      WHERE binding."id" IS NULL
-      ORDER BY member."storeId", member."userId"
+      GROUP BY store."id", member."userId"
+      HAVING COUNT(binding."id") <> 1
+         OR BOOL_OR(binding."userId" IS DISTINCT FROM member."userId")
+      ORDER BY store."id"
+    `
+  },
+  {
+    invariant: "nonmember_store_binding_review",
+    message: "非成员的有效门店绑定仅供核查来源，不自动撤销",
+    query: `
+      SELECT binding."id", binding."userId", binding."storeId", binding."roleId", binding."createdById"
+      FROM "PermissionRoleBinding" binding
+      LEFT JOIN "StoreMember" member
+        ON member."userId" = binding."userId" AND member."storeId" = binding."storeId"
+      WHERE binding."scopeType" = 'STORE'
+        AND binding."status" = 'ACTIVE'
+        AND member."id" IS NULL
+      ORDER BY binding."storeId", binding."userId", binding."id"
     `
   }
 ];

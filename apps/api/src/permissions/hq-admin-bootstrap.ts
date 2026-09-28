@@ -87,6 +87,9 @@ export async function ensureHeadquartersAdmin(prisma: PrismaService, roleId: str
       await tx.permissionRoleBinding.update({ where: { id: existingBinding.id }, data: { status: "ACTIVE", effectiveAt: new Date(), expiredAt: null } });
       bindingReactivated = true;
     }
+    if (bindingCreated || bindingReactivated) {
+      await tx.user.update({ where: { id: existingTarget.id }, data: { authRevision: { increment: 1 } } });
+    }
 
     await tx.auditEvent.create({
       data: {

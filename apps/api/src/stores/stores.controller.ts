@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Inject,
   Param,
   Patch,
@@ -30,6 +31,7 @@ import {
   UpdateStoreCrossStoreConfigDto
 } from "./dto/cross-store-config.dto";
 import { STORE_GOVERNANCE, type StoreGovernance } from "./domain/store-governance";
+import { requireBindingCommandId } from "../permissions/require-binding-command-id";
 
 type AuthRequest = Request & {
   user: { id: string; username: string };
@@ -46,8 +48,8 @@ export class StoresController {
 
   // 管理员：创建门店并指派店长
   @Post()
-  createStore(@Req() req: AuthRequest, @Body() dto: CreateStoreDto) {
-    return this.stores.createStore(req.user.id, dto);
+  createStore(@Req() req: AuthRequest, @Body() dto: CreateStoreDto, @Headers("x-request-id") commandId?: string) {
+    return this.stores.createStore(req.user.id, dto, requireBindingCommandId(commandId));
   }
 
   // 公开门店列表（无需登录也可访问）
@@ -174,8 +176,9 @@ export class StoresController {
   changeManager(
     @Req() req: AuthRequest,
     @Param("id") id: string,
-    @Body() dto: ChangeManagerDto
+    @Body() dto: ChangeManagerDto,
+    @Headers("x-request-id") commandId?: string
   ) {
-    return this.stores.changeManager(req.user.id, id, dto);
+    return this.stores.changeManager(req.user.id, id, dto, requireBindingCommandId(commandId));
   }
 }

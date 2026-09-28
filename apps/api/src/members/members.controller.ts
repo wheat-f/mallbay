@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Inject, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Inject, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { InviteMemberDto } from "./dto/invite-member.dto";
 import { MEMBER_INVITATION_WORKFLOW, type MemberInvitationWorkflow } from "./domain/member-invitation-workflow";
+import { requireBindingCommandId } from "../permissions/require-binding-command-id";
 
 type AuthRequest = Request & { user: { id: string } };
 
@@ -36,9 +37,10 @@ export class MembersController {
   remove(
     @Req() req: AuthRequest,
     @Param("storeId") storeId: string,
-    @Param("userId") userId: string
+    @Param("userId") userId: string,
+    @Headers("x-request-id") commandId?: string
   ) {
-    return this.membersService.removeMember(req.user.id, storeId, userId);
+    return this.membersService.removeMember(req.user.id, storeId, userId, requireBindingCommandId(commandId));
   }
 
   // 用户：查看收到的邀请
@@ -49,8 +51,8 @@ export class MembersController {
 
   // 用户：接受邀请
   @Post("invitations/:id/accept")
-  accept(@Req() req: AuthRequest, @Param("id") id: string) {
-    return this.membersService.acceptInvitation(req.user.id, id);
+  accept(@Req() req: AuthRequest, @Param("id") id: string, @Headers("x-request-id") commandId?: string) {
+    return this.membersService.acceptInvitation(req.user.id, id, requireBindingCommandId(commandId));
   }
 
   // 用户：拒绝邀请

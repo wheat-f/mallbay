@@ -1,6 +1,8 @@
-import { ConflictException, Injectable } from "@nestjs/common";
-import { PermissionBindingStatus, PermissionRoleStatus, PermissionScopeType, StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
+import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
+import { PermissionRoleStatus, StorePosition, StoreStatus, SubmissionStatus } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
+import { StoreBindingChanges, type StoreBindingAction } from "../../permissions/store-binding-changes";
 import { NormalizedSubmissionPhoto } from "../domain/store-policy";
 
 type CreateAuditSubmissionInput = {
@@ -25,12 +27,14 @@ type ChangeManagerInput = {
   actorId: string;
   newManagerId: string;
   currentManagerId?: string;
+  currentManagerUserId?: string;
   existingNewManagerMemberId?: string;
+  commandId?: string;
 };
 
 @Injectable()
 export class StoreRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly bindingChanges: StoreBindingChanges) {}
 
   findMemberByUserId(userId: string) {
     return this.prisma.storeMember.findUnique({
@@ -179,16 +183,21 @@ export class StoreRepository {
   }
 
   async changeManager(input: ChangeManagerInput) {
-    await this.prisma.$transaction(async (tx) => {
+    return this.bindingChanges.commit({
+      commandId: input.commandId ?? randomUUID(),
+      actorId: input.actorId,
+      authority: "managerTransfer",
+      intent: { operation: "changeManager", storeId: input.storeId, newManagerId: input.newManagerId },
+      expected: [
+        { kind: "manager", storeId: input.storeId, userId: input.currentManagerUserId ?? null },
+        { kind: "member", userId: input.newManagerId, storeId: input.existingNewManagerMemberId ? input.storeId : null }
+      ],
+      compose: async (tx) => {
+      if (input.currentManagerUserId === input.newManagerId) {
+        throw new BadRequestException("该用户已是本门店店长");
+      }
       if (input.currentManagerId) {
-        const currentManager = await tx.storeMember.findUnique({ where: { id: input.currentManagerId }, select: { userId: true } });
         await tx.storeMember.delete({ where: { id: input.currentManagerId } });
-        if (currentManager) {
-          await tx.permissionRoleBinding.updateMany({
-            where: { userId: currentManager.userId, scopeType: PermissionScopeType.STORE, storeId: input.storeId, status: PermissionBindingStatus.ACTIVE },
-            data: { status: PermissionBindingStatus.DISABLED }
-          });
-        }
       }
 
       if (input.existingNewManagerMemberId) {
@@ -210,18 +219,26 @@ export class StoreRepository {
       if (!managerRole || managerRole.status !== PermissionRoleStatus.ACTIVE) {
         throw new ConflictException("店长岗位尚未配置有效角色");
       }
-      await tx.permissionRoleBinding.updateMany({
-        where: { userId: input.newManagerId, scopeType: PermissionScopeType.STORE, storeId: input.storeId, status: PermissionBindingStatus.ACTIVE },
-        data: { status: PermissionBindingStatus.DISABLED }
-      });
-      const binding = await tx.permissionRoleBinding.upsert({
-        where: { userId_roleId_scopeType_storeId: { userId: input.newManagerId, roleId: managerRole.id, scopeType: PermissionScopeType.STORE, storeId: input.storeId } },
-        update: { status: PermissionBindingStatus.ACTIVE, effectiveAt: new Date(), expiredAt: null, createdById: input.actorId },
-        create: { userId: input.newManagerId, roleId: managerRole.id, scopeType: PermissionScopeType.STORE, storeId: input.storeId, createdById: input.actorId }
-      });
-      await tx.auditEvent.create({
-        data: { action: "permissions.binding.changed", actorId: input.actorId, storeId: input.storeId, targetType: "PermissionRoleBinding", targetId: binding.id, metadata: { userId: input.newManagerId, roleId: managerRole.id, source: "store_manager_changed" } }
-      });
+      const actions: StoreBindingAction[] = [];
+      if (input.currentManagerUserId) {
+        actions.push({ kind: "disableAll", userId: input.currentManagerUserId, storeId: input.storeId });
+      }
+      actions.push({ kind: "replace", userId: input.newManagerId, storeId: input.storeId, roleIds: [managerRole.id] });
+      return {
+        result: { success: true, previousManagerUserId: input.currentManagerUserId ?? null },
+        actions,
+        summary: {
+          action: "STORE_MANAGER_CHANGED",
+          targetType: "store",
+          targetId: input.storeId,
+          storeId: input.storeId,
+          metadata: {
+            previousManagerId: input.currentManagerUserId ?? null,
+            newManagerId: input.newManagerId
+          }
+        }
+      };
+      }
     });
   }
 }

@@ -1,9 +1,11 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 import { PermissionBindingStatus, PermissionPolicyVersionStatus, PermissionRoleStatus, Prisma, PermissionScopeType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { RuntimeAccessSnapshotStore } from "./domain/runtime-access-snapshot.store";
 import type { AccessDenialReason, AccessScopeFacts } from "./domain/access-context";
 import { isCatalogGrant } from "./permission-catalog";
+import { StoreBindingChanges } from "./store-binding-changes";
+import { randomUUID } from "crypto";
 
 export type PermissionContext = {
   storeId?: string;
@@ -25,10 +27,11 @@ export class PermissionsService {
   private readonly cacheTtlMs = 30_000;
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(RuntimeAccessSnapshotStore) private readonly snapshotStore: RuntimeAccessSnapshotStore
+    @Inject(RuntimeAccessSnapshotStore) private readonly snapshotStore: RuntimeAccessSnapshotStore,
+    @Optional() @Inject(StoreBindingChanges) private readonly bindingChanges?: StoreBindingChanges
   ) {}
 
-  async getForUser(userId: string, context: PermissionContext = {}): Promise<PermissionResult> {
+  async getForUser(userId: string, context: PermissionContext = {}, revisionRetry = 0): Promise<PermissionResult> {
     const cacheKey = userId + ":" + (context.storeId ?? "*");
     const cached = this.resultCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
@@ -47,6 +50,7 @@ export class PermissionsService {
       }
       this.resultCache.delete(cacheKey);
     }
+    const revisionBefore = await this.bindingVersion(userId);
     const now = new Date();
     const [user, bindings, published] = await Promise.all([
       this.prisma.user.findUnique({
@@ -150,10 +154,15 @@ export class PermissionsService {
         scopeIds: [...binding.scopeIds]
       }))
     }));
+    const revisionAfter = await this.bindingVersion(userId);
+    if (revisionBefore !== revisionAfter) {
+      if (revisionRetry >= 2) throw new Error("用户授权版本持续变化，拒绝使用权限快照");
+      return this.getForUser(userId, context, revisionRetry + 1);
+    }
     const result = {
       userId,
       policyVersion: published?.version ?? 0,
-      bindingVersion: await this.bindingVersion(userId),
+      bindingVersion: revisionAfter,
       roles,
       permissions: computedPermissions,
       generatedAt: now.toISOString()
@@ -469,9 +478,24 @@ export class PermissionsService {
     await this.assertRoleBindingWriteAllowed(actorId, binding.userId, binding.scopeType);
   }
 
-  async bindRole(input: { userId: string; roleId: string; scopeType: PermissionScopeType; storeId?: string; createdById: string }) {
+  async bindRole(input: { userId: string; roleId: string; scopeType: PermissionScopeType; storeId?: string; createdById: string; commandId?: string }) {
     if (input.scopeType === PermissionScopeType.STORE && !input.storeId) throw new Error("门店范围绑定必须提供 storeId");
     if (input.scopeType === PermissionScopeType.HQ && input.storeId) throw new Error("总部范围绑定不能提供 storeId");
+    if (input.scopeType === PermissionScopeType.STORE) {
+      if (!this.bindingChanges || !input.storeId) throw new Error("门店角色绑定变更模块未配置");
+      const committed = await this.bindingChanges.commit({
+        commandId: input.commandId ?? randomUUID(),
+        actorId: input.createdById,
+        authority: "governance",
+        intent: { operation: "bindRole", userId: input.userId, roleId: input.roleId, storeId: input.storeId },
+        compose: async () => ({
+          result: { success: true },
+          actions: [{ kind: "grant" as const, userId: input.userId, storeId: input.storeId!, roleId: input.roleId }]
+        })
+      });
+      if (!committed.replayed) this.invalidateUserCache(input.userId);
+      return committed.changes[0];
+    }
     const [target, role, existing] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: input.userId }, select: { id: true } }),
       this.prisma.permissionRole.findUnique({ where: { id: input.roleId } }),
@@ -483,15 +507,31 @@ export class PermissionsService {
     const binding = await this.prisma.$transaction(async (tx) => {
       const created = await tx.permissionRoleBinding.create({ data: { userId: input.userId, roleId: input.roleId, scopeType: input.scopeType, storeId: input.storeId, createdById: input.createdById, effectiveAt: new Date() } });
       await tx.auditEvent.create({ data: { action: "permissions.binding.created", actorId: input.createdById, targetType: "PermissionRoleBinding", targetId: created.id, storeId: created.storeId, metadata: { userId: created.userId, roleId: created.roleId, scopeType: created.scopeType } } });
+      await tx.user.update({ where: { id: input.userId }, data: { authRevision: { increment: 1 } } });
       return created;
     });
     this.invalidateUserCache(input.userId);
     return binding;
   }
 
-  async disableBinding(bindingId: string, actorId: string) {
+  async disableBinding(bindingId: string, actorId: string, commandId = randomUUID()) {
     const binding = await this.prisma.permissionRoleBinding.findUnique({ where: { id: bindingId } });
     if (!binding) throw new Error("角色绑定不存在");
+    if (binding.scopeType === PermissionScopeType.STORE) {
+      if (!this.bindingChanges) throw new Error("门店角色绑定变更模块未配置");
+      const committed = await this.bindingChanges.commit({
+        commandId,
+        actorId,
+        authority: "governance",
+        intent: { operation: "disableBinding", bindingId },
+        compose: async () => ({
+          result: { success: true },
+          actions: [{ kind: "disable" as const, bindingId }]
+        })
+      });
+      if (!committed.replayed) this.invalidateUserCache(binding.userId);
+      return committed.changes[0] ?? binding;
+    }
     if (binding.status === PermissionBindingStatus.DISABLED) return binding;
     const updated = await this.prisma.$transaction(async (tx) => {
       const role = await tx.permissionRole.findUnique({ where: { id: binding.roleId }, select: { code: true } });
@@ -501,24 +541,39 @@ export class PermissionsService {
       }
       const next = await tx.permissionRoleBinding.update({ where: { id: bindingId }, data: { status: PermissionBindingStatus.DISABLED } });
       await tx.auditEvent.create({ data: { action: "permissions.binding.disabled", actorId, targetType: "PermissionRoleBinding", targetId: next.id, storeId: next.storeId, metadata: { userId: next.userId, roleId: next.roleId } } });
+      await tx.user.update({ where: { id: next.userId }, data: { authRevision: { increment: 1 } } });
       return next;
     });
     this.invalidateUserCache(updated.userId);
     return updated;
   }
 
-  async disableRole(roleId: string, actorId: string) {
+  async disableRole(roleId: string, actorId: string, commandId = randomUUID()) {
     const role = await this.prisma.permissionRole.findUnique({ where: { id: roleId } });
     if (!role) throw new Error("角色不存在");
     if (role.type === "SYSTEM") throw new Error("系统角色不可停用");
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const next = await tx.permissionRole.update({ where: { id: roleId }, data: { status: PermissionRoleStatus.DISABLED } });
-      await tx.permissionRoleBinding.updateMany({ where: { roleId, status: PermissionBindingStatus.ACTIVE }, data: { status: PermissionBindingStatus.DISABLED } });
-      await tx.auditEvent.create({ data: { action: "permissions.role.disabled", actorId, targetType: "PermissionRole", targetId: roleId, metadata: { code: role.code } } });
-      return next;
+    if (!this.bindingChanges) throw new Error("门店角色绑定变更模块未配置");
+    const committed = await this.bindingChanges.commit({
+      commandId,
+      actorId,
+      authority: "roleDisable",
+      intent: { operation: "disableRole", roleId },
+      compose: async (tx) => {
+        const next = await tx.permissionRole.update({ where: { id: roleId }, data: { status: PermissionRoleStatus.DISABLED } });
+        return {
+          result: next,
+          actions: [{ kind: "disableRole" as const, roleId }],
+          summary: {
+            action: "permissions.role.disabled",
+            targetType: "PermissionRole",
+            targetId: roleId,
+            metadata: { code: role.code }
+          }
+        };
+      }
     });
     this.invalidateAllCache();
-    return updated;
+    return committed.value;
   }
 
   async listCatalog() {
@@ -537,8 +592,9 @@ export class PermissionsService {
   }
 
   private async bindingVersion(userId: string) {
-    const latest = await this.prisma.permissionRoleBinding.findFirst({ where: { userId }, orderBy: { updatedAt: "desc" }, select: { updatedAt: true } });
-    return latest ? latest.updatedAt.getTime() : 0;
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { authRevision: true } });
+    if (!user || typeof user.authRevision !== "number") throw new Error("用户授权版本不可用");
+    return user.authRevision;
   }
 
 }

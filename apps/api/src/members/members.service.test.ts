@@ -125,6 +125,9 @@ test("acceptInvitation replaces frozen-store membership, accepts invitation, and
     store: { id: "store-1", name: "门店一" }
   };
   const tx = {
+    store: {
+      findUnique: async () => ({ status: StoreStatus.FROZEN })
+    },
     storeMember: {
       findUnique: async (args: unknown) => {
         transactionCalls.push("member.findUnique");
@@ -147,6 +150,7 @@ test("acceptInvitation replaces frozen-store membership, accepts invitation, and
       }
     },
     storeInvitation: {
+      findUnique: async () => invitation,
       updateMany: async (args: unknown) => {
         transactionCalls.push("invitation.update");
         assert.deepEqual(args, {
@@ -217,6 +221,15 @@ test("acceptInvitation replaces frozen-store membership, accepts invitation, and
     }
   } as never, storeMemberWriter as never, undefined, {
     invalidateUserCache: (userId: string) => invalidatedUsers.push(userId)
+  } as never, {
+    commit: async (command: { compose: (tx: unknown) => Promise<{ result: unknown; actions: unknown[] }> }) => {
+      const composed = await command.compose(tx);
+      assert.deepEqual(composed.actions, [
+        { kind: "disableAll", userId: "user-2", storeId: "frozen-store" },
+        { kind: "grant", userId: "user-2", storeId: "store-1", roleId: "role-finance" }
+      ]);
+      return { value: composed.result, changes: [], replayed: false };
+    }
   } as never);
 
   const result = await service.acceptInvitation("user-2", "invitation-1");
@@ -226,12 +239,9 @@ test("acceptInvitation replaces frozen-store membership, accepts invitation, and
   assert.deepEqual(transactionCalls, [
     "member.findUnique",
     "member.delete",
-    "binding.disable",
     "member.create",
     "invitation.update",
-    "role.findUnique",
-    "binding.upsert",
-    "audit.create"
+    "role.findUnique"
   ]);
   assert.deepEqual(notifications, [
     {

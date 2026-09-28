@@ -8,7 +8,7 @@ import type { SubmitStoreDto } from "../dto/submit-store.dto";
 export const STORE_GOVERNANCE = Symbol("STORE_GOVERNANCE");
 
 export type StoreGovernance = {
-  createStore(actorId: string, dto: CreateStoreDto): Promise<unknown>;
+  createStore(actorId: string, dto: CreateStoreDto, commandId?: string): Promise<unknown>;
   submitStore(userId: string, storeId: string, dto: SubmitStoreDto): Promise<unknown>;
   reviewSubmission(actorId: string, submissionId: string, dto: ReviewStoreDto): Promise<unknown>;
   listEligibleExecutionStores(actorId: string, sourceStoreId: string): Promise<unknown>;
@@ -22,6 +22,6 @@ export type StoreGovernance = {
   getWorkbenchStore(userId: string, storeId: string): Promise<unknown>;
   getAdminStoreDetail(actorId: string, storeId: string): Promise<unknown>;
   setFrozen(actorId: string, storeId: string, frozen: boolean): Promise<unknown>;
-  changeManager(actorId: string, storeId: string, dto: ChangeManagerDto): Promise<unknown>;
+  changeManager(actorId: string, storeId: string, dto: ChangeManagerDto, commandId?: string): Promise<unknown>;
   assertStoreManager(userId: string, storeId: string): Promise<unknown>;
 };

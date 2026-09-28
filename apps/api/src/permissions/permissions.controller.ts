@@ -1,8 +1,9 @@
-import { Body, Controller, ForbiddenException, Get, Inject, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, Headers, Inject, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { PermissionScopeType, Prisma } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AccessContext } from "./domain/access-context";
 import { PERMISSION_GOVERNANCE, type PermissionGovernance } from "./domain/permission-governance";
+import { requireBindingCommandId } from "./require-binding-command-id";
 
 @Controller()
 @UseGuards(JwtAuthGuard)
@@ -47,9 +48,9 @@ export class PermissionsController {
   }
 
   @Post(["permissions/roles/:id/disable", "roles/:id/disable"])
-  async disableRole(@Req() request: { user: { id: string } }, @Param("id") id: string) {
+  async disableRole(@Req() request: { user: { id: string } }, @Param("id") id: string, @Headers("x-request-id") commandId?: string) {
     await this.assertPolicyAdmin(request.user.id, "write");
-    return this.governance.disableRole(id, request.user.id);
+    return this.governance.disableRole(id, request.user.id, requireBindingCommandId(commandId));
   }
 
   @Get("permissions/role-bindings")
@@ -59,31 +60,31 @@ export class PermissionsController {
   }
 
   @Post("permissions/role-bindings")
-  async bindRole(@Req() request: { user: { id: string } }, @Body() body: { userId: string; roleId: string; scopeType: PermissionScopeType; storeId?: string }) {
+  async bindRole(@Req() request: { user: { id: string } }, @Body() body: { userId: string; roleId: string; scopeType: PermissionScopeType; storeId?: string }, @Headers("x-request-id") commandId?: string) {
     await this.assertPolicyAdmin(request.user.id, "write");
     await this.governance.assertRoleBindingWriteAllowed(request.user.id, body.userId, body.scopeType);
-    return this.governance.bindRole({ ...body, createdById: request.user.id });
+    return this.governance.bindRole({ ...body, createdById: request.user.id, commandId: requireBindingCommandId(commandId) });
   }
 
   @Post("users/:userId/role-bindings")
-  async bindUserRole(@Req() request: { user: { id: string } }, @Param("userId") userId: string, @Body() body: { roleId: string; scopeType: PermissionScopeType; storeId?: string }) {
+  async bindUserRole(@Req() request: { user: { id: string } }, @Param("userId") userId: string, @Body() body: { roleId: string; scopeType: PermissionScopeType; storeId?: string }, @Headers("x-request-id") commandId?: string) {
     await this.assertPolicyAdmin(request.user.id, "write");
     await this.governance.assertRoleBindingWriteAllowed(request.user.id, userId, body.scopeType);
-    return this.governance.bindRole({ ...body, userId, createdById: request.user.id });
+    return this.governance.bindRole({ ...body, userId, createdById: request.user.id, commandId: requireBindingCommandId(commandId) });
   }
 
   @Patch("users/:userId/role-bindings/:bindingId")
-  async updateUserRoleBinding(@Req() request: { user: { id: string } }, @Param("userId") userId: string, @Param("bindingId") bindingId: string, @Body() body: { status?: "ACTIVE" | "DISABLED" }) {
+  async updateUserRoleBinding(@Req() request: { user: { id: string } }, @Param("userId") userId: string, @Param("bindingId") bindingId: string, @Body() body: { status?: "ACTIVE" | "DISABLED" }, @Headers("x-request-id") commandId?: string) {
     await this.assertPolicyAdmin(request.user.id, "write");
     if (body.status !== "DISABLED") throw new ForbiddenException("角色绑定仅支持即时停用");
     await this.governance.assertExistingRoleBindingWriteAllowed(request.user.id, bindingId);
-    return this.governance.disableBinding(bindingId, request.user.id);
+    return this.governance.disableBinding(bindingId, request.user.id, requireBindingCommandId(commandId));
   }
   @Post("permissions/role-bindings/:id/disable")
-  async disableBinding(@Req() request: { user: { id: string } }, @Param("id") id: string) {
+  async disableBinding(@Req() request: { user: { id: string } }, @Param("id") id: string, @Headers("x-request-id") commandId?: string) {
     await this.assertPolicyAdmin(request.user.id, "write");
     await this.governance.assertExistingRoleBindingWriteAllowed(request.user.id, id);
-    return this.governance.disableBinding(id, request.user.id);
+    return this.governance.disableBinding(id, request.user.id, requireBindingCommandId(commandId));
   }
 
   @Get(["permissions/policy", "permission-policy-versions/current"])

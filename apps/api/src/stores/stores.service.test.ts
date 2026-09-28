@@ -13,6 +13,7 @@ import { StoreRepository } from "./repositories/store.repository";
 import { DictionariesService } from "../settings/dictionaries.service";
 import { AccessContext } from "../permissions/domain/access-context";
 import { PermissionsService } from "../permissions/permissions.service";
+import { StoreBindingChanges } from "../permissions/store-binding-changes";
 
 test("listPublishedStores caps pageSize at 100", async () => {
   let capturedTake = 0;
@@ -53,7 +54,8 @@ test("StoresService receives PrismaService through Nest injection", async () => 
       { provide: SetStoreFrozenUseCase, useValue: {} },
       { provide: DictionariesService, useValue: {} },
       { provide: AccessContext, useValue: { scope: async () => ({ allowed: true, global: true, storeIds: [] }) } },
-      { provide: PermissionsService, useValue: { invalidateUserCache: () => undefined } }
+      { provide: PermissionsService, useValue: { invalidateUserCache: () => undefined } },
+      { provide: StoreBindingChanges, useValue: {} }
     ]
   }).compile();
 
@@ -337,10 +339,11 @@ function createStoresService(prisma: unknown, notifications: unknown, auditLog: 
     prisma as never,
     new ReviewStoreSubmissionUseCase(storeRepository, notifications as never, auditLog as never),
     new SubmitStoreForReviewUseCase(storeRepository, { scope: async () => ({ allowed: true }) } as never),
-    new ChangeStoreManagerUseCase(storeRepository, notifications as never, auditLog as never),
+    new ChangeStoreManagerUseCase(storeRepository, notifications as never),
     new SetStoreFrozenUseCase(storeRepository, notifications as never, auditLog as never),
     {} as never,
     { scope: async () => ({ allowed: true, global: true, storeIds: [] }), can: async () => true } as never,
-    { invalidateUserCache: () => undefined } as never
+    { invalidateUserCache: () => undefined } as never,
+    {} as never
   );
 }

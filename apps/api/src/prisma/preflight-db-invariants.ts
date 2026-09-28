@@ -5,7 +5,7 @@ import {
   formatDatabaseInvariantViolations
 } from "./database-invariants";
 
-const NON_BLOCKING_LEGACY_INVARIANTS = new Set(["customer_vehicle_has_identity"]);
+const NON_BLOCKING_LEGACY_INVARIANTS = new Set(["customer_vehicle_has_identity", "nonmember_store_binding_review"]);
 
 export async function runDatabaseInvariantPreflight() {
   const connectionString = process.env.DATABASE_URL;

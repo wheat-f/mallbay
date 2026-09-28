@@ -31,6 +31,7 @@ model User {
   isActive          Boolean   @default(true)
   loginFailureCount Int       @default(0)
   lockedUntil       DateTime?
+  authRevision      Int       @default(0)
 
   storeMembers                   StoreMember[]
   sentInvitations                StoreInvitation[]            @relation("InvitedBy")
@@ -3588,6 +3589,15 @@ model PermissionRoleBinding {
   @@unique([userId, roleId, scopeType, storeId])
   @@index([userId, status, effectiveAt, expiredAt])
   @@index([storeId, status])
+}
+
+// One durable result for each store-binding business intent.
+model StoreBindingCommand {
+  id         String   @id
+  actorId    String
+  intentHash String
+  result     Json
+  createdAt  DateTime @default(now())
 }
 
 model PermissionPolicyVersion {

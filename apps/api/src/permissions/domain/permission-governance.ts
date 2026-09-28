@@ -26,8 +26,9 @@ export type PermissionGovernance = {
     scopeType: PermissionScopeType;
     storeId?: string;
     createdById: string;
+    commandId?: string;
   }): Promise<unknown>;
-  disableBinding(bindingId: string, actorId: string): Promise<unknown>;
-  disableRole(roleId: string, actorId: string): Promise<unknown>;
+  disableBinding(bindingId: string, actorId: string, commandId?: string): Promise<unknown>;
+  disableRole(roleId: string, actorId: string, commandId?: string): Promise<unknown>;
   listCatalog(): Promise<unknown>;
 };

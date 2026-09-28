@@ -34,6 +34,7 @@ type TestUser = {
   wechatOpenId: string | null;
   alipayUserId: string | null;
   isAuditor: boolean;
+  authRevision: number;
 };
 
 const openApps: { close: () => Promise<void> }[] = [];
@@ -236,7 +237,8 @@ function createPrismaStub(users: Map<string, TestUser>) {
           phone: null,
           wechatOpenId: null,
           alipayUserId: null,
-          isAuditor: false
+          isAuditor: false,
+          authRevision: 0
         };
         users.set(user.id, user);
         return user;

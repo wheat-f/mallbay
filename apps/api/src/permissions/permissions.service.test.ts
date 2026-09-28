@@ -7,7 +7,7 @@ import { RuntimeAccessSnapshotStore } from "./domain/runtime-access-snapshot.sto
 function buildPrisma(overrides: Record<string, unknown> = {}) {
   const prisma = {
     user: {
-      findUnique: async () => ({ id: "u1", isAuditor: false, storeMembers: [] })
+      findUnique: async () => ({ id: "u1", authRevision: 0, isAuditor: false, storeMembers: [] })
     },
     permissionRoleBinding: {
       findMany: async () => [
@@ -40,6 +40,26 @@ function buildService(overrides: Record<string, unknown> = {}) {
   return new PermissionsService(buildPrisma(overrides) as never, new RuntimeAccessSnapshotStore());
 }
 
+test("permission reads fail closed when the durable user revision is unavailable", async () => {
+  const service = buildService({ user: { findUnique: async () => ({ id: "u1" }) } });
+  await assert.rejects(() => service.getForUser("u1"), /用户授权版本不可用/);
+});
+
+test("a changed user revision invalidates a cached permission snapshot immediately", async () => {
+  let revision = 0;
+  let active = true;
+  const service = buildService({
+    user: { findUnique: async () => ({ id: "u1", authRevision: revision }) },
+    permissionRoleBinding: {
+      findMany: async () => active ? [{ id: "b1", roleId: "r1", scopeType: "STORE", storeId: "s1" }] : []
+    }
+  });
+  assert.equal((await service.getForUser("u1")).roles.length, 1);
+  active = false;
+  revision++;
+  assert.equal((await service.getForUser("u1")).roles.length, 0);
+});
+
 test("multi-role permissions are unioned and scoped to the requested store", async () => {
   const service = buildService();
   assert.equal(await service.authorize("u1", "orders", "read", { storeId: "s1", ownerId: "u1" }), true);
@@ -50,7 +70,7 @@ test("multi-role permissions are unioned and scoped to the requested store", asy
 
 test("users without active role bindings receive no runtime permissions", async () => {
   const service = buildService({
-    user: { findUnique: async () => ({ id: "u1", isAuditor: false, storeMembers: [{ storeId: "s1", position: "MANAGER" }] }) },
+    user: { findUnique: async () => ({ id: "u1", authRevision: 0, isAuditor: false, storeMembers: [{ storeId: "s1", position: "MANAGER" }] }) },
     permissionRoleBinding: {
       findMany: async () => [],
       findFirst: async () => null
@@ -63,7 +83,7 @@ test("users without active role bindings receive no runtime permissions", async 
 
 test("legacy isAuditor users do not receive HQ permissions without an active HQ binding", async () => {
   const service = buildService({
-    user: { findUnique: async () => ({ id: "auditor-1", isAuditor: true, storeMembers: [] }) },
+    user: { findUnique: async () => ({ id: "auditor-1", authRevision: 0, isAuditor: true, storeMembers: [] }) },
     permissionRoleBinding: {
       findMany: async () => [],
       findFirst: async () => null
@@ -78,7 +98,7 @@ test("legacy isAuditor users do not receive HQ permissions without an active HQ 
 
 test("OWN-only permissions work for HQ-bound users when the owner is explicit", async () => {
   const service = buildService({
-    user: { findUnique: async () => ({ id: "hq-1", isAuditor: false, storeMembers: [] }) },
+    user: { findUnique: async () => ({ id: "hq-1", authRevision: 0, isAuditor: false, storeMembers: [] }) },
     permissionRoleBinding: {
       findMany: async () => [{ id: "hq-binding", roleId: "hq-role", scopeType: "HQ", storeId: null }],
       findFirst: async () => null
@@ -92,7 +112,7 @@ test("OWN-only permissions work for HQ-bound users when the owner is explicit", 
 
 test("policy administrators may manage explicit role bindings", async () => {
   const service = buildService({
-    user: { findUnique: async () => ({ id: "hq-1", isAuditor: false, storeMembers: [] }) },
+    user: { findUnique: async () => ({ id: "hq-1", authRevision: 0, isAuditor: false, storeMembers: [] }) },
     permissionRoleBinding: {
       findMany: async () => [{ id: "hq-binding", roleId: "hq-role", scopeType: "HQ", storeId: null }],
       findFirst: async () => null
@@ -136,7 +156,9 @@ test("user-level permission mutations clear the internal runtime snapshot", asyn
     }),
     auditEvent: { create: async () => ({ id: "audit-1" }) }
   });
-  const permissionsService = new PermissionsService(prisma as never, snapshotStore);
+  const permissionsService = new PermissionsService(prisma as never, snapshotStore, {
+    commit: async () => ({ value: { success: true }, changes: [{ id: "b1", userId: "u1", status: "DISABLED" }], replayed: false })
+  } as never);
   snapshotStore.set("u1", { roles: [{ scopeType: "STORE", scopeIds: ["s1"] }], permissions: [] });
   assert.equal(snapshotStore.has("u1"), true);
 
@@ -158,7 +180,9 @@ test("global permission mutations clear all internal runtime snapshots", async (
       auditEvent: { create: async () => ({ id: "audit-1" }) }
     }),
   });
-  const permissionsService = new PermissionsService(prisma as never, snapshotStore);
+  const permissionsService = new PermissionsService(prisma as never, snapshotStore, {
+    commit: async () => ({ value: { id: "role-1", status: "DISABLED" }, changes: [], replayed: false })
+  } as never);
   snapshotStore.set("u1", { roles: [], permissions: [] });
   snapshotStore.set("u2", { roles: [], permissions: [] });
 

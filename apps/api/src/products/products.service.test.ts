@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ProductCategory, ProductStatus, ProductUnit } from "@prisma/client";
+import { Prisma, ProductCategory, ProductStatus, ProductUnit } from "@prisma/client";
 import { ProductsService } from "./products.service";
 
 const productAccess = {
@@ -57,6 +57,25 @@ test("ProductsService creates active products for store managers", async () => {
   );
 
   assert.deepEqual(result, { id: "product-1" });
+});
+
+test("ProductsService maps duplicate brand and model on create to 409", async () => {
+  const duplicate = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "test" });
+  const service = new ProductsService({ product: { create: async () => { throw duplicate; } } } as never, productAccess as never);
+  await assert.rejects(() => service.create({ id: "manager-1" }, {
+    storeId: "store-1", brand: "3M", name: "漆面保护膜", model: "PPF-100",
+    category: ProductCategory.PPF, unit: ProductUnit.ROLL, inventoryUnit: ProductUnit.ROLL,
+    salesUnit: ProductUnit.ROLL, basePriceCents: 5000000
+  }), { name: "ConflictException", status: 409 });
+});
+
+test("ProductsService maps duplicate brand and model on update to 409", async () => {
+  const duplicate = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "test" });
+  const service = new ProductsService({ product: {
+    findUnique: async () => ({ id: "product-1", storeId: "store-1", basePriceCents: 5000000, salesUnit: ProductUnit.ROLL, unit: ProductUnit.ROLL, metersPerRoll: null }),
+    update: async () => { throw duplicate; }
+  } } as never, productAccess as never);
+  await assert.rejects(() => service.update({ id: "manager-1" }, "product-1", { model: "PPF-100" }), { name: "ConflictException", status: 409 });
 });
 
 test("ProductsService persists structured inventory conversion fields", async () => {

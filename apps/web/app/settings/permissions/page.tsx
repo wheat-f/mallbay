@@ -83,7 +83,7 @@ export default function PermissionsPage() {
     <SettingsCapabilityGuard capabilityCodes={["settings.permissions"]}>
       <div className="management-page settings-workspace">
         <Space direction="vertical" size={20} style={{ width: "100%" }}>
-          <Space><Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/settings")}>返回职责工作台</Button><Button onClick={() => router.push("/settings/role-bindings")}>维护人员角色绑定</Button></Space>
+          <Space><Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/settings")}>返回职责工作台</Button><Button onClick={() => router.push("/settings/role-bindings")}>查询人员角色绑定</Button></Space>
           <div>
             <Typography.Title level={2}>角色与权限</Typography.Title>
             <Typography.Paragraph type="secondary">

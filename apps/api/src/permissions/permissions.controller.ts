@@ -1,5 +1,5 @@
 import { Body, Controller, ForbiddenException, Get, Headers, Inject, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
-import { PermissionScopeType, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AccessContext } from "./domain/access-context";
 import { PERMISSION_GOVERNANCE, type PermissionGovernance } from "./domain/permission-governance";
@@ -60,37 +60,34 @@ export class PermissionsController {
   }
 
   @Post("permissions/role-bindings")
-  async bindRole(@Req() request: { user: { id: string } }, @Body() body: { userId: string; roleId: string; scopeType: PermissionScopeType; storeId?: string }, @Headers("x-request-id") commandId?: string) {
-    await this.assertPolicyAdmin(request.user.id, "write");
-    await this.governance.assertRoleBindingWriteAllowed(request.user.id, body.userId, body.scopeType);
-    return this.governance.bindRole({ ...body, createdById: request.user.id, commandId: requireBindingCommandId(commandId) });
+  bindRole() {
+    throw new ForbiddenException({ code: "HQ_MEMBER_BINDING_DISABLED", message: "人员角色不能直接绑定；请由总部新增或更换店长，普通成员由店长邀请" });
   }
 
   @Post("users/:userId/role-bindings")
-  async bindUserRole(@Req() request: { user: { id: string } }, @Param("userId") userId: string, @Body() body: { roleId: string; scopeType: PermissionScopeType; storeId?: string }, @Headers("x-request-id") commandId?: string) {
-    await this.assertPolicyAdmin(request.user.id, "write");
-    await this.governance.assertRoleBindingWriteAllowed(request.user.id, userId, body.scopeType);
-    return this.governance.bindRole({ ...body, userId, createdById: request.user.id, commandId: requireBindingCommandId(commandId) });
+  bindUserRole() {
+    throw new ForbiddenException({ code: "HQ_MEMBER_BINDING_DISABLED", message: "人员角色不能直接绑定；请由总部新增或更换店长，普通成员由店长邀请" });
   }
 
   @Patch("users/:userId/role-bindings/:bindingId")
-  async updateUserRoleBinding(@Req() request: { user: { id: string } }, @Param("userId") userId: string, @Param("bindingId") bindingId: string, @Body() body: { status?: "ACTIVE" | "DISABLED" }, @Headers("x-request-id") commandId?: string) {
-    await this.assertPolicyAdmin(request.user.id, "write");
-    if (body.status !== "DISABLED") throw new ForbiddenException("角色绑定仅支持即时停用");
-    await this.governance.assertExistingRoleBindingWriteAllowed(request.user.id, bindingId);
-    return this.governance.disableBinding(bindingId, request.user.id, requireBindingCommandId(commandId));
+  updateUserRoleBinding() {
+    throw new ForbiddenException({ code: "HQ_MEMBER_BINDING_DISABLED", message: "人员角色不能直接修改；请通过门店治理或店长成员流程调整" });
   }
   @Post("permissions/role-bindings/:id/disable")
-  async disableBinding(@Req() request: { user: { id: string } }, @Param("id") id: string, @Headers("x-request-id") commandId?: string) {
-    await this.assertPolicyAdmin(request.user.id, "write");
-    await this.governance.assertExistingRoleBindingWriteAllowed(request.user.id, id);
-    return this.governance.disableBinding(id, request.user.id, requireBindingCommandId(commandId));
+  disableBinding() {
+    throw new ForbiddenException({ code: "HQ_MEMBER_BINDING_DISABLED", message: "人员角色不能直接停用；请通过门店治理或店长成员流程调整" });
   }
 
   @Get(["permissions/policy", "permission-policy-versions/current"])
   async getCurrentPolicy(@Req() request: { user: { id: string } }) {
     await this.assertPolicyAdmin(request.user.id);
     return this.governance.currentPolicy();
+  }
+
+  @Get("permissions/policy/draft")
+  async getCurrentDraft(@Req() request: { user: { id: string } }) {
+    await this.assertPolicyAdmin(request.user.id);
+    return this.governance.currentDraft();
   }
 
   @Post(["permissions/policy/drafts", "permission-policy-versions"])
@@ -112,9 +109,9 @@ export class PermissionsController {
   }
 
   @Post(["permissions/policy/:id/publish", "permission-policy-versions/:id/publish"])
-  async publishPolicy(@Req() request: { user: { id: string } }, @Param("id") id: string, @Body() body: { expectedVersion?: number }) {
+  async publishPolicy(@Req() request: { user: { id: string } }, @Param("id") id: string, @Body() body: { expectedVersion?: number; expectedPublishedId?: string }) {
     await this.assertPolicyAdmin(request.user.id, "publish");
-    return this.governance.publishPolicy(id, request.user.id, body.expectedVersion);
+    return this.governance.publishPolicy(id, request.user.id, body.expectedVersion, body.expectedPublishedId);
   }
 
   @Post(["permissions/policy/:id/rollback", "permission-policy-versions/:id/rollback"])

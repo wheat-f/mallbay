@@ -4,10 +4,11 @@ export const PERMISSION_GOVERNANCE = Symbol("PERMISSION_GOVERNANCE");
 
 export type PermissionGovernance = {
   currentPolicy(): Promise<unknown>;
+  currentDraft(): Promise<unknown>;
   createDraft(input: { payload: Prisma.InputJsonValue; actorId: string; expectedVersion?: number }): Promise<unknown>;
   validatePolicy(id: string, actorId: string): Promise<unknown>;
   policyImpact(id: string): Promise<unknown>;
-  publishPolicy(id: string, actorId: string, expectedVersion?: number): Promise<unknown>;
+  publishPolicy(id: string, actorId: string, expectedVersion?: number, expectedPublishedId?: string): Promise<unknown>;
   rollbackPolicy(targetId: string, actorId: string): Promise<unknown>;
   listRoles(): Promise<unknown>;
   createRole(input: {

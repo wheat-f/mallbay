@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { Prisma, ProductStatus, ProductUnit } from "@prisma/client";
 import { normalizePagination } from "../common/pagination";
 import { AccessContext, type AccessSubject } from "../permissions/domain/access-context";
@@ -52,7 +52,7 @@ export class ProductsService {
         ...(dto.standardCostCents !== undefined ? { standardCostCents: dto.standardCostCents } : {}),
         status: ProductStatus.ACTIVE
       }
-    });
+    }).catch((error: unknown) => { throw this.translateProductWriteError(error); });
     await this.recordAudit({
       action: "product_created",
       actorId: actor.userId,
@@ -153,7 +153,7 @@ export class ProductsService {
     const updated = await this.prisma.product.update({
       where: { id },
       data: dto
-    });
+    }).catch((error: unknown) => { throw this.translateProductWriteError(error); });
     if (dto.basePriceCents !== undefined && dto.basePriceCents !== product.basePriceCents) {
       await this.recordAudit({
         action: "product_suggested_price_updated",
@@ -342,6 +342,13 @@ export class ProductsService {
     if (!await this.accessContext.can(user, "products", "suggested-price-write", { storeId })) {
       throw new ForbiddenException("仅店长可维护产品建议价");
     }
+  }
+
+  private translateProductWriteError(error: unknown): Error {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return new ConflictException("该门店已存在相同品牌和型号的产品（包括已停用产品）");
+    }
+    return error instanceof Error ? error : new Error("产品保存失败");
   }
 
   private supportedSalesUnits(product: { salesUnit: ProductUnit; metersPerRoll: Prisma.Decimal | null }) {

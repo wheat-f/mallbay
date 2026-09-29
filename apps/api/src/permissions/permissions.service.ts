@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Optional } from "@nestjs/common";
 import { PermissionBindingStatus, PermissionPolicyVersionStatus, PermissionRoleStatus, Prisma, PermissionScopeType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { RuntimeAccessSnapshotStore } from "./domain/runtime-access-snapshot.store";
@@ -271,6 +271,14 @@ export class PermissionsService {
     return this.prisma.permissionPolicyVersion.findFirst({ where: { status: PermissionPolicyVersionStatus.PUBLISHED }, orderBy: { version: "desc" } });
   }
 
+  async currentDraft() {
+    return this.prisma.permissionPolicyVersion.findFirst({
+      where: { status: PermissionPolicyVersionStatus.DRAFT },
+      orderBy: { version: "desc" },
+      select: { id: true, version: true, createdById: true }
+    });
+  }
+
   async createDraft(input: { payload: Prisma.InputJsonValue; actorId: string; expectedVersion?: number }) {
     const current = await this.currentPolicy();
     if (input.expectedVersion !== undefined && current && current.version !== input.expectedVersion) throw new Error("权限版本冲突");
@@ -399,13 +407,21 @@ export class PermissionsService {
       return ["roleCode", "permissionCode", "action", "scope"].every((key) => typeof item[key] === "string");
     });
   }
-  async publishPolicy(id: string, actorId: string, expectedVersion?: number) {
+  async publishPolicy(id: string, actorId: string, expectedVersion?: number, expectedPublishedId?: string) {
     const policy = await this.prisma.permissionPolicyVersion.findUnique({ where: { id } });
     if (!policy || policy.status !== PermissionPolicyVersionStatus.VALIDATED) throw new Error("只能发布已校验版本");
     if (expectedVersion !== undefined && policy.version !== expectedVersion) throw new Error("权限版本冲突");
     await this.assertPolicyPreservesRecovery(policy.payload, actorId);
     const result = await this.prisma.$transaction(async (tx) => {
-      await tx.permissionPolicyVersion.updateMany({ where: { status: PermissionPolicyVersionStatus.PUBLISHED }, data: { status: PermissionPolicyVersionStatus.ROLLED_BACK } });
+      if (expectedPublishedId) {
+        const changed = await tx.permissionPolicyVersion.updateMany({
+          where: { id: expectedPublishedId, status: PermissionPolicyVersionStatus.PUBLISHED },
+          data: { status: PermissionPolicyVersionStatus.ROLLED_BACK }
+        });
+        if (changed.count !== 1) throw new ConflictException("已发布权限版本发生变化，请重新检查后发布");
+      } else {
+        await tx.permissionPolicyVersion.updateMany({ where: { status: PermissionPolicyVersionStatus.PUBLISHED }, data: { status: PermissionPolicyVersionStatus.ROLLED_BACK } });
+      }
       const published = await tx.permissionPolicyVersion.update({ where: { id }, data: { status: PermissionPolicyVersionStatus.PUBLISHED, publishedAt: new Date() } });
       await this.applyPolicyPayload(tx, policy.payload);
       await tx.auditEvent.create({

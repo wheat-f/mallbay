@@ -110,7 +110,7 @@ test("OWN-only permissions work for HQ-bound users when the owner is explicit", 
   assert.equal(await service.authorize("hq-1", "account.profile", "read", { ownerId: "other-user" }), false);
 });
 
-test("policy administrators may manage explicit role bindings", async () => {
+test("legacy governance can inspect explicit binding targets; public write routes remain closed", async () => {
   const service = buildService({
     user: { findUnique: async () => ({ id: "hq-1", authRevision: 0, isAuditor: false, storeMembers: [] }) },
     permissionRoleBinding: {
@@ -234,6 +234,26 @@ test("publishing a validated policy clears all internal runtime snapshots", asyn
 
   assert.equal(snapshotStore.has("u1"), false);
   assert.equal(snapshotStore.has("u2"), false);
+});
+
+test("publishing with an expected live policy rejects a concurrent replacement", async () => {
+  const payload = { grants: [{ roleCode: "HQ_ADMIN", permissionCode: "permissions.policy", action: "publish", scope: "GLOBAL" }] };
+  let candidatePublished = false;
+  const service = new PermissionsService({
+    permissionPolicyVersion: { findUnique: async () => ({ id: "candidate", version: 2, status: PermissionPolicyVersionStatus.VALIDATED, payload }) },
+    permissionRole: { findUnique: async () => ({ id: "role-hq" }), findMany: async () => [{ id: "role-hq", code: "HQ_ADMIN" }] },
+    permissionDefinition: { findMany: async () => [{ code: "permissions.policy", actions: ["publish"], supportedScopes: ["GLOBAL"] }] },
+    permissionRoleBinding: { count: async () => 1, findMany: async () => [{ roleId: "role-hq" }] },
+    user: { findUnique: async () => ({ isAuditor: false }) },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      permissionPolicyVersion: {
+        updateMany: async (args: { where: { id: string } }) => { assert.equal(args.where.id, "original"); return { count: 0 }; },
+        update: async () => { candidatePublished = true; }
+      }
+    })
+  } as never, new RuntimeAccessSnapshotStore());
+  await assert.rejects(() => service.publishPolicy("candidate", "admin-1", 2, "original"), { name: "ConflictException" });
+  assert.equal(candidatePublished, false);
 });
 
 test("rolling back a policy clears all internal runtime snapshots", async () => {

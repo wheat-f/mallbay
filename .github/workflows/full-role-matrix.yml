@@ -1,0 +1,72 @@
+name: MallBay Test Full Role Matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_mutations:
+        description: "Enable reversible writes only after checking the Test database and external channels"
+        type: boolean
+        required: true
+        default: false
+      external_channels_disabled:
+        description: "Confirm real payment, SMS, email and outbound notifications are disabled in Test"
+        type: boolean
+        required: true
+        default: false
+      policy_exclusive_window:
+        description: "Confirm an exclusive Test governance window with no concurrent permission edits"
+        type: boolean
+        required: true
+        default: false
+      second_store_id:
+        description: "Verified second Test store ID for cross-store assertions"
+        type: string
+        required: false
+      second_store_customer_id:
+        description: "Verified customer ID in the second Test store"
+        type: string
+        required: false
+      second_store_product_id:
+        description: "Verified product ID in the second Test store"
+        type: string
+        required: false
+
+jobs:
+  matrix:
+    name: Eight-role deployed acceptance
+    runs-on: ubuntu-latest
+    environment: test
+    timeout-minutes: 90
+    env:
+      CI: "true"
+      MALLBAY_ENABLE_MUTATIONS: ${{ inputs.enable_mutations && '1' || '0' }}
+      MALLBAY_TEST_EXTERNAL_CHANNELS_DISABLED: ${{ inputs.external_channels_disabled && '1' || '0' }}
+      MALLBAY_POLICY_EXCLUSIVE_WINDOW: ${{ inputs.policy_exclusive_window && '1' || '0' }}
+      MALLBAY_SECOND_STORE_ID: ${{ inputs.second_store_id }}
+      MALLBAY_SECOND_STORE_CUSTOMER_ID: ${{ inputs.second_store_customer_id }}
+      MALLBAY_SECOND_STORE_PRODUCT_ID: ${{ inputs.second_store_product_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run deployed matrix with fail-closed reporting
+        env:
+          MALLBAY_ACCOUNTS_TEXT: ${{ secrets.MALLBAY_ROLE_MATRIX_ACCOUNTS }}
+        run: node scripts/full-role-matrix-playwright.mjs
+      - name: Upload redacted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-role-matrix-evidence
+          path: .codex/verification/full-role-matrix-*
+          if-no-files-found: warn
+          retention-days: 14

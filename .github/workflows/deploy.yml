@@ -393,6 +393,20 @@ jobs:
 
             echo "✅ Test deployed — ${{ github.sha }}"
 
+  # Read-only deployment smoke. Credentialed matrix runs in a separate,
+  # manually triggered workflow and never writes during an ordinary deploy.
+  test-readonly-smoke:
+    name: Test Read-only Smoke
+    runs-on: ubuntu-latest
+    needs: deploy-test
+    steps:
+      - name: Check deployed login page
+        shell: bash
+        run: |
+          set -euo pipefail
+          html=$(curl --fail --silent --show-error --max-time 15 http://8.136.156.153:3000/auth)
+          grep -qi 'mallbay' <<< "$html"
+
   # ----------------------------------------------------------------
   # Job 5: 可选测试环境浏览器 E2E
   # ----------------------------------------------------------------
@@ -453,7 +467,7 @@ jobs:
   production-preprod-browser-gate:
     name: Pre-production Order Lifecycle Release Gate
     runs-on: ubuntu-latest
-    needs: [deploy-test]
+    needs: [deploy-test, test-readonly-smoke]
     if: github.event_name == 'push' && github.ref_name == 'main' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
     environment: test
 

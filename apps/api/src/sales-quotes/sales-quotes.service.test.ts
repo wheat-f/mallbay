@@ -13,6 +13,26 @@ const salesAccess = {
   resolve: async () => ({ roles: [{ roleCode: "MANAGER" }] })
 };
 
+test("sales quote list authorizes OWN scope with the actor and still filters rows by salesperson", async () => {
+  const calls: Array<{ actor: unknown; capability: string; action: string; facts: unknown }> = [];
+  let quoteWhere: unknown;
+  const access = {
+    can: async (actor: unknown, capability: string, action: string, facts: unknown) => {
+      calls.push({ actor, capability, action, facts });
+      if (capability === "orders" && action === "read") return (facts as { ownerId?: string }).ownerId === "sales-1";
+      return false;
+    }
+  };
+  const prisma = {
+    salesQuote: { findMany: async ({ where }: { where: unknown }) => { quoteWhere = where; return []; } }
+  };
+  const service = new SalesQuotesService(prisma as never, {} as never, {} as never, undefined, undefined, access as never);
+  const rows = await service.list({ id: "sales-1", storeMember: { storeId: "store-1", position: "SALES" } } as never, { storeId: "store-1" });
+  assert.deepEqual(rows, []);
+  assert.deepEqual(quoteWhere, { storeId: "store-1", salesPersonId: "sales-1" });
+  assert.deepEqual(calls[0], { actor: { userId: "sales-1" }, capability: "orders", action: "read", facts: { storeId: "store-1", ownerId: "sales-1" } });
+});
+
 test("报价过期任务只把仍待审批的报价标记为过期并释放对应占位", async () => {
   const released: string[] = [];
   const statuses: string[] = [];

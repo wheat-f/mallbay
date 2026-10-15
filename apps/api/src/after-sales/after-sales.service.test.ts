@@ -363,6 +363,25 @@ test("AfterSalesService limits sales after-sales list to their own orders", asyn
   });
 });
 
+test("AfterSalesService passes the actor as owner when authorizing an OWN-scoped list", async () => {
+  const permissionFacts: unknown[] = [];
+  const access = {
+    can: async (_actor: unknown, capability: string, action: string, facts: unknown) => {
+      if (capability === "after-sales" && action === "read") {
+        permissionFacts.push(facts);
+        return (facts as { ownerId?: string }).ownerId === "sales-1";
+      }
+      return false;
+    },
+    scope: async () => ({ ownerId: "sales-1" })
+  };
+  const prisma = { afterSale: { findMany: async () => [] } };
+  const service = new AfterSalesService(prisma as never, access as never);
+  const rows = await service.list({ id: "sales-1" }, { storeId: "store-1" });
+  assert.deepEqual(rows, []);
+  assert.deepEqual(permissionFacts, [{ storeId: "store-1", ownerId: "sales-1" }]);
+});
+
 test("AfterSalesService uploads after-sale evidence through object storage and persists the photo", async () => {
   const writes: unknown[] = [];
   const prisma = {

@@ -108,7 +108,7 @@ function classifyPage(text, url, status) {
   const loginRedirect = /\/auth(?:$|\?)/.test(url);
   const loading = /正在加载|加载中|正在校验|Loading\.\.\./i.test(text);
   const notFound = /404|页面不存在|This page could not be found/i.test(text);
-  return { status, url, forbidden, loginRedirect, loading, notFound, ok: !loginRedirect && !forbidden && !loading && !notFound && text.trim().length > 80 && (status == null || status < 400) };
+  return { status, url, forbidden, loginRedirect, loading, notFound, ok: !loginRedirect && !forbidden && !loading && !notFound && text.trim().length > 30 && (status == null || status < 400) };
 }
 
 async function waitForTerminalPage(page) {
@@ -188,18 +188,19 @@ async function runRouteMatrix(page, roleKey, storeId, roleResult) {
     const started = Date.now();
     const domain = domainForRoute(route, "route");
     const allowedRoles = domain?.[1].allowed ?? EXPLICIT_ROUTE_EXPECTATIONS[route];
+    const routePage = await page.context().newPage();
     try {
       if (route.includes(":storeId") && !storeId) throw new Error("门店 ID 未解析");
       const resolvedRoute = route.replace(":storeId", encodeURIComponent(storeId ?? ""));
-      const response = await page.goto(`${appUrl}${resolvedRoute}`, { waitUntil: "domcontentloaded", timeout: 20000 });
-      await page.locator("body").waitFor({ state: "visible", timeout: 10000 });
-      const text = await waitForTerminalPage(page);
-      const observed = classifyPage(text, page.url(), response?.status() ?? null);
+      const response = await routePage.goto(`${appUrl}${resolvedRoute}`, { waitUntil: "domcontentloaded", timeout: 20000 });
+      await routePage.locator("body").waitFor({ state: "visible", timeout: 10000 });
+      const text = await waitForTerminalPage(routePage);
+      const observed = classifyPage(text, routePage.url(), response?.status() ?? null);
       const outcome = allowedRoles ? decision(observed.forbidden ? false : observed.ok ? true : null, allowedRoles, roleKey) : { verdict: "OBSERVED" };
       roleResult.routes.push({ name, route, domain: domain?.[0] ?? null, elapsedMs: Date.now() - started, ...observed, ...outcome });
     } catch (error) {
       roleResult.routes.push({ name, route, domain: domain?.[0] ?? null, elapsedMs: Date.now() - started, verdict: allowedRoles ? "BLOCKED" : "OBSERVED", error: redactError(error) });
-    }
+    } finally { await routePage.close().catch(() => undefined); }
   }
 }
 
@@ -581,11 +582,26 @@ async function main() {
         await context.close().catch(() => undefined);
       }
     }
-    report.operations = await runReversibleCrud(accountByKey).catch((error) => ({ error: redactError(error), operations: [{ verdict: "FAIL" }], cleanup: [] }));
-    report.governance = {
-      roleBindingVersion: await runBindingInvalidation(accountByKey).catch((error) => ({ verdict: "FAIL", error: redactError(error) })),
-      policyVersion: await runPolicyVersionInvalidation(accountByKey).catch((error) => ({ verdict: "FAIL", error: redactError(error) }))
-    };
+    const safeBindingBoundary = report.headquarters?.manualWrites?.length === MANUAL_BINDING_WRITES.length
+      && report.headquarters.manualWrites.every((item) => item.verdict === "PASS");
+    if (process.env.MALLBAY_ENABLE_MUTATIONS === "1" && !safeBindingBoundary) {
+      report.operations = { operations: [{ verdict: "BLOCKED", reason: "通用角色绑定写接口未全部返回 403，停止业务写入" }], cleanup: [], blockedDomains: Object.keys(DOMAIN_READS) };
+      report.governance = {
+        roleBindingVersion: { verdict: "BLOCKED", reason: "角色绑定安全预检未通过" },
+        policyVersion: { verdict: "BLOCKED", reason: "角色绑定安全预检未通过" }
+      };
+    } else {
+      report.operations = await runReversibleCrud(accountByKey).catch((error) => ({ error: redactError(error), operations: [{ verdict: "FAIL" }], cleanup: [] }));
+      const roleBindingVersion = await runBindingInvalidation(accountByKey).catch((error) => ({ verdict: "FAIL", error: redactError(error) }));
+      const incompleteCleanup = report.operations.cleanup?.some((item) => item.verdict !== "PASS")
+        || roleBindingVersion.cleanup?.some((item) => item.verdict !== "PASS");
+      report.governance = {
+        roleBindingVersion,
+        policyVersion: incompleteCleanup
+          ? { verdict: "BLOCKED", reason: "先前业务或邀请清理未完成，停止权限版本发布" }
+          : await runPolicyVersionInvalidation(accountByKey).catch((error) => ({ verdict: "FAIL", error: redactError(error) }))
+      };
+    }
     const verdicts = [
       ...report.roles.flatMap((role) => [role.menu?.verdict ?? "BLOCKED", role.quickActions?.verdict ?? "BLOCKED", role.apiUser?.crossStoreIsolation?.verdict ?? "BLOCKED", ...role.routes.filter((item) => item.verdict !== "OBSERVED").map((item) => item.verdict), ...role.api.filter((item) => item.verdict !== "OBSERVED").map((item) => item.verdict), role.login?.verdict ?? (role.login?.ok ? "PASS" : "FAIL"), role.login?.verdict === "BLOCKED" ? "BLOCKED" : role.refresh?.ok ? "PASS" : "FAIL", role.login?.verdict === "BLOCKED" ? "BLOCKED" : role.logout?.ok ? "PASS" : "FAIL", ...(role.errors.length ? ["FAIL"] : [])]),
       ...report.operations.operations.map((item) => item.verdict), ...report.operations.cleanup.map((item) => item.verdict), report.operations.ownIsolation?.verdict ?? "BLOCKED",

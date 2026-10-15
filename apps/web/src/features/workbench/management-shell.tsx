@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Avatar, Dropdown, Input, Space, Tag, Typography } from "antd";
+import { Alert, Avatar, Dropdown, Input, Result, Space, Spin, Tag, Typography } from "antd";
 import { HomeOutlined, LogoutOutlined, SearchOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
@@ -11,6 +11,7 @@ import { useAuthStore } from "../../stores/auth-store";
 import { useEffectivePermissions } from "../permissions/use-effective-permissions";
 import { useCurrentStoreContext } from "./store-context";
 import { getActiveManagementMenuKey, getManagementMenuGroups, getManagementMenuItems, hasAnySettingsReadPermission } from "./management-menu";
+import { canOpenGuardedBusinessRoute, isGuardedBusinessRoute } from "./guarded-business-route";
 
 const publicPrefixes = ["/auth", "/stores/"];
 const mobilePrefixes = [] as string[];
@@ -89,6 +90,16 @@ export function ManagementShell({ children }: { children: ReactNode }) {
   const { storeId, store } = useCurrentStoreContext();
   const permissionsQuery = useEffectivePermissions(storeId);
   const runtimePermissions = permissionsQuery.data?.permissions;
+  const guardedBusinessRoute = isGuardedBusinessRoute(pathname);
+  const guardedContent = guardedBusinessRoute
+    ? !user || permissionsQuery.isPending || permissionsQuery.isFetching
+      ? <Spin description="正在校验页面权限…" />
+      : permissionsQuery.isError
+        ? <Alert type="error" showIcon title="页面权限校验失败" />
+        : canOpenGuardedBusinessRoute(pathname, runtimePermissions, storeId)
+          ? children
+          : <Result status="403" title="当前角色无权访问" subTitle="请从左侧菜单进入获授权的业务页面。" />
+    : children;
   const isHeadquartersAdmin = Boolean(permissionsQuery.data?.roles.some((role) => role.roleCode === "HQ_ADMIN" && role.scopeType === "HQ"));
   const canAccessAdmin = Boolean(runtimePermissions?.some((permission) => permission.code === "store" && permission.actions.includes("read") && permission.scopes.includes("GLOBAL")));
   const effectiveRoleLabel = permissionsQuery.data?.roles
@@ -301,7 +312,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
           </Space>
         </header>
 
-        <main className="management-content">{children}</main>
+        <main className="management-content">{guardedContent}</main>
       </div>
 
       <nav className="management-mobile-nav" aria-label="移动导航">

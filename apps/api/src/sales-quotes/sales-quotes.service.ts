@@ -559,7 +559,7 @@ export class SalesQuotesService implements QuoteWorkflow, QuoteReadModel {
 
   private async canOrdersRead(actor: UserWithStoreMember, storeId: string) {
     if (!this.accessContext) throw new Error("SalesQuotesService access context is not configured");
-    return this.accessContext.can({ userId: actor.id }, "orders", "read", { storeId });
+    return this.accessContext.can({ userId: actor.id }, "orders", "read", { storeId, ownerId: actor.id });
   }
 
   private async canOrdersWrite(actor: UserWithStoreMember, storeId: string, ownerId?: string) {

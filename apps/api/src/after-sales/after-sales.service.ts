@@ -63,7 +63,7 @@ export class AfterSalesService {
 
   async list(user: AuthenticatedAfterSalesUser, query: ListAfterSalesDto) {
     const actor = { userId: user.id } satisfies AccessSubject;
-    if (!await this.accessContext.can(actor, "after-sales", "read", { storeId: query.storeId })) {
+    if (!await this.accessContext.can(actor, "after-sales", "read", { storeId: query.storeId, ownerId: actor.userId })) {
       throw new ForbiddenException("无权限");
     }
     const where = buildAfterSalesListScope(actor, query.storeId, await this.isSalesActor(actor, query.storeId), await this.isWorkerActor(actor, query.storeId));

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canOpenGuardedBusinessRoute, isGuardedBusinessRoute } from "./guarded-business-route";
+import { canOpenGuardedBusinessRoute, isGuardedBusinessRoute, shouldShowPermissionLoading } from "./guarded-business-route";
 
 const paths = ["/customers", "/construction/tasks", "/inventory", "/purchases", "/returns", "/finance", "/commissions", "/after-sales"];
 
@@ -10,6 +10,13 @@ test("direct business entry routes deny before a permission snapshot is availabl
     assert.equal(canOpenGuardedBusinessRoute(path, undefined, "store-1"), false);
   }
   assert.equal(isGuardedBusinessRoute("/auth"), false);
+});
+
+test("background permission refresh does not replace an existing page with the loading state", () => {
+  assert.equal(shouldShowPermissionLoading(true, true, true), false);
+  assert.equal(shouldShowPermissionLoading(true, false, true), true);
+  assert.equal(shouldShowPermissionLoading(true, false, false), false);
+  assert.equal(shouldShowPermissionLoading(false, false, false), true);
 });
 
 test("business route guard uses the matching server-evaluated grant and store binding", () => {

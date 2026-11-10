@@ -16,6 +16,10 @@ export function isGuardedBusinessRoute(pathname: string) {
   return Object.hasOwn(guardedRoutes, pathname);
 }
 
+export function shouldShowPermissionLoading(userPresent: boolean, hasPermissionSnapshot: boolean, isPending: boolean) {
+  return !userPresent || (!hasPermissionSnapshot && isPending);
+}
+
 export function canOpenGuardedBusinessRoute(
   pathname: string,
   permissions: PermissionResult["permissions"] | undefined,

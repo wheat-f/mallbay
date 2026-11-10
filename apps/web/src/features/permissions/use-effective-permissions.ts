@@ -40,8 +40,7 @@ export function useEffectivePermissions(storeId?: string) {
     queryKey: ["auth-permissions", userId ?? "anonymous", storeId ?? "headquarters"],
     queryFn: () => permissionsApi.me(storeId),
     enabled: Boolean(userId),
-    staleTime: 0,
-    refetchOnMount: "always",
+    staleTime: 10_000,
     refetchOnWindowFocus: true
   });
 }

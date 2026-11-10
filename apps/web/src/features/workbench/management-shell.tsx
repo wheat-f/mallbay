@@ -11,7 +11,7 @@ import { useAuthStore } from "../../stores/auth-store";
 import { useEffectivePermissions } from "../permissions/use-effective-permissions";
 import { useCurrentStoreContext } from "./store-context";
 import { getActiveManagementMenuKey, getManagementMenuGroups, getManagementMenuItems, hasAnySettingsReadPermission } from "./management-menu";
-import { canOpenGuardedBusinessRoute, isGuardedBusinessRoute } from "./guarded-business-route";
+import { canOpenGuardedBusinessRoute, isGuardedBusinessRoute, shouldShowPermissionLoading } from "./guarded-business-route";
 
 const publicPrefixes = ["/auth", "/stores/"];
 const mobilePrefixes = [] as string[];
@@ -92,7 +92,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
   const runtimePermissions = permissionsQuery.data?.permissions;
   const guardedBusinessRoute = isGuardedBusinessRoute(pathname);
   const guardedContent = guardedBusinessRoute
-    ? !user || permissionsQuery.isPending || permissionsQuery.isFetching
+    ? shouldShowPermissionLoading(Boolean(user), Boolean(permissionsQuery.data), permissionsQuery.isPending)
       ? <Spin description="正在校验页面权限…" />
       : permissionsQuery.isError
         ? <Alert type="error" showIcon title="页面权限校验失败" />

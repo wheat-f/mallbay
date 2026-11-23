@@ -130,6 +130,12 @@ export class UploadConstructionPhotoDto {
   clientOperationId?: string;
 }
 
+export class RevokeConstructionPhotoDto {
+  @IsString()
+  @MaxLength(300)
+  reason!: string;
+}
+
 export class VerifyMaterialBatchDto {
   @IsString()
   batchId!: string;

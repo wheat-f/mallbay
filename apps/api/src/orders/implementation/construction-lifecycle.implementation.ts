@@ -282,7 +282,9 @@ export class ConstructionLifecycleImplementation {
     if (order.status !== OrderStatus.IN_CONSTRUCTION || record.status !== ConstructionTaskStatus.IN_CONSTRUCTION) {
       throw new BadRequestException({ code: "COMMAND_PRECONDITION_FAILED", message: "只有施工中或返工中的订单可以完工" });
     }
-    const stages = new Set(record.photos.map((photo) => photo.stage));
+    const stages = new Set(record.photos
+      .filter((photo) => photo.status === "APPLIED")
+      .map((photo) => photo.stage));
     if (!stages.has(ConstructionPhotoStage.BEFORE)) {
       throw new BadRequestException({ code: "BEFORE_EVIDENCE_REQUIRED", message: "完工前必须上传施工前照片" });
     }

@@ -130,7 +130,7 @@ export class ConstructionFulfillment {
             qualityResult: true,
             qualityNote: true,
             qualityCheckedAt: true,
-            photos: { select: { id: true, stage: true, url: true, uploadedById: true } },
+            photos: { select: { id: true, stage: true, url: true, uploadedById: true, status: true } },
             assignments: { select: { workerUserId: true } }
           }
         },

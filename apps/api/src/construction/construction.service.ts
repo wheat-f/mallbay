@@ -36,6 +36,7 @@ import {
   OfflineTaskStatusPayloadDto,
   PickupConstructionMaterialDto,
   QualityCheckDto,
+  RevokeConstructionPhotoDto,
   RecordMaterialLossDto,
   StartConstructionDto,
   UpdateDailyCapacityDto,
@@ -220,6 +221,48 @@ export class ConstructionService {
       }
       throw error;
     }
+  }
+
+  async revokePhoto(user: AuthenticatedConstructionUser, recordId: string, photoId: string, dto: RevokeConstructionPhotoDto) {
+    const actor = await this.withStoreMember(user);
+    const record = await this.findRecord(recordId);
+    const reason = dto.reason.trim();
+    if (!reason) throw new BadRequestException("请填写撤销施工照片的原因");
+    if (record.status === ConstructionTaskStatus.COMPLETED) {
+      throw new BadRequestException("施工已完工，照片已成为履约凭证，不能撤销");
+    }
+    const assignedWorkerId = this.getAssignedWorkerId(actor.id, record);
+    if (
+      assignedWorkerId !== actor.id &&
+      !(await this.canAccess(actor, "construction", "write", record.storeId)) &&
+      !(await this.canAccess(actor, "construction", "write", record.storeId, assignedWorkerId))
+    ) {
+      throw new ForbiddenException("无权限");
+    }
+    const photo = await this.prisma.constructionPhoto.findFirst({ where: { id: photoId, recordId } });
+    if (!photo) throw new NotFoundException("施工照片不存在");
+    if (photo.status === ConstructionEvidenceStatus.REVOKED) return toConstructionPhotoResponse(photo);
+    const warrantyReferences = await this.prisma.warrantyPhoto.count({ where: { constructionPhotoId: photoId } });
+    if (warrantyReferences > 0) throw new BadRequestException("该照片已归档到质保凭证，不能撤销");
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.constructionPhoto.updateMany({
+        where: { id: photoId, recordId, status: ConstructionEvidenceStatus.APPLIED },
+        data: { status: ConstructionEvidenceStatus.REVOKED }
+      });
+      if (updated.count !== 1) throw new ConflictException("施工照片已被其他操作更新，请刷新后重试");
+      await tx.auditEvent.create({
+        data: {
+          action: "construction.photo.revoked",
+          actorId: actor.id,
+          storeId: record.storeId,
+          targetType: "ConstructionPhoto",
+          targetId: photoId,
+          metadata: { recordId, reason }
+        }
+      });
+      return toConstructionPhotoResponse({ ...photo, status: ConstructionEvidenceStatus.REVOKED });
+    });
   }
 
   async completeOrder(user: AuthenticatedConstructionUser, recordId: string, dto: CompleteConstructionDto, context: { commandId: string; expectedVersion: number }) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { App, Button, Card, Descriptions, Empty, Image, Input, InputNumber, Modal, Select, Space, Table, Tag, Upload } from "antd";
+import { App, Button, Card, Descriptions, Empty, Image, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Upload } from "antd";
 import {
   ArrowLeftOutlined,
   CheckOutlined,
@@ -40,7 +40,7 @@ type TaskRecord = {
     constructionLocation?: string | null;
     outsideAddress?: string | null;
   } | null;
-  photos?: { id: string; stage: string; url: string; uploadedById: string }[];
+  photos?: { id: string; stage: string; url: string; uploadedById: string; status?: string }[];
 };
 
 type TaskPhoto = NonNullable<TaskRecord["photos"]>[number];
@@ -60,6 +60,7 @@ export default function ConstructionTaskDetailPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const [previewPhoto, setPreviewPhoto] = useState<TaskPhoto | null>(null);
+  const [revokeReason, setRevokeReason] = useState("");
   const [declaredMinutes, setDeclaredMinutes] = useState<number>();
   const [varianceReasonCode, setVarianceReasonCode] = useState<string>();
   const [varianceReasonText, setVarianceReasonText] = useState("");
@@ -78,7 +79,7 @@ export default function ConstructionTaskDetailPage() {
       order: fulfillment.order
     }
     : undefined;
-  const photos = record?.photos ?? [];
+  const photos = (record?.photos ?? []).filter((photo) => photo.status !== "REVOKED");
   const pendingUploads = photoRequirements.filter((item) => item.required && !photos.some((photo) => photo.stage === item.stage)).length;
 
   const materialsQuery = useQuery({
@@ -175,6 +176,17 @@ export default function ConstructionTaskDetailPage() {
     message.success(`${title}已上传`);
     await invalidateTask();
   };
+
+  const revokePhotoMutation = useMutation({
+    mutationFn: (photoId: string) => constructionApi.revokePhoto(record!.id, photoId, revokeReason),
+    onSuccess: async () => {
+      setPreviewPhoto(null);
+      setRevokeReason("");
+      message.success("照片已撤销，原文件和操作记录仍保留");
+      await invalidateTask();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
 
   return (
     <div className="management-page worker-task-detail-page">
@@ -390,7 +402,21 @@ export default function ConstructionTaskDetailPage() {
         title={previewPhoto ? getWorkerPhotoStageLabel(previewPhoto.stage) : "施工照片"}
         open={Boolean(previewPhoto)}
         onCancel={() => setPreviewPhoto(null)}
-        footer={null}
+        footer={previewPhoto && record?.status !== "COMPLETED" ? (
+          <Space>
+            <Input value={revokeReason} onChange={(event) => setRevokeReason(event.target.value)} maxLength={300} placeholder="撤销原因（必填）" />
+            <Popconfirm
+              title="撤销这张施工照片？"
+              description="照片不会被物理删除，撤销原因会写入审计记录。"
+              okText="确认撤销"
+              cancelText="取消"
+              disabled={!revokeReason.trim()}
+              onConfirm={() => revokePhotoMutation.mutate(previewPhoto.id)}
+            >
+              <Button danger loading={revokePhotoMutation.isPending} disabled={!revokeReason.trim()}>撤销照片</Button>
+            </Popconfirm>
+          </Space>
+        ) : null}
         width={760}
         centered
       >

@@ -380,6 +380,12 @@ export const constructionApi = {
     });
   },
 
+  revokePhoto: (recordId: string, photoId: string, reason: string) =>
+    request<unknown>(`/construction/records/${recordId}/photos/${photoId}/revoke`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    }),
+
   qualityCheck: (recordId: string, payload: QualityCheckPayload, command: LifecycleCommandOptions) =>
     request<unknown>(`/construction/records/${recordId}/quality-check`, {
       method: "POST",

@@ -300,11 +300,12 @@ export class OrderLifecycle {
       , historicalQualityResolved: latestVerification?.status === "RESOLVED"
     });
     const executionStoreId = order.executionStoreId ?? order.storeId;
-    const [canConstructionWrite, canFinalize, canCancel, canOrderWrite, canVerificationView, canVerificationResolve] = await Promise.all([
+    const [canConstructionWrite, canFinalize, canCancel, canOrderWrite, canFinanceWrite, canVerificationView, canVerificationResolve] = await Promise.all([
       this.accessContext.can({ userId: user.id }, "construction", "write", { storeId: executionStoreId }),
       this.accessContext.can({ userId: user.id }, "orders.lifecycle", "finalize", { storeId: order.storeId }),
       this.accessContext.can({ userId: user.id }, "orders.lifecycle", "cancel", { storeId: order.storeId }),
       this.accessContext.can({ userId: user.id }, "orders", "write", { storeId: order.storeId, ownerId: order.salesPersonId }),
+      this.accessContext.can({ userId: user.id }, "finance", "write", { storeId: order.storeId }),
       this.accessContext.can({ userId: user.id }, "orders.lifecycle", "verification_view", { storeId: order.storeId }),
       this.accessContext.can({ userId: user.id }, "orders.lifecycle", "verification_resolve", { storeId: order.storeId })
     ]);
@@ -331,7 +332,7 @@ export class OrderLifecycle {
       warrantyStatus: workflow.warrantyStatus,
       blockingReasonCodes: [...new Set([...globalBlock, ...workflow.blockingReasons])],
       capabilities: {
-        collectBalance: capability(canOrderWrite, workflow.capabilities.canCollectBalance, ["BALANCE_NOT_DUE"]),
+        collectBalance: capability(canFinanceWrite, workflow.capabilities.canCollectBalance, ["BALANCE_NOT_DUE"]),
         dispatch: capability(canConstructionWrite, stage === "PENDING_DISPATCH", ["ORDER_NOT_READY_FOR_DISPATCH"]),
         startConstruction: capability(canConstructionWrite || assigned, stage === "READY_TO_START", ["MATERIAL_PICKUP_REQUIRED"]),
         completeConstruction: capability(canConstructionWrite || assigned, stage === "IN_CONSTRUCTION" || stage === "REWORKING", ["ORDER_NOT_IN_CONSTRUCTION"]),

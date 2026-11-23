@@ -124,6 +124,54 @@ test("ConstructionService persists evidence fingerprint/status and rejects confl
   );
 });
 
+test("ConstructionService revokes a photo as audited evidence without deleting its record", async () => {
+  const auditWrites: unknown[] = [];
+  let savedStatus = "APPLIED";
+  const tx = {
+    constructionPhoto: {
+      updateMany: async ({ data }: { data: { status: string } }) => {
+        savedStatus = data.status;
+        return { count: 1 };
+      }
+    },
+    auditEvent: { create: async (args: unknown) => { auditWrites.push(args); } }
+  };
+  const service = new ConstructionService({
+    constructionRecord: { findUnique: async () => ({ id: "record-1", storeId: "store-1", orderId: "order-1", status: ConstructionTaskStatus.IN_CONSTRUCTION, assignments: [{ workerUserId: "worker-1" }] }) },
+    constructionPhoto: { findFirst: async () => ({ id: "photo-1", recordId: "record-1", status: "APPLIED", stage: ConstructionPhotoStage.AFTER, url: "https://oss.example/photo.jpg", uploadedById: "worker-1" }) },
+    warrantyPhoto: { count: async () => 0 },
+    $transaction: async (run: (transaction: typeof tx) => Promise<unknown>) => run(tx)
+  } as never, {} as never, undefined, undefined, undefined, undefined, access as never);
+
+  const result = await service.revokePhoto(
+    { id: "worker-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION } },
+    "record-1",
+    "photo-1",
+    { reason: "照片拍摄角度不正确" }
+  );
+  assert.equal(savedStatus, "REVOKED");
+  assert.equal((result as { status: string }).status, "REVOKED");
+  assert.equal(auditWrites.length, 1);
+  assert.equal(JSON.stringify(auditWrites[0]).includes("照片拍摄角度不正确"), true);
+});
+
+test("ConstructionService refuses to revoke a photo already used in a warranty", async () => {
+  const service = new ConstructionService({
+    constructionRecord: { findUnique: async () => ({ id: "record-1", storeId: "store-1", orderId: "order-1", status: ConstructionTaskStatus.IN_CONSTRUCTION, assignments: [{ workerUserId: "worker-1" }] }) },
+    constructionPhoto: { findFirst: async () => ({ id: "photo-1", recordId: "record-1", status: "APPLIED", stage: ConstructionPhotoStage.AFTER, url: "https://oss.example/photo.jpg", uploadedById: "worker-1" }) },
+    warrantyPhoto: { count: async () => 1 }
+  } as never, {} as never, undefined, undefined, undefined, undefined, access as never);
+  await assert.rejects(
+    service.revokePhoto(
+      { id: "worker-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION } },
+      "record-1",
+      "photo-1",
+      { reason: "替换错误照片" }
+    ),
+    /已归档到质保凭证/
+  );
+});
+
 test("ConstructionService persists material pickup idempotently and invalidates the order version", async () => {
   const writes: unknown[] = [];
   const tx = {

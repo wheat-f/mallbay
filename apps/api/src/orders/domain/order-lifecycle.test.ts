@@ -40,6 +40,38 @@ test("OrderLifecycle exposes lifecycle and capability queries without leaking de
   );
 });
 
+test("OrderLifecycle exposes collection for finance writers before a construction record exists", async () => {
+  const order = {
+    id: "order-early-collection",
+    storeId: "store-1",
+    executionStoreId: "store-1",
+    salesPersonId: "sales-1",
+    status: OrderStatus.PENDING_DISPATCH,
+    lifecycleVersion: 1,
+    amount: { paidAmountCents: 0, outstandingCents: 5000 },
+    constructionRecord: null,
+    inventoryAllocations: [],
+    inventoryMovements: [],
+    warranty: null,
+    lifecycleVerificationCases: []
+  };
+  const access = {
+    can: async (_actor: { userId: string }, capability: string, action: string) =>
+      (capability === "orders" && action === "read") || (capability === "finance" && action === "write")
+  };
+  const lifecycle = new OrderLifecycle(
+    {} as never,
+    { $transaction: async (run: (tx: unknown) => unknown) => run({ order: { findUnique: async () => order } }) } as never,
+    access as never,
+    noConstructionWrites as never,
+    inventoryLedger as never
+  );
+
+  const result = await lifecycle.getAuthoritativeLifecycle({ id: "finance-1", isAuditor: false } as never, order.id);
+  assert.equal(result.currentStage, "PENDING_INVENTORY_CONFIRM");
+  assert.deepEqual(result.capabilities.collectBalance, { visible: true, enabled: true, blockingReasonCodes: [] });
+});
+
 test("OrderLifecycle routes order creation through the unified seam", async () => {
   await assert.rejects(
     () => makeLifecycle().createOrder("actor" as never, { commandId: "", source: "WEB" }, { source: "DIRECT", order: {} as never }),

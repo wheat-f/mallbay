@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Form, Input, InputNumber, Select, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, Select, Space, Table, Tag, message } from "antd";
 import { ArrowLeftOutlined, CheckCircleOutlined, MinusCircleOutlined, PlusOutlined, ShoppingCartOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -12,6 +12,7 @@ import { PurchaseModuleNav } from "../../../../src/features/purchases/purchase-m
 import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 import { hasEffectivePermission, useEffectivePermissions } from "../../../../src/features/permissions/use-effective-permissions";
+import dayjs from "dayjs";
 
 type SupplierOption = {
   id?: string;
@@ -279,8 +280,13 @@ export default function PurchaseOrderCreatePage() {
                             name={[field.name, "expectedAt"]}
                             label="预计到货日"
                             rules={[{ required: true, message: "请选择预计到货日" }]}
+                            getValueProps={(value?: string) => ({ value: value ? dayjs(value) : undefined })}
+                            getValueFromEvent={(value: dayjs.Dayjs | null) => value?.format("YYYY-MM-DD")}
                           >
-                            <Input type="date" />
+                              <DatePicker
+                                className="w-full"
+                                format="YYYY-MM-DD"
+                              />
                           </Form.Item>
                           {remainingItems.map((item) => {
                             const itemId = item.id ?? "";
@@ -309,6 +315,16 @@ export default function PurchaseOrderCreatePage() {
                     </div>
                   )}
                 </Form.List>
+
+              {!suppliersQuery.isLoading && supplierOptions.length === 0 ? (
+                <Alert
+                  className="mb-4"
+                  type="warning"
+                  showIcon
+                  title="当前门店还没有可用供应商"
+                  description={<Space direction="vertical"><span>先维护并启用供应商档案，再回来生成采购订单。</span><Button type="link" onClick={() => router.push("/purchases/suppliers")}>前往供应商档案</Button></Space>}
+                />
+              ) : null}
 
                 <Button
                   block

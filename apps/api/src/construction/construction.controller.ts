@@ -45,6 +45,7 @@ import {
   OfflineSyncDto,
   PickupConstructionMaterialDto,
   QualityCheckDto,
+  RevokeConstructionPhotoDto,
   RecordMaterialLossDto,
   WorkCostDeclarationDto,
   CreateCostAdjustmentDto,
@@ -287,6 +288,16 @@ export class ConstructionController {
     @UploadedFile() file?: MulterFile
   ) {
     return this.construction.uploadPhoto(req.user, recordId, dto, file, dto.clientOperationId);
+  }
+
+  @Post("records/:recordId/photos/:photoId/revoke")
+  revokePhoto(
+    @Req() req: AuthRequest,
+    @Param("recordId") recordId: string,
+    @Param("photoId") photoId: string,
+    @Body() dto: RevokeConstructionPhotoDto
+  ) {
+    return this.construction.revokePhoto(req.user, recordId, photoId, dto);
   }
 
   @Post("records/:recordId/quality-check")

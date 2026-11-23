@@ -589,7 +589,16 @@ export default function WorkbenchPage() {
     staleTime: 5_000,
     enabled: storeContext.storeId === storeId && permissionsQuery.isFetched
   });
-  const store = storeQuery.data;
+  // The authenticated membership already carries the minimal store identity.
+  // Some worker roles can read their workbench but not the full member roster;
+  // keep that workbench usable without treating the roster endpoint as fatal.
+  const store = storeQuery.data ?? (storeContext.store ? {
+    ...storeContext.store,
+    address: null,
+    description: null,
+    photos: [],
+    members: []
+  } : undefined);
   const statusCfg = store ? (STATUS_CONFIG[store.status] ?? { text: store.status, color: "default" }) : null;
   const runtimePermissions = permissionsQuery.data?.permissions;
   const canEditStoreProfile = hasWorkbenchPermission(runtimePermissions, "store.profile", "write", storeId);
@@ -690,7 +699,7 @@ export default function WorkbenchPage() {
           <div className="flex justify-center pt-16"><Spin size="large" /></div>
         )}
 
-        {(storeQuery.isError || permissionsQuery.isError || storeContext.storeId !== storeId) && (
+        {((storeQuery.isError && !storeContext.store) || permissionsQuery.isError || storeContext.storeId !== storeId) && (
           <Alert
             className="workbench-data-alert"
             type="warning"
@@ -700,7 +709,7 @@ export default function WorkbenchPage() {
           />
         )}
 
-        {storeQuery.isError && (
+        {storeQuery.isError && !storeContext.store && (
           <section className="workbench-empty-panel workbench-empty-state">
             <Typography.Title level={4}>无法加载门店工作台</Typography.Title>
             <Typography.Text type="secondary">

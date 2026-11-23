@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import {
   ConstructionCostSettlementStatus,
   InventoryMovementType,
@@ -35,6 +35,8 @@ import type {
 import { convertToBaseQuantity } from "./domain/unit-conversion";
 import { InventoryLedger, type InventoryLedgerTransaction } from "./domain/inventory-ledger";
 import { InventoryCatalog } from "./inventory-catalog";
+import { OssService } from "../users/oss.service";
+import type { MulterFile } from "../users/multer-file.type";
 
 export type AuthenticatedInventoryUser = UserWithStoreMember & {
   username?: string;
@@ -154,7 +156,8 @@ export class ProcurementImplementation {
     private readonly prisma: PrismaService,
     private readonly accessContext: AccessContext,
     private readonly inventoryLedger: InventoryLedger,
-    private readonly inventoryCatalog: InventoryCatalog
+    private readonly inventoryCatalog: InventoryCatalog,
+    @Optional() @Inject(OssService) private readonly oss?: OssService
   ) {}
 
   private canAccess(actor: AuthenticatedInventoryUser, capability: string, action: string, storeId: string) {
@@ -738,7 +741,8 @@ export class ProcurementImplementation {
           || receiptCostRecord.actualUnitCostCents !== actualUnitCostCents
           || receiptCostRecord.baseUnit !== baseUnit
           || receiptCostRecord.purchaseUnit !== packageUnit
-          || receiptCostRecord.differenceReason !== differenceReason) {
+          || receiptCostRecord.differenceReason !== differenceReason
+          || JSON.stringify(receiptCostRecord.inspectionPhotoUrls ?? []) !== JSON.stringify(dto.inspectionPhotoUrls ?? [])) {
           throw new ConflictException("收货幂等键已被不同收货内容使用");
         }
         return { ...batch, receiptCostRecord };
@@ -757,6 +761,7 @@ export class ProcurementImplementation {
           baseUnitCostCents,
           differenceCents,
           differenceReason,
+          inspectionPhotoUrls: dto.inspectionPhotoUrls ?? [],
           createdById: actor.id
         }
       });
@@ -1012,6 +1017,19 @@ export class ProcurementImplementation {
       }
     }
     return result;
+  }
+
+  async uploadPurchaseReceiptPhoto(user: AuthenticatedInventoryUser, purchaseOrderItemId: string, file: MulterFile) {
+    const actor = await this.withStoreMember(user);
+    const item = await this.prisma.purchaseOrderItem.findUnique({
+      where: { id: purchaseOrderItemId },
+      include: { purchaseOrder: true }
+    });
+    if (!item) throw new NotFoundException("采购明细不存在");
+    if (!await this.canAccess(actor, "purchase", "write", item.purchaseOrder.storeId)) throw new ForbiddenException("无权限");
+    if (!file?.buffer?.length || !file.mimetype.startsWith("image/")) throw new BadRequestException("请上传有效的外箱照片");
+    if (!this.oss) throw new BadRequestException("照片存储服务未配置");
+    return { url: await this.oss.uploadPurchaseReceiptPhoto(item.purchaseOrder.storeId, purchaseOrderItemId, file) };
   }
 
   private async resolveReceivingWarehouse(

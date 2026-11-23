@@ -73,7 +73,9 @@ export class CustomersService {
       throw new ConflictException("客户手机号已存在");
     }
 
-    const companyUsers = dto.customerType === "COMPANY" ? this.normalizeCompanyUsers(dto.companyUsers) : [];
+    const companyUsers = dto.customerType === "COMPANY"
+      ? this.normalizeCompanyUsers(dto.companyUsers)
+      : [{ name: dto.name?.trim() ?? "", phone: dto.phone, isDefault: true }].filter((contact) => Boolean(contact.name));
     const customer = await this.prisma.customer.create({
       data: {
         storeId,

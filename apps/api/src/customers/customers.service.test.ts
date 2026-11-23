@@ -42,7 +42,17 @@ test("CustomersService creates a personal customer owned by the current sales us
             sourceType: "REFERRAL",
             sourceDetail: "老客户介绍",
             referrerId: undefined,
-            users: undefined
+            users: {
+              create: [{
+                name: "张三",
+                phoneEncrypted: "enc:13800138000",
+                phoneHash: "hash:13800138000",
+                note: undefined,
+                role: "OTHER",
+                department: undefined,
+                isDefault: true
+              }]
+            }
           },
           include: { users: true }
         });

@@ -36,6 +36,7 @@ export type LifecycleCommandOptions = {
 
 export type UploadConstructionPhotoPayload = {
   stage: ConstructionPhotoStage;
+  purpose?: "INSPECTION" | "FILM_BOX" | "PROCESS" | "COMPLETION";
   url?: string;
   takenAt?: string;
   clientOperationId?: string;
@@ -365,6 +366,7 @@ export const constructionApi = {
       const formData = new FormData();
       formData.set("file", payload.file);
       formData.set("stage", payload.stage);
+      if (payload.purpose) formData.set("purpose", payload.purpose);
       if (payload.takenAt) formData.set("takenAt", payload.takenAt);
       if (payload.clientOperationId) formData.set("clientOperationId", payload.clientOperationId);
       return requestMultipart<unknown>(`/construction/records/${recordId}/photos`, formData);
@@ -373,6 +375,7 @@ export const constructionApi = {
       method: "POST",
       body: JSON.stringify({
         stage: payload.stage,
+        purpose: payload.purpose,
         url: payload.url,
         takenAt: payload.takenAt,
         clientOperationId: payload.clientOperationId
@@ -385,6 +388,9 @@ export const constructionApi = {
       method: "POST",
       body: JSON.stringify({ reason })
     }),
+
+  deletePhoto: (recordId: string, photoId: string) =>
+    request<unknown>(`/construction/records/${recordId}/photos/${photoId}`, { method: "DELETE" }),
 
   qualityCheck: (recordId: string, payload: QualityCheckPayload, command: LifecycleCommandOptions) =>
     request<unknown>(`/construction/records/${recordId}/quality-check`, {
@@ -590,6 +596,17 @@ export function clearLifecycleCommandId(
 ) {
   if (typeof window === "undefined") return;
   window.sessionStorage.removeItem(`mallbay:lifecycle-command:${actorId}:${storeId}:${targetId}:${commandType}`);
+  window.sessionStorage.removeItem(`mallbay:lifecycle-command-input:${actorId}:${storeId}:${targetId}:${commandType}`);
+}
+
+export function getLifecycleCommandTimestamp(actorId: string, storeId: string, targetId: string, commandType: string) {
+  const key = `mallbay:lifecycle-command-input:${actorId}:${storeId}:${targetId}:${commandType}`;
+  if (typeof window === "undefined") return new Date().toISOString();
+  const existing = window.sessionStorage.getItem(key);
+  if (existing) return existing;
+  const timestamp = new Date().toISOString();
+  window.sessionStorage.setItem(key, timestamp);
+  return timestamp;
 }
 
 

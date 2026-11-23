@@ -2277,6 +2277,7 @@ model ConstructionPhoto {
   id           String                 @id @default(cuid())
   recordId     String
   stage        ConstructionPhotoStage
+  purpose      String                 @default("LEGACY")
   url          String
   uploadedById String
   clientOperationId String?           @unique
@@ -2600,6 +2601,7 @@ model PurchaseReceiptCostRecord {
   baseUnitCostCents    Int?
   differenceCents      Int?
   differenceReason     String?
+  inspectionPhotoUrls String[]    @default([])
   createdById          String
   updatedById          String?
   createdAt            DateTime    @default(now())

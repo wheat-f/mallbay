@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import {
@@ -20,6 +21,7 @@ import {
 import type { AuthenticatedInventoryUser } from "../inventory/inventory.service";
 import { ProcurementFlow } from "../inventory/procurement-flow";
 import { InventoryCatalog } from "../inventory/inventory-catalog";
+import type { MulterFile } from "../users/multer-file.type";
 
 type AuthRequest = Request & {
   user: AuthenticatedInventoryUser;
@@ -99,6 +101,12 @@ export class PurchasesController {
     @Body() dto: ReceivePurchaseItemBatchesDto
   ) {
     return this.procurement.receiveBatches(req.user, id, dto);
+  }
+
+  @Post("orders/items/:id/receipt-photos")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  uploadReceiptPhoto(@Req() req: AuthRequest, @Param("id") id: string, @UploadedFile() file: MulterFile) {
+    return this.procurement.uploadReceiptPhoto(req.user, id, file);
   }
 
   @Patch("receipt-costs/:id")

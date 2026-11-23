@@ -322,6 +322,20 @@ export default function CustomerDetailPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
+  const createDefaultContactMutation = useMutation({
+    mutationFn: () => customerApi.createCustomerUser({
+      customerId: params.id,
+      name: customer?.name ?? customer?.contactPerson ?? "客户本人",
+      role: "PRIMARY",
+      isDefault: true
+    }),
+    onSuccess: async () => {
+      message.success("已将客户本人设为默认用车联系人");
+      await customerQuery.refetch();
+    },
+    onError: (error: Error) => message.error(error.message)
+  });
+
 
   const transferTargetsQuery = useQuery({
     queryKey: ["customer-transfer-targets", customer?.storeId, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
@@ -1079,6 +1093,14 @@ export default function CustomerDetailPage() {
                     }))}
                   />
                 </Form.Item>
+                {customer.customerType === "PERSONAL" && !customer.users?.length ? (
+                  <Button
+                    loading={createDefaultContactMutation.isPending}
+                    onClick={() => createDefaultContactMutation.mutate()}
+                  >
+                    将客户本人设为默认联系人
+                  </Button>
+                ) : null}
                 <Form.Item name="department" label="使用部门">
                   <Input maxLength={100} placeholder="例如 销售部、行政部" />
                 </Form.Item>

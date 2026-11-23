@@ -194,6 +194,7 @@ export class ConstructionService {
         data: {
           recordId,
           stage: dto.stage,
+          purpose: dto.purpose ?? "LEGACY",
           url,
           uploadedById: actor.id,
           clientOperationId: operationId,
@@ -263,6 +264,20 @@ export class ConstructionService {
       });
       return toConstructionPhotoResponse({ ...photo, status: ConstructionEvidenceStatus.REVOKED });
     });
+  }
+
+  async deletePhoto(user: AuthenticatedConstructionUser, recordId: string, photoId: string) {
+    const actor = await this.withStoreMember(user);
+    const record = await this.findRecord(recordId);
+    if (record.status === ConstructionTaskStatus.COMPLETED) throw new BadRequestException("施工已完工，照片已成为履约凭证，不能删除");
+    const assignedWorkerId = this.getAssignedWorkerId(actor.id, record);
+    if (assignedWorkerId !== actor.id && !(await this.canAccess(actor, "construction", "write", record.storeId))) throw new ForbiddenException("无权限");
+    const photo = await this.prisma.constructionPhoto.findFirst({ where: { id: photoId, recordId } });
+    if (!photo) throw new NotFoundException("施工照片不存在");
+    if (await this.prisma.warrantyPhoto.count({ where: { constructionPhotoId: photoId } })) throw new BadRequestException("该照片已用于质保凭证，不能删除");
+    await this.prisma.constructionPhoto.delete({ where: { id: photoId } });
+    await this.oss?.removeConstructionPhoto(photo.url);
+    return { id: photo.id, deleted: true };
   }
 
   async completeOrder(user: AuthenticatedConstructionUser, recordId: string, dto: CompleteConstructionDto, context: { commandId: string; expectedVersion: number }) {
@@ -893,7 +908,7 @@ const constructionRecordInclude = {
   assignments: true,
   // Keep command identity/fingerprint internal to the evidence implementation;
   // transport adapters only expose business-safe photo fields.
-  photos: { select: { id: true, stage: true, url: true, uploadedById: true, takenAt: true, status: true } }
+  photos: { select: { id: true, stage: true, purpose: true, url: true, uploadedById: true, takenAt: true, status: true } }
 } satisfies Prisma.ConstructionRecordInclude;
 
 function buildConstructionEvidenceFingerprint(
@@ -908,6 +923,7 @@ function buildConstructionEvidenceFingerprint(
       recordId,
       actorId,
       stage: dto.stage,
+      purpose: dto.purpose ?? "LEGACY",
       takenAt: dto.takenAt ? new Date(dto.takenAt).toISOString() : null,
       contentSha256: createHash("sha256").update(content).digest("hex")
     }))
@@ -919,6 +935,7 @@ function assertConstructionEvidenceReplay(
     recordId: string;
     uploadedById?: string;
     stage?: ConstructionPhotoStage;
+  purpose?: string;
     requestFingerprint?: string;
     status?: ConstructionEvidenceStatus;
   },
@@ -987,6 +1004,7 @@ function toConstructionPhotoResponse(photo: {
   id: string;
   recordId?: string | null;
   stage?: ConstructionPhotoStage | null;
+  purpose?: string | null;
   url?: string | null;
   uploadedById?: string | null;
   takenAt?: Date | null;
@@ -996,6 +1014,7 @@ function toConstructionPhotoResponse(photo: {
     id: string;
     recordId?: string | null;
     stage?: ConstructionPhotoStage | null;
+    purpose?: string | null;
     url?: string | null;
     uploadedById?: string | null;
     takenAt?: Date | null;
@@ -1003,6 +1022,7 @@ function toConstructionPhotoResponse(photo: {
   } = { id: photo.id };
   if ("recordId" in photo) response.recordId = photo.recordId;
   if ("stage" in photo) response.stage = photo.stage;
+  if ("purpose" in photo) response.purpose = photo.purpose;
   if ("url" in photo) response.url = photo.url;
   if ("uploadedById" in photo) response.uploadedById = photo.uploadedById;
   if ("takenAt" in photo) response.takenAt = photo.takenAt;

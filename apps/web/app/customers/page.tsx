@@ -54,6 +54,7 @@ type CustomerRow = CustomerArchiveLike & {
 
 type CustomerUser = {
   id: string;
+  isDefault?: boolean;
   name?: string | null;
   phone?: string | null;
   note?: string | null;
@@ -183,7 +184,8 @@ export default function CustomersPage() {
     mutationFn: async (values: CreateCustomerFormValues) => {
       if (!storeId) throw new Error("当前账号尚未加入门店");
       const customer = await customerApi.create(toCreateCustomerPayload(storeId, values));
-      const vehiclePayloads = toCreateVehiclePayloads(customer.id, values);
+      const defaultContactId = (customer as CustomerRow).users?.find((contact) => contact.isDefault)?.id;
+      const vehiclePayloads = toCreateVehiclePayloads(customer.id, values, defaultContactId);
       if (vehiclePayloads.length) {
         await Promise.all(vehiclePayloads.map((payload) => customerApi.createVehicle(payload)));
       }

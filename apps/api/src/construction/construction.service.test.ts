@@ -105,11 +105,13 @@ test("ConstructionService persists evidence fingerprint/status and rejects confl
   const first = await service.uploadPhoto(
     { id: "worker-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION } },
     "record-1",
-    { stage: ConstructionPhotoStage.BEFORE, url: "https://oss.example/photo.jpg" },
+    { stage: ConstructionPhotoStage.BEFORE, purpose: "FILM_BOX", url: "https://oss.example/photo.jpg" },
     undefined,
     "photo-op-fingerprint"
   );
   assert.equal((first as { status: string }).status, "APPLIED");
+  assert.equal((first as { purpose: string }).purpose, "FILM_BOX");
+  assert.equal(writes[0]?.data.purpose, "FILM_BOX");
   assert.match(String(writes[0]?.data.requestFingerprint), /^[a-f0-9]{64}$/);
 
   await assert.rejects(
@@ -122,6 +124,27 @@ test("ConstructionService persists evidence fingerprint/status and rejects confl
     ),
     (error: { response?: { code?: string } }) => error.response?.code === "COMMAND_ID_CONFLICT"
   );
+});
+
+test("ConstructionService deletes a worker photo and stored object before completion", async () => {
+  const calls: string[] = [];
+  const service = new ConstructionService({
+    constructionRecord: { findUnique: async () => ({ id: "record-1", storeId: "store-1", orderId: "order-1", status: ConstructionTaskStatus.IN_CONSTRUCTION, assignments: [{ workerUserId: "worker-1" }] }) },
+    constructionPhoto: {
+      findFirst: async () => ({ id: "photo-1", recordId: "record-1", url: "https://files.test/photo.jpg" }),
+      delete: async () => { calls.push("delete-row"); }
+    },
+    warrantyPhoto: { count: async () => 0 }
+  } as never, {} as never, {
+    removeConstructionPhoto: async (url: string) => { calls.push(`delete-file:${url}`); }
+  } as never, undefined, undefined, undefined, access as never);
+  const result = await service.deletePhoto(
+    { id: "worker-1", isAuditor: false, storeMember: { storeId: "store-1", position: StorePosition.CONSTRUCTION } },
+    "record-1",
+    "photo-1"
+  );
+  assert.deepEqual(result, { id: "photo-1", deleted: true });
+  assert.deepEqual(calls, ["delete-row", "delete-file:https://files.test/photo.jpg"]);
 });
 
 test("ConstructionService revokes a photo as audited evidence without deleting its record", async () => {

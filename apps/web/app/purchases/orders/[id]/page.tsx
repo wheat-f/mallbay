@@ -2,7 +2,7 @@
 
 import type { InventorySupplierSummary, InventoryWarehouseSummary, ProductUnit } from "@mallbay/shared";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Alert, App, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Radio, Select, Table, Tag } from "antd";
+import { Alert, App, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Radio, Select, Table, Tag, Upload } from "antd";
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
@@ -54,6 +54,7 @@ type PurchaseReceiptCostRecord = {
   plannedUnitCostCents?: number | null;
   differenceCents?: number | null;
   differenceReason?: string | null;
+  inspectionPhotoUrls?: string[];
   createdAt: string;
   inventoryBatch?: { batchNo?: string | null } | null;
 };
@@ -115,6 +116,8 @@ export default function PurchaseOrderDetailPage() {
   const [scanImportRecognizing, setScanImportRecognizing] = useState(false);
   const [receiveActionMode, setReceiveActionMode] = useState<ReceiveActionMode>("receive");
   const [editingReceiptCost, setEditingReceiptCost] = useState<PurchaseReceiptCostRecord | null>(null);
+  const [receiptPhotoUrlsByItem, setReceiptPhotoUrlsByItem] = useState<Record<string, string[]>>({});
+  const [receiptPhotoUploading, setReceiptPhotoUploading] = useState(false);
 
   const purchaseOrderQuery = useQuery({
     queryKey: ["purchase-order", purchaseOrderId],
@@ -147,15 +150,21 @@ export default function PurchaseOrderDetailPage() {
         warehouseName?: string;
         actualUnitCostCents?: number | null;
         costDifferenceReason?: string;
+        inspectionPhotoUrls?: string[];
       }>;
     }) =>
       purchaseApi.receiveOrderItemBatches(values.itemId, values.batches),
-    onSuccess: async (result) => {
+    onSuccess: async (result, variables) => {
       if (result.failed.length > 0) {
         message.warning(`批量入库完成，成功 ${result.received.length} 行，失败 ${result.failed.length} 行`);
       } else {
         message.success("批量入库已完成");
         receiveForm.setFieldsValue({ batches: [] });
+        setReceiptPhotoUrlsByItem((current) => {
+          const next = { ...current };
+          delete next[variables.itemId];
+          return next;
+        });
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["purchase-orders", storeId] }),
@@ -224,6 +233,7 @@ export default function PurchaseOrderDetailPage() {
     [warehousesQuery.data]
   );
   const selectedReceiveItemId = Form.useWatch("itemId", receiveForm);
+  const receiptPhotoUrls = selectedReceiveItemId ? receiptPhotoUrlsByItem[selectedReceiveItemId] ?? [] : [];
   const selectedReceiveItem = items.find((item) => item.id === selectedReceiveItemId);
   const remainingReceiveQuantity = getRemainingPurchaseQuantity(selectedReceiveItem);
   const isPurchaseOrderReceivable = effectivePurchaseOrderStatus === "ORDERED" || effectivePurchaseOrderStatus === "PARTIAL_RECEIVED";
@@ -231,6 +241,7 @@ export default function PurchaseOrderDetailPage() {
     canManagePurchase &&
     isPurchaseOrderReceivable &&
     Boolean(selectedReceiveItem) &&
+    receiptPhotoUrls.length > 0 &&
     remainingReceiveQuantity > 0 &&
     !receivePurchaseItemBatches.isPending;
   const purchaseSteps = getPurchaseSteps(effectivePurchaseOrderStatus);
@@ -554,6 +565,7 @@ export default function PurchaseOrderDetailPage() {
                                 {record.differenceCents == null || record.differenceCents === 0
                                   ? <em>无差异</em>
                                   : <em>{record.differenceCents > 0 ? "+" : ""}¥{(record.differenceCents / 100).toFixed(2)}</em>}
+                                {(record.inspectionPhotoUrls ?? []).map((url, index) => <a key={url} href={url} target="_blank" rel="noreferrer">外箱照片 {index + 1}</a>)}
                                 {canManagePurchase ? (
                                   <Button
                                     type="link"
@@ -660,7 +672,8 @@ export default function PurchaseOrderDetailPage() {
                           : batch.actualCostMode === "ACTUAL"
                             ? Math.round(Number(batch.actualUnitCostYuan ?? 0) * 100)
                             : undefined,
-                        costDifferenceReason: batch.costDifferenceReason?.trim() || undefined
+                        costDifferenceReason: batch.costDifferenceReason?.trim() || undefined,
+                        inspectionPhotoUrls: receiptPhotoUrls
                       }))
                       .filter((batch) => batch.batchNo && batch.quantity > 0);
                     if (batches.length === 0) {
@@ -714,6 +727,33 @@ export default function PurchaseOrderDetailPage() {
                   <Form.Item name="acceptanceNote" label="验收备注">
                     <Input.TextArea rows={2} placeholder="如包装破损、数量不符等情况请在此说明" />
                   </Form.Item>
+                  <div className="purchase-receipt-photo-control">
+                    <strong>外箱照片（入库必传）</strong>
+                    <Upload
+                      accept="image/*"
+                      showUploadList={false}
+                      disabled={!selectedReceiveItem || !canManagePurchase || receiptPhotoUploading || receiptPhotoUrls.length >= 8}
+                      customRequest={async ({ file, onError, onSuccess }) => {
+                        if (!selectedReceiveItem) return onError?.(new Error("请先选择验收物料"));
+                        setReceiptPhotoUploading(true);
+                        try {
+                          const saved = await purchaseApi.uploadReceiptPhoto(selectedReceiveItem.id, file as File);
+                          const itemId = selectedReceiveItem.id;
+                          setReceiptPhotoUrlsByItem((current) => ({ ...current, [itemId]: [...(current[itemId] ?? []), saved.url] }));
+                          onSuccess?.(saved);
+                        } catch (error) {
+                          onError?.(error as Error);
+                          message.error((error as Error).message);
+                        } finally {
+                          setReceiptPhotoUploading(false);
+                        }
+                      }}
+                    >
+                      <Button loading={receiptPhotoUploading} icon={<PlusOutlined />}>上传外箱照片</Button>
+                    </Upload>
+                    <span>{receiptPhotoUrls.length ? `已存档 ${receiptPhotoUrls.length} 张` : "请拍摄外箱及防伪标签，最多 8 张。"}</span>
+                    {receiptPhotoUrls.map((url, index) => <a key={url} href={url} target="_blank" rel="noreferrer">查看照片 {index + 1}</a>)}
+                  </div>
                   <div className="purchase-receive-batch-toolbar">
                     <div>
                       <strong>批次明细</strong>

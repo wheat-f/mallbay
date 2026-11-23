@@ -16,7 +16,7 @@ import { getWorkerPhotoStageLabel, getWorkerTaskStatusLabel } from "@mallbay/sha
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import type { ConstructionMaterialItem, ConstructionOrderMaterials, ConstructionFulfillmentView } from "../../../../src/features/construction/api";
-import { clearLifecycleCommandId, getLifecycleCommandId } from "../../../../src/features/construction/api";
+import { clearLifecycleCommandId, getLifecycleCommandId, getLifecycleCommandTimestamp } from "../../../../src/features/construction/api";
 import { constructionApi } from "../../../../src/lib/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
 import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
@@ -40,16 +40,18 @@ type TaskRecord = {
     constructionLocation?: string | null;
     outsideAddress?: string | null;
   } | null;
-  photos?: { id: string; stage: string; url: string; uploadedById: string; status?: string }[];
+  photos?: { id: string; stage: string; purpose?: PhotoPurpose; url: string; uploadedById: string; status?: string }[];
 };
 
-type TaskPhoto = NonNullable<TaskRecord["photos"]>[number];
+type TaskPhoto = NonNullable<TaskRecord["photos"]>[number] & { purpose?: PhotoPurpose };
+type PhotoPurpose = "INSPECTION" | "FILM_BOX" | "PROCESS" | "COMPLETION" | "LEGACY";
+type UploadPhotoPurpose = Exclude<PhotoPurpose, "LEGACY">;
 
-const photoRequirements: { stage: PhotoStage; title: string; description: string; required: boolean }[] = [
-  { stage: "BEFORE", title: "验车照片", description: "车头、车尾、漆面瑕疵和交车前状态", required: true },
-  { stage: "BEFORE", title: "膜箱照片", description: "膜箱标签、防伪码和批次信息", required: true },
-  { stage: "DURING", title: "施工过程照片", description: "裁膜、贴膜、收边等关键节点", required: false },
-  { stage: "AFTER", title: "施工后照片", description: "完工外观、边角细节和交付状态", required: true }
+const photoRequirements: { stage: PhotoStage; purpose: UploadPhotoPurpose; title: string; description: string; required: boolean }[] = [
+  { stage: "BEFORE", purpose: "INSPECTION", title: "验车照片", description: "车头、车尾、漆面瑕疵和交车前状态", required: true },
+  { stage: "BEFORE", purpose: "FILM_BOX", title: "膜箱照片", description: "膜箱标签、防伪码和批次信息", required: true },
+  { stage: "DURING", purpose: "PROCESS", title: "施工过程照片", description: "裁膜、贴膜、收边等关键节点", required: false },
+  { stage: "AFTER", purpose: "COMPLETION", title: "施工后照片", description: "完工外观、边角细节和交付状态", required: true }
 ];
 
 export default function ConstructionTaskDetailPage() {
@@ -60,7 +62,6 @@ export default function ConstructionTaskDetailPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const [previewPhoto, setPreviewPhoto] = useState<TaskPhoto | null>(null);
-  const [revokeReason, setRevokeReason] = useState("");
   const [declaredMinutes, setDeclaredMinutes] = useState<number>();
   const [varianceReasonCode, setVarianceReasonCode] = useState<string>();
   const [varianceReasonText, setVarianceReasonText] = useState("");
@@ -143,12 +144,14 @@ export default function ConstructionTaskDetailPage() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: () => constructionApi.completeOrder(params.id, new Date().toISOString(), {
-      commandId: getLifecycleCommandId(user!.id, storeId!, params.id, "COMPLETE_CONSTRUCTION"),
+    mutationFn: () => constructionApi.completeOrder(params.id, getLifecycleCommandTimestamp(user!.id, storeId!, params.id, "COMPLETE_CONSTRUCTION_V2"), {
+      // Rotate the client cache namespace so command IDs created by the older
+      // timestamp-per-click flow cannot be replayed with a different payload.
+      commandId: getLifecycleCommandId(user!.id, storeId!, params.id, "COMPLETE_CONSTRUCTION_V2"),
       expectedVersion: fulfillment!.order.lifecycleVersion
     }),
     onSuccess: async () => {
-      clearLifecycleCommandId(user!.id, storeId!, params.id, "COMPLETE_CONSTRUCTION");
+      clearLifecycleCommandId(user!.id, storeId!, params.id, "COMPLETE_CONSTRUCTION_V2");
       message.success("已完工");
       await invalidateTask();
     },
@@ -168,21 +171,20 @@ export default function ConstructionTaskDetailPage() {
     onError: (error: Error) => message.error(error.message)
   });
 
-  const uploadStagePhoto = async (stage: PhotoStage, file: File, title: string, clientOperationId: string) => {
+  const uploadStagePhoto = async (stage: PhotoStage, file: File, title: string, clientOperationId: string, purpose: UploadPhotoPurpose) => {
     if (!record) {
       throw new Error("未找到该施工任务");
     }
-    await constructionApi.uploadPhoto(record.id, { stage, file, clientOperationId });
+    await constructionApi.uploadPhoto(record.id, { stage, purpose, file, clientOperationId });
     message.success(`${title}已上传`);
     await invalidateTask();
   };
 
-  const revokePhotoMutation = useMutation({
-    mutationFn: (photoId: string) => constructionApi.revokePhoto(record!.id, photoId, revokeReason),
+  const deletePhotoMutation = useMutation({
+    mutationFn: (photoId: string) => constructionApi.deletePhoto(record!.id, photoId),
     onSuccess: async () => {
       setPreviewPhoto(null);
-      setRevokeReason("");
-      message.success("照片已撤销，原文件和操作记录仍保留");
+      message.success("照片已删除");
       await invalidateTask();
     },
     onError: (error: Error) => message.error(error.message)
@@ -347,7 +349,9 @@ export default function ConstructionTaskDetailPage() {
               <Card id="task-photo-upload" className="worker-task-photo-card" title="照片凭证">
                 <div className="worker-task-photo-checklist">
                   {photoRequirements.map((item) => {
-                    const stagePhotos = photos.filter((photo) => photo.stage === item.stage);
+                    const stagePhotos = photos.filter((photo) =>
+                      photo.purpose === item.purpose || (photo.purpose === "LEGACY" && item.purpose === "INSPECTION" && photo.stage === item.stage)
+                    );
                     const isComplete = stagePhotos.length > 0;
                     return (
                       <article key={item.title} className={`worker-task-photo-item${isComplete ? " is-complete" : ""}`}>
@@ -378,7 +382,7 @@ export default function ConstructionTaskDetailPage() {
                           customRequest={async ({ file, onError, onSuccess }) => {
                             try {
                               const clientOperationId = globalThis.crypto?.randomUUID?.() ?? `photo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-                              await uploadStagePhoto(item.stage, file as File, item.title, clientOperationId);
+                              await uploadStagePhoto(item.stage, file as File, item.title, clientOperationId, item.purpose);
                               onSuccess?.("ok");
                             } catch (error) {
                               onError?.(error as Error);
@@ -404,16 +408,8 @@ export default function ConstructionTaskDetailPage() {
         onCancel={() => setPreviewPhoto(null)}
         footer={previewPhoto && record?.status !== "COMPLETED" ? (
           <Space>
-            <Input value={revokeReason} onChange={(event) => setRevokeReason(event.target.value)} maxLength={300} placeholder="撤销原因（必填）" />
-            <Popconfirm
-              title="撤销这张施工照片？"
-              description="照片不会被物理删除，撤销原因会写入审计记录。"
-              okText="确认撤销"
-              cancelText="取消"
-              disabled={!revokeReason.trim()}
-              onConfirm={() => revokePhotoMutation.mutate(previewPhoto.id)}
-            >
-              <Button danger loading={revokePhotoMutation.isPending} disabled={!revokeReason.trim()}>撤销照片</Button>
+            <Popconfirm title="删除这张未完工照片？" okText="删除" cancelText="取消" onConfirm={() => deletePhotoMutation.mutate(previewPhoto.id)}>
+              <Button danger loading={deletePhotoMutation.isPending}>删除照片</Button>
             </Popconfirm>
           </Space>
         ) : null}

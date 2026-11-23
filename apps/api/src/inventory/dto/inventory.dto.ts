@@ -1,6 +1,8 @@
 import { Transform, Type } from "class-transformer";
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
+  IsArray,
   ArrayMinSize,
   IsDateString,
   IsBoolean,
@@ -469,6 +471,12 @@ export class ReceivePurchaseItemDto {
   @IsString()
   @MaxLength(300)
   costDifferenceReason?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsString({ each: true })
+  inspectionPhotoUrls?: string[];
 }
 
 export class ReceivePurchaseItemBatchesDto {

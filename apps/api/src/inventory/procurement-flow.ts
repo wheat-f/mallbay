@@ -11,6 +11,7 @@ import type {
   ReceivePurchaseItemDto,
   UpdatePurchaseReceiptCostDto
 } from "./dto/inventory.dto";
+import type { MulterFile } from "../users/multer-file.type";
 
 /** Public seam for purchase requirements, orders and receipts. */
 @Injectable()
@@ -37,5 +38,8 @@ export class ProcurementFlow {
   receive(user: AuthenticatedInventoryUser, itemId: string, input: ReceivePurchaseItemDto) { return this.implementation.receivePurchaseItem(user, itemId, input); }
   receiveBatches(user: AuthenticatedInventoryUser, itemId: string, input: ReceivePurchaseItemBatchesDto) {
     return this.implementation.receivePurchaseItemBatches(user, itemId, input);
+  }
+  uploadReceiptPhoto(user: AuthenticatedInventoryUser, itemId: string, file: MulterFile) {
+    return this.implementation.uploadPurchaseReceiptPhoto(user, itemId, file);
   }
 }

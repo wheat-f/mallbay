@@ -63,6 +63,7 @@ type OrderRow = {
 
 type WorkerRow = {
   userId: string;
+  position?: string;
   skillTags?: string[];
   isActive: boolean;
   user?: { username?: string | null; nickname?: string | null } | null;
@@ -130,7 +131,9 @@ export default function ConstructionAssignmentsPage() {
   const pendingRows = useMemo(() => ((pendingOrdersQuery.data?.items ?? []) as OrderRow[]), [pendingOrdersQuery.data?.items]);
   const records = useMemo(() => ((recordsQuery.data ?? []) as ConstructionRecordRow[]), [recordsQuery.data]);
   const workers = useMemo(
-    () => ((workersQuery.data ?? []) as WorkerRow[]).filter((worker) => worker.isActive),
+    () => ((workersQuery.data ?? []) as WorkerRow[]).filter((worker) =>
+      worker.isActive && (worker.position === "CONSTRUCTION" || worker.position === "APPRENTICE")
+    ),
     [workersQuery.data]
   );
   const filteredWorkers = useMemo(() => filterConstructionWorkers(workers, workerSearchKeyword), [workers, workerSearchKeyword]);

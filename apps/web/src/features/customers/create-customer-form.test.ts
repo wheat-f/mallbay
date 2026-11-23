@@ -131,3 +131,21 @@ test("toCreateVehiclePayloads builds multiple vehicle payloads and skips empty d
     ]
   );
 });
+
+test("new vehicles inherit the personal customer default contact", () => {
+  assert.deepEqual(
+    toCreateVehiclePayloads("customer-1", {
+      customerType: "PERSONAL",
+      name: "小明",
+      phone: "13800138000",
+      carModel: "宝马 5X",
+      vehicleTypeCode: "STANDARD_CAR"
+    }, "contact-customer-1"),
+    [{
+      customerId: "customer-1",
+      carModel: "宝马 5X",
+      vehicleTypeCode: "STANDARD_CAR",
+      defaultContactId: "contact-customer-1"
+    }]
+  );
+});

@@ -116,6 +116,10 @@ export class UploadConstructionPhotoDto {
   stage!: ConstructionPhotoStage;
 
   @IsOptional()
+  @IsIn(["INSPECTION", "FILM_BOX", "PROCESS", "COMPLETION", "LEGACY"])
+  purpose?: string;
+
+  @IsOptional()
   @IsString()
   url?: string;
 

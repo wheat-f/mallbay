@@ -56,6 +56,9 @@ export type CreateCustomerUserPayload = {
   name: string;
   phone?: string;
   note?: string;
+  role?: "PRIMARY" | "SETTLEMENT" | "DRIVER" | "OTHER";
+  department?: string;
+  isDefault?: boolean;
 };
 
 export type CreateCustomerNotePayload = {

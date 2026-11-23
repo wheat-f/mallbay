@@ -5,7 +5,7 @@ import type {
   InventoryWarehouseSummary,
   ProductUnit
 } from "@mallbay/shared";
-import { request } from "../../lib/request";
+import { request, requestMultipart } from "../../lib/request";
 
 export type InventoryListQuery = {
   storeId: string;
@@ -165,6 +165,7 @@ export type ReceivePurchaseItemPayload = {
   /** 未传时沿用采购单计划价；传 null 表示待采购员后补实际入库价。 */
   actualUnitCostCents?: number | null;
   costDifferenceReason?: string;
+  inspectionPhotoUrls?: string[];
 };
 
 export type UpdatePurchaseReceiptCostPayload = {
@@ -404,6 +405,12 @@ export const purchaseApi = {
       method: "POST",
       body: JSON.stringify({ batches: payloads })
     }),
+
+  uploadReceiptPhoto: (id: string, file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    return requestMultipart<{ url: string }>(`/purchases/orders/items/${id}/receipt-photos`, form);
+  },
 
   updateReceiptCost: (id: string, payload: UpdatePurchaseReceiptCostPayload) =>
     request<unknown>(`/purchases/receipt-costs/${id}`, {

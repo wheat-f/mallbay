@@ -22,6 +22,7 @@ export type CreateCustomerFormValues = {
   vehicleTypeCode?: CreateVehiclePayload["vehicleTypeCode"];
   carColor?: string;
   photoUrl?: string;
+  defaultContactId?: string;
   companyUsers?: Array<{
     name?: string;
     phone?: string;
@@ -34,6 +35,7 @@ export type CreateCustomerFormValues = {
     vehicleTypeCode?: CreateVehiclePayload["vehicleTypeCode"];
     carColor?: string;
     photoUrl?: string;
+    defaultContactId?: string;
   }>;
 };
 
@@ -73,13 +75,15 @@ export function toCreateVehiclePayload(
     carPlate: trimOptional(values.carPlate),
     vin: trimOptional(values.vin),
     carColor: trimOptional(values.carColor),
-    photoUrl: trimOptional(values.photoUrl)
+    photoUrl: trimOptional(values.photoUrl),
+    defaultContactId: trimOptional(values.defaultContactId)
   });
 }
 
 export function toCreateVehiclePayloads(
   customerId: string,
-  values: CreateCustomerFormValues
+  values: CreateCustomerFormValues,
+  defaultContactId?: string
 ): CreateVehiclePayload[] {
   const vehicleDrafts = values.vehicles?.length
     ? values.vehicles
@@ -94,7 +98,7 @@ export function toCreateVehiclePayloads(
       ];
 
   return vehicleDrafts
-    .map((vehicle) => toCreateVehiclePayload(customerId, { ...values, ...vehicle, vehicles: undefined }))
+    .map((vehicle) => toCreateVehiclePayload(customerId, { ...values, ...vehicle, defaultContactId: vehicle.defaultContactId ?? defaultContactId, vehicles: undefined }))
     .filter((vehicle): vehicle is CreateVehiclePayload => Boolean(vehicle));
 }
 

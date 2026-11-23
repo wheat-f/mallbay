@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Inject,
@@ -298,6 +299,11 @@ export class ConstructionController {
     @Body() dto: RevokeConstructionPhotoDto
   ) {
     return this.construction.revokePhoto(req.user, recordId, photoId, dto);
+  }
+
+  @Delete("records/:recordId/photos/:photoId")
+  deletePhoto(@Req() req: AuthRequest, @Param("recordId") recordId: string, @Param("photoId") photoId: string) {
+    return this.construction.deletePhoto(req.user, recordId, photoId);
   }
 
   @Post("records/:recordId/quality-check")

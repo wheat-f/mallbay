@@ -106,6 +106,10 @@ test("construction task detail page is a desktop execution workspace", () => {
   assert.match(pageSource, /constructionApi\.uploadPhoto/);
   assert.match(pageSource, /constructionApi\.startOrder/);
   assert.match(pageSource, /constructionApi\.completeOrder/);
+  assert.match(pageSource, /purpose: "INSPECTION"/);
+  assert.match(pageSource, /purpose: "FILM_BOX"/);
+  assert.match(pageSource, /constructionApi\.deletePhoto/);
+  assert.doesNotMatch(pageSource, /撤销照片/);
   assert.match(pageSource, /constructionApi\.orderMaterials/);
   assert.match(pageSource, /constructionApi\.pickupMaterials/);
   assert.match(pageSource, /title: "施工批次"/);

@@ -42,7 +42,7 @@ export type FulfillmentView = {
     qualityResult: string | null;
     qualityNote: string | null;
     qualityCheckedAt: string | null;
-    photos: Array<{ id: string; stage: string; url: string; uploadedById: string }>;
+    photos: Array<{ id: string; stage: string; purpose: string; url: string; uploadedById: string }>;
     assignments: Array<{ workerUserId: string }>;
   } | null;
   workflow: OrderWorkflow;
@@ -130,7 +130,7 @@ export class ConstructionFulfillment {
             qualityResult: true,
             qualityNote: true,
             qualityCheckedAt: true,
-            photos: { select: { id: true, stage: true, url: true, uploadedById: true, status: true } },
+            photos: { select: { id: true, stage: true, purpose: true, url: true, uploadedById: true, status: true } },
             assignments: { select: { workerUserId: true } }
           }
         },

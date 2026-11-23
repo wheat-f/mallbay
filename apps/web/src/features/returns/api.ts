@@ -1,4 +1,5 @@
 import { request } from "@/lib/request";
+import { createIdempotencyKey } from "@/lib/idempotency-key";
 
 export type ReturnListItem = { id: string; returnNo: string; status: string; reason: string; createdAt: string };
 
@@ -11,7 +12,7 @@ export function listPurchaseReturns(storeId: string) {
 }
 
 
-function key() { return crypto.randomUUID(); }
+function key() { return createIdempotencyKey(); }
 export function submitSalesReturn(id: string) { return request<ReturnListItem>(`/sales-returns/${id}/submit`, { method: "POST", body: JSON.stringify({ idempotencyKey: key() }) }); }
 export function approveSalesReturn(id: string) { return request<ReturnListItem>(`/sales-returns/${id}/approve`, { method: "POST", body: JSON.stringify({ idempotencyKey: key() }) }); }
 export function submitPurchaseReturn(id: string) { return request<ReturnListItem>(`/purchase-returns/${id}/submit`, { method: "POST", body: JSON.stringify({ idempotencyKey: key() }) }); }

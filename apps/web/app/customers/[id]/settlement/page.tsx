@@ -42,6 +42,7 @@ import {
 import { customerApi } from "../../../../src/features/customers/api";
 import { orderApi } from "../../../../src/features/orders/api";
 import { useAuthStore } from "../../../../src/stores/auth-store";
+import { createIdempotencyKey } from "../../../../src/lib/idempotency-key";
 import { hasEffectivePermission, useEffectivePermissions } from "../../../../src/features/permissions/use-effective-permissions";
 
 type CustomerSummary = {
@@ -97,7 +98,7 @@ export default function CustomerSettlementPage() {
   const [receiptOrderIds, setReceiptOrderIds] = useState<React.Key[]>([]);
   const [receiptAllocations, setReceiptAllocations] = useState<ReceiptAllocationInput[]>([]);
   const [reverseReceipt, setReverseReceipt] = useState<CustomerReceipt | null>(null);
-  const [statementIdempotencyKey, setStatementIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [statementIdempotencyKey, setStatementIdempotencyKey] = useState(() => createIdempotencyKey());
   const [receiptIdempotencyKey, setReceiptIdempotencyKey] = useState<string | null>(null);
   const [reversalIdempotencyKey, setReversalIdempotencyKey] = useState<string | null>(null);
 
@@ -186,7 +187,7 @@ export default function CustomerSettlementPage() {
     onSuccess: () => {
       message.success("对账单草稿已生成");
       setSelectedStatementOrders([]);
-      setStatementIdempotencyKey(crypto.randomUUID());
+      setStatementIdempotencyKey(createIdempotencyKey());
       refreshSettlementData();
     }
   });
@@ -260,7 +261,7 @@ export default function CustomerSettlementPage() {
       .map((order) => order.id);
     setReceiptOrderIds(outstandingOrderIds);
     setReceiptAllocations([]);
-    setReceiptIdempotencyKey(crypto.randomUUID());
+    setReceiptIdempotencyKey(createIdempotencyKey());
     setReceiptOpen(true);
     const defaultAccount = accountsQuery.data?.find((account) => account.isDefault)
       ?? accountsQuery.data?.[0];
@@ -617,7 +618,7 @@ export default function CustomerSettlementPage() {
                     icon={<RollbackOutlined />}
                     onClick={() => {
                       setReverseReceipt(item);
-                      setReversalIdempotencyKey(crypto.randomUUID());
+                      setReversalIdempotencyKey(createIdempotencyKey());
                       reverseForm.setFieldsValue({
                         amountYuan: item.reversibleAmountCents / 100,
                         reason: ""

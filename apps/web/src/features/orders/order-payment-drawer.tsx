@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import { useEffect } from "react";
+import { createIdempotencyKey } from "../../lib/idempotency-key";
 import { orderApi } from "./api";
 import { centsToYuan, yuanToCents } from "./create-order-form";
 import { getPaymentTypeLabel, yuanCurrency } from "./order-display";
@@ -65,7 +66,7 @@ export function OrderPaymentDrawer({ open, order, storeId, onClose, onSuccess }:
         paymentType: values.paymentType,
         amountCents: yuanToCents(values.amountYuan),
         paidAt: values.paidAt.toISOString(),
-        idempotencyKey: crypto.randomUUID()
+        idempotencyKey: createIdempotencyKey()
       }),
     onSuccess: async () => {
       message.success("收款已记录");

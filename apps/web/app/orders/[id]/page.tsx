@@ -35,6 +35,7 @@ import {
 } from "../../../src/features/orders/order-display";
 import { getAuditActorLabel } from "../../../src/features/audit/display";
 import { getProductUnitLabel } from "../../../src/features/products/display";
+import { createIdempotencyKey } from "../../../src/lib/idempotency-key";
 import { OrderPaymentDrawer } from "../../../src/features/orders/order-payment-drawer";
 import { useAuthStore } from "../../../src/stores/auth-store";
 import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
@@ -268,7 +269,7 @@ export default function OrderDetailPage() {
       appointmentTimeSlot: values.appointmentTimeSlot?.every(Boolean)
         ? `${values.appointmentTimeSlot[0]!.format("HH:mm")}-${values.appointmentTimeSlot[1]!.format("HH:mm")}`
         : undefined,
-      idempotencyKey: crypto.randomUUID()
+      idempotencyKey: createIdempotencyKey()
     }),
     onSuccess: (draft) => {
       if (!order) return;

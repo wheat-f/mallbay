@@ -37,6 +37,7 @@ import {
   type InboundScanParseResult
 } from "../../../../src/features/inventory/inbound-scan";
 import { exportRowsToExcel } from "../../../../src/lib/export-excel";
+import { createIdempotencyKey } from "../../../../src/lib/idempotency-key";
 import { PRODUCT_UNIT_OPTIONS } from "../../../../src/features/products/display";
 
 type PurchaseOrderItemRow = Omit<PurchaseInboundItemLike, "receiptCostRecords"> & {
@@ -653,7 +654,7 @@ export default function PurchaseOrderDetailPage() {
                         supplierName: batch.supplierName?.trim() || values.supplierName?.trim() || purchaseOrder.supplierName || undefined,
                         warehouseId: values.warehouseId,
                         warehouseName: selectedWarehouse?.label,
-                        idempotencyKey: crypto.randomUUID(),
+                        idempotencyKey: createIdempotencyKey(),
                         actualUnitCostCents: batch.actualCostMode === "PENDING"
                           ? null
                           : batch.actualCostMode === "ACTUAL"

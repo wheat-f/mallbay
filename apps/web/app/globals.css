@@ -8815,6 +8815,65 @@ body {
   overflow-x: auto;
 }
 
+.purchase-receipt-evidence-list {
+  display: grid;
+  gap: 12px;
+}
+
+.purchase-receipt-evidence-item {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface);
+  padding: 14px;
+}
+
+.purchase-receipt-evidence-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.purchase-receipt-evidence-heading > div:first-child,
+.purchase-receipt-evidence-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.purchase-receipt-evidence-heading strong {
+  color: var(--mb-primary);
+  font-size: 14px;
+}
+
+.purchase-receipt-evidence-heading span,
+.purchase-receipt-evidence-meta {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.purchase-receipt-evidence-meta {
+  justify-items: end;
+  text-align: right;
+}
+
+.purchase-receipt-evidence-photos {
+  display: grid;
+  gap: 8px;
+}
+
+.purchase-receipt-evidence-photos > strong {
+  color: var(--mb-text-primary);
+  font-size: 12px;
+}
+
+.purchase-receipt-evidence-no-photos {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+}
+
 .purchase-items-mobile-cards {
   display: none;
 }

@@ -2,7 +2,7 @@
 
 import type { InventorySupplierSummary, InventoryWarehouseSummary, ProductUnit } from "@mallbay/shared";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Alert, App, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Radio, Select, Table, Tag, Upload } from "antd";
+import { Alert, App, Button, Card, DatePicker, Form, Image, Input, InputNumber, Modal, Radio, Select, Space, Table, Tag, Upload } from "antd";
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
@@ -38,7 +38,7 @@ import {
 } from "../../../../src/features/inventory/inbound-scan";
 import { exportRowsToExcel } from "../../../../src/lib/export-excel";
 import { createIdempotencyKey } from "../../../../src/lib/idempotency-key";
-import { PRODUCT_UNIT_OPTIONS } from "../../../../src/features/products/display";
+import { getProductUnitLabel, PRODUCT_UNIT_OPTIONS } from "../../../../src/features/products/display";
 
 type PurchaseOrderItemRow = Omit<PurchaseInboundItemLike, "receiptCostRecords"> & {
   id: string;
@@ -50,10 +50,12 @@ type PurchaseOrderItemRow = Omit<PurchaseInboundItemLike, "receiptCostRecords"> 
 type PurchaseReceiptCostRecord = {
   id: string;
   inventoryBatchId: string;
+  receivedQuantity?: number | string | null;
   actualUnitCostCents?: number | null;
   plannedUnitCostCents?: number | null;
   differenceCents?: number | null;
   differenceReason?: string | null;
+  purchaseUnit?: ProductUnit | null;
   inspectionPhotoUrls?: string[];
   createdAt: string;
   inventoryBatch?: { batchNo?: string | null } | null;
@@ -592,6 +594,81 @@ export default function PurchaseOrderDetailPage() {
                 />
               </Card>
 
+              <Card
+                className="purchase-detail-card purchase-receipt-evidence-card"
+                title="入库批次与验收照片"
+                extra={<span>{`${items.reduce((count, item) => count + Math.max(item.receiptCostRecords?.length ?? 0, item.receivedBatches?.length ?? 0), 0)} 笔入库记录`}</span>}
+              >
+                {items.some((item) => (item.receiptCostRecords?.length ?? 0) > 0 || (item.receivedBatches?.length ?? 0) > 0) ? (
+                  <div className="purchase-receipt-evidence-list">
+                    {items.flatMap((item) => {
+                      const details = getPurchaseInboundItemDetails(item);
+                      const receiptRecords = item.receiptCostRecords ?? [];
+                      const receiptBatchNumbers = new Set(receiptRecords.map((record) => record.inventoryBatch?.batchNo).filter(Boolean));
+                      const recordCards = receiptRecords.map((record) => {
+                        const photos = record.inspectionPhotoUrls ?? [];
+                        const batchNo = record.inventoryBatch?.batchNo ?? "批次信息待确认";
+                        return (
+                          <article className="purchase-receipt-evidence-item" key={record.id}>
+                            <div className="purchase-receipt-evidence-heading">
+                              <div>
+                                <strong>{batchNo}</strong>
+                                <span>{details.product}</span>
+                              </div>
+                              <div className="purchase-receipt-evidence-meta">
+                                <span>{`入库 ${formatQuantity(toNumber(record.receivedQuantity), 3)}${record.purchaseUnit ? ` ${getProductUnitLabel(record.purchaseUnit)}` : ""}`}</span>
+                                <span>{formatDateTime(record.createdAt)}</span>
+                              </div>
+                            </div>
+                            {photos.length > 0 ? (
+                              <div className="purchase-receipt-evidence-photos">
+                                <strong>{`外箱照片 ${photos.length} 张`}</strong>
+                                <Image.PreviewGroup>
+                                  <Space wrap>
+                                    {photos.map((url, index) => (
+                                      <Image
+                                        key={url}
+                                        src={url}
+                                        alt={`${batchNo} 外箱照片 ${index + 1}`}
+                                        width={96}
+                                        height={72}
+                                        style={{ objectFit: "cover", borderRadius: 8 }}
+                                      />
+                                    ))}
+                                  </Space>
+                                </Image.PreviewGroup>
+                              </div>
+                            ) : (
+                              <span className="purchase-receipt-evidence-no-photos">未上传外箱照片</span>
+                            )}
+                          </article>
+                        );
+                      });
+                      const legacyBatchCards = (item.receivedBatches ?? [])
+                        .filter((batch) => !receiptBatchNumbers.has(batch.batchNo))
+                        .map((batch, index) => (
+                          <article className="purchase-receipt-evidence-item" key={`${item.id}-${batch.batchNo ?? index}`}>
+                            <div className="purchase-receipt-evidence-heading">
+                              <div>
+                                <strong>{batch.batchNo ?? "批次信息待确认"}</strong>
+                                <span>{details.product}</span>
+                              </div>
+                              <div className="purchase-receipt-evidence-meta">
+                                <span>{`入库 ${formatQuantity(toNumber(batch.quantity), 3)}`}</span>
+                                <span>{formatDateTime(batch.receivedAt ? String(batch.receivedAt) : undefined)}</span>
+                              </div>
+                            </div>
+                            <span className="purchase-receipt-evidence-no-photos">该批次没有关联验收照片</span>
+                          </article>
+                        ));
+                      return [...recordCards, ...legacyBatchCards];
+                    })}
+                  </div>
+                ) : (
+                  <div className="purchase-items-mobile-empty">暂无入库批次和验收照片</div>
+                )}
+              </Card>
+
               <Card className="purchase-detail-card purchase-log-card" title="流转日志" extra={<HistoryOutlined />}>
                 <div className="purchase-log-timeline">
                   {[
@@ -1081,6 +1158,10 @@ export default function PurchaseOrderDetailPage() {
 function toNumber(value?: number | string | null) {
   if (value === undefined || value === null || value === "") return 0;
   return Number(value);
+}
+
+function formatQuantity(value: number, precision: number) {
+  return Number(value.toFixed(precision)).toString();
 }
 
 function getRemainingPurchaseQuantity(item?: PurchaseOrderItemRow) {

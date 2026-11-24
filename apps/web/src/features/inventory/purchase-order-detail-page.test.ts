@@ -100,6 +100,18 @@ test("purchase order detail page transitions receiving controls after successful
   assert.match(detailSource, /已全部入库，无需继续验收/);
 });
 
+test("completed purchase receipts expose their batch details and previewable inspection photos", () => {
+  const detailSource = readFileSync("app/purchases/orders/[id]/page.tsx", "utf8");
+
+  assert.match(detailSource, /title="入库批次与验收照片"/);
+  assert.match(detailSource, /item\.receiptCostRecords/);
+  assert.match(detailSource, /record\.inventoryBatch\?\.batchNo/);
+  assert.match(detailSource, /record\.inspectionPhotoUrls/);
+  assert.match(detailSource, /<Image\.PreviewGroup>/);
+  assert.match(detailSource, /item\.receivedBatches/);
+  assert.match(detailSource, /该批次没有关联验收照片/);
+});
+
 test("purchase order detail page uses mobile cards for purchase items", () => {
   const detailSource = readFileSync("app/purchases/orders/[id]/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n");

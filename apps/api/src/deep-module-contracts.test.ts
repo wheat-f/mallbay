@@ -16,6 +16,7 @@ import { FinanceService } from "./finance/finance.service";
 import { CashFactWriter } from "./finance/domain/cash-fact-writer";
 import { SettlementWorkflow } from "./customer-settlements/domain/settlement-workflow";
 import { InventoryModule } from "./inventory/inventory.module";
+import { UsersModule } from "./users/users.module";
 import { InventoryService } from "./inventory/inventory.service";
 import { ConstructionModule } from "./construction/construction.module";
 import { ConstructionService } from "./construction/construction.service";
@@ -151,6 +152,11 @@ test("deep modules do not re-export compatibility implementations", () => {
   assert.equal(exported(FinanceModule).has(FinanceQueryService), false);
   assert.equal(exported(FinanceModule).has(CashFactWriter), true);
   assert.equal(exported(ReportsModule).has(ReportsService), false);
+});
+
+test("InventoryModule imports UsersModule for purchase receipt photo storage", () => {
+  const imports = new Set((Reflect.getMetadata("imports", InventoryModule) ?? []) as unknown[]);
+  assert.equal(imports.has(UsersModule), true);
 });
 
 test("OrdersModule exposes only OrderLifecycle for lifecycle writes", () => {

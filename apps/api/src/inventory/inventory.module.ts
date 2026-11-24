@@ -8,9 +8,10 @@ import { InventoryLedger } from "./domain/inventory-ledger";
 import { ProcurementFlow } from "./procurement-flow";
 import { InventoryCatalog } from "./inventory-catalog";
 import { ProcurementImplementation } from "./procurement-implementation";
+import { UsersModule } from "../users/users.module";
 
 @Module({
-  imports: [PrismaModule, PermissionsModule],
+  imports: [PrismaModule, PermissionsModule, UsersModule],
   controllers: [InventoryController],
   providers: [InventoryImplementation, InventoryService, InventoryLedger, ProcurementImplementation, ProcurementFlow, InventoryCatalog],
   exports: [InventoryLedger, ProcurementFlow, InventoryCatalog]

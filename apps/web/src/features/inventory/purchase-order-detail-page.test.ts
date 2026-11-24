@@ -89,7 +89,7 @@ test("purchase order detail page follows the prototype receiving workspace layou
   assert.doesNotMatch(detailSource, /detail-layout/);
 });
 
-test("purchase order detail page transitions receiving controls after successful inbound", () => {
+test("purchase order detail page hides the receiving panel after all items are received", () => {
   const detailSource = readFileSync("app/purchases/orders/[id]/page.tsx", "utf8");
 
   assert.match(detailSource, /const effectivePurchaseOrderStatus = getEffectivePurchaseOrderStatus\(purchaseOrder\?\.status, items\);/);
@@ -97,7 +97,8 @@ test("purchase order detail page transitions receiving controls after successful
   assert.match(detailSource, /receiveForm\.setFieldsValue\(\{ itemId: nextReceivableItemId, batches: \[\] \}\);/);
   assert.match(detailSource, /queryClient\.refetchQueries\(\{ queryKey: \["purchase-order", purchaseOrderId\], type: "active" \}\)/);
   assert.match(detailSource, /disabled=\{!canSubmitReceive\}/);
-  assert.match(detailSource, /已全部入库，无需继续验收/);
+  assert.match(detailSource, /isPurchaseOrderReceivable \? \([\s\S]*?<aside className="purchase-detail-side">/);
+  assert.doesNotMatch(detailSource, /已全部入库，无需继续验收/);
 });
 
 test("completed purchase receipts expose their batch details and previewable inspection photos", () => {

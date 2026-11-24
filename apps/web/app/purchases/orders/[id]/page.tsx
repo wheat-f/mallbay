@@ -687,6 +687,7 @@ export default function PurchaseOrderDetailPage() {
               </Card>
             </div>
 
+            {isPurchaseOrderReceivable ? (
             <aside className="purchase-detail-side">
               <Card className="purchase-receiving-panel" title="到货验收录入">
                 <Radio.Group
@@ -699,15 +700,6 @@ export default function PurchaseOrderDetailPage() {
                   <Radio.Button value="receive">验收入库</Radio.Button>
                   <Radio.Button value="reject">拒收订单</Radio.Button>
                 </Radio.Group>
-                {!isPurchaseOrderReceivable ? (
-                  <Alert
-                    className="management-readonly-alert"
-                    type="success"
-                    showIcon
-                    title="已全部入库，无需继续验收"
-                    description="采购订单和入库进度已经完成，后续可在采购清单、入库批次和库存流水中查看记录。"
-                  />
-                ) : null}
                 {receiveActionMode === "receive" ? (
                 <Form
                   form={receiveForm}
@@ -1010,6 +1002,7 @@ export default function PurchaseOrderDetailPage() {
                 </div>
               </div>
             </aside>
+            ) : null}
           </section>
           <Modal
             title="补录或修改实际入库价"

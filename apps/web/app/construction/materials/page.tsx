@@ -105,9 +105,6 @@ export default function ConstructionMaterialsPage() {
         <Button icon={<ClockCircleOutlined />} onClick={() => router.push("/inventory/movements")}>
           查看库存流水
         </Button>
-        <Button type="primary" icon={<ToolOutlined />} onClick={() => router.push("/construction/tasks")}>
-          返回我的任务
-        </Button>
       </StorePageHeader>
 
       <section className="worker-materials-hero">
@@ -267,23 +264,6 @@ export default function ConstructionMaterialsPage() {
                     {item}
                   </span>
                 ))}
-              </div>
-            </Card>
-
-            <Card className="construction-materials-card" title="辅助入口">
-              <div className="construction-materials-actions">
-                <Button
-                  type="primary"
-                  icon={<InboxOutlined />}
-                  disabled={!hasPendingPickup}
-                  loading={pickupMutation.isPending}
-                  onClick={() => pickupMutation.mutate(pendingAllocationIds)}
-                >
-                  {!materialData ? "待选择工单" : hasPendingPickup ? "领取物料" : "已领取"}
-                </Button>
-                <Button icon={<ClockCircleOutlined />} onClick={() => router.push("/inventory/movements")}>
-                  查看损耗流水
-                </Button>
               </div>
             </Card>
           </aside>

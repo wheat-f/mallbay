@@ -14,8 +14,8 @@ test("purchases overview exposes purchase demand order receiving and supplier wo
   assert.match(purchasesPageSource, /供应商档案/);
   assert.match(purchasesPageSource, /只读模式/);
   assert.match(purchasesPageSource, /canManagePurchase/);
-  assert.match(purchasesPageSource, /href="\/purchases\/requirements"/);
-  assert.match(purchasesPageSource, /href="\/purchases\/orders"/);
+  assert.match(purchasesPageSource, /\/purchases\/requirements/);
+  assert.match(purchasesPageSource, /\/purchases\/orders/);
   assert.doesNotMatch(purchasesPageSource, /purchases-overview-shortcuts/);
   assert.doesNotMatch(purchasesPageSource, /title="采购工作区"/);
   assert.match(cssSource, /\.purchases-overview-shell/);

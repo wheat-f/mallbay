@@ -163,23 +163,6 @@ export default function ConstructionOrderDetailPage() {
 
         <section className="construction-detail-grid">
           <div className="construction-detail-main">
-            <Card className="construction-team-panel" title="订单客户与车辆">
-              <div className="construction-order-context-grid">
-                <div>
-                  <span>客户</span>
-                  <strong>{getOrderCustomerLabel(record)}</strong>
-                </div>
-                <div>
-                  <span>车辆</span>
-                  <strong>{getOrderVehicleLabel(record)}</strong>
-                </div>
-                <div>
-                  <span>预约时间</span>
-                  <strong>{formatOrderAppointment(record)}</strong>
-                </div>
-              </div>
-            </Card>
-
             <Card className="construction-team-panel" title={<><UsergroupAddOutlined /> 施工团队</>}>
               {assignedWorkers.length ? (
                 <div className="construction-worker-chip-grid">

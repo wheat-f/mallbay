@@ -183,7 +183,7 @@ test("inventory overview links only to inventory workspaces and purchases bounda
   assert.doesNotMatch(pageSource, /href="\/inventory\/adjustments"/);
   assert.match(pageSource, /href="\/inventory\/warehouses"/);
   assert.match(pageSource, /href="\/inventory\/movements"/);
-  assert.match(pageSource, /href="\/purchases"/);
+  assert.doesNotMatch(pageSource, /href="\/purchases"/);
   assert.doesNotMatch(pageSource, /href="\/inventory\/suppliers"/);
   assert.doesNotMatch(pageSource, /href="\/inventory\/purchase-orders"/);
 });

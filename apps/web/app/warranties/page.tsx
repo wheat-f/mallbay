@@ -143,20 +143,9 @@ export default function WarrantiesPage() {
       <StorePageHeader
         title="质保管理"
         description="查看最终交付后形成的电子质保卡、到期状态和售后追溯；未交付工单请从订单履约页完成最终交付。"
-      />
-
-      <section className="warranty-command-bar">
-        <div className="warranty-command-copy">
-          <span>质保工作台</span>
-          <strong>主列表展示已由最终交付形成的电子质保卡</strong>
-        </div>
-        <div className="warranty-command-actions">
-          <Button icon={<DownloadOutlined />} onClick={() => void exportWarrantyRecords()}>导出记录</Button>
-          <Button type="primary" icon={<SearchOutlined />} onClick={() => router.push("/orders")}>
-            查看订单履约
-          </Button>
-        </div>
-      </section>
+      >
+        <Button icon={<DownloadOutlined />} onClick={() => void exportWarrantyRecords()}>导出记录</Button>
+      </StorePageHeader>
 
       <div className="management-kpi-grid">
         {[
@@ -261,24 +250,6 @@ export default function WarrantiesPage() {
             ) : (
               <div className="warranty-mobile-empty">暂无待最终交付的质检通过工单</div>
             )}
-          </Card>
-          <Card className="warranty-preview-panel" title="电子质保说明">
-            <div className="warranty-guide-grid warranty-guide-grid-side">
-              <article className="warranty-launch-card">
-                <span><SafetyCertificateOutlined /></span>
-                <div>
-                  <h3>形成条件</h3>
-                  <p>质保只在最终交付事务中形成或激活，质检通过不提供独立生成入口。</p>
-                </div>
-              </article>
-              <article className="warranty-audit-guide">
-                <span><FileProtectOutlined /></span>
-                <div>
-                  <h3>查看条件</h3>
-                  <p>已存在质保记录后，可从主列表查看电子质保卡和售后追溯。</p>
-                </div>
-              </article>
-            </div>
           </Card>
         </aside>
       </section>

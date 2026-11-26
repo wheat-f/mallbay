@@ -1,7 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Empty, Table, Tag } from "antd";
-import { CheckCircleOutlined, ShoppingCartOutlined, TeamOutlined } from "@ant-design/icons";
+import { ShoppingCartOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { purchaseApi } from "../../src/lib/api";
@@ -53,14 +53,8 @@ export default function PurchasesOverviewPage() {
   return (
     <div className="management-page purchases-overview-shell">
       <StorePageHeader title="采购管理总览" description="汇总采购需求、采购订单、到货验收和供应商档案的当前状态。">
-        <Button href="/purchases/requirements" icon={<CheckCircleOutlined />}>
-          采购需求
-        </Button>
-        <Button href="/purchases/orders/create" disabled={!canManagePurchase} icon={<ShoppingCartOutlined />}>
+        <Button href="/purchases/orders/create" type="primary" disabled={!canManagePurchase} icon={<ShoppingCartOutlined />}>
           从需求创建采购单
-        </Button>
-        <Button href="/purchases/orders" type="primary" icon={<ShoppingCartOutlined />}>
-          采购订单
         </Button>
       </StorePageHeader>
 
@@ -79,95 +73,49 @@ export default function PurchasesOverviewPage() {
         <div className="purchase-module-content">
           <div className="management-kpi-grid">
             {[
-              ["采购需求", requirementCount, "待下单或待跟进"],
-              ["采购订单", orderCount, "当前采购订单总数"],
-              ["到货验收", overview.pendingInboundCount ?? 0, "待到货或部分到货"],
-              ["供应商档案", overview.supplierCount ?? 0, "可用供应商与历史快照"]
-            ].map(([label, value, description]) => (
-              <Card key={label} className="management-kpi-card" loading={overviewQuery.isLoading}>
-                <div className="management-kpi-label">{label}</div>
-                <div className="management-kpi-value">{value}</div>
-                <div className="management-kpi-desc">{description}</div>
-              </Card>
+              { label: "采购需求", value: requirementCount, description: "待下单或待跟进", href: "/purchases/requirements" },
+              { label: "采购订单", value: orderCount, description: "当前采购订单总数", href: "/purchases/orders" },
+              { label: "到货验收", value: overview.pendingInboundCount ?? 0, description: "待到货或部分到货", href: "/purchases/orders" },
+              { label: "供应商档案", value: overview.supplierCount ?? 0, description: "可用供应商与历史快照", href: "/purchases/suppliers" }
+            ].map((item) => (
+              <Link key={item.label} href={item.href} className="block no-underline">
+                <Card className="management-kpi-card" loading={overviewQuery.isLoading} hoverable>
+                  <div className="management-kpi-label">{item.label}</div>
+                  <div className="management-kpi-value">{item.value}</div>
+                  <div className="management-kpi-desc">{item.description}</div>
+                </Card>
+              </Link>
             ))}
           </div>
 
-          <section className="purchases-overview-grid">
-            <Card
-              className="inventory-prototype-card"
-              title="待跟进采购需求与订单"
-              extra={<Link href="/purchases/orders">查看全部订单 →</Link>}
-            >
-              {(overview.orders?.length ?? 0) > 0 ? (
-                <Table<PurchaseOrderPreview>
-                  rowKey={(row) => row.id ?? row.orderNo ?? "purchase-row"}
-                  size="small"
-                  pagination={false}
-                  scroll={{ x: "max-content" }}
-                  loading={overviewQuery.isLoading}
-                  dataSource={(overview.orders ?? []).slice(0, 5)}
-                  columns={[
-                    { title: "采购单号", dataIndex: "orderNo", width: 150, render: (v) => <span className="whitespace-nowrap">{v ?? "待生成单号"}</span> },
-                    { title: "供应商", dataIndex: "supplierName", width: 120, render: (v) => <span className="whitespace-nowrap">{v ?? "待确认"}</span> },
-                    { title: "状态", dataIndex: "status", width: 96, render: (v) => <Tag>{v ? getPurchaseOrderStatusLabel(v) : "进行中"}</Tag> },
-                    {
-                      title: "操作",
-                      width: 68,
-                      render: (_, row) => row.id ? <Link href={`/purchases/orders/${row.id}`}>处理</Link> : "-"
-                    }
-                  ]}
-                />
-              ) : (
-                <Empty description="暂无采购订单，可从需求创建采购单" />
-              )}
-            </Card>
-
-            <Card className="inventory-prototype-card" title="采购流转概览">
-              <div className="purchase-overview-flow">
-                <Link href="/purchases/requirements">
-                  <span>1</span>
-                  <strong>采购需求</strong>
-                  <small>查看缺货、人工申请和待转单需求</small>
-                </Link>
-                <Link href="/purchases/orders/create" aria-disabled={!canManagePurchase}>
-                  <span>2</span>
-                  <strong>从需求创建采购单</strong>
-                  <small>选择未生成订购的需求并补充采购信息</small>
-                </Link>
-                <Link href="/purchases/orders">
-                  <span>3</span>
-                  <strong>采购订单</strong>
-                  <small>处理审批、取消、到货验收和入库</small>
-                </Link>
-              </div>
-            </Card>
-
-            <Card className="inventory-prototype-card" title="采购工作入口">
-              <div className="purchase-overview-actions">
-                <Link href="/purchases/requirements">
-                  <CheckCircleOutlined />
-                  <span>
-                    <strong>采购需求列表</strong>
-                    <small>进入列表查看全部需求并处理转单</small>
-                  </span>
-                </Link>
-                <Link href="/purchases/orders">
-                  <ShoppingCartOutlined />
-                  <span>
-                    <strong>采购订单列表</strong>
-                    <small>进入列表查看订单和到货状态</small>
-                  </span>
-                </Link>
-                <Link href="/purchases/suppliers">
-                  <TeamOutlined />
-                  <span>
-                    <strong>供应商档案</strong>
-                    <small>维护联系人、评级和结算信息</small>
-                  </span>
-                </Link>
-              </div>
-            </Card>
-          </section>
+          <Card
+            className="inventory-prototype-card"
+            title="待跟进采购需求与订单"
+            extra={<Link href="/purchases/orders">查看全部订单 →</Link>}
+          >
+            {(overview.orders?.length ?? 0) > 0 ? (
+              <Table<PurchaseOrderPreview>
+                rowKey={(row) => row.id ?? row.orderNo ?? "purchase-row"}
+                size="small"
+                pagination={false}
+                scroll={{ x: "max-content" }}
+                loading={overviewQuery.isLoading}
+                dataSource={(overview.orders ?? []).slice(0, 5)}
+                columns={[
+                  { title: "采购单号", dataIndex: "orderNo", width: 150, render: (v) => <span className="whitespace-nowrap">{v ?? "待生成单号"}</span> },
+                  { title: "供应商", dataIndex: "supplierName", width: 120, render: (v) => <span className="whitespace-nowrap">{v ?? "待确认"}</span> },
+                  { title: "状态", dataIndex: "status", width: 96, render: (v) => <Tag>{v ? getPurchaseOrderStatusLabel(v) : "进行中"}</Tag> },
+                  {
+                    title: "操作",
+                    width: 68,
+                    render: (_, row) => row.id ? <Link href={`/purchases/orders/${row.id}`}>处理</Link> : "-"
+                  }
+                ]}
+              />
+            ) : (
+              <Empty description="暂无采购订单，可从需求创建采购单" />
+            )}
+          </Card>
         </div>
       </div>
     </div>

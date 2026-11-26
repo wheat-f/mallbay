@@ -205,17 +205,6 @@ export default function InventoryOverviewPage() {
         </div>
 
         <aside className="inventory-overview-aside">
-          <Card className="inventory-prototype-card" title="库存流程入口">
-            <div className="inventory-overview-shortcuts">
-              <Link href="/inventory/matching"><strong>订单库存匹配</strong><span>查看匹配建议、锁库结果和待出库订单</span><ArrowRightOutlined /></Link>
-              {canManageInventory ? (
-                <Link href="/inventory/warehouses"><strong>仓库管理</strong><span>配置门店仓库、库区和启用状态</span><ArrowRightOutlined /></Link>
-              ) : null}
-              <Link href="/inventory/movements"><strong>库存流水</strong><span>按产品、批次、订单和操作人追踪</span><ArrowRightOutlined /></Link>
-              <Link href="/purchases"><strong>采购管理</strong><span>采购需求、采购订单、到货验收</span><ArrowRightOutlined /></Link>
-            </div>
-          </Card>
-
           <Card className="inventory-prototype-card" title="锁库待出库">
             <div className="inventory-overview-lock-list">
               {lockedRows.length > 0 ? lockedRows.map((row) => (

@@ -296,7 +296,6 @@ export function ConstructionCostConfigPage({ section = "hub" }: { section?: Cons
         <Col xs={24} md={12} xl={8}><Card className="construction-hub-card" title={<SectionTitle title="店长：施工服务项目" help="定义门店可销售和施工的服务项目，并为同类施工指定同一施工组。" />} extra={<Tag color="blue">基础档案</Tag>}><Typography.Paragraph type="secondary">先维护服务项目和施工组。收费标准不在这里设置。</Typography.Paragraph><Link href="/orders/pricing/construction-costs/services"><Button type="primary" icon={<PlusOutlined />}>维护服务项目</Button></Link></Card></Col>
         <Col xs={24} md={12} xl={8}><Card className="construction-hub-card" title={<SectionTitle title="财务：岗位小时成本" help="维护施工岗位的内部小时成本；该成本不向客户或销售展示。" />} extra={<Tag color="gold">财务维护</Tag>}><Typography.Paragraph type="secondary">独立新建、核对并发布成本版本，供店长选择。</Typography.Paragraph><Link href="/orders/pricing/construction-costs/rates"><Button type="primary" icon={<SettingOutlined />}>{canViewRateAmounts ? "维护岗位成本" : "查看成本版本"}</Button></Link></Card></Col>
         <Col xs={24} md={12} xl={8}><Card className="construction-hub-card" title={<SectionTitle title="店长：施工收费与标准工时" help="将主项目收费、追加量和班组工时写入建议价草稿。" />} extra={<Tag color="purple">随建议价发布</Tag>}><Typography.Paragraph type="secondary">一组只维护一套主标准，附加产品按追加收费和追加工时计算。</Typography.Paragraph><Link href="/orders/pricing/construction-costs/standards"><Button type="primary" icon={<SaveOutlined />}>维护施工标准</Button></Link></Card></Col>
-        <Col xs={24}><Alert type="info" showIcon title="推荐配置顺序：服务项目 → 岗位小时成本 → 施工收费与标准工时 → 建议价发布与试运行" description="岗位、施工类型、地点、产品分类和单位均来自系统字典。店长和财务只进入各自职责页面，建议价发布仍由店长在“建议价设置”中操作。" /></Col>
       </Row> : null}
 
       {showServices ? <Card title={<SectionTitle title="店长：维护施工服务项目" help="先定义门店可销售和施工的服务项目；后续施工收费与标准工时均从这里选择。" />} extra={<Tag color="blue">基础档案</Tag>}>
@@ -351,8 +350,7 @@ export function ConstructionCostConfigPage({ section = "hub" }: { section?: Cons
 
       {showStandards ? <Card title={<SectionTitle title="施工标准配置" help="由店长为一个施工组定义对客主项目收费、追加量、标准用时和班组构成；这些业务标准与建议价草稿一同发布。" />} extra={<Tag color="purple">店长维护 · 随建议价版本发布</Tag>}>
         {!draft ? <Alert type="warning" showIcon title="尚无可编辑草稿" description={<span>请先到 <Link href="/orders/pricing">建议价设置</Link> 点击“开始设置建议价”或“编辑当前建议价”，再返回本页维护施工标准。</span>} /> : <>
-          <Alert type="info" showIcon style={{ marginBottom: 16 }} title="同一施工组只保存一条主标准，追加量不再新增标准" description="选择一个主施工项目后，填写一次主项目收费和主项目标准工时；订单中同组的第 2 个及之后产品，自动按“每个追加项目收费/工时”累加。不要再为追加产品新建相同适用范围的标准。只有收费确实随单个产品数量分段变化时，才新增下一条且数量区间必须不重叠，例如 1–2 与 3–5。" />
-          <Typography.Paragraph type="secondary">选择已发布岗位小时成本版本，维护一条主项目及其追加量的对客收费、标准工时和班组配置。系统会在保存前和服务端再次按施工组检查冲突。</Typography.Paragraph>
+          <Alert type="info" showIcon style={{ marginBottom: 16 }} title="同一施工组只保存一条主标准，追加量不再新增标准" description="选择一个主施工项目后，填写一次主项目收费和主项目标准工时；订单中同组的第 2 个及之后产品，自动按“每个追加项目收费/工时”累加。系统会在保存前和服务端再次按施工组检查冲突。" />
           <Form<StandardValues> layout="vertical" onFinish={(values) => saveStandards.mutate({ ...values, standards: draft.constructionStandards ?? [] })} initialValues={{ positionCostRateVersionId: draft.positionCostRateVersionId ?? publishedRateVersions[0]?.id, constructionLocationCode: locationOptions[0]?.value, crewRoles: positionOptions.slice(0, 1).map((item) => ({ positionTypeCode: item.value, workerCount: 1, workMinutes: 60 })) }}>
             <Row gutter={[16, 0]}>
               <Col xs={24} sm={12} lg={6}><Form.Item label={<HelpLabel label="岗位小时成本版本" help="选择财务已发布的内部成本版本。系统按该版本和下方班组工时计算预计施工成本。" />} name="positionCostRateVersionId" rules={[{ required: true, message: "请选择已发布版本" }]}><Select placeholder="请选择已发布版本" options={publishedRateVersions.map((item) => ({ value: item.id, label: `v${item.version}（${dayjs(item.effectiveFrom).format("YYYY-MM-DD")}）` }))} /></Form.Item></Col>
@@ -390,11 +388,6 @@ export function ConstructionCostConfigPage({ section = "hub" }: { section?: Cons
             { title: <HelpLabel label="主施工项目" help="该施工组唯一的主项目。额外同组产品不另建标准，而是使用追加规则。" />, render: (_, row) => row.serviceItem?.name ?? "未找到服务项目" }, { title: <HelpLabel label="适用范围" help="以中文展示车型、地点、产品分类和销售单位；“不限”表示不限制该条件。" />, render: (_, row) => [row.vehiclePriceClass?.name ?? "全部车型", locationLabel(row.constructionLocationCode), categoryLabel(row.productCategoryCode), unitLabel(row.salesUnitCode)].join(" / ") }, { title: <HelpLabel label="主项目收费" help="同组第一个产品收取一次的对客施工服务费。" />, render: (_, row) => `¥${(row.baseConstructionChargeCents / 100).toFixed(2)}` }, { title: <HelpLabel label="追加规则" help="同组第 2 个及之后每个产品，按此金额与工时累加；不需要另建施工标准。" />, render: (_, row) => `每个追加 ¥${((row.addonChargeCents ?? 0) / 100).toFixed(2)} / ${row.addonWorkMinutes ?? 0} 分钟` }, { title: <HelpLabel label="主项目工时" help="用于排班和预计成本计算的主项目标准时长。" />, dataIndex: "standardWorkMinutes", render: (value) => `${value} 分钟` }, { title: <HelpLabel label="班组" help="以中文岗位名展示标准班组人数和每人作业时长。" />, render: (_, row) => row.crewRoles.map((role) => `${positionLabel(role.positionTypeCode)} ×${role.workerCount}（${role.workMinutes}分）`).join("；") }, { title: <HelpLabel label="操作" help="仅草稿标准可以移除；已发布版本不会被原地修改。" />, render: (_, row) => row.id ? <Popconfirm title="移除这条草稿施工标准？" onConfirm={() => removeStandard.mutate(row.id!)}><Button danger size="small">移除</Button></Popconfirm> : "—" }
           ]} locale={{ emptyText: <Empty description="尚未配置施工收费与标准工时" /> }} />
         </>}
-      </Card> : null}
-
-      {showStandards ? <Card size="small" title={<SectionTitle title="发布与启用检查" help="施工标准随建议价草稿一同检查、发布和启用；请先在试运行中核对建议价、收费与成本。" />}>
-        <Typography.Paragraph>返回“建议价设置”执行“检查规则和冲突”及“确认发布并生效”。随后先选择“观察试运行”，核对典型订单的建议价、施工收费和预计成本；预检无误后才选择“正式启用”。</Typography.Paragraph>
-        <div className="construction-form-actions"><Link href="/orders/pricing?view=versions"><Button type="primary" icon={<CheckCircleOutlined />}>进入发布与试运行</Button></Link><Link href="/orders/pricing/simulator"><Button icon={<ExperimentOutlined />}>试算典型订单</Button></Link></div>
       </Card> : null}
     </Space>
   </div>;

@@ -310,7 +310,7 @@ test("after-sales task center is a web management task board", () => {
   assert.match(pageSource, /afterSalesApi\.list/);
   assert.match(pageSource, /worker-after-sales-task-page/);
   assert.match(pageSource, /worker-after-sales-hero/);
-  assert.match(pageSource, /worker-after-sales-kpis/);
+  assert.doesNotMatch(pageSource, /worker-after-sales-kpis/);
   assert.match(pageSource, /worker-after-sales-tabs/);
   assert.match(pageSource, /worker-after-sales-table/);
   assert.match(pageSource, /worker-after-sales-mobile-cards/);

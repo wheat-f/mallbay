@@ -735,13 +735,28 @@ body {
   font-weight: 700;
 }
 
-.management-content .ant-btn-primary {
+.management-content .ant-btn-primary:not(:disabled):not(.ant-btn-disabled):not(.ant-btn-background-ghost):not(.ant-btn-variant-outlined) {
   background: var(--mb-primary);
+  color: #ffffff;
   box-shadow: 0 6px 16px rgb(15 58 95 / 0.12);
 }
 
-.management-content .ant-btn-primary:not(:disabled):not(.ant-btn-disabled):hover {
+.management-content .ant-btn-primary:not(:disabled):not(.ant-btn-disabled):not(.ant-btn-background-ghost):not(.ant-btn-variant-outlined):hover {
   background: var(--mb-primary-fixed-variant);
+  color: #ffffff;
+}
+
+.management-content .ant-btn-primary.ant-btn-background-ghost:not(:disabled):not(.ant-btn-disabled) {
+  background: #ffffff;
+  color: var(--mb-primary);
+  border-color: var(--mb-primary);
+  box-shadow: none;
+}
+
+.management-content .ant-btn-primary.ant-btn-background-ghost:not(:disabled):not(.ant-btn-disabled):hover {
+  background: rgb(15 58 95 / 0.06);
+  color: var(--mb-primary-fixed-variant);
+  border-color: var(--mb-primary-fixed-variant);
 }
 
 .management-content .ant-input,
@@ -26685,4 +26700,185 @@ button:hover .avatar-hover-mask {
 
 .purchases-overview-grid > .ant-card .ant-card-body {
   flex: 1;
+}
+
+/* Order Detail Workspace Redesign (2-column asymmetric layout + unified financial strip) */
+.order-detail-hero {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 16px 20px 18px;
+}
+
+.order-detail-back-row {
+  display: flex;
+  align-items: center;
+}
+
+.order-detail-back-btn.ant-btn {
+  padding-inline: 4px;
+  color: var(--mb-text-muted);
+  font-weight: 600;
+}
+
+.order-detail-back-btn.ant-btn:hover {
+  color: var(--mb-primary);
+  background: transparent;
+}
+
+.order-detail-header-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px 20px;
+}
+
+.order-financial-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  overflow: hidden;
+}
+
+.order-financial-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.order-financial-cell:nth-child(odd) {
+  border-right: 1px solid #f1f5f9;
+}
+
+.order-financial-label {
+  color: var(--mb-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.order-financial-value {
+  color: var(--mb-text-primary);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-financial-cell.is-outstanding .order-financial-value {
+  color: #0f3a5f;
+}
+
+.order-financial-note {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+@media (min-width: 900px) {
+  .order-financial-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .order-financial-cell {
+    border-bottom: 0;
+    border-right: 1px solid #e2e8f0;
+  }
+
+  .order-financial-cell:last-child {
+    border-right: 0;
+  }
+}
+
+@media (min-width: 1100px) {
+  .order-detail-bento {
+    grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+    gap: 20px;
+  }
+
+  .order-info-grid-2col {
+    grid-template-columns: 110px minmax(0, 1fr) 110px minmax(0, 1fr);
+    gap: 12px 18px;
+  }
+}
+
+.order-related-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 10px;
+}
+
+.order-related-link.ant-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  height: auto;
+  padding: 10px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.order-related-link.ant-btn strong {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.order-audit-timeline > div > strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+/* Construction Assignments Toolbar Distill */
+.dispatch-management-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+
+.dispatch-management-heading {
+  min-width: 0;
+}
+
+.dispatch-management-heading h1 {
+  margin: 0;
+  color: var(--mb-text-primary);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 28px;
+}
+
+.dispatch-management-heading p {
+  margin: 2px 0 0;
+  color: var(--mb-text-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.dispatch-management-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.order-related-link.ant-btn:hover {
+  border-color: #bfd4ea;
+  background: #eff6ff;
+}
+
+.order-related-link.ant-btn .anticon-right {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .order-related-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

@@ -118,7 +118,6 @@ export default function PurchaseRequirementsPage() {
   return (
     <div className="management-page purchases-requirements-page">
       <StorePageHeader title="采购需求" description="查看缺货需求、人工采购申请，并将待处理需求转为采购订单。">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/purchases")}>返回采购总览</Button>
         <Button type="primary" icon={<PlusOutlined />} disabled={!canManagePurchase} onClick={() => setIsCreateDrawerOpen(true)}>
           新建采购需求
         </Button>

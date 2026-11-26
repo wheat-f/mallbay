@@ -97,7 +97,6 @@ export default function PurchasesOrdersPage() {
   return (
     <div className="management-page purchases-orders-page">
       <StorePageHeader title="采购订单" description="查看采购订单、审批状态、预计到货和到货验收进度。">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/purchases")}>返回采购总览</Button>
         <Select
           aria-label="采购订单导出维度"
           value={exportDimension}

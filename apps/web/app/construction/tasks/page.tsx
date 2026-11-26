@@ -135,21 +135,6 @@ export default function ConstructionTasksPage() {
         <Tag color="processing">实时同步</Tag>
       </section>
 
-      <section className="management-kpi-grid management-kpi-grid-four worker-task-center-kpis">
-        {[
-          ["今日任务", todayCount, "按预约日期统计"],
-          ["待开工", pendingCount, "已派工待执行"],
-          ["施工中", inProgressCount, "正在履约"],
-          ["已完成", completedCount, "已提交完工"]
-        ].map(([label, value, description]) => (
-          <Card key={label} className="management-kpi-card">
-            <div className="management-kpi-label">{label}</div>
-            <div className="management-kpi-value">{value}</div>
-            <div className="management-kpi-desc">{description}</div>
-          </Card>
-        ))}
-      </section>
-
       <nav className="worker-task-center-filters mb-segmented-tabs" aria-label="施工任务状态筛选">
         {taskSegments.map((segment) => (
           <button

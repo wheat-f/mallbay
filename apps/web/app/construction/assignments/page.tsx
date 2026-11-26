@@ -243,28 +243,13 @@ export default function ConstructionAssignmentsPage() {
   return (
     <div className="management-page dispatch-page">
       <section className="dispatch-management-toolbar" aria-label="施工管理入口">
-        <div className="dispatch-management-summary">
-          {[
-            { label: "待派单", value: workOrderCounts.pending },
-            { label: "施工中", value: workOrderCounts.active },
-            { label: "已完工", value: workOrderCounts.completed },
-            { label: "施工工单", value: workOrderCounts.all }
-          ].map((item) => (
-            <article key={item.label}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-            </article>
-          ))}
+        <div className="dispatch-management-heading">
+          <h1>施工管理</h1>
+          <p>选择待派单或履约中工单，指派施工团队并查看实时进度</p>
         </div>
         <div className="dispatch-management-toolbar-actions">
           <Button icon={<SettingOutlined />} onClick={() => router.push("/construction/capacities")}>
             施工产能设置
-          </Button>
-          <Button icon={<CalendarOutlined />} onClick={() => router.push("/construction/schedules")}>
-            施工排班
-          </Button>
-          <Button icon={<ToolOutlined />} onClick={() => router.push("/construction/tasks")}>
-            施工工单
           </Button>
         </div>
       </section>
@@ -737,13 +722,8 @@ function PendingDispatchPanel({
         <div className="dispatch-info-panel dispatch-location-panel">
           <h3>外出施工信息</h3>
           <p>{selectedOrder?.outsideAddress || "到店施工或未填写外出地址"}</p>
-          <strong>外派施工门店协同</strong>
-          <p>本店下单，外店或外出地址施工时，请在施工排班中维护当天人员去向，并在订单详情保留地址和照片。</p>
           <Button size="small" onClick={onOpenOrder}>
             查看订单详情
-          </Button>
-          <Button size="small" onClick={onOpenSchedule}>
-            施工排班
           </Button>
         </div>
       </div>
@@ -792,17 +772,6 @@ function AssignedConstructionRecordPanel({
           </div>
         </div>
         <Button type="primary" onClick={onOpenDetail}>查看施工工单</Button>
-      </div>
-
-      <div className="dispatch-info-grid dispatch-order-customer-grid">
-        <div className="dispatch-info-panel">
-          <h3>客户信息</h3>
-          <strong>{getOrderCustomerLabel(record.order)}</strong>
-        </div>
-        <div className="dispatch-info-panel">
-          <h3>车辆信息</h3>
-          <strong>{getOrderVehicleLabel(record.order)}</strong>
-        </div>
       </div>
 
       <div className="dispatch-info-grid">

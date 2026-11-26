@@ -235,26 +235,6 @@ function MembersContent() {
           ))}
         </section>
 
-        <section className="members-related-workspaces" aria-label="相关工作区">
-          <div className="members-related-heading">
-            <CalendarOutlined />
-            <span>相关工作区</span>
-          </div>
-          <div className="members-related-grid">
-            {MEMBER_RELATED_WORKSPACES.map((item) => (
-              <Link key={item.href} href={item.href} className="members-related-workspace">
-                <span className="members-related-icon">
-                  {item.icon === "calendar" ? <CalendarOutlined /> : <TeamOutlined />}
-                </span>
-                <span>
-                  <strong>{item.title}</strong>
-                  <small>{item.description}</small>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-
         <section className="members-layout">
           <Card className="management-filter-card members-filter-panel">
             <div className="members-filter-heading">

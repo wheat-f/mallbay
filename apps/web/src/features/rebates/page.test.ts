@@ -71,7 +71,7 @@ test("rebates workflow tabs switch to matching process queues", () => {
   assert.match(pageSource, /getRebateWorkflowCounts/);
   assert.match(pageSource, /const activeWorkflow =/);
   assert.match(pageSource, /const stageRebateRows =/);
-  assert.match(pageSource, /rebate-stage-summary/);
+  assert.doesNotMatch(pageSource, /rebate-stage-summary/);
   assert.match(pageSource, /rebate-stage-list-title/);
   assert.match(workflowSource, /业务审核队列/);
   assert.match(workflowSource, /财务审批队列/);

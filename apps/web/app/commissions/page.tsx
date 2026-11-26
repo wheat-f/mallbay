@@ -231,9 +231,6 @@ export default function CommissionsPage() {
         <Button href="/commissions/settlements" icon={<HistoryOutlined />}>
           提成结算
         </Button>
-        <Button type="primary" icon={<SaveOutlined />} onClick={() => ruleForm.submit()}>
-          保存所有配置
-        </Button>
       </div>
 
       <div className="commission-rule-tabs" role="tablist" aria-label="佣金规则类型">

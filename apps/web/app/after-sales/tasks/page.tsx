@@ -55,9 +55,6 @@ export default function AfterSalesTasksPage() {
         <Button icon={<ReloadOutlined />} onClick={() => listQuery.refetch()}>
           刷新任务
         </Button>
-        <Button type="primary" href="/after-sales" icon={<CustomerServiceOutlined />}>
-          返回售后工作台
-        </Button>
       </StorePageHeader>
 
       <section className="worker-after-sales-hero">
@@ -67,15 +64,6 @@ export default function AfterSalesTasksPage() {
           <span>个工单需要跟进</span>
         </div>
         <p>优先处理开放工单，进入详情后完成责任判定、处罚记录和质保关联。</p>
-      </section>
-
-      <section className="worker-after-sales-kpis">
-        {tabs.map((tab) => (
-          <article key={tab.key}>
-            <span>{tab.label}</span>
-            <strong>{counts[tab.key]}</strong>
-          </article>
-        ))}
       </section>
 
       <nav className="worker-after-sales-tabs" aria-label="售后任务状态">
@@ -160,12 +148,9 @@ export default function AfterSalesTasksPage() {
             {
               title: "操作",
               render: (_, item) => (
-                <Space>
-                  <Button href={`/after-sales/${item.id}`}>查看详情</Button>
-                  <Button type="primary" icon={<PlayCircleOutlined />} href={`/after-sales/${item.id}`}>
-                    立即处理
-                  </Button>
-                </Space>
+                <Button type="primary" icon={<PlayCircleOutlined />} href={`/after-sales/${item.id}`}>
+                  立即处理
+                </Button>
               )
             }
           ]}
@@ -210,7 +195,6 @@ export default function AfterSalesTasksPage() {
                   <em>{getAfterSaleResponsibilityLabel(item.responsibility)}</em>
                 </div>
                 <div className="worker-after-sales-actions">
-                  <Button href={`/after-sales/${item.id}`}>查看详情</Button>
                   <Button type="primary" icon={<PlayCircleOutlined />} href={`/after-sales/${item.id}`}>
                     立即处理
                   </Button>

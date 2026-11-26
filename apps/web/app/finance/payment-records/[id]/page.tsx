@@ -205,31 +205,12 @@ export default function PaymentRecordDetailPage() {
                     value={record.createdById ? "已记录经办人" : "待确认经办人"}
                   />
                   <InfoItem label="门店" value={storeName ?? "当前门店"} />
-                </div>
-              </Card>
-
-              <Card className="finance-record-detail-panel">
-                <div className="finance-record-section-title">
-                  <FileSearchOutlined />
-                  <h2>交易明细</h2>
-                </div>
-                <div className="finance-record-detail-list">
                   <InfoItem
-                    label="摘要"
-                    value={
-                      record.note || getPaymentRecordTypeLabel(record.type)
-                    }
+                    label="财务备注"
+                    value={record.note?.trim() || "暂无财务备注"}
                   />
                   <InfoItem
-                    label="金额方向"
-                    value={getDirectionLabel(record)}
-                  />
-                  <InfoItem
-                    label="账户/状态"
-                    value={getPaymentAccountLabel(record)}
-                  />
-                  <InfoItem
-                    label="创建时间"
+                    label="记录时间"
                     value={formatRecordDateTime(record.createdAt)}
                   />
                 </div>
@@ -270,11 +251,6 @@ export default function PaymentRecordDetailPage() {
                     {maskAccountNo(record.account?.accountNo)}
                   </span>
                 </div>
-                <div className="finance-record-actions">
-                  <Button onClick={() => router.push("/finance/ledger")}>
-                    返回流水列表
-                  </Button>
-                </div>
               </Card>
 
               <Card className="finance-record-detail-panel">
@@ -295,41 +271,6 @@ export default function PaymentRecordDetailPage() {
                       </div>
                     </div>
                   ))}
-                </div>
-              </Card>
-
-              <Card className="finance-record-detail-panel">
-                <div className="finance-record-section-title">
-                  <PaperClipOutlined />
-                  <h2>打款备注与入账说明</h2>
-                </div>
-                <div className="finance-record-voucher-panel">
-                  <div className="finance-record-voucher-head">
-                    <div>
-                      <span>业务类型</span>
-                      <strong>{getPaymentRecordTypeLabel(record.type)}</strong>
-                    </div>
-                    <Tag
-                      color={
-                        record.direction === "INCOME" ? "success" : "warning"
-                      }
-                    >
-                      {getDirectionLabel(record)}
-                    </Tag>
-                  </div>
-                  <div className="finance-record-voucher-summary">
-                    <span>发生金额</span>
-                    <strong>{formatCentsAsYuan(record.amountCents)}</strong>
-                  </div>
-                  <div className="finance-record-voucher-note">
-                    <span>财务备注</span>
-                    <p>{record.note?.trim() || "暂无财务备注"}</p>
-                  </div>
-                  <div className="finance-record-voucher-time">
-                    <span>
-                      记录时间: {formatRecordDateTime(record.createdAt)}
-                    </span>
-                  </div>
                 </div>
               </Card>
             </aside>

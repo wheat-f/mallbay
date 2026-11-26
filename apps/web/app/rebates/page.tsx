@@ -209,25 +209,6 @@ export default function RebatesPage() {
             </ul>
           </Card>
 
-          <div className="rebate-stage-summary">
-            <button type="button" onClick={() => setActiveRebateSection("review")}>
-              <span>待业务审核</span>
-              <strong>{rebateWorkflowCounts.review}</strong>
-            </button>
-            <button type="button" onClick={() => setActiveRebateSection("finance")}>
-              <span>待财务审批</span>
-              <strong>{rebateWorkflowCounts.finance}</strong>
-            </button>
-            <button type="button" onClick={() => setActiveRebateSection("payout")}>
-              <span>待返利发放</span>
-              <strong>{rebateWorkflowCounts.payout}</strong>
-            </button>
-            <button type="button" onClick={() => setActiveRebateSection("report")}>
-              <span>已发放 / 已驳回</span>
-              <strong>{rebateWorkflowCounts.paid} / {rebateWorkflowCounts.rejected}</strong>
-            </button>
-          </div>
-
           <Card
             className="rebate-application-list"
             title={

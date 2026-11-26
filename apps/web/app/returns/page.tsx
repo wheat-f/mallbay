@@ -239,7 +239,7 @@ export default function ReturnsPage() {
 
   return (
     <div className="management-page">
-      <StorePageHeader title="退货处理" description="按状态机处理门店销售退货、采购退货、出入库与财务结算。" backHref="/purchases" backLabel="返回采购总览">
+      <StorePageHeader title="退货处理" description="按状态机处理门店销售退货、采购退货、出入库与财务结算。">
         <Button icon={<ReloadOutlined />} loading={returnsQuery.isFetching} onClick={() => void returnsQuery.refetch()}>
           刷新列表
         </Button>

@@ -58,21 +58,11 @@ test("members management maps legacy construction position query to craftsman vi
   assert.match(source, /router\.replace/);
 });
 
-test("members management exposes construction workspaces as related links", () => {
+test("members management omits redundant related workspace links already in sidebar", () => {
   const source = readFileSync(pagePath, "utf8");
-  const cssSource = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n");
 
-  assert.match(source, /MEMBER_RELATED_WORKSPACES/);
-  assert.match(source, /相关工作区/);
-  assert.match(source, /施工派单/);
-  assert.match(source, /施工容量/);
-  assert.match(source, /请假审批/);
-  assert.match(source, /href: "\/construction\/assignments"/);
-  assert.match(source, /href: "\/construction\/capacities"/);
-  assert.match(source, /href: "\/construction\/leave-approvals"/);
-  assert.doesNotMatch(source, /href: "\/construction\/schedules"/);
-  assert.match(cssSource, /\.members-related-workspaces/);
-  assert.match(cssSource, /\.members-related-workspace/);
+  assert.doesNotMatch(source, /相关工作区/);
+  assert.doesNotMatch(source, /members-related-workspaces/);
 });
 
 test("members management filter uses a horizontal prototype toolbar", () => {

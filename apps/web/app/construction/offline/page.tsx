@@ -161,6 +161,9 @@ export default function ConstructionOfflinePage() {
   return (
     <div className="management-page worker-offline-page">
       <StorePageHeader title="离线上传队列" description="查看施工照片、任务状态和请假申请的本地待同步记录。">
+        <Button danger icon={<DeleteOutlined />} aria-label="清理缓存" onClick={clearQueue}>
+          清理缓存
+        </Button>
         <Button icon={paused ? <PlayCircleOutlined /> : <PauseOutlined />} onClick={() => setPaused((current) => !current)}>
           {paused ? "继续同步" : "暂停同步"}
         </Button>
@@ -188,23 +191,6 @@ export default function ConstructionOfflinePage() {
             <span>/ {maxCacheSizeMb} MB 已用</span>
           </div>
           <Progress percent={Math.min(Math.round((cacheUsedMb / maxCacheSizeMb) * 100), 100)} showInfo={false} />
-        </Card>
-
-        <Card className="construction-offline-actions" title="队列操作">
-          <Space wrap>
-            <Button type="primary" icon={<SyncOutlined spin={syncMutation.isPending} />} loading={syncMutation.isPending} onClick={handleSync}>
-              全部同步
-            </Button>
-            <Button icon={paused ? <PlayCircleOutlined /> : <PauseOutlined />} onClick={() => setPaused((current) => !current)}>
-              {paused ? "继续同步" : "暂停同步"}
-            </Button>
-            <Button danger icon={<DeleteOutlined />} aria-label="清理缓存" onClick={clearQueue}>
-              清理缓存
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={() => window.location.reload()}>
-              刷新
-            </Button>
-          </Space>
         </Card>
       </section>
 

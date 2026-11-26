@@ -35,14 +35,14 @@ test("warranties home does not expose an independent warranty creation route", (
   const pageSource = readFileSync("app/warranties/page.tsx", "utf8");
   assert.doesNotMatch(pageSource, /warranties\/create/);
   assert.doesNotMatch(pageSource, /生成电子质保/);
-  assert.match(pageSource, /最终交付事务中形成或激活/);
+  assert.match(pageSource, /查看最终交付后形成的电子质保卡/);
 });
 
 test("warranties pages keep the responsive workspace classes", () => {
   const pageSource = readFileSync("app/warranties/page.tsx", "utf8");
   const cssSource = readFileSync("app/globals.css", "utf8");
 
-  assert.match(pageSource, /warranty-command-bar/);
+  assert.doesNotMatch(pageSource, /warranty-command-bar/);
   assert.match(pageSource, /warranty-filter-panel/);
   assert.match(pageSource, /warranty-workspace-list/);
   assert.match(pageSource, /warranty-mobile-cards/);

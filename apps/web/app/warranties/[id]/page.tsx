@@ -9,8 +9,7 @@ import {
   FileProtectOutlined,
   HistoryOutlined,
   LinkOutlined,
-  SafetyCertificateOutlined,
-  StopOutlined
+  SafetyCertificateOutlined
 } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
@@ -114,9 +113,6 @@ export default function WarrantyDetailPage() {
               </Button>
               <Button icon={<HistoryOutlined />} onClick={() => setIsWarrantyLogOpen(true)}>
                 查看质保日志
-              </Button>
-              <Button danger icon={<StopOutlined />}>
-                作废/重开质保
               </Button>
               <Button type="primary" icon={<DownloadOutlined />} onClick={() => void downloadWarrantyCard()}>
                 下载电子质保卡
@@ -307,7 +303,7 @@ function getWarrantySummaryItems(warranty: Parameters<typeof getWarrantyOrderLab
   const order = warranty.order;
   return [
     { label: "客户姓名", value: order?.customer?.companyName ?? order?.customer?.personalName ?? order?.customer?.name ?? "-" },
-    { label: "手机号码", value: "联系方式待确认" },
+    { label: "客户类型", value: order?.customer?.companyName ? "企业客户" : "个人客户" },
     { label: "车牌号码", value: order?.vehicle?.plateNo ?? order?.vehicle?.carPlate ?? "-" },
     { label: "车辆型号", value: order?.vehicle?.model ?? order?.vehicle?.carModel ?? "-" }
   ];

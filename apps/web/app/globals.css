@@ -25591,3 +25591,1098 @@ button:hover .avatar-hover-mask {
   color: #124b73;
   text-decoration: underline;
 }
+
+
+/* ─── Unified Shell, Missing Tokens & Broken-Layout Fixes ────── */
+:root {
+  --mb-brand: var(--mb-primary);
+  --mb-primary-soft: #eef4fa;
+  --mb-border-strong: #cbd5e1;
+  --mb-shadow-xs: 0 1px 2px rgb(15 23 42 / 0.04);
+  --mb-shadow-card: var(--mb-shadow-sm);
+  --mb-shadow-subtle: var(--mb-shadow-xs);
+  --mb-surface-muted: #f3f4f6;
+}
+
+.page-header,
+.page-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Remove 248px second sidebar on /purchases/* by turning PurchaseModuleNav into a horizontal sub-nav strip */
+.purchase-module-layout {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.purchase-module-nav {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.purchase-module-nav-title {
+  padding: 0 6px 0 4px;
+  font-size: 14px;
+  color: var(--mb-primary);
+  white-space: nowrap;
+}
+
+.purchase-module-nav nav {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 1;
+  gap: 8px;
+}
+
+.purchase-module-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--mb-radius-md);
+  white-space: nowrap;
+}
+
+.purchase-module-nav a span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.purchase-module-nav a small {
+  display: none;
+}
+
+@media (min-width: 1180px) {
+  .purchase-module-content .purchase-detail-workspace {
+    grid-template-columns: minmax(0, 1.28fr) minmax(380px, 0.72fr);
+    align-items: start;
+  }
+
+  .purchase-module-content .purchase-detail-side {
+    position: sticky;
+    top: 84px;
+  }
+}
+
+/* Fix 10-field receive batch row grid in /purchases/orders/[id] */
+.purchase-receive-batch-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 12px;
+  padding: 14px;
+  border: 1px solid var(--mb-border);
+  border-radius: var(--mb-radius-md);
+  background: var(--mb-surface-alt);
+}
+
+.purchase-receive-batch-row > .ant-btn {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
+@media (max-width: 760px) {
+  .purchase-receive-batch-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Fix /construction/materials: show batch verification & loss controls on desktop, align 4 summary cards */
+.worker-materials-page .construction-materials-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.worker-materials-page .construction-materials-batch-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+@media (max-width: 900px) {
+  .worker-materials-page .construction-materials-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .worker-materials-page .construction-materials-batch-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Fix /orders/pricing sticky footer offset & grid track counts */
+.pricing-workspace-page > .pricing-workspace-footer {
+  left: 240px;
+  right: 0;
+}
+
+.pricing-publish-checks,
+.pricing-simulator-condition-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .pricing-workspace-page > .pricing-workspace-footer {
+    left: 0;
+    bottom: 76px;
+  }
+
+  .pricing-publish-checks,
+  .pricing-simulator-condition-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ─── Phase 2: Refined Deep Navy Workbench Visual System ────── */
+:root {
+  --mb-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.04);
+  --mb-shadow-md: 0 8px 20px rgb(15 23 42 / 0.06);
+  --mb-shadow-card: 0 1px 2px rgb(15 23 42 / 0.04);
+  --mb-shadow-xs: 0 1px 2px rgb(15 23 42 / 0.04);
+  --mb-shadow-subtle: 0 1px 3px rgb(15 23 42 / 0.05);
+  --mb-border: #e2e8f0;
+  --mb-border-strong: #cbd5e1;
+  --mb-surface-muted: #f8fafc;
+}
+
+/* Sidebar & Topbar — Refined Deep Navy */
+.management-sidebar {
+  background: linear-gradient(180deg, #0b2c48 0%, #0f3a5f 100%);
+  border-right: 1px solid rgb(255 255 255 / 0.1);
+}
+
+.management-brand {
+  padding: 22px 20px 18px;
+}
+
+.management-nav-item,
+.management-nav-group-toggle {
+  min-height: 40px;
+  border-radius: 8px;
+  color: rgb(226 232 240 / 0.84);
+  font-size: 13.5px;
+}
+
+.management-nav-item:hover,
+.management-nav-group-toggle:hover {
+  background: rgb(255 255 255 / 0.09);
+  color: #ffffff;
+}
+
+.management-nav-item-active {
+  background: var(--mb-primary-container);
+  color: var(--mb-primary);
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.management-user-card {
+  border-top: 1px solid rgb(255 255 255 / 0.12);
+  padding: 14px 16px 16px;
+}
+
+.management-topbar {
+  height: 60px;
+  border-bottom: 1px solid #e2e8f0;
+  background: rgb(255 255 255 / 0.98);
+  box-shadow: none;
+}
+
+.management-global-search.ant-input-affix-wrapper {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.management-global-search.ant-input-affix-wrapper:hover,
+.management-global-search.ant-input-affix-wrapper-focused {
+  background: #ffffff;
+  border-color: #94a3b8;
+}
+
+.management-role-switcher {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: var(--mb-primary);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.management-role-switcher:hover {
+  background: var(--mb-primary-container);
+  border-color: #bfd4ea;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Page Header & Typography */
+.management-page {
+  gap: 16px;
+}
+
+.management-page-title.ant-typography {
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
+  letter-spacing: -0.015em;
+}
+
+.management-page-description.ant-typography {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13.5px;
+  line-height: 20px;
+}
+
+/* Eliminate ghost card border + heavy shadow */
+.management-kpi-card.ant-card,
+.management-filter-card,
+.management-table-card.ant-card,
+.inventory-prototype-card.ant-card,
+.dispatch-order-list.ant-card,
+.dispatch-order-detail.ant-card,
+.dispatch-action-bar.ant-card,
+.dispatch-worker-panel.ant-card,
+.dispatch-progress-card.ant-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.management-kpi-card .ant-card-body {
+  padding: 16px 18px;
+}
+
+.management-kpi-label {
+  color: #64748b;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.management-kpi-value,
+.inventory-summary-value,
+.workbench-kpi-card strong {
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.management-kpi-desc {
+  margin-top: 6px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+/* Table & Segmented Pill Primitives */
+.management-table-toolbar {
+  padding: 14px 16px;
+  border-bottom: 1px solid #edf2f7;
+  background: #ffffff;
+}
+
+.management-table-toolbar.orders-filter-card,
+.management-table-toolbar.customers-filter-card {
+  border: 0;
+  border-bottom: 1px solid #edf2f7;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 14px 16px;
+  margin: 0;
+}
+
+.mb-segmented-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #f1f5f9;
+}
+
+.mb-segmented-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mb-segmented-tab:hover {
+  color: #0f172a;
+}
+
+.mb-segmented-tab.is-active {
+  background: #ffffff;
+  color: var(--mb-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+}
+
+.mb-segmented-tab em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.mb-segmented-tab.is-active em {
+  background: var(--mb-primary-container);
+  color: var(--mb-primary);
+}
+
+.management-table-card .ant-table-thead > tr > th {
+  background: #f8fafc !important;
+  color: #475569;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.management-table-card .ant-table-pagination.ant-pagination {
+  margin: 14px 16px !important;
+}
+
+/* Workbench Executive Header & 4-Col Balanced KPIs */
+.workbench-hero {
+  border: 1px solid #e2e8f0;
+  border-top: 3px solid var(--mb-primary);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 20px 22px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.workbench-hero h1 {
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
+}
+
+.workbench-hero p {
+  color: #475569;
+  font-size: 13.5px;
+}
+
+.workbench-kpi-grid {
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 900px) {
+  .workbench-kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+.workbench-kpi-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 15px 16px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  cursor: default;
+}
+
+.workbench-kpi-card.is-interactive {
+  cursor: pointer;
+}
+
+.workbench-kpi-card:not(.is-interactive):hover {
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  transform: none;
+}
+
+.workbench-kpi-card.is-interactive:hover {
+  border-color: var(--mb-primary);
+  box-shadow: 0 4px 12px rgb(15 58 95 / 0.08);
+  transform: translateY(-1px);
+}
+
+.workbench-kpi-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workbench-kpi-arrow {
+  color: #94a3b8;
+  font-size: 12px;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.workbench-kpi-card.is-interactive:hover .workbench-kpi-arrow {
+  color: var(--mb-primary);
+  transform: translate(1px, -1px);
+}
+
+.workbench-quick-groups {
+  display: grid;
+  gap: 16px;
+}
+
+.workbench-team-footer {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #edf2f7;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Orders Filter Toolbar */
+.orders-toolbar-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (min-width: 1180px) {
+  .orders-filter-grid {
+    grid-template-columns: minmax(200px, 1.3fr) minmax(240px, 1.4fr) minmax(130px, 1fr) minmax(130px, 1fr) auto;
+  }
+}
+
+/* Customers Filter Toolbar */
+.customers-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.customers-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.customers-advanced-grid {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+/* Worker Task Center Refined Summary Strip */
+.worker-task-center-hero {
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid var(--mb-primary);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 16px 20px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.worker-task-center-hero span {
+  background: var(--mb-primary-container);
+  color: var(--mb-primary);
+  font-weight: 600;
+}
+
+.worker-task-center-hero h2 {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.worker-task-center-hero p {
+  color: #475569;
+}
+
+/* Dispatch Canvas & Active Filter Pills */
+.dispatch-management-toolbar {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  padding: 14px 16px;
+}
+
+@media (min-width: 1180px) and (max-width: 1379px) {
+  .dispatch-canvas {
+    grid-template-columns: 310px minmax(0, 1fr);
+  }
+  .dispatch-board-aside {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1380px) {
+  .dispatch-canvas {
+    grid-template-columns: 296px minmax(0, 1fr) 296px;
+  }
+}
+
+.dispatch-segment button.is-active {
+  background: var(--mb-primary);
+  color: #ffffff;
+  border-color: var(--mb-primary);
+}
+
+.dispatch-skill-tag {
+  cursor: pointer;
+  user-select: none;
+}
+
+.dispatch-skill-tag.is-active {
+  background: var(--mb-primary) !important;
+  color: #ffffff !important;
+  border-color: var(--mb-primary) !important;
+}
+
+/* ─── Phase 3: Public Entry, Order Forms, Pricing & Detail Polish ── */
+/* Public Store Lobby */
+.home-lobby-hero {
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgb(15 58 95 / 0.14);
+}
+
+.store-lobby-grid {
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+}
+
+.store-lobby-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.store-lobby-card:hover {
+  border-color: var(--mb-primary);
+  box-shadow: 0 6px 16px rgb(15 58 95 / 0.08);
+}
+
+.store-lobby-cover img {
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+/* Auth Policy Trigger Buttons */
+.auth-policy-btn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.auth-policy-btn:hover {
+  color: var(--mb-primary);
+  text-decoration: underline;
+}
+
+/* Create Order Layout & Product Row Fix */
+@media (min-width: 900px) {
+  .create-order-labor-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .create-order-product-row {
+    grid-template-columns: minmax(260px, 1fr) 88px minmax(88px, 100px) 132px auto;
+  }
+}
+
+.create-order-product-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.create-order-price-suggestion {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  padding-top: 8px;
+  margin-top: 2px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+/* Order Detail & After-Sale Detail Crisp Refined Navy */
+.order-detail-hero,
+.order-detail-card.ant-card,
+.after-sale-detail-hero,
+.after-sale-detail-card.ant-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.order-detail-hero h1 {
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.after-sale-cost-head {
+  justify-content: space-between;
+}
+
+.after-sale-cost-head h2 {
+  margin-right: auto;
+}
+
+/* Pricing Workspace Refined Tabs & Shell */
+.pricing-workspace-steps.ant-steps {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px 12px 0 0;
+}
+
+.pricing-workspace-shell.ant-card {
+  border: 1px solid #e2e8f0;
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+/* Finance Lists Toolbar */
+.finance-list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.finance-list-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ─── Phase 4: Secondary Modules Refined Deep Navy Polish ────── */
+/* Supplier & Procurement Subpages */
+.supplier-table-card.ant-card,
+.supplier-metric-card.ant-card,
+.purchase-order-create-panel.ant-card,
+.movement-filter-panel.ant-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.supplier-detail-drawer {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+/* Construction Secondary Pages — Normalize Radii, Buttons & Responsive Layouts */
+.capacity-calendar-card.ant-card,
+.capacity-editor-card.ant-card,
+.capacity-tips-card.ant-card,
+.construction-schedule-week.ant-card,
+.construction-schedule-task-section.ant-card,
+.construction-schedule-form-panel.ant-card,
+.construction-leave-application-panel.ant-card,
+.construction-leave-history-card.ant-card,
+.construction-leave-approval-card.ant-card,
+.worker-archive-main-card.ant-card,
+.worker-archive-photo-card.ant-card,
+.worker-archive-capability-card.ant-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+@media (max-width: 1120px) {
+  .capacity-shell {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+.worker-leave-form-card .ant-btn-primary {
+  height: 38px !important;
+  border-radius: 8px !important;
+}
+
+.construction-schedule-card {
+  border-radius: 12px !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+@media (min-width: 1080px) {
+  .worker-profile-grid {
+    grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.75fr);
+  }
+}
+
+/* Admin & Members Refined Cards */
+.admin-review-queue.ant-card,
+.admin-status-distribution.ant-card,
+.admin-operation-guide.ant-card,
+.admin-store-table-card.ant-card,
+.members-table-card.ant-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.members-related-workspaces {
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+
+/* ─── Phase 5: Live Walkthrough Visual & Responsive Fixes ────── */
+/* Public Lobby & Auth Polish */
+.store-lobby-card {
+  text-decoration: none;
+  color: inherit;
+}
+
+.home-lobby-hero {
+  grid-template-columns: minmax(480px, 1.05fr) minmax(340px, 0.95fr);
+}
+
+.home-lobby-title.ant-typography {
+  font-size: clamp(28px, 2.4vw, 34px);
+}
+
+.home-lobby-toolbar .ant-btn-primary {
+  background: #ffffff;
+  color: #0f3a5f;
+  border-color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.14);
+}
+
+.home-lobby-toolbar .ant-btn-primary:not(:disabled):not(.ant-btn-disabled):hover {
+  background: #f1f5f9;
+  color: #0b2c48;
+  border-color: #f1f5f9;
+}
+
+.auth-hero-title.ant-typography {
+  max-width: 600px;
+  font-size: clamp(30px, 2.6vw, 36px);
+}
+
+.auth-footer-links a,
+.auth-footer-links button {
+  color: #64748b;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.auth-footer-links a:hover,
+.auth-footer-links button:hover {
+  color: var(--mb-primary);
+  text-decoration: underline;
+}
+
+/* Dark Sidebar Custom Thin Scrollbar & Mobile Menu Toggle */
+.management-nav {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.24) transparent;
+}
+
+.management-nav::-webkit-scrollbar {
+  width: 5px;
+}
+
+.management-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.management-nav::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.22);
+}
+
+.management-nav::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.36);
+}
+
+.management-mobile-menu-btn {
+  display: none;
+}
+
+.management-mobile-drawer .ant-drawer-section,
+.management-mobile-drawer .ant-drawer-content {
+  background: linear-gradient(180deg, #0b2c48 0%, #0f3a5f 100%) !important;
+  color: #e2e8f0;
+}
+
+.management-role-tag,
+.management-role-switcher {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.management-page-header {
+  flex-wrap: wrap;
+  gap: 14px 18px;
+}
+
+.management-page-header > :first-child {
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
+.management-page-header .ant-space {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+}
+
+.store-lobby-cover-placeholder {
+  width: 100%;
+  height: 100%;
+}
+
+.management-mobile-drawer .ant-drawer-header {
+  border-bottom: 1px solid rgb(255 255 255 / 0.12);
+  background: transparent;
+  padding: 14px 16px;
+}
+
+.management-mobile-drawer .ant-drawer-close {
+  color: rgb(226 232 240 / 0.84) !important;
+}
+
+.management-mobile-drawer .ant-drawer-body {
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.management-mobile-drawer .ant-drawer-footer {
+  border-top: 1px solid rgb(255 255 255 / 0.12);
+  padding: 0;
+}
+
+.management-mobile-drawer-brand {
+  padding: 0 !important;
+}
+
+/* Mobile Responsive Shell Fixes (must sit below desktop rule order) */
+@media (max-width: 900px) {
+  .management-mobile-menu-btn {
+    display: inline-flex;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: var(--mb-primary);
+    font-size: 17px;
+    cursor: pointer;
+  }
+
+  .management-page-header,
+  .page-header,
+  .page-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .management-page-header > :first-child,
+  .page-header > :first-child,
+  .page-heading > :first-child {
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .management-page-header .ant-space {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .management-mobile-nav {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    right: 0;
+    bottom: 0;
+    left: 0;
+    min-height: 60px;
+    border: 0;
+    border-top: 1px solid rgb(15 58 95 / 0.12);
+    border-radius: 16px 16px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .management-mobile-nav-label {
+    font-size: 10.5px;
+    padding: 0 2px;
+  }
+
+  .home-lobby-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Tables & Horizontal Tabs: prevent unintended vertical scrollbars & wrapped column titles */
+.management-content .ant-table-wrapper {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.management-table-card .ant-table-thead > tr > th,
+.movement-ledger-table .ant-table-thead > tr > th,
+.inventory-overview-order-table .ant-table-thead > tr > th {
+  white-space: nowrap;
+}
+
+.members-module-tabs {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.members-module-tab.is-active::after {
+  bottom: 0;
+}
+
+/* Workbench KPI Consistency: keep icon tint only, no pink block behind numbers */
+.workbench-kpi-warning strong,
+.workbench-kpi-info strong,
+.workbench-kpi-danger strong,
+.workbench-kpi-success strong,
+.workbench-kpi-warning .workbench-kpi-card-trend,
+.workbench-kpi-info .workbench-kpi-card-trend,
+.workbench-kpi-danger .workbench-kpi-card-trend,
+.workbench-kpi-success .workbench-kpi-card-trend {
+  background: transparent;
+}
+
+/* Inventory Overview Shortcut Grid Arrow Placement */
+.inventory-overview-shortcuts a {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+}
+
+.inventory-overview-shortcuts a strong {
+  grid-column: 1;
+}
+
+.inventory-overview-shortcuts a span {
+  grid-column: 1;
+}
+
+.inventory-overview-shortcuts a .anticon {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+/* Inventory Movements: KPI danger badge contrast + 4-col symmetrical filter grid */
+.movement-kpi-danger .movement-kpi-icon {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+@media (min-width: 1180px) {
+  .movement-filter-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .movement-filter-grid > .ant-form-item:nth-child(2) {
+    grid-column: span 2;
+  }
+}
+
+/* Construction Assignments & Materials Polish */
+.dispatch-work-order-tabs > button:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.dispatch-segment button:first-child:not(.is-active) {
+  border-color: var(--mb-border);
+  background: var(--mb-surface-container-low);
+  color: var(--mb-text-secondary);
+}
+
+.worker-materials-hero .ant-btn {
+  background: #ffffff;
+  color: #0f3a5f;
+  border: 0;
+}
+
+.worker-materials-hero .ant-btn:disabled,
+.worker-materials-hero .ant-btn.ant-btn-disabled {
+  background: rgb(255 255 255 / 0.16);
+  color: rgb(255 255 255 / 0.88);
+  border: 1px solid rgb(255 255 255 / 0.28);
+}
+
+@media (min-width: 901px) {
+  .worker-materials-page .construction-materials-batch-list-empty {
+    display: none;
+  }
+}
+
+/* Customers Filter Chips & Purchases Card Alignment */
+.customers-search-chips {
+  flex: 1 1 auto;
+}
+
+.customers-search-chip {
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+.purchases-overview-grid {
+  align-items: stretch;
+}
+
+.purchases-overview-grid > .ant-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.purchases-overview-grid > .ant-card .ant-card-body {
+  flex: 1;
+}

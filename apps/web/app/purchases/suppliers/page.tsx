@@ -31,7 +31,7 @@ import {
   TeamOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { purchaseApi } from "../../../src/lib/api";
 import { PurchaseModuleNav } from "../../../src/features/purchases/purchase-module-nav";
 import { StorePageHeader } from "../../../src/features/workbench/store-page-header";
@@ -118,6 +118,19 @@ export default function InventorySuppliersPage() {
   };
   const activeSupplierId = getVisibleSupplierId(selectedSupplierId, filteredSuppliers);
   const selectedSupplier = filteredSuppliers.find((supplier) => supplier.id === activeSupplierId);
+
+  useEffect(() => {
+    if (!selectedSupplier) return;
+    editForm.setFieldsValue({
+      name: selectedSupplier.name,
+      contactName: selectedSupplier.contactName ?? undefined,
+      contactPhone: selectedSupplier.contactPhone ?? undefined,
+      settlementCycle: selectedSupplier.settlementCycle ?? undefined,
+      rating: selectedSupplier.rating ?? undefined,
+      note: selectedSupplier.note ?? undefined,
+      isActive: selectedSupplier.isActive !== false
+    });
+  }, [editForm, selectedSupplier]);
   const supplierMetrics = useMemo(
     () => calculateSupplierMetrics(suppliers, purchaseOrders),
     [purchaseOrders, suppliers]
@@ -358,7 +371,7 @@ export default function InventorySuppliersPage() {
                 <span>{selectedSupplier.name.slice(0, 1).toUpperCase()}</span>
                 <div>
                   <h2>{selectedSupplier.name}</h2>
-                  <p>最后更新于 {formatDate(selectedSupplier.lastMasterDataUpdatedAt)}</p>
+                  <p>结算周期：{selectedSupplier.settlementCycle ?? "-"} · 更新于 {formatDate(selectedSupplier.lastMasterDataUpdatedAt)}</p>
                 </div>
               </div>
 
@@ -407,20 +420,9 @@ export default function InventorySuppliersPage() {
                           <Switch checkedChildren="合作中" unCheckedChildren="暂停" disabled={!canManagePurchase} />
                           </Form.Item>
                           <Button type="primary" htmlType="submit" icon={<EditOutlined />} loading={updateSupplier.isPending} disabled={!canManagePurchase} block>
-                            编辑详情
+                            保存修改
                           </Button>
                         </Form>
-
-                        <Card className="supplier-contact-card" title="核心联系信息">
-                          <dl>
-                            <dt>主要联系人</dt>
-                            <dd>{selectedSupplier.contactName ?? "-"}</dd>
-                            <dt>商务电话</dt>
-                            <dd>{selectedSupplier.contactPhone ?? "-"}</dd>
-                            <dt>结算周期</dt>
-                            <dd>{selectedSupplier.settlementCycle ?? "-"}</dd>
-                          </dl>
-                        </Card>
                       </div>
                     )
                   },

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Alert,
   App,
   Button,
   Card,
@@ -10,10 +11,10 @@ import {
   Modal,
   Select,
 } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { financeApi } from "../../../src/features/finance/api";
 import { FinanceApplicationTable } from "../../../src/features/finance/components/finance-application-table";
 import { useAuthStore } from "../../../src/stores/auth-store";
@@ -27,6 +28,8 @@ export default function ReimbursementListPage() {
   const client = useQueryClient();
   const { message } = App.useApp();
   const [open, setOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [keyword, setKeyword] = useState("");
   const [form] = Form.useForm();
   const isManager = hasEffectivePermission(permissionsQuery.data?.permissions, "finance.reimbursement", "review", storeId);
   const scope = isManager ? "all" : "mine";
@@ -72,6 +75,16 @@ export default function ReimbursementListPage() {
     },
   });
 
+  const allRows = useMemo(() => query.data?.items ?? [], [query.data?.items]);
+  const filteredRows = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return allRows.filter((row) => {
+      if (statusFilter !== "ALL" && row.status !== statusFilter) return false;
+      if (kw && ![row.applicationNo, row.title, row.reason].filter(Boolean).join(" ").toLowerCase().includes(kw)) return false;
+      return true;
+    });
+  }, [allRows, statusFilter, keyword]);
+
   return (
     <div className="management-page">
       <StorePageHeader
@@ -91,9 +104,51 @@ export default function ReimbursementListPage() {
           </Button>
         }
       />
-      <Card>
+      {query.isError ? <Alert type="error" showIcon title="报销列表加载失败，请稍后刷新" /> : null}
+      <Card className="management-table-card">
+        <div className="management-table-toolbar finance-list-toolbar">
+          <div className="mb-segmented-tabs" role="tablist" aria-label="报销状态筛选">
+            {[
+              { key: "ALL", label: "全部" },
+              { key: "PENDING", label: "待审批" },
+              { key: "APPROVED", label: "已通过" },
+              { key: "PAID", label: "已打款" },
+              { key: "REJECTED", label: "已驳回" }
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === tab.key}
+                className={`mb-segmented-tab${statusFilter === tab.key ? " is-active" : ""}`}
+                onClick={() => setStatusFilter(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="finance-list-toolbar-actions">
+            <Input.Search
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="搜索编号、标题或说明"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              style={{ width: 240 }}
+            />
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                setStatusFilter("ALL");
+                setKeyword("");
+              }}
+            >
+              重置
+            </Button>
+          </div>
+        </div>
         <FinanceApplicationTable
-          rows={query.data?.items ?? []}
+          rows={filteredRows}
           loading={query.isLoading}
           onOpen={(id) => router.push(`/finance/reimbursements/${id}`)}
         />

@@ -10,6 +10,7 @@ import {
 } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
+import { StoreCoverImage } from "../../../src/components/store-cover-image";
 import { storeApi } from "../../../src/lib/api";
 
 const STORE_STATUS_LABEL: Record<string, string> = {
@@ -92,15 +93,12 @@ export default function StoreDetailPage() {
             </div>
 
             <div className="store-public-cover">
-              {coverPhoto ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={coverPhoto.url} alt={store.name} />
-              ) : (
-                <div className="store-public-cover-placeholder">
-                  <ShopOutlined />
-                  <span>暂无封面</span>
-                </div>
-              )}
+              <StoreCoverImage
+                src={coverPhoto?.url}
+                alt={store.name}
+                placeholderClassName="store-public-cover-placeholder"
+                placeholderLabel="暂无封面"
+              />
             </div>
           </section>
 

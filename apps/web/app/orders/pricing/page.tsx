@@ -22,6 +22,7 @@ import {
   Input,
   InputNumber,
   Select,
+  Skeleton,
   Space,
   Table,
   Tag,
@@ -420,7 +421,7 @@ export default function PricingRulesPage() {
       <Card className="pricing-workspace-shell" variant="borderless">
         <PricingWorkspaceTabs active={activeView} onChange={navigateTab} />
 
-        {rulesQuery.isLoading ? <Card loading /> : null}
+        {rulesQuery.isLoading ? <div className="p-6"><Skeleton active paragraph={{ rows: 6 }} /></div> : null}
 
         {!rulesQuery.isLoading && !draftRuleSet ? (
           <div className="pricing-start-state">
@@ -797,7 +798,15 @@ export default function PricingRulesPage() {
             <span>{conflictIndexes.size ? "存在冲突规则，草稿暂未保存" : dirty || saveMutation.isPending ? "正在保存草稿…" : `草稿已自动保存 ${lastSavedAt ?? ""}`}</span>
           </div>
           <Space>
-            <Button disabled={conflictIndexes.size > 0} onClick={() => saveDraft(true)}>暂存退出</Button>
+            <Button
+              disabled={conflictIndexes.size > 0}
+              onClick={() => {
+                saveDraft(true);
+                router.push("/orders");
+              }}
+            >
+              暂存退出
+            </Button>
             {activeView !== "versions" ? <Button type="primary" disabled={conflictIndexes.size > 0} onClick={advance}>保存并继续</Button> : null}
           </Space>
         </div>

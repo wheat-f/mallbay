@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
-import { Button, Card, Empty, Space, Table, Tag } from "antd";
+import { Alert, Button, Card, Empty, Space, Table, Tag } from "antd";
 import {
   CheckCircleOutlined,
   CustomerServiceOutlined,
@@ -28,11 +27,6 @@ const tabs: Array<{ key: AfterSaleTaskTab; label: string; statuses: AfterSaleSta
   { key: "pending", label: "待处理", statuses: ["OPEN"] },
   { key: "processing", label: "处理中", statuses: ["ASSIGNED"] },
   { key: "done", label: "已完成", statuses: ["RESOLVED", "CLOSED"] }
-];
-
-const taskImages = [
-  "/prototype-assets/after-sales-task-1.png",
-  "/prototype-assets/after-sales-task-2.png"
 ];
 
 export default function AfterSalesTasksPage() {
@@ -68,7 +62,7 @@ export default function AfterSalesTasksPage() {
 
       <section className="worker-after-sales-hero">
         <div>
-          <Tag color="error" icon={<WarningOutlined />}>今日待处理任务</Tag>
+          <Tag color="error" icon={<WarningOutlined />}>待处理售后任务</Tag>
           <strong>{counts.pending}</strong>
           <span>个工单需要跟进</span>
         </div>
@@ -97,6 +91,15 @@ export default function AfterSalesTasksPage() {
         ))}
       </nav>
 
+      {listQuery.isError ? (
+        <Alert
+          type="error"
+          showIcon
+          title="售后任务加载失败"
+          description={listQuery.error instanceof Error ? listQuery.error.message : "请稍后重试"}
+        />
+      ) : null}
+
       <Card className="worker-after-sales-table" title="任务明细">
         <Table<AfterSaleSummary>
           rowKey="id"
@@ -106,24 +109,32 @@ export default function AfterSalesTasksPage() {
           locale={{ emptyText: <Empty description="暂无售后任务" /> }}
           columns={[
             {
-              title: "现场",
-              render: (_, item) => (
-                <Space>
-                  <Image
-                    className="worker-after-sales-car-image"
-                    src={getAfterSalesTaskImage(item)}
-                    alt={`${getMobileAfterSaleTitle(item)} 售后现场`}
-                    width={48}
-                    height={48}
-                    sizes="48px"
-                    unoptimized
-                  />
-                  <div className="worker-after-sales-ticket-title">
-                    <strong>{getMobileAfterSaleTitle(item)}</strong>
-                    <span>{getAfterSaleOrderLabel(item)}</span>
-                  </div>
-                </Space>
-              )
+              title: "工单信息",
+              render: (_, item) => {
+                const photoUrl = getFirstIssuePhotoUrl(item);
+                return (
+                  <Space>
+                    {photoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        className="worker-after-sales-car-image"
+                        src={photoUrl}
+                        alt={`${getMobileAfterSaleTitle(item)} 售后现场`}
+                        width={48}
+                        height={48}
+                      />
+                    ) : (
+                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--mb-primary-container)] text-[var(--mb-primary)]">
+                        <CustomerServiceOutlined />
+                      </div>
+                    )}
+                    <div className="worker-after-sales-ticket-title">
+                      <strong>{getMobileAfterSaleTitle(item)}</strong>
+                      <span>{getAfterSaleOrderLabel(item)}</span>
+                    </div>
+                  </Space>
+                );
+              }
             },
             {
               title: "状态",
@@ -143,8 +154,8 @@ export default function AfterSalesTasksPage() {
               render: (_, item) => getAfterSaleResponsibilityLabel(item.responsibility)
             },
             {
-              title: "时效",
-              render: (_, item) => getRelativeTaskTime(item.status)
+              title: "创建时间",
+              render: (_, item) => formatCreatedTime(item.createdAt)
             },
             {
               title: "操作",
@@ -163,51 +174,63 @@ export default function AfterSalesTasksPage() {
         <div className="worker-after-sales-mobile-cards">
           {listQuery.isLoading ? <div className="worker-after-sales-loading">售后任务加载中...</div> : null}
           {!listQuery.isLoading && visibleRows.length === 0 ? <Empty description="暂无售后任务" /> : null}
-          {visibleRows.map((item) => (
-            <article key={item.id} className="worker-after-sales-card">
-              <div className="worker-after-sales-card-head">
-                <Tag className={getAfterSaleStatusClassName(item.status)} icon={item.status === "OPEN" ? <WarningOutlined /> : <ToolOutlined />}>
-                  {getAfterSaleStatusLabel(item.status)}
-                </Tag>
-                <span>{getRelativeTaskTime(item.status)}</span>
-              </div>
-              <div className="worker-after-sales-card-main">
-                <Image
-                  className="worker-after-sales-car-image"
-                  src={getAfterSalesTaskImage(item)}
-                  alt={`${getMobileAfterSaleTitle(item)} 售后现场`}
-                  width={72}
-                  height={72}
-                  sizes="72px"
-                  unoptimized
-                />
-                <div>
-                  <h2>{getMobileAfterSaleTitle(item)}</h2>
-                  <p>{getAfterSaleOrderLabel(item)}</p>
+          {visibleRows.map((item) => {
+            const photoUrl = getFirstIssuePhotoUrl(item);
+            return (
+              <article key={item.id} className="worker-after-sales-card">
+                <div className="worker-after-sales-card-head">
+                  <Tag className={getAfterSaleStatusClassName(item.status)} icon={item.status === "OPEN" ? <WarningOutlined /> : <ToolOutlined />}>
+                    {getAfterSaleStatusLabel(statusLabelKey(item.status))}
+                  </Tag>
+                  <span>{formatCreatedTime(item.createdAt)}</span>
                 </div>
-              </div>
-              <div className="worker-after-sales-warranty">
-                <CheckCircleOutlined />
-                <span>{item.warrantyId ? "已关联质保单" : "质保单待关联"}</span>
-                <em>{getAfterSaleResponsibilityLabel(item.responsibility)}</em>
-              </div>
-              <div className="worker-after-sales-actions">
-                <Button href={`/after-sales/${item.id}`}>查看详情</Button>
-                <Button type="primary" icon={<PlayCircleOutlined />} href={`/after-sales/${item.id}`}>
-                  立即处理
-                </Button>
-              </div>
-            </article>
-          ))}
+                <div className="worker-after-sales-card-main">
+                  {photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      className="worker-after-sales-car-image"
+                      src={photoUrl}
+                      alt={`${getMobileAfterSaleTitle(item)} 售后现场`}
+                      width={72}
+                      height={72}
+                    />
+                  ) : (
+                    <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-lg bg-[var(--mb-primary-container)] text-xl text-[var(--mb-primary)]">
+                      <CustomerServiceOutlined />
+                    </div>
+                  )}
+                  <div>
+                    <h2>{getMobileAfterSaleTitle(item)}</h2>
+                    <p>{getAfterSaleOrderLabel(item)}</p>
+                  </div>
+                </div>
+                <div className="worker-after-sales-warranty">
+                  <CheckCircleOutlined />
+                  <span>{item.warrantyId ? "已关联质保单" : "质保单待关联"}</span>
+                  <em>{getAfterSaleResponsibilityLabel(item.responsibility)}</em>
+                </div>
+                <div className="worker-after-sales-actions">
+                  <Button href={`/after-sales/${item.id}`}>查看详情</Button>
+                  <Button type="primary" icon={<PlayCircleOutlined />} href={`/after-sales/${item.id}`}>
+                    立即处理
+                  </Button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </Card>
     </div>
   );
 }
 
-function getAfterSalesTaskImage(item: AfterSaleSummary) {
-  if (item.description.includes("划痕")) return taskImages[1];
-  return taskImages[0];
+function statusLabelKey(status: AfterSaleStatus) {
+  return status;
+}
+
+function getFirstIssuePhotoUrl(item: AfterSaleSummary) {
+  const photos = (item as AfterSaleSummary & { photos?: Array<{ url?: string; purpose?: string }> }).photos ?? [];
+  return photos.find((photo) => photo.url)?.url;
 }
 
 function getMobileAfterSaleTitle(item: AfterSaleSummary) {
@@ -221,8 +244,9 @@ function getAfterSaleStatusClassName(status: AfterSaleStatus) {
   return "worker-after-sales-status is-done";
 }
 
-function getRelativeTaskTime(status: AfterSaleStatus) {
-  if (status === "OPEN") return "30分钟前";
-  if (status === "ASSIGNED") return "处理中";
-  return "已完成";
+function formatCreatedTime(value?: string | Date | null) {
+  if (!value) return "-";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }

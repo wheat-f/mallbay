@@ -50,7 +50,6 @@ test("purchase order detail page keeps arrival review and inbound actions togeth
   assert.doesNotMatch(detailSource, /华东 1 号中心仓/);
   assert.doesNotMatch(detailSource, /华南分仓/);
   assert.match(detailSource, /title="流转日志"/);
-  assert.match(detailSource, /供应商已发货/);
   assert.match(detailSource, /采购订单创建/);
   assert.match(detailSource, /receiveActionMode/);
   assert.match(detailSource, /验收入库/);

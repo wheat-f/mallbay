@@ -109,6 +109,9 @@ export default function ConstructionAssignmentsPage() {
   const [dispatchChecklist, setDispatchChecklist] = useState<DispatchChecklist>(emptyDispatchChecklist);
   const [dispatchNote, setDispatchNote] = useState("");
   const [workerSearchKeyword, setWorkerSearchKeyword] = useState("");
+  const [constructionTypeFilter, setConstructionTypeFilter] = useState<string>();
+  const [appointmentWindowFilter, setAppointmentWindowFilter] = useState<"TODAY" | "FUTURE">();
+  const [selectedSkillTags, setSelectedSkillTags] = useState<string[]>([]);
 
   const pendingOrdersQuery = useQuery({
     queryKey: ["orders", storeId, "PENDING_DISPATCH"],
@@ -136,17 +139,39 @@ export default function ConstructionAssignmentsPage() {
     ),
     [workersQuery.data]
   );
-  const filteredWorkers = useMemo(() => filterConstructionWorkers(workers, workerSearchKeyword), [workers, workerSearchKeyword]);
+  const filteredWorkers = useMemo(() => {
+    const base = filterConstructionWorkers(workers, workerSearchKeyword);
+    if (selectedSkillTags.length === 0) return base;
+    return base.filter((worker) => {
+      const tags = worker.skillTags ?? [];
+      return selectedSkillTags.every((selectedTag) =>
+        tags.some((t) => t.includes(selectedTag.replace("擅长", "")) || t === selectedTag)
+      );
+    });
+  }, [workers, workerSearchKeyword, selectedSkillTags]);
   const workerMap = new Map(workers.map((worker) => [worker.userId, worker]));
   const workItems = useMemo(
     () => buildConstructionWorkItems({ pendingOrders: pendingRows, records }),
     [pendingRows, records]
   );
   const workOrderCounts = useMemo(() => getConstructionWorkOrderCounts(workItems), [workItems]);
-  const visibleWorkItems = useMemo(
-    () => getVisibleConstructionWorkItems(workItems, activeWorkOrderTab),
-    [activeWorkOrderTab, workItems]
-  );
+  const visibleWorkItems = useMemo(() => {
+    const tabFiltered = getVisibleConstructionWorkItems(workItems, activeWorkOrderTab);
+    const todayPrefix = new Date().toISOString().slice(0, 10);
+    return tabFiltered.filter((item) => {
+      const order = getWorkItemOrder(item);
+      if (constructionTypeFilter && order.constructionType !== constructionTypeFilter) {
+        return false;
+      }
+      if (appointmentWindowFilter) {
+        const appt = formatDispatchAppointmentDate(order.appointmentDate, "");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(appt)) return false;
+        if (appointmentWindowFilter === "TODAY" && appt !== todayPrefix) return false;
+        if (appointmentWindowFilter === "FUTURE" && appt <= todayPrefix) return false;
+      }
+      return true;
+    });
+  }, [activeWorkOrderTab, workItems, constructionTypeFilter, appointmentWindowFilter]);
   const selectedWorkItem =
     visibleWorkItems.find((item) => getWorkItemKey(item) === selectedWorkItemKey) ?? visibleWorkItems[0] ?? workItems[0];
   const selectedPendingOrder = selectedWorkItem?.kind === "pending" ? (selectedWorkItem.order as OrderRow) : undefined;
@@ -232,7 +257,7 @@ export default function ConstructionAssignmentsPage() {
           ))}
         </div>
         <div className="dispatch-management-toolbar-actions">
-          <Button type="primary" icon={<SettingOutlined />} onClick={() => router.push("/construction/capacities")}>
+          <Button icon={<SettingOutlined />} onClick={() => router.push("/construction/capacities")}>
             施工产能设置
           </Button>
           <Button icon={<CalendarOutlined />} onClick={() => router.push("/construction/schedules")}>
@@ -272,6 +297,8 @@ export default function ConstructionAssignmentsPage() {
             <Select
               allowClear
               placeholder="全部施工类型"
+              value={constructionTypeFilter}
+              onChange={(value) => setConstructionTypeFilter(value)}
               options={[
                 { value: "PPF", label: "漆面保护膜" },
                 { value: "COLOR_FILM", label: "改色膜" },
@@ -279,8 +306,20 @@ export default function ConstructionAssignmentsPage() {
               ]}
             />
             <div className="dispatch-segment">
-              <button type="button">今天预约</button>
-              <button type="button">明日及以后</button>
+              <button
+                type="button"
+                className={appointmentWindowFilter === "TODAY" ? "is-active" : undefined}
+                onClick={() => setAppointmentWindowFilter((cur) => (cur === "TODAY" ? undefined : "TODAY"))}
+              >
+                今天预约
+              </button>
+              <button
+                type="button"
+                className={appointmentWindowFilter === "FUTURE" ? "is-active" : undefined}
+                onClick={() => setAppointmentWindowFilter((cur) => (cur === "FUTURE" ? undefined : "FUTURE"))}
+              >
+                明日及以后
+              </button>
             </div>
           </div>
 
@@ -388,11 +427,23 @@ export default function ConstructionAssignmentsPage() {
             <div className="dispatch-skill-filter">
               <span>技能筛选</span>
               <div>
-                {["可外出", "仅店内", "擅长漆面保护膜", "擅长改色膜"].map((label) => (
-                  <Tag key={label} color={label === "可外出" || label === "擅长漆面保护膜" ? "processing" : undefined}>
-                    {label}
-                  </Tag>
-                ))}
+                {["可外出", "仅店内", "擅长漆面保护膜", "擅长改色膜"].map((label) => {
+                  const active = selectedSkillTags.includes(label);
+                  return (
+                    <Tag
+                      key={label}
+                      className={`dispatch-skill-tag${active ? " is-active" : ""}`}
+                      color={active ? "processing" : undefined}
+                      onClick={() =>
+                        setSelectedSkillTags((current) =>
+                          current.includes(label) ? current.filter((item) => item !== label) : [...current, label]
+                        )
+                      }
+                    >
+                      {label}
+                    </Tag>
+                  );
+                })}
               </div>
             </div>
             <Input

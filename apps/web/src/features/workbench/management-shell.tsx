@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Alert, Avatar, Dropdown, Input, Result, Space, Spin, Tag, Typography } from "antd";
-import { HomeOutlined, LogoutOutlined, SearchOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined } from "@ant-design/icons";
+import { Alert, Avatar, Button, Drawer, Dropdown, Input, Result, Space, Spin, Tag, Typography } from "antd";
+import { HomeOutlined, LogoutOutlined, MenuOutlined, SearchOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { authApi } from "../../lib/api";
@@ -30,6 +30,7 @@ export function shouldUseManagementShell(pathname: string) {
     "/construction",
     "/inventory",
     "/purchases",
+    "/returns",
     "/warranties",
     "/after-sales",
     "/finance",
@@ -78,6 +79,7 @@ export function getManagementSearchPlaceholder(pathname: string) {
   if (pathname.startsWith("/purchases/orders/")) return "搜索采购单号...";
   if (pathname.startsWith("/purchases/suppliers")) return "搜索供应商、联系人或评级...";
   if (pathname.startsWith("/purchases")) return "搜索采购需求、采购单或供应商...";
+  if (pathname.startsWith("/returns")) return "搜索退货单号或原因...";
   if (pathname.startsWith("/products")) return "全局搜索档案、订单或规格...";
   return "搜索客户 / 车牌 / VIN / 订单号";
 }
@@ -98,7 +100,18 @@ export function ManagementShell({ children }: { children: ReactNode }) {
         ? <Alert type="error" showIcon title="页面权限校验失败" />
         : canOpenGuardedBusinessRoute(pathname, runtimePermissions, storeId)
           ? children
-          : <Result status="403" title="当前角色无权访问" subTitle="请从左侧菜单进入获授权的业务页面。" />
+          : (
+              <Result
+                status="403"
+                title="当前角色无权访问"
+                subTitle="请从左侧菜单进入获授权的业务页面。"
+                extra={(
+                  <Button type="primary" onClick={() => router.push(storeId ? `/workbench/${storeId}` : "/")}>
+                    返回工作台
+                  </Button>
+                )}
+              />
+            )
     : children;
   const isHeadquartersAdmin = Boolean(permissionsQuery.data?.roles.some((role) => role.roleCode === "HQ_ADMIN" && role.scopeType === "HQ"));
   const canAccessAdmin = Boolean(runtimePermissions?.some((permission) => permission.code === "store" && permission.actions.includes("read") && permission.scopes.includes("GLOBAL")));
@@ -126,6 +139,8 @@ export function ManagementShell({ children }: { children: ReactNode }) {
     .filter((group) => group.items.length > 0);
   const activeGroupKey = menuGroups.find((group) => group.items.some((item) => item.key === activeKey))?.key;
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -192,6 +207,67 @@ export function ManagementShell({ children }: { children: ReactNode }) {
   ];
   const roleSwitcherLabel = store ? effectiveRoleLabel : isHeadquartersAdmin ? "运营管理" : "角色切换";
 
+  const navigateFromMenu = (href: string, onNavigate?: () => void) => {
+    router.push(href);
+    onNavigate?.();
+  };
+
+  const renderNavigationItems = (onNavigate?: () => void) => (
+    <>
+      {menuItems.filter((item) => item.key === "workbench").map((item) => {
+        const active = activeKey === item.key;
+        return (
+          <button
+            key={item.key}
+            type="button"
+            className={`management-nav-item${active ? " management-nav-item-active" : ""}`}
+            onClick={() => navigateFromMenu(item.href, onNavigate)}
+          >
+            <span className="management-nav-icon">{item.icon}</span>
+            <span className="management-nav-label">{item.label}</span>
+          </button>
+        );
+      })}
+      {menuGroups.map((group) => {
+        const expanded = expandedGroupKeys.includes(group.key);
+        const active = group.items.some((item) => item.key === activeKey);
+        return (
+          <div key={group.key} className={`management-nav-group${active ? " management-nav-group-active" : ""}`}>
+            <button
+              type="button"
+              className="management-nav-group-toggle"
+              aria-expanded={expanded}
+              aria-controls={`management-nav-group-${group.key}`}
+              onClick={() => toggleGroup(group.key)}
+            >
+              <span className="management-nav-icon">{group.icon}</span>
+              <span className="management-nav-label">{group.label}</span>
+              <span className="management-nav-caret" aria-hidden="true">{expanded ? "⌃" : "⌄"}</span>
+            </button>
+            {expanded ? (
+              <div id={`management-nav-group-${group.key}`} className="management-nav-submenu">
+                {group.items.map((item) => {
+                  const itemActive = activeKey === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`management-nav-item management-nav-subitem${itemActive ? " management-nav-item-active" : ""}`}
+                      onClick={() => navigateFromMenu(item.href, onNavigate)}
+                    >
+                      <span className="management-nav-icon">{item.icon}</span>
+                      <span className="management-nav-label">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </>
+  );
+
   return (
     <div className="management-shell">
       <aside className="management-sidebar">
@@ -201,57 +277,7 @@ export function ManagementShell({ children }: { children: ReactNode }) {
         </button>
 
         <nav className="management-nav" aria-label="主导航">
-          {menuItems.filter((item) => item.key === "workbench").map((item) => {
-            const active = activeKey === item.key;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                className={`management-nav-item${active ? " management-nav-item-active" : ""}`}
-                onClick={() => router.push(item.href)}
-              >
-                <span className="management-nav-icon">{item.icon}</span>
-                <span className="management-nav-label">{item.label}</span>
-              </button>
-            );
-          })}
-          {menuGroups.map((group) => {
-            const expanded = expandedGroupKeys.includes(group.key);
-            const active = group.items.some((item) => item.key === activeKey);
-            return (
-              <div key={group.key} className={`management-nav-group${active ? " management-nav-group-active" : ""}`}>
-                <button
-                  type="button"
-                  className="management-nav-group-toggle"
-                  aria-expanded={expanded}
-                  aria-controls={`management-nav-group-${group.key}`}
-                  onClick={() => toggleGroup(group.key)}
-                >
-                  <span className="management-nav-icon">{group.icon}</span>
-                  <span className="management-nav-label">{group.label}</span>
-                  <span className="management-nav-caret" aria-hidden="true">{expanded ? "⌃" : "⌄"}</span>
-                </button>
-                {expanded ? (
-                  <div id={`management-nav-group-${group.key}`} className="management-nav-submenu">
-                    {group.items.map((item) => {
-                      const itemActive = activeKey === item.key;
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          className={`management-nav-item management-nav-subitem${itemActive ? " management-nav-item-active" : ""}`}
-                          onClick={() => router.push(item.href)}
-                        >
-                          <span className="management-nav-icon">{item.icon}</span>
-                          <span className="management-nav-label">{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
+          {renderNavigationItems()}
         </nav>
 
         <div className="management-user-card">
@@ -267,9 +293,50 @@ export function ManagementShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
+      <Drawer
+        placement="left"
+        size={280}
+        open={mobileDrawerOpen}
+        onClose={() => setMobileDrawerOpen(false)}
+        rootClassName="management-mobile-drawer"
+        title={
+          <button
+            className="management-brand management-mobile-drawer-brand"
+            type="button"
+            onClick={() => navigateFromMenu("/", () => setMobileDrawerOpen(false))}
+          >
+            <span className="management-brand-title">mallbay</span>
+            <span className="management-brand-subtitle">{store?.name ?? "门店运营系统"}</span>
+          </button>
+        }
+        footer={
+          <div className="management-user-card">
+            <Avatar size={36} src={user?.avatarUrl} className="management-user-avatar">
+              {displayName.charAt(0).toUpperCase()}
+            </Avatar>
+            <div className="min-w-0">
+              <div className="management-user-name">{displayName}</div>
+              <div className="management-user-role">{effectiveRoleLabel}</div>
+            </div>
+          </div>
+        }
+      >
+        <nav className="management-nav" aria-label="移动端主导航">
+          {renderNavigationItems(() => setMobileDrawerOpen(false))}
+        </nav>
+      </Drawer>
+
       <div className="management-main">
         <header className="management-topbar">
           <div className="management-topbar-left">
+            <button
+              type="button"
+              className="management-mobile-menu-btn"
+              aria-label="打开导航菜单"
+              onClick={() => setMobileDrawerOpen(true)}
+            >
+              <MenuOutlined />
+            </button>
             <Typography.Text className="management-store-name">
               {store?.name ?? (isHeadquartersAdmin ? "运营管理" : "mallbay")}
             </Typography.Text>
@@ -281,6 +348,22 @@ export function ManagementShell({ children }: { children: ReactNode }) {
             prefix={<SearchOutlined />}
             aria-label="全局搜索"
             placeholder={getManagementSearchPlaceholder(pathname)}
+            value={globalSearch}
+            onChange={(event) => setGlobalSearch(event.target.value)}
+            onPressEnter={() => {
+              const keyword = globalSearch.trim();
+              if (!keyword) return;
+              const targetBase = pathname.startsWith("/customers")
+                ? "/customers"
+                : pathname.startsWith("/products")
+                  ? "/products"
+                  : pathname.startsWith("/warranties")
+                    ? "/warranties"
+                    : pathname.startsWith("/after-sales")
+                      ? "/after-sales"
+                      : "/orders";
+              router.push(`${targetBase}?q=${encodeURIComponent(keyword)}`);
+            }}
             allowClear
           />
 
@@ -327,7 +410,9 @@ export function ManagementShell({ children }: { children: ReactNode }) {
               onClick={() => router.push(item.href)}
             >
               <span className="management-mobile-nav-icon">{item.icon}</span>
-              <span className="management-mobile-nav-label">{item.label}</span>
+              <span className="management-mobile-nav-label">
+                {item.key === "construction-tasks" ? "施工任务" : item.label}
+              </span>
             </button>
           );
         })}

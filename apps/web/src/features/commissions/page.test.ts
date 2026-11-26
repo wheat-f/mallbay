@@ -55,11 +55,12 @@ test("commissions page follows the prototype commission rule workspace layout", 
   assert.match(pageSource, /commission-rule-bento/);
   assert.match(pageSource, /commission-sales-panel/);
   assert.match(pageSource, /commission-worker-panel/);
-  assert.match(pageSource, /全局规则应用/);
-  assert.match(pageSource, /一键同步配置到所有门店或指定销售组/);
+  assert.doesNotMatch(pageSource, /全局规则应用/);
+  assert.doesNotMatch(pageSource, /立即全量应用/);
+  assert.doesNotMatch(pageSource, /全车隐形车衣/);
+  assert.doesNotMatch(pageSource, /首席技师 P3/);
   assert.match(pageSource, /销售佣金规则/);
   assert.match(pageSource, /施工员佣金规则/);
-  assert.doesNotMatch(pageSource, /一键同步配置到当前门店销售组、施工组和财务结算流程。/);
   assert.doesNotMatch(pageSource, /management-kpi-grid/);
   assert.doesNotMatch(pageSource, /warranty-action-layout/);
 });
@@ -108,11 +109,11 @@ test("commissions page avoids implementation-phase export copy", () => {
   assert.doesNotMatch(pageSource, /提成结算导出将在后续财务批次中实现/);
 });
 
-test("commissions page avoids implementation-phase global sync copy", () => {
+test("commissions page removes disconnected global sync and audit log buttons", () => {
   const pageSource = readFileSync("app/commissions/page.tsx", "utf8");
 
-  assert.match(pageSource, /请先确认规则适用范围后再同步到相关小组/);
-  assert.match(pageSource, /操作日志会统一进入审计中心/);
+  assert.doesNotMatch(pageSource, /请先确认规则适用范围后再同步到相关小组/);
+  assert.doesNotMatch(pageSource, /操作日志会统一进入审计中心/);
   assert.doesNotMatch(pageSource, /规则同步将在多门店配置批次中实现/);
   assert.doesNotMatch(pageSource, /操作日志将在审计中心统一展示/);
 });
@@ -158,7 +159,8 @@ test("commission settlement page follows the prototype settlement layout without
   assert.match(pageSource, /提成结算日志/);
   assert.match(pageSource, /待结算提成/);
   assert.match(pageSource, /本月应发提成总额/);
-  assert.match(pageSource, /待审核总额/);
+  assert.match(pageSource, /可结算来源数/);
+  assert.doesNotMatch(pageSource, /待审核总额/);
   assert.match(pageSource, /已发放总额/);
   assert.match(pageSource, /角色类型/);
   assert.match(pageSource, /结算月份/);
@@ -175,7 +177,8 @@ test("commission settlement page follows the prototype settlement layout without
   assert.match(pageSource, /selectedSettlementRow/);
   assert.match(pageSource, /结算明细/);
   assert.match(pageSource, /查看详情/);
-  assert.match(pageSource, /生成本月结算单/);
+  assert.match(pageSource, /前往生成提成/);
+  assert.doesNotMatch(pageSource, /生成本月结算单/);
   assert.match(pageSource, /导出报表/);
   assert.match(pageSource, /exportSettlementReport/);
   assert.match(pageSource, /exportSettlementRows/);

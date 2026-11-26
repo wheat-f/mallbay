@@ -34,7 +34,6 @@ type RebateActionValues = {
   id: string;
   status?: RebateStatus;
   note?: string;
-  payoutMode?: "CASH" | "DEDUCT";
 };
 
 type RebateOrderOption = {
@@ -130,8 +129,7 @@ export default function RebatesPage() {
     rebateActionForm.resetFields();
     if (selectedRebate) {
       rebateActionForm.setFieldsValue({
-        id: selectedRebate.id,
-        payoutMode: "DEDUCT"
+        id: selectedRebate.id
       });
     }
   }, [rebateActionForm, selectedRebate]);
@@ -383,18 +381,6 @@ export default function RebatesPage() {
                 onChange={(value) => setSelectedRebateId(value)}
               />
             </Form.Item>
-
-            <div className="rebate-payout-card">
-              <h3>期望发放方式</h3>
-              <Form.Item name="payoutMode">
-                <Select
-                  options={[
-                    { value: "DEDUCT", label: "抵扣返利 (推荐)" },
-                    { value: "CASH", label: "现金返利" }
-                  ]}
-                />
-              </Form.Item>
-            </div>
 
             <div className="rebate-payout-preview">
               <h3>发放操作预设</h3>

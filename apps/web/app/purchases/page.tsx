@@ -1,22 +1,39 @@
 "use client";
 
-import { Alert, Button, Card } from "antd";
+import { Alert, Button, Card, Empty, Table, Tag } from "antd";
 import { CheckCircleOutlined, ShoppingCartOutlined, TeamOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { purchaseApi } from "../../src/lib/api";
 import { PurchaseModuleNav } from "../../src/features/purchases/purchase-module-nav";
+import { getPurchaseOrderStatusLabel } from "../../src/features/inventory/display";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { hasEffectivePermission, useEffectivePermissions } from "../../src/features/permissions/use-effective-permissions";
+
+type PurchaseRequirementPreview = {
+  id?: string;
+  productName?: string;
+  requiredQuantity?: number;
+  requiredUnit?: string;
+  status?: string;
+};
+
+type PurchaseOrderPreview = {
+  id?: string;
+  orderNo?: string;
+  supplierName?: string | null;
+  status?: string;
+  createdAt?: string;
+};
 
 type PurchaseOverview = {
   openRequirementCount?: number;
   pendingApprovalCount?: number;
   pendingInboundCount?: number;
   supplierCount?: number;
-  requirements?: unknown[];
-  orders?: unknown[];
+  requirements?: PurchaseRequirementPreview[];
+  orders?: PurchaseOrderPreview[];
 };
 
 export default function PurchasesOverviewPage() {
@@ -76,6 +93,35 @@ export default function PurchasesOverviewPage() {
           </div>
 
           <section className="purchases-overview-grid">
+            <Card
+              className="inventory-prototype-card"
+              title="待跟进采购需求与订单"
+              extra={<Link href="/purchases/orders">查看全部订单 →</Link>}
+            >
+              {(overview.orders?.length ?? 0) > 0 ? (
+                <Table<PurchaseOrderPreview>
+                  rowKey={(row) => row.id ?? row.orderNo ?? "purchase-row"}
+                  size="small"
+                  pagination={false}
+                  scroll={{ x: "max-content" }}
+                  loading={overviewQuery.isLoading}
+                  dataSource={(overview.orders ?? []).slice(0, 5)}
+                  columns={[
+                    { title: "采购单号", dataIndex: "orderNo", width: 150, render: (v) => <span className="whitespace-nowrap">{v ?? "待生成单号"}</span> },
+                    { title: "供应商", dataIndex: "supplierName", width: 120, render: (v) => <span className="whitespace-nowrap">{v ?? "待确认"}</span> },
+                    { title: "状态", dataIndex: "status", width: 96, render: (v) => <Tag>{v ? getPurchaseOrderStatusLabel(v) : "进行中"}</Tag> },
+                    {
+                      title: "操作",
+                      width: 68,
+                      render: (_, row) => row.id ? <Link href={`/purchases/orders/${row.id}`}>处理</Link> : "-"
+                    }
+                  ]}
+                />
+              ) : (
+                <Empty description="暂无采购订单，可从需求创建采购单" />
+              )}
+            </Card>
+
             <Card className="inventory-prototype-card" title="采购流转概览">
               <div className="purchase-overview-flow">
                 <Link href="/purchases/requirements">

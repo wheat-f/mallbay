@@ -116,6 +116,16 @@ export default function CommissionSettlementsPage() {
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const settlementMonth = currentMonthValue();
+  const [roleFilter, setRoleFilter] = useState<string>("ALL");
+  const [keywordInput, setKeywordInput] = useState<string>("");
+  const [monthInput, setMonthInput] = useState<string>(settlementMonth);
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [appliedFilters, setAppliedFilters] = useState({
+    role: "ALL",
+    keyword: "",
+    month: settlementMonth,
+    status: "ALL"
+  });
 
   const rulesQuery = useQuery({
     queryKey: ["commission-settlement", "rules", storeId],
@@ -140,8 +150,23 @@ export default function CommissionSettlementsPage() {
 
   const allOrderRows = (ordersQuery.data?.items ?? []) as CommissionOrderSource[];
   const allConstructionRecordRows = (constructionRecordsQuery.data ?? []) as ConstructionRecordSource[];
-  const settlementRows = buildSettlementRows(allOrderRows.slice(0, 3), allConstructionRecordRows.slice(0, 3), settlementMonth);
-  const exportSettlementRows = buildSettlementRows(allOrderRows, allConstructionRecordRows, settlementMonth);
+  const rawSettlementRows = useMemo(
+    () => buildSettlementRows(allOrderRows, allConstructionRecordRows, appliedFilters.month || settlementMonth),
+    [allOrderRows, allConstructionRecordRows, appliedFilters.month, settlementMonth]
+  );
+  const settlementRows = useMemo(() => {
+    const keyword = appliedFilters.keyword.trim().toLowerCase();
+    return rawSettlementRows.filter((row) => {
+      if (appliedFilters.role === "SALES" && row.source !== "销售提成") return false;
+      if (appliedFilters.role === "CONSTRUCTION" && row.source !== "师傅提成") return false;
+      if (appliedFilters.status === "GENERATED" && row.status === "待结算") return false;
+      if (appliedFilters.status === "APPROVED" && row.status !== "已审核") return false;
+      if (appliedFilters.status === "PAID" && row.status !== "已发放") return false;
+      if (keyword && ![row.role, row.note, row.displayNo].join(" ").toLowerCase().includes(keyword)) return false;
+      return true;
+    });
+  }, [rawSettlementRows, appliedFilters]);
+  const exportSettlementRows = settlementRows;
   const availableSourceCount = (ordersQuery.data?.items?.length ?? 0) + (constructionRecordsQuery.data?.length ?? 0);
   const totalCommissionCents =
     (summaryQuery.data?.salesCommissionAmountCents ?? 0) + (summaryQuery.data?.workerCommissionAmountCents ?? 0);
@@ -232,7 +257,7 @@ export default function CommissionSettlementsPage() {
           <span className="commission-settlement-kpi-icon">
             <AuditOutlined />
           </span>
-          <p>待审核总额</p>
+          <p>可结算来源数</p>
           <strong>{availableSourceCount} 项</strong>
           <small>来自已完工订单和施工记录</small>
         </Card>
@@ -251,7 +276,8 @@ export default function CommissionSettlementsPage() {
           <label>
             <span>角色类型</span>
             <Select
-              defaultValue="ALL"
+              value={roleFilter}
+              onChange={(value) => setRoleFilter(value)}
               options={[
                 { label: "全部角色", value: "ALL" },
                 { label: "销售顾问", value: "SALES" },
@@ -260,17 +286,26 @@ export default function CommissionSettlementsPage() {
             />
           </label>
           <label>
-            <span>姓名</span>
-            <Input placeholder="输入姓名关键词" />
+            <span>姓名 / 单号</span>
+            <Input
+              value={keywordInput}
+              onChange={(e) => setKeywordInput(e.target.value)}
+              placeholder="输入姓名、订单或车牌关键词"
+            />
           </label>
           <label>
             <span>结算月份</span>
-            <Input type="month" defaultValue={settlementMonth} />
+            <Input
+              type="month"
+              value={monthInput}
+              onChange={(e) => setMonthInput(e.target.value || settlementMonth)}
+            />
           </label>
           <label>
             <span>单据状态</span>
             <Select
-              defaultValue="ALL"
+              value={statusFilter}
+              onChange={(value) => setStatusFilter(value)}
               options={[
                 { label: "全部状态", value: "ALL" },
                 { label: "已生成", value: "GENERATED" },
@@ -280,10 +315,37 @@ export default function CommissionSettlementsPage() {
             />
           </label>
           <div className="commission-settlement-filter-actions">
-            <Button type="primary" icon={<FilterOutlined />}>
+            <Button
+              type="primary"
+              icon={<FilterOutlined />}
+              onClick={() =>
+                setAppliedFilters({
+                  role: roleFilter,
+                  keyword: keywordInput,
+                  month: monthInput || settlementMonth,
+                  status: statusFilter
+                })
+              }
+            >
               查询
             </Button>
-            <Button icon={<ReloadOutlined />}>重置</Button>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                setRoleFilter("ALL");
+                setKeywordInput("");
+                setMonthInput(settlementMonth);
+                setStatusFilter("ALL");
+                setAppliedFilters({
+                  role: "ALL",
+                  keyword: "",
+                  month: settlementMonth,
+                  status: "ALL"
+                });
+              }}
+            >
+              重置
+            </Button>
           </div>
         </div>
       </section>
@@ -298,8 +360,8 @@ export default function CommissionSettlementsPage() {
             <Button icon={<DownloadOutlined />} onClick={() => void exportSettlementReport()}>
               导出报表
             </Button>
-            <Button type="primary" icon={<CalculatorOutlined />} onClick={() => message.info("请先在佣金规则配置页按订单或施工记录生成提成")}>
-              生成本月结算单
+            <Button type="primary" icon={<CalculatorOutlined />} href="/commissions">
+              前往生成提成
             </Button>
           </div>
         </div>
@@ -370,7 +432,7 @@ export default function CommissionSettlementsPage() {
           rowKey="id"
           loading={isSettlementLoading}
           dataSource={settlementRows}
-          pagination={false}
+          pagination={{ pageSize: 10 }}
           columns={[
             { title: "结算单号", render: (_, row) => getSettlementDisplayNo(row) },
             { title: "结算来源", dataIndex: "source" },

@@ -213,11 +213,6 @@ export default function InventoryMovementsPage() {
 
   return (
     <div className="management-page movement-ledger-page">
-      <div className="movement-ledger-breadcrumb">
-        <Link href="/inventory">库存管理</Link>
-        <span>/</span>
-        <span>库存流水</span>
-      </div>
       <StorePageHeader title="库存流水" description="追踪入库、出库、锁库、调拨、报损和盘点调整的完整批次链路">
         <Button href="/inventory" aria-label="返回库存总览" icon={<ArrowLeftOutlined />}>
           返回库存总览
@@ -232,7 +227,7 @@ export default function InventoryMovementsPage() {
           value={movementSummary.inbound}
           unit="件"
           tone="success"
-          description="采购、盘点和退货入库"
+          description="当前筛选范围 · 采购、盘点和退货入库"
         />
         <MovementKpiCard
           icon={<ArrowUpOutlined />}
@@ -240,7 +235,7 @@ export default function InventoryMovementsPage() {
           value={movementSummary.outbound}
           unit="件"
           tone="primary"
-          description="订单出库、报损和调拨"
+          description="当前筛选范围 · 订单出库、报损和调拨"
         />
         <MovementKpiCard
           icon={<AlertOutlined />}
@@ -370,7 +365,7 @@ export default function InventoryMovementsPage() {
             rowKey={(row) => row.id}
             loading={isMovementsLoading}
             dataSource={movementRows}
-            scroll={{ x: 1180 }}
+            scroll={{ x: "max-content" }}
             pagination={{ pageSize: 10, showSizeChanger: false }}
             columns={[
               {

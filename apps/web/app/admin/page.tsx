@@ -291,7 +291,13 @@ export default function AdminPage() {
                 <span className="admin-review-eyebrow">审核队列</span>
                 <h2>待处理信息变更 ({pendingCount})</h2>
               </div>
-              <Button type="link" onClick={() => setPage(1)}>
+              <Button
+                type="link"
+                onClick={() => {
+                  setPage(1);
+                  document.querySelector(".admin-store-table-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
                 查看全部队列
               </Button>
             </div>
@@ -366,8 +372,8 @@ export default function AdminPage() {
                   <strong>{value}</strong>
                 </div>
               ))}
-              <div className="admin-weekly-review">
-                <span>本周处理审核量</span>
+              <div className="admin-weekly-review" title="统计当前待审核与已公开门店合计">
+                <span>本周处理审核量（待审+在营）</span>
                 <strong>{pendingCount + publishedCount}</strong>
               </div>
             </Card>

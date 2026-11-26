@@ -868,17 +868,23 @@ function AfterSaleCostLedger({
       { value: "SUPPLIER_RECOVERY", label: "供应商追偿" }
     ] : [])
   ];
+  const [costFormOpen, setCostFormOpen] = useState(false);
   const entries = afterSale.costEntries ?? [];
   const canRecord = categories.length > 0;
   return (
     <>
-      <div className="after-sale-card-title">
+      <div className="after-sale-card-title after-sale-cost-head">
         <DollarOutlined />
         <h2>售后费用与追偿</h2>
+        {canRecord ? (
+          <Button size="small" type={costFormOpen ? "default" : "primary"} onClick={() => setCostFormOpen((open) => !open)}>
+            {costFormOpen ? "收起录入" : "登记费用"}
+          </Button>
+        ) : null}
       </div>
       <p className="after-sale-risk-note">店长录入材料、实际施工人工和外包；财务录入退款/补偿、供应商追偿及实际付款关联。确认后不可删除，只能红冲并保留原因。</p>
-      {canRecord ? (
-        <Form form={form} layout="vertical" onFinish={onSubmit}>
+      {canRecord && costFormOpen ? (
+        <Form form={form} layout="vertical" className="mb-3" onFinish={onSubmit}>
           <Form.Item name="category" label="费用类型" rules={[{ required: true, message: "请选择费用类型" }]}>
             <Select options={categories} placeholder="请选择您有权限录入的费用类型" />
           </Form.Item>
@@ -895,7 +901,7 @@ function AfterSaleCostLedger({
           ) : null}
           <Button type="primary" htmlType="submit" loading={submitting}>确认记录</Button>
         </Form>
-      ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="仅店长或财务可以录入售后费用" />}
+      ) : !canRecord ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="仅店长或财务可以录入售后费用" /> : null}
       <div className="after-sale-penalty-records">
         <span>费用台账</span>
         {entries.length === 0 ? <div className="after-sale-penalty-empty">暂无已确认费用或追偿记录</div> : entries.map((entry) => (

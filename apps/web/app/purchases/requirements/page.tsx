@@ -1,8 +1,8 @@
 "use client";
 
 import type { ProductUnit } from "@mallbay/shared";
-import { Alert, Button, Card, Drawer, Form, InputNumber, Select, Space, Table, Tag, message } from "antd";
-import { ArrowLeftOutlined, DeleteOutlined, FileTextOutlined, PlusOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Select, Space, Table, Tag, message } from "antd";
+import { ArrowLeftOutlined, DeleteOutlined, FileTextOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -52,6 +52,8 @@ export default function PurchaseRequirementsPage() {
   const queryClient = useQueryClient();
   const [createRequirementForm] = Form.useForm();
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [keyword, setKeyword] = useState("");
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeMember?.store.id;
   const permissionsQuery = useEffectivePermissions(storeId);
@@ -67,13 +69,28 @@ export default function PurchaseRequirementsPage() {
     queryFn: () => productApi.list({ storeId: storeId!, page: 1, pageSize: 200 }),
     enabled: Boolean(storeId) && canManagePurchase
   });
-  const rows = (requirementsQuery.data ?? []) as PurchaseRequirementRow[];
+  const rows = useMemo(() => (requirementsQuery.data ?? []) as PurchaseRequirementRow[], [requirementsQuery.data]);
   const productItems = useMemo(() => (productsQuery.data?.items ?? []) as ProductOption[], [productsQuery.data]);
   const productLookup = useMemo(() => {
     const lookup = new Map<string, ProductOption>();
     for (const product of productItems) lookup.set(product.id, product);
     return lookup;
   }, [productItems]);
+  const filteredRows = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (statusFilter !== "ALL" && row.status !== statusFilter) return false;
+      if (kw) {
+        const text = [
+          getPurchaseRequirementSourceOrderLabel(row),
+          getPurchaseRequirementItemsSummary(row, productLookup),
+          ...(row.purchaseOrders ?? []).map((o) => o.orderNo)
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!text.includes(kw)) return false;
+      }
+      return true;
+    });
+  }, [rows, statusFilter, keyword, productLookup]);
   const productOptions = productItems.map((product) => ({
     value: product.id,
     label: getProductDisplayName(product)
@@ -120,12 +137,47 @@ export default function PurchaseRequirementsPage() {
       <div className="purchase-module-layout">
         <PurchaseModuleNav activeKey="requirements" />
         <div className="purchase-module-content">
+          {requirementsQuery.isError ? <Alert type="error" showIcon title="采购需求加载失败，请稍后刷新" className="mb-3" /> : null}
           <Card className="management-table-card purchase-requirement-list-card" title="采购需求列表">
+            <div className="management-table-toolbar finance-list-toolbar">
+              <div className="mb-segmented-tabs" role="tablist" aria-label="采购需求状态">
+                {[
+                  { key: "ALL", label: "全部" },
+                  { key: "OPEN", label: "待采购" },
+                  { key: "PARTIAL_ORDERED", label: "部分转单" },
+                  { key: "ORDERED", label: "已转单" }
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={statusFilter === tab.key}
+                    className={`mb-segmented-tab${statusFilter === tab.key ? " is-active" : ""}`}
+                    onClick={() => setStatusFilter(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className="finance-list-toolbar-actions">
+                <Input.Search
+                  allowClear
+                  prefix={<SearchOutlined />}
+                  placeholder="搜索关联单号或产品明细"
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  style={{ width: 220 }}
+                />
+                <Button icon={<ReloadOutlined />} onClick={() => { setStatusFilter("ALL"); setKeyword(""); }}>
+                  重置
+                </Button>
+              </div>
+            </div>
             <Table<PurchaseRequirementRow>
               className="purchase-requirement-list"
               rowKey="id"
               loading={requirementsQuery.isLoading}
-              dataSource={rows}
+              dataSource={filteredRows}
               pagination={{ pageSize: 10 }}
               columns={[
                 {

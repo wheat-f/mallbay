@@ -361,11 +361,11 @@ test("inventory movement ledger page follows the prototype movement workspace", 
   assert.match(movementsSource, /inventoryApi\.batches/);
   assert.match(movementsSource, /productApi\.list/);
   assert.match(movementsSource, /userApi\.searchUsers/);
-  assert.match(movementsSource, /movement-ledger-breadcrumb/);
+  assert.doesNotMatch(movementsSource, /movement-ledger-breadcrumb/);
   assert.match(movementsSource, /href="\/inventory"[^>]*aria-label="返回库存总览"/);
   assert.match(movementsSource, /返回库存总览/);
-  assert.match(movementsSource, /<Link href="\/inventory">库存管理<\/Link>/);
-  assert.match(movementsSource, /<span>库存流水<\/span>/);
+
+
   assert.doesNotMatch(movementsSource, /新增入库/);
   assert.doesNotMatch(movementsSource, /router\.push\("\/inventory"\)/);
   assert.match(movementsSource, /库存流水/);

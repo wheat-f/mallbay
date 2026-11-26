@@ -135,10 +135,7 @@ export default function ConstructionMaterialsPage() {
             loading={pickupMutation.isPending}
             onClick={() => pickupMutation.mutate(pendingAllocationIds)}
           >
-            {hasPendingPickup ? "领取物料" : "已领取"}
-          </Button>
-          <Button icon={<ToolOutlined />} onClick={() => router.push("/construction/tasks")}>
-            返回我的任务
+            {!materialData ? "待选择工单" : hasPendingPickup ? "领取物料" : "已领取"}
           </Button>
         </Space>
       </section>
@@ -252,8 +249,10 @@ export default function ConstructionMaterialsPage() {
                   </article>
                 ))
               )}
-              {!materialsQuery.isLoading && (materialData?.summary.allocatedBatches ?? 0) === 0 ? (
-                <Empty description="当前订单暂无锁定批次" />
+              {!materialsQuery.isLoading && (materialData?.materials?.length ?? 0) > 0 && (materialData?.summary.allocatedBatches ?? 0) === 0 ? (
+                <div className="construction-materials-batch-list-empty">
+                  <Empty description="当前订单暂无锁定批次" />
+                </div>
               ) : null}
             </div>
           </Card>
@@ -280,13 +279,10 @@ export default function ConstructionMaterialsPage() {
                   loading={pickupMutation.isPending}
                   onClick={() => pickupMutation.mutate(pendingAllocationIds)}
                 >
-                  {hasPendingPickup ? "领取物料" : "已领取"}
+                  {!materialData ? "待选择工单" : hasPendingPickup ? "领取物料" : "已领取"}
                 </Button>
                 <Button icon={<ClockCircleOutlined />} onClick={() => router.push("/inventory/movements")}>
                   查看损耗流水
-                </Button>
-                <Button icon={<ToolOutlined />} onClick={() => router.push("/construction/tasks")}>
-                  返回我的任务
                 </Button>
               </div>
             </Card>

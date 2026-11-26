@@ -284,18 +284,13 @@ export default function InvoiceDetailPage() {
                 <span>内部备注</span>
               </div>
               <p>
-                该发票对应高端保时捷车主，请确保开票信息准确无误。如需废弃重开，必须先收回原纸质质保卡或作废记录。
+                如需废弃或重开，请先确认原发票冲红或作废记录。
               </p>
-              <div className="invoice-detail-note-editor">
-                <Input.TextArea rows={3} placeholder="添加新备注..." />
-                <Button type="primary" block>
-                  添加备注
-                </Button>
-              </div>
+              <p>核对订单收款、发票抬头和电子文件后再发送给客户。</p>
             </Card>
 
             <Card className="invoice-detail-total-card">
-              <span>累计开票总额 (本月)</span>
+              <span>本张发票金额</span>
               <strong>{formatCentsAsYuan(invoice.amountCents)}</strong>
               <p>已纳入本店发票流水与报表分析统计。</p>
             </Card>
@@ -459,7 +454,7 @@ function getInvoiceOperationLogs(invoice?: InvoiceSummary) {
       tone: "draft"
     },
     {
-      title: "财务经理修改了抬头信息",
+      title: "财务核对发票信息",
       description: `核对 ${invoiceNo} 的发票抬头、关联订单和电子文件状态。`,
       tone: "info"
     }

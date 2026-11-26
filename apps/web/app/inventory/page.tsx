@@ -96,7 +96,15 @@ export default function InventoryOverviewPage() {
   return (
     <div className="management-page inventory-overview-shell">
       <StorePageHeader title="库存运营总览" description="查看库存健康、订单匹配、锁库出库和库存流水，采购事项已拆到采购管理。">
-        <Button icon={<FileSearchOutlined />} href="/inventory/matching">
+        <Button icon={<SwapOutlined />} href="/inventory/movements">
+          库存流水
+        </Button>
+        {canManageInventory ? (
+          <Button href="/inventory/warehouses">
+            仓库管理
+          </Button>
+        ) : null}
+        <Button type="primary" icon={<FileSearchOutlined />} href="/inventory/matching">
           库存匹配
         </Button>
       </StorePageHeader>
@@ -147,15 +155,16 @@ export default function InventoryOverviewPage() {
               loading={pendingOrdersQuery.isLoading}
               dataSource={pendingRows.slice(0, 6)}
               pagination={false}
+              scroll={{ x: "max-content" }}
               columns={[
-                { title: "订单号", render: (_, row) => row.orderNo ?? "未编号订单" },
+                { title: "订单号", render: (_, row) => <span className="whitespace-nowrap">{row.orderNo ?? "未编号订单"}</span> },
                 { title: "客户", render: (_, row) => getInventoryOrderCustomerLabel(row) },
                 { title: "产品", render: (_, row) => getInventoryOrderItemsSummary(row) },
-                { title: "预约", render: (_, row) => formatInventoryOrderDate(row.appointmentDate) },
+                { title: "预约", render: (_, row) => <span className="whitespace-nowrap">{formatInventoryOrderDate(row.appointmentDate)}</span> },
                 {
                   title: "操作",
                   render: (_, row) => (
-                    <Link href={`/inventory/matching?orderId=${row.id}`} className="inventory-overview-row-action">
+                    <Link href={`/inventory/matching?orderId=${row.id}`} className="inventory-overview-row-action whitespace-nowrap">
                       进入匹配
                     </Link>
                   )

@@ -1,9 +1,8 @@
 "use client";
 
-import { Alert, App, Button, Card, Checkbox, DatePicker, Drawer, Form, Input, InputNumber, Select, Skeleton, Tag, TimePicker, Typography } from "antd";
+import { Alert, App, Button, Card, Checkbox, DatePicker, Drawer, Form, Input, InputNumber, Result, Select, Skeleton, Tag, TimePicker, Typography } from "antd";
 import {
   ArrowLeftOutlined,
-  CarOutlined,
   CheckCircleOutlined,
   CreditCardOutlined,
   CopyOutlined,
@@ -427,6 +426,19 @@ export default function OrderDetailPage() {
       <div className="management-page">
         {orderQuery.isLoading ? (
           <Skeleton active />
+        ) : !order ? (
+          <Card>
+            <Result
+              status={orderQuery.isError ? "error" : "404"}
+              title={orderQuery.isError ? "订单详情加载失败" : "未找到该订单"}
+              subTitle={orderQuery.isError ? "请检查网络或权限后重试，或返回销售订单列表。" : "该订单可能已被删除或不属于当前门店。"}
+              extra={
+                <Button type="primary" onClick={() => router.push("/orders")}>
+                  返回订单列表
+                </Button>
+              }
+            />
+          </Card>
         ) : (
           <>
             <section className="order-detail-hero">
@@ -553,13 +565,7 @@ export default function OrderDetailPage() {
                     <span>预约日期</span><strong>{formatDateOnly(order?.appointmentDate)}</strong>
                     <span>预约时段</span><strong>{order?.appointmentTimeSlot ?? "-"}</strong>
                   </div>
-                  <div className="order-vehicle-strip">
-                    <span><CarOutlined /></span>
-                    <div>
-                      <strong>{order?.vehicle?.carPlate ?? "车辆待完善"}</strong>
-                      <p>{[order?.vehicle?.carModel, order?.vehicle?.carColor].filter(Boolean).join(" / ") || "车型颜色待完善"}</p>
-                    </div>
-                  </div>
+
                 </Card>
 
                 <Card className="order-detail-card order-product-card" title={<><InboxOutlined />商品清单</>}>
@@ -678,7 +684,7 @@ export default function OrderDetailPage() {
                     <Button className="order-related-link" type="text" onClick={openOrderInvoiceEntry}>
                       <span><FileTextOutlined /></span>
                       <strong>发票记录</strong>
-                      <Tag>未开票</Tag>
+                      <RightOutlined />
                     </Button>
                     <Button className="order-related-link" type="text" onClick={() => router.push("/warranties")}>
                       <span><SafetyCertificateOutlined /></span>
@@ -751,10 +757,10 @@ export default function OrderDetailPage() {
       />
       <Drawer
         title="复制为新订单"
-        width={520}
+        size={520}
         open={copyDrawerOpen}
         onClose={() => !copyOrderMutation.isPending && setCopyDrawerOpen(false)}
-        destroyOnClose
+        destroyOnHidden
         extra={(
           <Button type="primary" loading={copyOrderMutation.isPending} onClick={() => copyOrderForm.submit()}>
             生成新草稿

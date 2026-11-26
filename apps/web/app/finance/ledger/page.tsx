@@ -1,7 +1,8 @@
 "use client";
 
-import { Alert, Card, DatePicker, Select, Space, Table, Tag } from "antd";
+import { Alert, Button, Card, DatePicker, Select, Space, Table, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { PaymentDirection, PaymentRecordType } from "@mallbay/shared";
 import { financeApi } from "../../../src/features/finance/api";
@@ -23,6 +24,7 @@ type LedgerFilters = {
 };
 
 export default function FinanceLedgerPage() {
+  const router = useRouter();
   const storeId = useAuthStore((s) => s.user?.storeMember?.store.id);
   const [filters, setFilters] = useState<LedgerFilters>({});
   const accounts = useQuery({
@@ -104,6 +106,7 @@ export default function FinanceLedgerPage() {
               }))
             }
           />
+          <Button onClick={() => setFilters({})}>重置</Button>
         </Space>
         {query.isError ? (
           <Alert
@@ -159,8 +162,22 @@ export default function FinanceLedgerPage() {
               dataIndex: "note",
               render: (value) => value || "-",
             },
+            {
+              title: "操作",
+              key: "actions",
+              width: 110,
+              render: (_, row) => (
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => router.push(`/finance/payment-records/${row.id}`)}
+                >
+                  查看详情
+                </Button>
+              ),
+            },
             ]}
-            pagination={false}
+            pagination={{ pageSize: 12 }}
           />
         )}
       </Card>

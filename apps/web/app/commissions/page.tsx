@@ -9,9 +9,7 @@ import {
   HistoryOutlined,
   PercentageOutlined,
   SaveOutlined,
-  SyncOutlined,
   TeamOutlined,
-  TrophyOutlined,
   WalletOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -233,9 +231,6 @@ export default function CommissionsPage() {
         <Button href="/commissions/settlements" icon={<HistoryOutlined />}>
           提成结算
         </Button>
-        <Button icon={<HistoryOutlined />} onClick={() => message.info("操作日志会统一进入审计中心")}>
-          操作日志
-        </Button>
         <Button type="primary" icon={<SaveOutlined />} onClick={() => ruleForm.submit()}>
           保存所有配置
         </Button>
@@ -258,17 +253,6 @@ export default function CommissionsPage() {
 
       <section className="commission-workspace">
         <div className="commission-main-column">
-          <div className="commission-global-card">
-            <div className="commission-card-icon">
-              <SyncOutlined />
-            </div>
-            <div>
-              <h2>全局规则应用</h2>
-              <p>一键同步配置到所有门店或指定销售组。</p>
-            </div>
-            <Button onClick={() => message.info("请先确认规则适用范围后再同步到相关小组")}>立即全量应用</Button>
-          </div>
-
           <div ref={salesCommissionRuleSectionRef} className="commission-rule-bento">
             <div className="commission-bento-card commission-sales-panel">
               <div className="commission-bento-head">
@@ -299,34 +283,12 @@ export default function CommissionsPage() {
               </Form>
             </div>
 
-            <div className="commission-bento-card commission-type-card">
-              <div className="commission-bento-head">
-                <TrophyOutlined />
-                <div>
-                  <h3>按施工类型配置</h3>
-                  <p>将规则绑定漆面保护膜、玻璃膜、复检等履约类型。</p>
-                </div>
-              </div>
-              <div className="commission-type-grid">
-                {[
-                  ["全车隐形车衣", "8.5%"],
-                  ["窗膜施工", "12.0%"],
-                  ["内饰保护", "15.0%"]
-                ].map(([name, rate]) => (
-                  <div key={name}>
-                    <span>{name}</span>
-                    <strong>{rate}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             <div className="commission-bento-card commission-tier-panel">
               <div className="commission-bento-head">
                 <WalletOutlined />
                 <div>
-                  <h3>销售额阶梯奖励</h3>
-                  <p>按月度销售额区间维护额外奖金和阶梯提成。</p>
+                  <h3>已配置销售佣金规则</h3>
+                  <p>展示当前门店已保存的销售佣金比例与固定金额规则明细。</p>
                 </div>
               </div>
               <div className="commission-rule-mobile-cards">
@@ -378,20 +340,22 @@ export default function CommissionsPage() {
           <div ref={workerCommissionRuleSectionRef}>
             <Card className="commission-worker-panel" title="施工员佣金规则">
               <div className="commission-worker-rules">
-                {[
-                  ["首席技师 P3", "权重 1.5x", "¥200"],
-                  ["高级技师 P2", "权重 1.2x", "¥150"],
-                  ["初级技师 P1", "权重 1.0x", "¥100"]
-                ].map(([level, desc, amount]) => (
-                  <div key={level}>
-                    <TeamOutlined />
-                    <span>
-                      <strong>{level}</strong>
-                      <small>{desc}</small>
-                    </span>
-                    <b>{amount}</b>
-                  </div>
-                ))}
+                <div>
+                  <TeamOutlined />
+                  <span>
+                    <strong>在岗施工技师</strong>
+                    <small>可参与施工提成核算</small>
+                  </span>
+                  <b>{workerOptions.length} 位</b>
+                </div>
+                <div>
+                  <TeamOutlined />
+                  <span>
+                    <strong>待核算施工单</strong>
+                    <small>按单录入基数与调整金额</small>
+                  </span>
+                  <b>{constructionRecordOptions.length} 单</b>
+                </div>
               </div>
             </Card>
           </div>

@@ -7,6 +7,7 @@ import {
   EyeOutlined,
   FileTextOutlined,
   PlusOutlined,
+  ReloadOutlined,
   SearchOutlined,
   TagOutlined,
   UploadOutlined
@@ -111,6 +112,9 @@ export default function CustomersPage() {
   const [customerTypeFilter, setCustomerTypeFilter] = useState<string>();
   const [tagFilter, setTagFilter] = useState<string>();
   const [statusFilter, setStatusFilter] = useState<CustomerStatus>("ACTIVE");
+  const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [valueFilter, setValueFilter] = useState<string>();
   const [warrantyFilter, setWarrantyFilter] = useState<string>();
   const [recentFilter, setRecentFilter] = useState<string>();
@@ -135,8 +139,8 @@ export default function CustomersPage() {
   });
 
   const customersQuery = useQuery({
-    queryKey: ["customers", storeId, search, tagFilter, statusFilter, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
-    queryFn: () => customerApi.list({ storeId: storeId!, page: 1, pageSize: 20, q: search, systemTag: tagFilter, status: statusFilter }),
+    queryKey: ["customers", storeId, search, tagFilter, statusFilter, page, pageSize, permissionsQuery.data?.policyVersion, permissionsQuery.data?.bindingVersion],
+    queryFn: () => customerApi.list({ storeId: storeId!, page, pageSize, q: search, systemTag: tagFilter, status: statusFilter }),
     enabled: Boolean(storeId && canReadCustomers),
     staleTime: 10_000
   });
@@ -382,121 +386,162 @@ export default function CustomersPage() {
           ))}
         </div>
 
-        <section className="customers-filter-card management-filter-card">
-          <div className="customers-search-row">
-            <span className="customers-filter-label">快速搜索</span>
-            <div className="customers-search-chips">
-              {quickSearchModes.map((mode) => (
-                <button
-                  key={mode.label}
-                  type="button"
-                  className={mode.label === quickSearchMode ? "customers-search-chip active" : "customers-search-chip"}
-                  onClick={() => setQuickSearchMode(mode.label)}
-                >
-                  {mode.label}
-                </button>
-              ))}
-            </div>
-            <Input.Search
-              className="customers-search-input"
-              prefix={<SearchOutlined />}
-              placeholder={quickSearchModes.find((mode) => mode.label === quickSearchMode)?.placeholder}
-              allowClear
-              onSearch={setSearch}
-            />
-          </div>
-
-          <div className="customers-filter-grid management-filter-grid">
-            <div className="orders-filter-item">
-              <span className="orders-filter-label">档案状态</span>
-              <Select
-                value={statusFilter}
-                onChange={(value) => setStatusFilter(value)}
-                options={[
-                  { label: "正常", value: "ACTIVE" },
-                  { label: "已归档", value: "ARCHIVED" }
-                ]}
-              />
-            </div>
-            <div className="orders-filter-item">
-              <span className="orders-filter-label">客户类型</span>
-              <Select
-                allowClear
-                placeholder="全部"
-                value={customerTypeFilter}
-                onChange={(value) => setCustomerTypeFilter(value)}
-                options={[
-                  { label: "个人客户", value: "PERSONAL" },
-                  { label: "企业客户", value: "COMPANY" }
-                ]}
-              />
-            </div>
-            <div className="orders-filter-item">
-              <span className="orders-filter-label">客户标签</span>
-              <Select
-                allowClear
-                placeholder="全部"
-                value={tagFilter}
-                onChange={(value) => setTagFilter(value)}
-                options={[
-                  { label: "VIP客户", value: "VIP" },
-                  { label: "高价值客户", value: "HIGH_VALUE" },
-                  { label: "老客户", value: "OLD_CUSTOMER" },
-                  { label: "新客户", value: "NEW_CUSTOMER" }
-                ]}
-              />
-            </div>
-            <div className="orders-filter-item">
-              <span className="orders-filter-label">消费价值</span>
-              <Select
-                allowClear
-                placeholder="不限"
-                value={valueFilter}
-                onChange={(value) => setValueFilter(value)}
-                options={[
-                  { label: "¥10,000 以上", value: "OVER_10000" },
-                  { label: "¥50,000 以上", value: "OVER_50000" }
-                ]}
-              />
-            </div>
-            <div className="orders-filter-item">
-              <span className="orders-filter-label">质保状态</span>
-              <Select
-                allowClear
-                placeholder="全部"
-                value={warrantyFilter}
-                onChange={(value) => setWarrantyFilter(value)}
-                options={[
-                  { label: "有有效质保", value: "ACTIVE" },
-                  { label: "暂无有效质保", value: "NONE" }
-                ]}
-              />
-            </div>
-            <div className="orders-filter-item">
-              <span className="orders-filter-label">最近消费时间</span>
-              <Select
-                allowClear
-                placeholder="不限"
-                value={recentFilter}
-                onChange={(value) => setRecentFilter(value)}
-                options={[
-                  { label: "近 30 天", value: "30" },
-                  { label: "近半年", value: "180" },
-                  { label: "近一年", value: "365" }
-                ]}
-              />
-            </div>
-            <div className="orders-filter-item">
-              <span className="orders-filter-label">筛选结果</span>
-              <div className="customers-filter-result">{filteredRows.length} / {rows.length} 条</div>
-            </div>
-          </div>
-        </section>
-
         {!storeId ? (
           <Empty description="当前账号尚未加入门店" />
         ) : (
           <Card className="management-table-card customers-table-card">
+            <section className="customers-filter-card management-table-toolbar">
+              <div className="customers-toolbar-row">
+                <div className="customers-search-row">
+                  <span className="customers-filter-label">快速搜索</span>
+                  <div className="customers-search-chips">
+                    {quickSearchModes.map((mode) => (
+                      <button
+                        key={mode.label}
+                        type="button"
+                        className={mode.label === quickSearchMode ? "customers-search-chip active" : "customers-search-chip"}
+                        onClick={() => setQuickSearchMode(mode.label)}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                  <Input.Search
+                    className="customers-search-input"
+                    prefix={<SearchOutlined />}
+                    placeholder={quickSearchModes.find((mode) => mode.label === quickSearchMode)?.placeholder}
+                    allowClear
+                    value={search}
+                    onChange={(event) => {
+                      const val = event.target.value;
+                      setSearch(val);
+                      if (!val) setPage(1);
+                    }}
+                    onSearch={(val) => {
+                      setSearch(val.trim());
+                      setPage(1);
+                    }}
+                  />
+                </div>
+                <div className="customers-toolbar-actions">
+                  <Button onClick={() => setAdvancedFilterOpen((open) => !open)}>
+                    {advancedFilterOpen ? "收起筛选" : "更多筛选"}
+                  </Button>
+                  <Button
+                    icon={<ReloadOutlined />}
+                    onClick={() => {
+                      setSearch("");
+                      setCustomerTypeFilter(undefined);
+                      setTagFilter(undefined);
+                      setStatusFilter("ACTIVE");
+                      setValueFilter(undefined);
+                      setWarrantyFilter(undefined);
+                      setRecentFilter(undefined);
+                      setPage(1);
+                    }}
+                  >
+                    重置
+                  </Button>
+                </div>
+              </div>
+
+              <div className="customers-filter-grid management-filter-grid mt-3">
+                <div className="orders-filter-item">
+                  <span className="orders-filter-label">档案状态</span>
+                  <Select
+                    value={statusFilter}
+                    onChange={(value) => {
+                      setStatusFilter(value);
+                      setPage(1);
+                    }}
+                    options={[
+                      { label: "正常", value: "ACTIVE" },
+                      { label: "已归档", value: "ARCHIVED" }
+                    ]}
+                  />
+                </div>
+                <div className="orders-filter-item">
+                  <span className="orders-filter-label">客户类型</span>
+                  <Select
+                    allowClear
+                    placeholder="全部"
+                    value={customerTypeFilter}
+                    onChange={(value) => setCustomerTypeFilter(value)}
+                    options={[
+                      { label: "个人客户", value: "PERSONAL" },
+                      { label: "企业客户", value: "COMPANY" }
+                    ]}
+                  />
+                </div>
+                <div className="orders-filter-item">
+                  <span className="orders-filter-label">客户标签</span>
+                  <Select
+                    allowClear
+                    placeholder="全部"
+                    value={tagFilter}
+                    onChange={(value) => {
+                      setTagFilter(value);
+                      setPage(1);
+                    }}
+                    options={[
+                      { label: "VIP客户", value: "VIP" },
+                      { label: "高价值客户", value: "HIGH_VALUE" },
+                      { label: "老客户", value: "OLD_CUSTOMER" },
+                      { label: "新客户", value: "NEW_CUSTOMER" }
+                    ]}
+                  />
+                </div>
+                <div className="orders-filter-item">
+                  <span className="orders-filter-label">当前页筛选</span>
+                  <div className="customers-filter-result">{filteredRows.length} / {rows.length} 条</div>
+                </div>
+              </div>
+
+              {advancedFilterOpen ? (
+                <div className="customers-filter-grid management-filter-grid customers-advanced-grid">
+                  <div className="orders-filter-item">
+                    <span className="orders-filter-label">消费价值</span>
+                    <Select
+                      allowClear
+                      placeholder="不限"
+                      value={valueFilter}
+                      onChange={(value) => setValueFilter(value)}
+                      options={[
+                        { label: "¥10,000 以上", value: "OVER_10000" },
+                        { label: "¥50,000 以上", value: "OVER_50000" }
+                      ]}
+                    />
+                  </div>
+                  <div className="orders-filter-item">
+                    <span className="orders-filter-label">质保状态</span>
+                    <Select
+                      allowClear
+                      placeholder="全部"
+                      value={warrantyFilter}
+                      onChange={(value) => setWarrantyFilter(value)}
+                      options={[
+                        { label: "有有效质保", value: "ACTIVE" },
+                        { label: "暂无有效质保", value: "NONE" }
+                      ]}
+                    />
+                  </div>
+                  <div className="orders-filter-item">
+                    <span className="orders-filter-label">最近消费时间</span>
+                    <Select
+                      allowClear
+                      placeholder="不限"
+                      value={recentFilter}
+                      onChange={(value) => setRecentFilter(value)}
+                      options={[
+                        { label: "近 30 天", value: "30" },
+                        { label: "近半年", value: "180" },
+                        { label: "近一年", value: "365" }
+                      ]}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </section>
             <div className="customers-mobile-cards">
               {filteredRows.length > 0 ? (
                 filteredRows.map((row) => {
@@ -608,7 +653,17 @@ export default function CustomersPage() {
               rowKey="id"
               loading={customersQuery.isLoading}
               dataSource={filteredRows}
-              scroll={{ x: 1080 }}
+              scroll={{ x: "max-content" }}
+              pagination={{
+                current: page,
+                pageSize,
+                total: customersQuery.data?.total ?? filteredRows.length,
+                showSizeChanger: true,
+                onChange: (nextPage, nextPageSize) => {
+                  setPage(nextPage);
+                  setPageSize(nextPageSize);
+                }
+              }}
               onRow={(row) => ({
                 className: "customers-clickable-row",
                 onClick: () => setSelectedCustomer(row)
@@ -629,12 +684,12 @@ export default function CustomersPage() {
                 },
                 {
                   title: "客户类型",
-                  width: 90,
+                  width: 98,
                   render: (_, row) => <Tag>{getCustomerTypeLabel(row.customerType)}</Tag>
                 },
                 {
                   title: "车辆数量",
-                  width: 82,
+                  width: 92,
                   align: "right",
                   render: (_, row) => row.vehicles?.length ?? 0
                 },
@@ -645,7 +700,7 @@ export default function CustomersPage() {
                 },
                 {
                   title: "消费总额",
-                  width: 100,
+                  width: 108,
                   align: "right",
                   render: (_, row) => {
                     const metrics = getCustomerAutoArchiveMetrics(row);
@@ -658,12 +713,12 @@ export default function CustomersPage() {
                 },
                 {
                   title: "最近消费",
-                  width: 100,
-                  render: (_, row) => <span className="customers-muted">{formatCustomerDate(row.updatedAt ?? row.createdAt)}</span>
+                  width: 114,
+                  render: (_, row) => <span className="customers-muted whitespace-nowrap">{formatCustomerDate(row.updatedAt ?? row.createdAt)}</span>
                 },
                 {
                   title: "有效质保",
-                  width: 100,
+                  width: 104,
                   render: (_, row) => {
                     const metrics = getCustomerAutoArchiveMetrics(row);
                     return metrics.activeWarrantyCount > 0 ? (
@@ -674,22 +729,24 @@ export default function CustomersPage() {
                   }
                 },
                 {
-                  title: "系统标签",
-                  width: 150,
-                  render: (_, row) => row.systemTags?.length ? (
-                    <div className="customers-tag-list">
-                      {row.systemTags.map((tag) => <Tag key={tag.code} color={tag.code === "KEY_FOLLOW_UP" ? "red" : "blue"} title={tag.reasons?.join("；")}>{tag.label}</Tag>)}
-                    </div>
-                  ) : <span className="customers-muted">暂无系统标签</span>
-                },
-                {
-                  title: "人工标签",
-                  width: 150,
-                  render: (_, row) => row.customTags?.length ? (
-                    <div className="customers-tag-list">
-                      {row.customTags.map((tag) => <Tag key={tag.id}>{tag.label}</Tag>)}
-                    </div>
-                  ) : <span className="customers-muted">未打标签</span>
+                  title: "客户标签",
+                  width: 210,
+                  render: (_, row) => {
+                    const hasTags = Boolean(row.systemTags?.length || row.customTags?.length);
+                    if (!hasTags) return <span className="customers-muted">未打标签</span>;
+                    return (
+                      <div className="customers-tag-list">
+                        {row.systemTags?.map((tag) => (
+                          <Tag key={tag.code} color={tag.code === "KEY_FOLLOW_UP" ? "red" : "blue"} title={tag.reasons?.join("；")}>
+                            {tag.label}
+                          </Tag>
+                        ))}
+                        {row.customTags?.map((tag) => (
+                          <Tag key={tag.id}>{tag.label}</Tag>
+                        ))}
+                      </div>
+                    );
+                  }
                 },
                 {
                   title: "操作",

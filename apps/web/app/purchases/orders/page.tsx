@@ -1,7 +1,7 @@
 "use client";
 
-import { Alert, App, Button, Card, Select, Space, Table, Tag } from "antd";
-import { ArrowLeftOutlined, DownloadOutlined, PlusOutlined } from "@ant-design/icons";
+import { Alert, App, Button, Card, Input, Select, Space, Table, Tag } from "antd";
+import { ArrowLeftOutlined, DownloadOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { purchaseApi } from "../../../src/lib/api";
@@ -12,7 +12,7 @@ import { useAuthStore } from "../../../src/stores/auth-store";
 import { hasEffectivePermission, useEffectivePermissions } from "../../../src/features/permissions/use-effective-permissions";
 import { exportRowsToExcel } from "../../../src/lib/export-excel";
 import { getProductUnitLabel } from "../../../src/features/products/display";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 type PurchaseOrderRow = {
   id: string;
@@ -38,8 +38,27 @@ export default function PurchasesOrdersPage() {
     queryFn: () => purchaseApi.orders(storeId!),
     enabled: Boolean(storeId && hasEffectivePermission(permissionsQuery.data?.permissions, "purchase", "read", storeId))
   });
-  const rows = (ordersQuery.data ?? []) as PurchaseOrderRow[];
+  const rows = useMemo(() => (ordersQuery.data ?? []) as PurchaseOrderRow[], [ordersQuery.data]);
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [keyword, setKeyword] = useState("");
   const [exportDimension, setExportDimension] = useState<PurchaseExportDimension>("supplier");
+  const filteredRows = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (statusFilter !== "ALL" && row.status !== statusFilter) return false;
+      if (kw) {
+        const text = [
+          row.orderNo,
+          row.supplierName,
+          row.purchaser?.nickname,
+          row.purchaser?.username,
+          ...(row.items ?? []).map((item) => getPurchaseInboundItemDetails(item as never).product)
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!text.includes(kw)) return false;
+      }
+      return true;
+    });
+  }, [rows, statusFilter, keyword]);
   const exportMutation = useMutation({
     mutationFn: () => purchaseApi.exportOrderDetails(storeId!, exportDimension),
     onSuccess: async (exportRows) => {
@@ -112,20 +131,58 @@ export default function PurchasesOrdersPage() {
       <div className="purchase-module-layout">
         <PurchaseModuleNav activeKey="orders" />
         <div className="purchase-module-content">
+          {ordersQuery.isError ? <Alert type="error" showIcon title="采购订单加载失败，请稍后刷新" className="mb-3" /> : null}
           <Card className="management-table-card">
+            <div className="management-table-toolbar finance-list-toolbar">
+              <div className="mb-segmented-tabs" role="tablist" aria-label="采购订单状态">
+                {[
+                  { key: "ALL", label: "全部" },
+                  { key: "PENDING_APPROVAL", label: "待审批" },
+                  { key: "APPROVED", label: "已审批" },
+                  { key: "PARTIAL_RECEIVED", label: "部分入库" },
+                  { key: "RECEIVED", label: "已入库" },
+                  { key: "CANCELLED", label: "已取消" }
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={statusFilter === tab.key}
+                    className={`mb-segmented-tab${statusFilter === tab.key ? " is-active" : ""}`}
+                    onClick={() => setStatusFilter(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className="finance-list-toolbar-actions">
+                <Input.Search
+                  allowClear
+                  prefix={<SearchOutlined />}
+                  placeholder="搜索单号、供应商或采购员"
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  style={{ width: 260 }}
+                />
+                <Button icon={<ReloadOutlined />} onClick={() => { setStatusFilter("ALL"); setKeyword(""); }}>
+                  重置
+                </Button>
+              </div>
+            </div>
             <Table<PurchaseOrderRow>
               rowKey="id"
               loading={ordersQuery.isLoading}
-              dataSource={rows}
+              dataSource={filteredRows}
+              scroll={{ x: "max-content" }}
               pagination={{ pageSize: 10 }}
               onRow={(row) => ({ onClick: () => router.push(`/purchases/orders/${row.id}`) })}
               columns={[
-                { title: "采购单", render: (_, row) => row.orderNo ?? "未编号采购单" },
-                { title: "供应商", render: (_, row) => row.supplierName ?? "供应商待确认" },
-                { title: "采购员", render: (_, row) => row.purchaser?.nickname ?? row.purchaser?.username ?? "采购员待确认" },
-                { title: "状态", render: (_, row) => <Tag>{getPurchaseOrderStatusLabel(row.status)}</Tag> },
-                { title: "采购明细", render: (_, row) => (row.items ?? []).map((item) => getPurchaseInboundItemDetails(item as never).product).join(" / ") || "明细待确认" },
-                { title: "到货验收", render: (_, row) => getPurchaseOrderArrivalReminder(row as never) },
+                { title: "采购单", width: 170, render: (_, row) => row.orderNo ?? "未编号采购单" },
+                { title: "供应商", width: 140, render: (_, row) => row.supplierName ?? "供应商待确认" },
+                { title: "采购员", width: 120, render: (_, row) => row.purchaser?.nickname ?? row.purchaser?.username ?? "采购员待确认" },
+                { title: "状态", width: 110, render: (_, row) => <Tag>{getPurchaseOrderStatusLabel(row.status)}</Tag> },
+                { title: "采购明细", width: 180, render: (_, row) => (row.items ?? []).map((item) => getPurchaseInboundItemDetails(item as never).product).join(" / ") || "明细待确认" },
+                { title: "到货验收", width: 160, render: (_, row) => getPurchaseOrderArrivalReminder(row as never) },
                 {
                   title: "操作",
                   width: 140,

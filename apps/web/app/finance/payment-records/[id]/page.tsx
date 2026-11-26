@@ -301,12 +301,12 @@ export default function PaymentRecordDetailPage() {
               <Card className="finance-record-detail-panel">
                 <div className="finance-record-section-title">
                   <PaperClipOutlined />
-                  <h2>附件凭证</h2>
+                  <h2>打款备注与入账说明</h2>
                 </div>
                 <div className="finance-record-voucher-panel">
                   <div className="finance-record-voucher-head">
                     <div>
-                      <span>打款详情与凭证</span>
+                      <span>业务类型</span>
                       <strong>{getPaymentRecordTypeLabel(record.type)}</strong>
                     </div>
                     <Tag
@@ -318,40 +318,16 @@ export default function PaymentRecordDetailPage() {
                     </Tag>
                   </div>
                   <div className="finance-record-voucher-summary">
-                    <span>打款金额</span>
+                    <span>发生金额</span>
                     <strong>{formatCentsAsYuan(record.amountCents)}</strong>
                   </div>
-                  <div className="finance-record-upload-box">
-                    <PaperClipOutlined />
-                    <strong>上传银行凭证</strong>
-                    <span>
-                      支持 PNG、JPG 或 PDF 格式，凭证归档后可随流水导出。
-                    </span>
-                  </div>
-                  <label className="finance-record-voucher-note">
+                  <div className="finance-record-voucher-note">
                     <span>财务备注</span>
-                    <Input.TextArea
-                      rows={3}
-                      value={record.note ?? ""}
-                      placeholder="输入相关备注信息"
-                      readOnly
-                    />
-                  </label>
+                    <p>{record.note?.trim() || "暂无财务备注"}</p>
+                  </div>
                   <div className="finance-record-voucher-time">
                     <span>
                       记录时间: {formatRecordDateTime(record.createdAt)}
-                    </span>
-                  </div>
-                  <Button type="primary" block disabled>
-                    提交并标记已打款
-                  </Button>
-                </div>
-                <div className="finance-record-attachment">
-                  <SafetyCertificateOutlined />
-                  <div>
-                    <strong>凭证待补充</strong>
-                    <span>
-                      支持上传银行回单、合同、发票或付款截图，归档后可随流水导出。
                     </span>
                   </div>
                 </div>

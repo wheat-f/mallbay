@@ -6,7 +6,7 @@ import { App, Button, Card, Form, Input, Select, Table, Tag } from "antd";
 import { EyeOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { afterSalesApi, orderApi } from "../../src/lib/api";
 import { useAuthStore } from "../../src/stores/auth-store";
 import { StorePageHeader } from "../../src/features/workbench/store-page-header";
@@ -37,8 +37,17 @@ export default function AfterSalesPage() {
   const storeId = user?.storeMember?.store.id;
   const [createForm] = Form.useForm<CreateAfterSaleFormValues>();
   const [selectedAfterSaleId, setSelectedAfterSaleId] = useState<string>();
+  const [statusTab, setStatusTab] = useState<string>("ALL");
   const [draftFilters, setDraftFilters] = useState<AfterSaleQuickFilters>({});
   const [appliedFilters, setAppliedFilters] = useState<AfterSaleQuickFilters>({});
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const orderId = new URLSearchParams(window.location.search).get("orderId");
+    if (orderId) {
+      createForm.setFieldValue("orderId", orderId);
+    }
+  }, [createForm]);
 
   const listQuery = useQuery({
     queryKey: ["after-sales", storeId],
@@ -59,10 +68,11 @@ export default function AfterSalesPage() {
     ].filter(Boolean).join(" / ")
   }));
   const allAfterSaleRows = useMemo(() => listQuery.data ?? [], [listQuery.data]);
-  const afterSaleRows = useMemo(
-    () => filterAfterSalesRows(allAfterSaleRows, appliedFilters),
-    [allAfterSaleRows, appliedFilters]
-  );
+  const afterSaleRows = useMemo(() => {
+    const base = filterAfterSalesRows(allAfterSaleRows, appliedFilters);
+    if (statusTab === "ALL") return base;
+    return base.filter((row) => row.status === statusTab);
+  }, [allAfterSaleRows, appliedFilters, statusTab]);
   const activeSelectedAfterSaleId = selectedAfterSaleId ?? afterSaleRows[0]?.id;
   const selectedAfterSale = useMemo(
     () => afterSaleRows.find((item) => item.id === activeSelectedAfterSaleId) ?? afterSaleRows[0],
@@ -212,6 +222,28 @@ export default function AfterSalesPage() {
 
       <section className="after-sales-workspace">
         <Card className="after-sales-ticket-list" title="售后工单列表">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="mb-segmented-tabs" role="tablist" aria-label="售后状态筛选">
+              {[
+                { key: "ALL", label: "全部" },
+                { key: "OPEN", label: "待处理" },
+                { key: "ASSIGNED", label: "处理中" },
+                { key: "RESOLVED", label: "已完成" },
+                { key: "CLOSED", label: "已关闭" }
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={statusTab === tab.key}
+                  className={`mb-segmented-tab${statusTab === tab.key ? " is-active" : ""}`}
+                  onClick={() => setStatusTab(tab.key)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="after-sales-ticket-mobile-cards">
             {afterSaleRows.length > 0 ? (
               afterSaleRows.map((row) => (

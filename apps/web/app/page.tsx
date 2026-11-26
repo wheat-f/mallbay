@@ -20,10 +20,12 @@ import {
   UserOutlined
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authApi, storeApi } from "../src/lib/api";
 import { NotificationBell } from "../src/components/NotificationBell";
+import { StoreCoverImage } from "../src/components/store-cover-image";
 import { useAuthStore } from "../src/stores/auth-store";
 import { hasEffectivePermission, useEffectivePermissions } from "../src/features/permissions/use-effective-permissions";
 import { useCurrentStoreContext } from "../src/features/workbench/store-context";
@@ -39,19 +41,14 @@ type StoreLobbyCardProps = {
 };
 
 function StoreLobbyCard({ store }: StoreLobbyCardProps) {
-  const router = useRouter();
-
   return (
-    <button className="store-lobby-card" type="button" onClick={() => router.push(`/stores/${store.id}`)}>
+    <Link className="store-lobby-card" href={`/stores/${store.id}`}>
       <div className="store-lobby-cover">
-        {store.coverUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={store.coverUrl} alt={store.name} />
-        ) : (
-          <div className="store-lobby-cover-placeholder">
-            <ShopOutlined />
-          </div>
-        )}
+        <StoreCoverImage
+          src={store.coverUrl}
+          alt={store.name}
+          placeholderClassName="store-lobby-cover-placeholder"
+        />
       </div>
       <div className="store-lobby-card-body">
         <div className="store-lobby-card-kicker">认证服务门店</div>
@@ -64,11 +61,11 @@ function StoreLobbyCard({ store }: StoreLobbyCardProps) {
         )}
         <p className="store-lobby-card-desc">{store.description ?? "门店暂未填写简介，点击查看公开资料。"}</p>
         <div className="store-lobby-card-meta">
-          <span>认证技师: 已认证团队</span>
-          <span>工位: 以门店详情为准</span>
+          <span>认证技师驻店</span>
+          <span>专属工位 · 查看详情 →</span>
         </div>
       </div>
-    </button>
+    </Link>
   );
 }
 

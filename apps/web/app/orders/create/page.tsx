@@ -987,8 +987,11 @@ function CreateOrderContent() {
                               className="w-full"
                             />
                           </Form.Item>
+                          <Form.Item label=" ">
+                            <Button icon={<MinusCircleOutlined />} aria-label="删除产品行" onClick={() => remove(field.name)} />
+                          </Form.Item>
                           {serverPricing?.calculation.lines[field.name] ? (
-                            <Space size={4} className="create-order-price-suggestion">
+                            <Space size={8} className="create-order-price-suggestion">
                               <Typography.Text type="secondary">
                                 建议 ¥{(serverPricing.calculation.lines[field.name].suggestedUnitPriceCents / 100).toFixed(2)}
                                 {getSuggestedPriceSourceLabel(serverPricing.calculation.lines[field.name].basePriceSource)}
@@ -1004,9 +1007,6 @@ function CreateOrderContent() {
                               </Button>
                             </Space>
                           ) : null}
-                          <Form.Item label=" ">
-                            <Button icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} />
-                          </Form.Item>
                         </div>
                       ))}
                       <Button icon={<PlusOutlined />} onClick={() => add({ quantity: 1 })}>

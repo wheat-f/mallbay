@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { App, Avatar, Button, Card, Drawer, Empty, Input, Popconfirm, Select, Space, Table, Tag, Typography } from "antd";
+import { Alert, App, Avatar, Button, Card, Drawer, Empty, Input, Popconfirm, Select, Space, Table, Tag, Typography } from "antd";
 import { CalendarOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Suspense, useMemo, useState } from "react";
@@ -287,6 +287,15 @@ function MembersContent() {
             </div>
           </Card>
 
+          {activeMemberView === "permission" ? (
+            <Alert
+              type="info"
+              showIcon
+              className="mb-3"
+              title="当前处于权限核对视图"
+              description="下表「权限范围」列展示了各岗位默认的系统授权边界；如需细化岗位权限策略，请前往系统设置中的角色权限配置。"
+            />
+          ) : null}
           <Card className="members-table-card" title="人员列表">
             <div className="members-mobile-cards">
               {filteredMembers.length > 0 ? (
@@ -343,7 +352,8 @@ function MembersContent() {
               rowKey={(record) => record.id}
               loading={storeQuery.isLoading}
               dataSource={filteredMembers}
-              pagination={false}
+              scroll={{ x: 720 }}
+              pagination={{ pageSize: 12 }}
               locale={{ emptyText: <Empty description={storeId ? "暂无团队成员" : "当前账号未加入门店"} /> }}
               columns={[
                 {

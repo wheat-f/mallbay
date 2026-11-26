@@ -197,7 +197,7 @@ export default function ProductsPage() {
       totalCount: rows.length,
       categoryCount,
       inventoryWarningCount,
-      monthNewCount: 0
+      activeCount: rows.filter((row) => row.status === "ACTIVE").length
     };
   }, [rows]);
 
@@ -240,7 +240,7 @@ export default function ProductsPage() {
             ["总档案数", productSummary.totalCount, "当前产品主数据"],
             ["分类数量", productSummary.categoryCount, "已覆盖产品分类"],
             ["库存预警", productSummary.inventoryWarningCount, "单位换算待完善"],
-            ["本月新增", productSummary.monthNewCount, "新增产品档案"]
+            ["已启用产品", productSummary.activeCount, "当前可下单产品"]
           ].map(([label, value, description]) => (
             <Card key={label} className="management-kpi-card">
               <div className="management-kpi-label">{label}</div>

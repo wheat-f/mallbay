@@ -26,8 +26,8 @@ test("warranty detail page follows the prototype traceability workspace layout",
 
   assert.match(detailSource, /warranty-detail-hero/);
   assert.match(detailSource, /warranty-detail-summary/);
-  assert.match(detailSource, /label: "手机号码"/);
-  assert.match(detailSource, /联系方式待确认/);
+  assert.match(detailSource, /label: "客户类型"/);
+  assert.doesNotMatch(detailSource, /联系方式待确认/);
   assert.doesNotMatch(detailSource, /138 \*\*\*\* 9928/);
   assert.match(detailSource, /label: "客户姓名"/);
   assert.match(detailSource, /label: "车牌号码"/);
@@ -53,7 +53,7 @@ test("warranty detail page follows the prototype traceability workspace layout",
   assert.match(detailSource, /getWarrantyLogEntries/);
   assert.match(detailSource, /质保创建/);
   assert.match(detailSource, /材料与施工追溯/);
-  assert.match(detailSource, /作废\/重开质保/);
+  assert.doesNotMatch(detailSource, /作废\/重开质保/);
   assert.match(detailSource, /下载电子质保卡/);
   assert.match(detailSource, /售后服务记录/);
   assert.match(detailSource, /发起售后申请/);

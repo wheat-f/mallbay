@@ -19,7 +19,6 @@ import { orderApi } from "../../src/lib/api";
 import type { AuthoritativeLifecycleResult, OrderPaymentStatus } from "../../src/features/orders/api";
 import {
   CONSTRUCTION_TYPE_LABEL,
-  ORDER_STATUS_LABEL,
   getConstructionTypeLabel,
   getOrderStatusLabel,
   yuanCurrency
@@ -338,112 +337,105 @@ function OrdersContent() {
             ))}
           </div>
 
-          <section className="management-filter-card orders-filter-card">
-            <div className="management-filter-actions mb-3">
-              {QUICK_STATUS_OPTIONS.map((option) => {
-                const active = status === option.value || (!status && !option.value);
-                return (
-                  <Button
-                    key={option.label}
-                    type={active ? "primary" : "default"}
-                    onClick={() => {
-                      setStatus(option.value);
-                      setPage(1);
-                      updateOrderListUrl({ status: option.value, page: 1 });
-                    }}
-                  >
-                    <Tag color={active ? undefined : option.tone} className="mr-1">
-                      {option.label}
-                    </Tag>
-                  </Button>
-                );
-              })}
-            </div>
-            <div className="management-filter-grid orders-filter-grid">
-              <div className="orders-filter-item orders-filter-wide">
-                <span className="orders-filter-label">关键词</span>
-                <Input.Search
-                  prefix={<SearchOutlined />}
-                  placeholder="订单号 / 客户 / 车牌"
-                  allowClear
-                  defaultValue={q}
-                  onSearch={(value) => {
-                    const nextQ = value.trim();
-                    setQ(nextQ);
-                    setPage(1);
-                    updateOrderListUrl({ q: nextQ || undefined, page: 1 });
-                  }}
-                />
-              </div>
-              <div className="orders-filter-item orders-filter-date">
-                <span className="orders-filter-label">下单日期</span>
-                <DatePicker.RangePicker
-                  className="w-full"
-                  format="YYYY-MM-DD"
-                  value={[createdFrom ? dayjs(createdFrom) : null, createdTo ? dayjs(createdTo) : null]}
-                  onChange={(_, dateStrings) => {
-                    const [from, to] = dateStrings;
-                    const nextCreatedFrom = from || undefined;
-                    const nextCreatedTo = to || undefined;
-                    setCreatedFrom(nextCreatedFrom);
-                    setCreatedTo(nextCreatedTo);
-                    setPage(1);
-                    updateOrderListUrl({ createdFrom: nextCreatedFrom, createdTo: nextCreatedTo, page: 1 });
-                  }}
-                />
-              </div>
-              <div className="orders-filter-item">
-                <span className="orders-filter-label">订单状态</span>
-                <Select
-                  allowClear
-                  placeholder="全部订单"
-                  value={status}
-                  onChange={(nextStatus) => {
-                    setStatus(nextStatus);
-                    setPage(1);
-                    updateOrderListUrl({ status: nextStatus, page: 1 });
-                  }}
-                  options={Object.entries(ORDER_STATUS_LABEL).map(([value, label]) => ({ value, label }))}
-                />
-              </div>
-              <div className="orders-filter-item">
-                <span className="orders-filter-label">施工类型</span>
-                <Select
-                  allowClear
-                  placeholder="全部类型"
-                  value={constructionType}
-                  onChange={(nextConstructionType) => {
-                    setConstructionType(nextConstructionType);
-                    setPage(1);
-                    updateOrderListUrl({ constructionType: nextConstructionType, page: 1 });
-                  }}
-                  options={Object.entries(CONSTRUCTION_TYPE_LABEL).map(([value, label]) => ({ value, label }))}
-                />
-              </div>
-              <div className="orders-filter-item">
-                <span className="orders-filter-label">支付状态</span>
-                <Select
-                  allowClear
-                  placeholder="全部状态"
-                  value={paymentStatus}
-                  onChange={(nextPaymentStatus) => {
-                    setPaymentStatus(nextPaymentStatus);
-                    setPage(1);
-                    updateOrderListUrl({ paymentStatus: nextPaymentStatus, page: 1 });
-                  }}
-                  options={Object.entries(PAYMENT_STATUS_LABEL).map(([value, label]) => ({ value, label }))}
-                />
-              </div>
-              <div className="orders-filter-item">
-                <span className="orders-filter-label">筛选操作</span>
+          <Card className="management-table-card">
+            <section className="management-table-toolbar orders-filter-card">
+              <div className="orders-toolbar-top">
+                <div className="mb-segmented-tabs" role="tablist" aria-label="订单状态筛选">
+                  {QUICK_STATUS_OPTIONS.map((option) => {
+                    const active = status === option.value || (!status && !option.value);
+                    return (
+                      <button
+                        key={option.label}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        className={`mb-segmented-tab${active ? " is-active" : ""}`}
+                        onClick={() => {
+                          setStatus(option.value);
+                          setPage(1);
+                          updateOrderListUrl({ status: option.value, page: 1 });
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
                 <Button icon={<ReloadOutlined />} onClick={resetFilters}>
                   重置
                 </Button>
               </div>
-            </div>
-          </section>
-
-          <Card className="management-table-card">
+              <div className="management-filter-grid orders-filter-grid">
+                <div className="orders-filter-item orders-filter-wide">
+                  <span className="orders-filter-label">关键词</span>
+                  <Input.Search
+                    prefix={<SearchOutlined />}
+                    placeholder="订单号 / 客户 / 车牌"
+                    allowClear
+                    value={q}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setQ(nextValue);
+                      if (!nextValue) {
+                        setPage(1);
+                        updateOrderListUrl({ q: undefined, page: 1 });
+                      }
+                    }}
+                    onSearch={(value) => {
+                      const nextQ = value.trim();
+                      setQ(nextQ);
+                      setPage(1);
+                      updateOrderListUrl({ q: nextQ || undefined, page: 1 });
+                    }}
+                  />
+                </div>
+                <div className="orders-filter-item orders-filter-date">
+                  <span className="orders-filter-label">下单日期</span>
+                  <DatePicker.RangePicker
+                    className="w-full"
+                    format="YYYY-MM-DD"
+                    value={[createdFrom ? dayjs(createdFrom) : null, createdTo ? dayjs(createdTo) : null]}
+                    onChange={(_, dateStrings) => {
+                      const [from, to] = dateStrings;
+                      const nextCreatedFrom = from || undefined;
+                      const nextCreatedTo = to || undefined;
+                      setCreatedFrom(nextCreatedFrom);
+                      setCreatedTo(nextCreatedTo);
+                      setPage(1);
+                      updateOrderListUrl({ createdFrom: nextCreatedFrom, createdTo: nextCreatedTo, page: 1 });
+                    }}
+                  />
+                </div>
+                <div className="orders-filter-item">
+                  <span className="orders-filter-label">施工类型</span>
+                  <Select
+                    allowClear
+                    placeholder="全部类型"
+                    value={constructionType}
+                    onChange={(nextConstructionType) => {
+                      setConstructionType(nextConstructionType);
+                      setPage(1);
+                      updateOrderListUrl({ constructionType: nextConstructionType, page: 1 });
+                    }}
+                    options={Object.entries(CONSTRUCTION_TYPE_LABEL).map(([value, label]) => ({ value, label }))}
+                  />
+                </div>
+                <div className="orders-filter-item">
+                  <span className="orders-filter-label">支付状态</span>
+                  <Select
+                    allowClear
+                    placeholder="全部状态"
+                    value={paymentStatus}
+                    onChange={(nextPaymentStatus) => {
+                      setPaymentStatus(nextPaymentStatus);
+                      setPage(1);
+                      updateOrderListUrl({ paymentStatus: nextPaymentStatus, page: 1 });
+                    }}
+                    options={Object.entries(PAYMENT_STATUS_LABEL).map(([value, label]) => ({ value, label }))}
+                  />
+                </div>
+              </div>
+            </section>
             <div className="orders-mobile-cards">
               {rows.length > 0 ? (
                 rows.map((row) => {
@@ -532,17 +524,17 @@ function OrdersContent() {
             {
               title: "订单编号",
               dataIndex: "orderNo",
-              width: 150,
+              width: 132,
               render: (orderNo: string) => <Typography.Text strong className="text-[var(--mb-primary)]">{orderNo}</Typography.Text>
             },
             {
               title: "客户",
-              width: 140,
+              width: 108,
               render: (_, row) => row.customer?.companyName ?? row.customer?.name ?? "-"
             },
             {
               title: "车辆信息",
-              width: 180,
+              width: 148,
               render: (_, row) => (
                 <Space orientation="vertical" size={0}>
                   <Typography.Text>{row.vehicle?.carModel ?? "-"}</Typography.Text>
@@ -554,12 +546,12 @@ function OrdersContent() {
             },
             {
               title: "施工/类型",
-              width: 140,
+              width: 114,
               render: (_, row) => getConstructionTypeLabel(row.constructionType)
             },
             {
               title: "预约日期",
-              width: 140,
+              width: 106,
               render: (_, row) => (
                 <Space orientation="vertical" size={0}>
                   <Typography.Text>{formatOrderListDate(row.appointmentDate ?? row.createdAt)}</Typography.Text>
@@ -569,7 +561,7 @@ function OrdersContent() {
             },
             {
               title: "金额/已收",
-              width: 150,
+              width: 124,
               render: (_, row) => (
                 <Space orientation="vertical" size={0}>
                   <Typography.Text strong className="text-[var(--mb-primary)]">
@@ -581,7 +573,7 @@ function OrdersContent() {
             },
             {
               title: "支付状态",
-              width: 110,
+              width: 92,
               render: (_, row) => {
                 const payment = getPaymentStatus(row);
                 return <Tag color={payment.color}>{payment.label}</Tag>;
@@ -589,7 +581,7 @@ function OrdersContent() {
             },
             {
               title: "施工进度",
-              width: 150,
+              width: 128,
               render: (_, row) => {
                 const lifecycle = lifecycleById?.[row.id];
                 return lifecycle && lifecycle.ok
@@ -599,21 +591,12 @@ function OrdersContent() {
             },
             {
               title: "销售员",
-              width: 110,
+              width: 84,
               render: (_, row) => row.salesPerson?.nickname ?? row.salesPerson?.username ?? "-"
             },
             {
-              title: "状态",
-              width: 100,
-              render: (_, row) => {
-                const lifecycle = lifecycleById?.[row.id];
-                return <Tag>{lifecycle?.ok ? getOrderStageLabel(lifecycle.value.currentStage) : "履约状态加载失败"}</Tag>;
-              }
-            },
-            {
               title: "操作",
-              fixed: "right",
-              width: 126,
+              width: 104,
               render: (_, row) => (
                 <Space size={4}>
                   <Button

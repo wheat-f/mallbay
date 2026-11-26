@@ -205,7 +205,7 @@ export default function PricingSimulatorPage() {
         <Card className="pricing-simulator-result" title="3. 试算结果" extra={<Tag color={result.guard?.decision === "BLOCKED" ? "error" : result.guard?.decision === "APPROVAL_REQUIRED" ? "warning" : "success"}><SafetyCertificateOutlined /> {result.guard?.decision === "BLOCKED" ? "低于保护价" : result.guard?.decision === "APPROVAL_REQUIRED" ? "需要审批" : "价格正常"}</Tag>}>
           <div className="pricing-simulator-totals">
             <div><span>产品合计</span><strong>{yuan(result.calculation.suggestedProductAmountCents)}</strong></div>
-            <div><span>建议人工费</span><strong>{yuan(result.calculation.suggestedLaborCostCents)}</strong></div>
+            <div><span>建议施工收费</span><strong>{yuan(result.calculation.suggestedLaborCostCents)}</strong></div>
             <div className="is-total"><span>建议总价</span><strong>{yuan(result.calculation.suggestedTotalCents)}</strong></div>
           </div>
           <Typography.Title level={5}>逐产品建议价</Typography.Title>

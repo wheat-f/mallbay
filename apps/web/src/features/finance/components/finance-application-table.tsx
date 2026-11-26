@@ -22,5 +22,5 @@ export function FinanceApplicationTable({ rows, loading, onOpen }: Props) {
     { title: "状态", dataIndex: "status", render: (value) => <Tag color={getFinanceStatusTone(value)}>{getFinanceApprovalStatusLabel(value)}</Tag> },
     { title: "操作", key: "actions", render: (_, row) => <Space><Button icon={<EyeOutlined />} onClick={() => onOpen(row.id)}>查看详情</Button></Space> }
   ];
-  return <Table rowKey="id" loading={loading} columns={columns} dataSource={rows} locale={{ emptyText: <Empty description="暂无财务申请" /> }} pagination={false} />;
+  return <Table rowKey="id" loading={loading} columns={columns} dataSource={rows} scroll={{ x: 860 }} locale={{ emptyText: <Empty description="暂无财务申请" /> }} pagination={{ pageSize: 12 }} />;
 }

@@ -654,6 +654,7 @@ export default function WorkbenchPage() {
   const lowStockCount = countLowStockBatches((inventoryBatchesQuery.data ?? []) as InventoryBatchSummary[]);
   const activeWarrantyCount = countActiveWarranties((warrantiesQuery.data ?? []) as WarrantySummary[]);
   const financeApplicationAmountCents = (summary?.expenseAmountCents ?? 0) + (summary?.reimbursementAmountCents ?? 0);
+  const interactiveKpiLabels = new Set(["待派单", "库存预警", "生效质保", "财务申请额", "团队成员"]);
   const workbenchKpis = store
     ? buildWorkbenchKpis({
         summary,
@@ -749,25 +750,32 @@ export default function WorkbenchPage() {
             </section>
 
             <section className="workbench-kpi-grid">
-              {workbenchKpis.map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  className={`workbench-kpi-card workbench-kpi-${item.tone}`}
-                  onClick={() => {
-                    if (item.label === "待派单") router.push("/construction/assignments");
-                    if (item.label === "库存预警") router.push("/inventory");
-                    if (item.label === "生效质保") router.push("/warranties");
-                    if (item.label === "财务申请额") router.push("/finance");
-                    if (item.label === "团队成员") setInviteOpen(true);
-                  }}
-                >
-                  <span className="workbench-kpi-card-icon">{item.icon}</span>
-                  <span className="workbench-kpi-card-label">{item.label}</span>
-                  <strong>{item.value}</strong>
-                  <span className="workbench-kpi-card-trend">{item.trend}</span>
-                </button>
-              ))}
+              {workbenchKpis.map((item) => {
+                const interactive = interactiveKpiLabels.has(item.label);
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    className={`workbench-kpi-card workbench-kpi-${item.tone}${interactive ? " is-interactive" : ""}`}
+                    onClick={() => {
+                      if (!interactive) return;
+                      if (item.label === "待派单") router.push("/construction/assignments");
+                      if (item.label === "库存预警") router.push("/inventory");
+                      if (item.label === "生效质保") router.push("/warranties");
+                      if (item.label === "财务申请额") router.push("/finance");
+                      if (item.label === "团队成员") setInviteOpen(true);
+                    }}
+                  >
+                    <div className="workbench-kpi-card-top">
+                      <span className="workbench-kpi-card-icon">{item.icon}</span>
+                      {interactive ? <span className="workbench-kpi-arrow" aria-hidden="true">↗</span> : null}
+                    </div>
+                    <span className="workbench-kpi-card-label">{item.label}</span>
+                    <strong>{item.value}</strong>
+                    <span className="workbench-kpi-card-trend">{item.trend}</span>
+                  </button>
+                );
+              })}
             </section>
 
             <section className="workbench-main-grid">
@@ -860,20 +868,28 @@ export default function WorkbenchPage() {
                     <strong>业务快捷入口</strong>
                     <span>{effectiveRoleLabel}可用功能</span>
                   </div>
-                  <div className="workbench-entry-grid">
-                    {workbenchSections.flatMap((section) =>
-                      section.items.map((item) => (
-                        <button
-                          key={`${section.title}-${item.href}-${item.label}`}
-                          type="button"
-                          onClick={() => router.push(item.href)}
-                          className={`workbench-entry-button${item.primary ? " workbench-entry-button-primary" : ""}`}
-                        >
-                          <span className="workbench-entry-label">{item.label}</span>
-                          <span className="workbench-entry-text">{item.description}</span>
-                        </button>
-                      ))
-                    )}
+                  <div className="workbench-quick-groups">
+                    {workbenchSections.map((section) => (
+                      <section key={section.title} className="workbench-entry-section">
+                        <div className="workbench-entry-heading">
+                          <span className="workbench-entry-title">{section.title}</span>
+                          {section.description ? <span className="workbench-entry-desc">{section.description}</span> : null}
+                        </div>
+                        <div className="workbench-entry-grid">
+                          {section.items.map((item) => (
+                            <button
+                              key={`${section.title}-${item.href}-${item.label}`}
+                              type="button"
+                              onClick={() => router.push(item.href)}
+                              className={`workbench-entry-button${item.primary ? " workbench-entry-button-primary" : ""}`}
+                            >
+                              <span className="workbench-entry-label">{item.label}</span>
+                              <span className="workbench-entry-text">{item.description}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 </div>
               </Card>
@@ -894,7 +910,6 @@ export default function WorkbenchPage() {
                   )}
                   <div className="workbench-trend-legend">
                     <span><i />订单量</span>
-                    <span><i />施工量</span>
                   </div>
                 </Card>
 
@@ -913,7 +928,7 @@ export default function WorkbenchPage() {
                   ) : null}
                 >
                   <div className="workbench-member-list">
-                    {store.members.map((m) => (
+                    {store.members.slice(0, 6).map((m) => (
                       <div key={m.id} className="member-row">
                         <div className="flex items-center gap-3">
                           <Avatar
@@ -957,6 +972,13 @@ export default function WorkbenchPage() {
                       </div>
                     ))}
                   </div>
+                  {store.members.length > 6 ? (
+                    <div className="workbench-team-footer">
+                      <Button type="link" size="small" onClick={() => router.push("/members")}>
+                        查看全部 {store.members.length} 位成员 →
+                      </Button>
+                    </div>
+                  ) : null}
                 </Card>
               </div>
             </section>

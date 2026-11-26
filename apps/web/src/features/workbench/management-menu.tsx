@@ -6,7 +6,7 @@ import { hasEffectivePermission } from "../permissions/use-effective-permissions
 import {
   AppstoreOutlined, AuditOutlined, CalendarOutlined, DashboardOutlined,
   FileDoneOutlined, FileProtectOutlined, FormOutlined, GiftOutlined,
-  IdcardOutlined, ReconciliationOutlined, SettingOutlined, ShopOutlined,
+  IdcardOutlined, ReconciliationOutlined, RollbackOutlined, SettingOutlined, ShopOutlined,
   ShoppingCartOutlined, TeamOutlined, ToolOutlined, WalletOutlined
 } from "@ant-design/icons";
 
@@ -66,6 +66,7 @@ export const managementMenuItems: ManagementMenuItem[] = [
   { key: "construction-cost-settlements", label: "施工成本结算", href: "/construction/cost-settlements", icon: <WalletOutlined />, anyOf: [{ code: "finance", action: "read" }] },
   { key: "inventory", label: "库存管理", href: "/inventory", icon: <AppstoreOutlined />, anyOf: [{ code: "inventory", action: "read" }] },
   { key: "purchases", label: "采购管理", href: "/purchases", icon: <FileDoneOutlined />, anyOf: [{ code: "purchase", action: "read" }] },
+  { key: "returns", label: "退货处理", href: "/returns", icon: <RollbackOutlined />, anyOf: [{ code: "returns", action: "read" }, { code: "returns", action: "write" }] },
   { key: "warranties", label: "质保管理", href: "/warranties", icon: <FileProtectOutlined />, anyOf: [{ code: "warranties", action: "read" }] },
   { key: "after-sales", label: "售后管理", href: "/after-sales", icon: <ReconciliationOutlined />, anyOf: [{ code: "after-sales", action: "read" }] },
   { key: "members", label: "人员管理", href: "/members", icon: <IdcardOutlined />, anyOf: [{ code: "store.members", action: "read" }] },
@@ -82,7 +83,7 @@ const managementMenuGroupDefinitions: Array<{ key: string; label: string; icon: 
   { key: "customer-sales", label: "客户与销售", icon: <TeamOutlined />, itemKeys: ["customers", "orders", "sales-quotes"] },
   { key: "product-pricing", label: "产品与定价", icon: <ShopOutlined />, itemKeys: ["products", "pricing", "construction-charge-standards", "construction-role-costs"] },
   { key: "construction", label: "施工履约", icon: <ToolOutlined />, itemKeys: ["construction-tasks", "construction", "cross-store-construction", "construction-schedules", "construction-leaves", "construction-leave-approvals", "construction-materials", "construction-profile", "after-sales-tasks", "construction-cost-settlements"] },
-  { key: "inventory-purchase", label: "库存与采购", icon: <AppstoreOutlined />, itemKeys: ["inventory", "purchases"] },
+  { key: "inventory-purchase", label: "库存与采购", icon: <AppstoreOutlined />, itemKeys: ["inventory", "purchases", "returns"] },
   { key: "warranty-after-sales", label: "质保与售后", icon: <FileProtectOutlined />, itemKeys: ["warranties", "after-sales"] },
   { key: "finance-business", label: "财务与经营", icon: <WalletOutlined />, itemKeys: ["finance-expenses", "finance", "invoices", "rebates", "reports"] },
   { key: "people-system", label: "人员与系统", icon: <SettingOutlined />, itemKeys: ["members", "admin", "settings"] }
@@ -138,6 +139,7 @@ export function getActiveManagementMenuKey(pathname: string) {
   if (pathname.startsWith("/products")) return "products";
   if (pathname.startsWith("/construction")) return "construction";
   if (pathname.startsWith("/inventory")) return "inventory";
+  if (pathname.startsWith("/returns")) return "returns";
   if (pathname.startsWith("/purchases")) return "purchases";
   if (pathname.startsWith("/warranties")) return "warranties";
   if (pathname.startsWith("/after-sales")) return "after-sales";

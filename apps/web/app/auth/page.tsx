@@ -28,7 +28,8 @@ export default function AuthPage() {
   const user = useAuthStore((state) => state.user);
   const setSession = useAuthStore((state) => state.setSession);
   const router = useRouter();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
+  const [rememberAccount, setRememberAccount] = useState(true);
   const [form] = Form.useForm<AuthFormValues>();
   const credentialEncryptionEnabled = isCredentialEncryptionEnabled();
 
@@ -43,7 +44,14 @@ export default function AuthPage() {
         ? authApi.registerEncrypted({ username: values.username, password: values.password })
         : authApi.register({ username: values.username, password: values.password });
     },
-    onSuccess: (session) => {
+    onSuccess: (session, values) => {
+      if (typeof window !== "undefined") {
+        if (rememberAccount && mode === "login" && values.identifier) {
+          window.localStorage.setItem("mallbay-remember-identifier", values.identifier);
+        } else if (!rememberAccount) {
+          window.localStorage.removeItem("mallbay-remember-identifier");
+        }
+      }
       setSession(session);
       message.success(mode === "login" ? "登录成功" : "注册成功");
       router.push("/");
@@ -57,6 +65,15 @@ export default function AuthPage() {
     setMode(value);
     form.resetFields();
   };
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && mode === "login") {
+      const remembered = window.localStorage.getItem("mallbay-remember-identifier");
+      if (remembered) {
+        form.setFieldValue("identifier", remembered);
+      }
+    }
+  }, [form, mode]);
 
   useEffect(() => {
     if (hasHydrated && user) {
@@ -86,13 +103,13 @@ export default function AuthPage() {
           </Typography.Paragraph>
           <div className="auth-hero-stats">
             <div>
-              <strong>1,200+</strong>
-              <span>合规门店</span>
+              <strong>全流程追踪</strong>
+              <span>接车 → 施工 → 质保</span>
             </div>
             <div className="auth-hero-divider" />
             <div>
-              <strong>500k+</strong>
-              <span>交付车辆</span>
+              <strong>门店一体协同</strong>
+              <span>库存 · 财务 · 提成</span>
             </div>
           </div>
         </div>
@@ -190,7 +207,9 @@ export default function AuthPage() {
 
             {mode === "login" ? (
               <div className="auth-login-options">
-                <Checkbox>记住登录状态</Checkbox>
+                <Checkbox checked={rememberAccount} onChange={(e) => setRememberAccount(e.target.checked)}>
+                  记住登录状态
+                </Checkbox>
                 <a href="mailto:support@mallbay.com?subject=Password%20Reset%20Request">忘记密码？</a>
               </div>
             ) : (
@@ -220,8 +239,30 @@ export default function AuthPage() {
           </div>
 
           <div className="auth-footer-links">
-            <a href="#">隐私政策</a>
-            <a href="#">服务条款</a>
+            <button
+              type="button"
+              className="auth-policy-btn"
+              onClick={() =>
+                modal.info({
+                  title: "隐私政策说明",
+                  content: "mallbay 仅收集开展门店订单、车辆档案、施工质保与财务结算所需的必要业务数据，不对外出售客户与车主信息。"
+                })
+              }
+            >
+              隐私政策
+            </button>
+            <button
+              type="button"
+              className="auth-policy-btn"
+              onClick={() =>
+                modal.info({
+                  title: "服务条款说明",
+                  content: "账号按所属门店授权访问对应业务模块；请妥善保管账号凭据，跨角色或密码重置请联系门店店长或支持邮箱。"
+                })
+              }
+            >
+              服务条款
+            </button>
             <a href="mailto:support@mallbay.com">联系支持</a>
           </div>
         </div>

@@ -428,7 +428,8 @@ test("construction offline page follows the prototype upload queue layout", () =
   assert.match(pageSource, /construction-offline-mobile-cards/);
   assert.match(pageSource, /construction-offline-group/);
   assert.match(pageSource, /construction-offline-progress/);
-  assert.match(pageSource, /offlinePreviewQueue/);
+  assert.doesNotMatch(pageSource, /offlinePreviewQueue/);
+  assert.doesNotMatch(pageSource, /45\.2/);
   assert.match(pageSource, /groupOfflineQueue/);
   assert.match(pageSource, /离线上传队列/);
   assert.match(pageSource, /订单 #/);

@@ -4,17 +4,20 @@ import {
   Button,
   Card,
   Descriptions,
+  Empty,
   Form,
   Input,
+  InputNumber,
   Modal,
   Select,
+  Skeleton,
   Space,
   Tag,
 } from "antd";
-import { ArrowLeftOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import { StorePageHeader } from "../../../../src/features/workbench/store-page-header";
 import { financeApi } from "../../../../src/features/finance/api";
 import { FinanceApprovalTimeline } from "../../../../src/features/finance/components/finance-approval-timeline";
 import { FinanceAttachmentUpload } from "../../../../src/features/finance/components/finance-attachment-upload";
@@ -64,6 +67,7 @@ export default function ReimbursementDetailPage() {
       setReviewOpen(false);
       refresh();
     },
+    onError: (e: Error) => message.error(e.message),
   });
   const pay = useMutation({
     mutationFn: (v: {
@@ -77,6 +81,7 @@ export default function ReimbursementDetailPage() {
       payForm.resetFields();
       refresh();
     },
+    onError: (e: Error) => message.error(e.message),
   });
   const withdraw = useMutation({
     mutationFn: (v: { note?: string }) =>
@@ -87,6 +92,7 @@ export default function ReimbursementDetailPage() {
       withdrawForm.resetFields();
       refresh();
     },
+    onError: (e: Error) => message.error(e.message),
   });
   const resubmit = useMutation({
     mutationFn: (v: { title: string; amountCents: number; reason: string }) =>
@@ -97,19 +103,18 @@ export default function ReimbursementDetailPage() {
       resubmitForm.resetFields();
       refresh();
     },
+    onError: (e: Error) => message.error(e.message),
   });
   const item = query.data;
   return (
     <div className="management-page">
-      <Space>
-        <Button
-          icon={<ArrowLeftOutlined />}
-          onClick={() => router.push("/finance/reimbursements")}
-        >
-          返回报销审核
-        </Button>
-        <h1>报销申请详情</h1>
-      </Space>
+      <StorePageHeader
+        title="报销申请详情"
+        backHref="/finance/reimbursements"
+        backLabel="返回报销审核"
+      />
+      {query.isLoading ? <Card><Skeleton active /></Card> : null}
+      {!query.isLoading && !item ? <Card><Empty description="未找到报销申请记录" /></Card> : null}
       {item ? (
         <>
           <Card
@@ -173,7 +178,7 @@ export default function ReimbursementDetailPage() {
                 onClick={() => {
                   resubmitForm.setFieldsValue({
                     title: item.title,
-                    amountCents: item.amountCents,
+                    amountYuan: item.amountCents / 100,
                     reason: item.reason,
                     exceptionReason: item.exceptionReason,
                   });
@@ -313,7 +318,11 @@ export default function ReimbursementDetailPage() {
               form={resubmitForm}
               layout="vertical"
               onFinish={(v) =>
-                resubmit.mutate({ ...v, amountCents: Number(v.amountCents) })
+                resubmit.mutate({
+                  title: v.title,
+                  amountCents: Math.round(Number(v.amountYuan) * 100),
+                  reason: v.reason,
+                })
               }
             >
               <Form.Item
@@ -324,11 +333,11 @@ export default function ReimbursementDetailPage() {
                 <Input />
               </Form.Item>
               <Form.Item
-                name="amountCents"
-                label="金额（分）"
+                name="amountYuan"
+                label="金额（元）"
                 rules={[{ required: true }]}
               >
-                <Input type="number" />
+                <InputNumber className="w-full" min={0.01} precision={2} prefix="¥" />
               </Form.Item>
               <Form.Item
                 name="reason"

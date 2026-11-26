@@ -150,11 +150,11 @@ export default function ConstructionTasksPage() {
         ))}
       </section>
 
-      <nav className="worker-task-center-filters" aria-label="施工任务状态筛选">
+      <nav className="worker-task-center-filters mb-segmented-tabs" aria-label="施工任务状态筛选">
         {taskSegments.map((segment) => (
           <button
             key={segment.key}
-            className={activeSegment === segment.key ? "is-active" : undefined}
+            className={`mb-segmented-tab${activeSegment === segment.key ? " is-active" : ""}`}
             type="button"
             onClick={() => setActiveSegment(segment.key)}
           >
@@ -323,5 +323,5 @@ function formatLocation(row: TaskRow) {
 
 function formatPhotoProgress(row: TaskRow) {
   const count = row.photoCount ?? new Set((row.photos ?? []).map((photo) => photo.stage).filter(Boolean)).size;
-  return `照片 ${count}/3`;
+  return `照片 ${count}/4`;
 }

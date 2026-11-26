@@ -9,6 +9,8 @@ import {
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { hasEffectivePermission, useEffectivePermissions } from "../permissions/use-effective-permissions";
+import { useAuthStore } from "../../stores/auth-store";
 
 const PURCHASE_MODULE_NAV_ITEMS = [
   {
@@ -50,13 +52,20 @@ const PURCHASE_MODULE_NAV_ITEMS = [
 
 export function PurchaseModuleNav({ activeKey }: { activeKey?: string }) {
   const pathname = usePathname();
+  const user = useAuthStore((state) => state.user);
+  const storeId = user?.storeMember?.store.id;
+  const permissionsQuery = useEffectivePermissions(storeId);
+  const canAccessReturns =
+    hasEffectivePermission(permissionsQuery.data?.permissions, "returns", "read", storeId) ||
+    hasEffectivePermission(permissionsQuery.data?.permissions, "returns", "write", storeId);
   const resolvedActiveKey = activeKey ?? resolveActiveKey(pathname);
+  const visibleItems = PURCHASE_MODULE_NAV_ITEMS.filter((item) => item.key !== "returns" || canAccessReturns);
 
   return (
     <aside className="purchase-module-nav" aria-label="采购管理功能导航">
       <div className="purchase-module-nav-title">采购管理</div>
       <nav>
-        {PURCHASE_MODULE_NAV_ITEMS.map((item) => (
+        {visibleItems.map((item) => (
           <Link
             key={item.key}
             className={item.key === resolvedActiveKey ? "is-active" : undefined}

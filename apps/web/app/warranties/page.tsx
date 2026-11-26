@@ -151,7 +151,6 @@ export default function WarrantiesPage() {
           <strong>主列表展示已由最终交付形成的电子质保卡</strong>
         </div>
         <div className="warranty-command-actions">
-          <Button icon={<PrinterOutlined />}>批量打印</Button>
           <Button icon={<DownloadOutlined />} onClick={() => void exportWarrantyRecords()}>导出记录</Button>
           <Button type="primary" icon={<SearchOutlined />} onClick={() => router.push("/orders")}>
             查看订单履约

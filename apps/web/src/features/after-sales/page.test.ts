@@ -305,8 +305,8 @@ test("after-sales task center is a web management task board", () => {
 
   assert.match(pageSource, /售后任务中心/);
   assert.match(pageSource, /StorePageHeader/);
-  assert.match(pageSource, /from "next\/image"/);
-  assert.match(pageSource, /unoptimized/);
+  assert.doesNotMatch(pageSource, /from "next\/image"/);
+  assert.doesNotMatch(pageSource, /\bunoptimized\b/);
   assert.match(pageSource, /afterSalesApi\.list/);
   assert.match(pageSource, /worker-after-sales-task-page/);
   assert.match(pageSource, /worker-after-sales-hero/);
@@ -326,8 +326,8 @@ test("after-sales task center is a web management task board", () => {
   assert.doesNotMatch(pageSource, /<Button href="\/after-sales">查看详情<\/Button>/);
   assert.doesNotMatch(pageSource, /href="\/after-sales"[\s\S]{0,120}立即处理/);
   assert.match(pageSource, /getAfterSaleOrderLabel/);
-  assert.match(pageSource, /getAfterSalesTaskImage/);
-  assert.match(pageSource, /description\.includes\("划痕"\)/);
+  assert.match(pageSource, /getFirstIssuePhotoUrl/);
+  assert.doesNotMatch(pageSource, /description\.includes\("划痕"\)/);
   assert.match(pageSource, /item\.warrantyId \? "已关联质保单" : "质保单待关联"/);
   assert.doesNotMatch(pageSource, /`质保单：\$\{item\.warrantyId\}`/);
   assert.match(cssSource, /\.worker-after-sales-task-page/);
@@ -336,8 +336,8 @@ test("after-sales task center is a web management task board", () => {
   assert.match(cssSource, /\.worker-after-sales-tabs/);
   assert.match(cssSource, /\.worker-after-sales-table/);
   assert.match(cssSource, /\.worker-after-sales-mobile-cards/);
-  assert.match(pageSource, /\/prototype-assets\/after-sales-task-1\.png/);
-  assert.match(pageSource, /\/prototype-assets\/after-sales-task-2\.png/);
+  assert.doesNotMatch(pageSource, /\/prototype-assets\/after-sales-task-1\.png/);
+  assert.doesNotMatch(pageSource, /\/prototype-assets\/after-sales-task-2\.png/);
   assert.doesNotMatch(pageSource, /lh3\.googleusercontent\.com/);
   assert.doesNotMatch(nextConfigSource, /lh3\.googleusercontent\.com/);
 });

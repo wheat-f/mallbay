@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, App, Button, Card, Progress, Space, Table, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Empty, Progress, Space, Table, Tag, Typography } from "antd";
 import {
   DeleteOutlined,
   PauseOutlined,
@@ -50,45 +50,6 @@ type OfflineSyncSummary = {
   items: Array<Pick<OfflineQueueRow, "clientOperationId" | "orderNo" | "title" | "status" | "code" | "message" | "latestTaskHref">>;
 };
 
-const offlinePreviewImages = [
-  "/prototype-assets/construction-offline-1.png",
-  "/prototype-assets/construction-offline-2.png",
-  "/prototype-assets/construction-offline-3.png"
-];
-
-const offlinePreviewQueue: OfflineQueueRow[] = [
-  {
-    clientOperationId: "preview-1",
-    orderNo: "ORD-20231024-01",
-    title: "验车照片 - 车头正面",
-    capturedAt: "2023-10-24 10:45:12",
-    sizeLabel: "2.4 MB",
-    retryCount: 0,
-    status: "SYNCING",
-    imageSrc: offlinePreviewImages[0]
-  },
-  {
-    clientOperationId: "preview-2",
-    orderNo: "ORD-20231024-01",
-    title: "膜箱照片 - 防伪码",
-    capturedAt: "2023-10-24 10:48:05",
-    sizeLabel: "1.8 MB",
-    retryCount: 0,
-    status: "PENDING",
-    imageSrc: offlinePreviewImages[1]
-  },
-  {
-    clientOperationId: "preview-3",
-    orderNo: "ORD-20231024-02",
-    title: "完工照片 - 侧裙处",
-    capturedAt: "2023-10-24 10:55:22",
-    sizeLabel: "3.1 MB",
-    retryCount: 1,
-    status: "RETRYABLE_FAILURE",
-    imageSrc: offlinePreviewImages[2]
-  }
-];
-
 export default function ConstructionOfflinePage() {
   const router = useRouter();
   const { message, modal } = App.useApp();
@@ -106,7 +67,7 @@ export default function ConstructionOfflinePage() {
   const syncSummary = summaryOverride === undefined ? storedQueue.summary : summaryOverride;
 
   const queueRows = useMemo(
-    () => (operations.length > 0 ? operations.map(mapOperationToQueueRow) : offlinePreviewQueue),
+    () => operations.map(mapOperationToQueueRow),
     [operations]
   );
   const groupedRows = useMemo(() => groupOfflineQueue(queueRows), [queueRows]);
@@ -118,7 +79,7 @@ export default function ConstructionOfflinePage() {
     () => queueRows.filter((item) => item.status === "APPLIED" || item.status === "REPLAYED").length,
     [queueRows]
   );
-  const cacheUsedMb = operations.length > 0 ? getApproxCacheSizeMb(operations) : 45.2;
+  const cacheUsedMb = operations.length > 0 ? getApproxCacheSizeMb(operations) : 0;
   const syncProgress = queueRows.length > 0 ? Math.round((syncedCount / queueRows.length) * 100) : 0;
 
   const syncMutation = useMutation({
@@ -286,7 +247,7 @@ export default function ConstructionOfflinePage() {
         />
 
         <div className="construction-offline-mobile-cards">
-          {queueRows.map((item) => (
+          {queueRows.length > 0 ? queueRows.map((item) => (
             <article key={item.clientOperationId} className="construction-offline-queue-item">
               <div className="construction-offline-queue-main">
                 <div className="construction-offline-queue-title">
@@ -305,11 +266,12 @@ export default function ConstructionOfflinePage() {
                 </div>
               </div>
             </article>
-          ))}
+          )) : <Empty description="暂无本地离线待同步记录" />}
         </div>
       </Card>
 
       <section className="construction-mobile-panel construction-offline-group">
+        {groupedRows.length > 0 ? (
         <div className="construction-offline-list">
           {groupedRows.map((group) => (
             <section key={group.orderNo} className="construction-offline-order-group">
@@ -339,6 +301,7 @@ export default function ConstructionOfflinePage() {
             </section>
           ))}
         </div>
+        ) : <Empty description="暂无按订单分组的离线记录" />}
       </section>
 
       <Card className="construction-offline-progress">
@@ -346,7 +309,7 @@ export default function ConstructionOfflinePage() {
           <span>共 {pendingCount} 个文件待上传</span>
           <span>预计还需：-- 分钟</span>
         </div>
-        <Progress percent={syncProgress || 33} showInfo />
+        <Progress percent={syncProgress} showInfo />
       </Card>
 
       {syncSummary ? (

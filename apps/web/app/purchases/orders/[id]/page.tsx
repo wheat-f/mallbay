@@ -13,7 +13,6 @@ import {
   ImportOutlined,
   MinusCircleOutlined,
   PlusOutlined,
-  PrinterOutlined,
   StopOutlined
 } from "@ant-design/icons";
 import { BrowserMultiFormatReader } from "@zxing/browser";
@@ -437,7 +436,17 @@ export default function PurchaseOrderDetailPage() {
         <PurchaseModuleNav activeKey="orders" />
         <div className="purchase-module-content">
           {!purchaseOrder && !purchaseOrderQuery.isLoading ? (
-            <Alert type="warning" showIcon title="采购订单未找到" description="请从采购列表重新进入采购订单详情。" />
+            <Alert
+              type="warning"
+              showIcon
+              title="采购订单未找到"
+              description="请从采购列表重新进入采购订单详情。"
+              action={(
+                <Button size="small" type="primary" onClick={() => router.push("/purchases/orders")}>
+                  返回采购订单列表
+                </Button>
+              )}
+            />
           ) : null}
 
           {purchaseOrder ? (
@@ -469,7 +478,6 @@ export default function PurchaseOrderDetailPage() {
               <Button icon={<FileTextOutlined />} disabled={items.length === 0} onClick={() => void exportPurchaseOrder()}>
                 导出 Excel
               </Button>
-              <Button icon={<PrinterOutlined />}>打印入库单</Button>
             </div>
           </section>
 
@@ -672,15 +680,31 @@ export default function PurchaseOrderDetailPage() {
               <Card className="purchase-detail-card purchase-log-card" title="流转日志" extra={<HistoryOutlined />}>
                 <div className="purchase-log-timeline">
                   {[
-                    `采购订单创建 ${formatDateTime(purchaseOrder.createdAt)}`,
-                    `供应商已发货 ${purchaseOrder.supplierName ?? "供应商待确认"}`,
-                    `到货提醒：${arrivalReminder}`,
-                    `入库进度：${receivedQuantity}/${purchasedQuantity}`
-                  ].map((item, index) => (
-                    <div key={item}>
-                      <i className={index === 0 ? "is-active" : ""} />
-                      <strong>{item}</strong>
-                      <span>{index === 0 ? "系统记录" : "自动同步"}</span>
+                    {
+                      title: `采购订单创建 ${formatDateTime(purchaseOrder.createdAt)}`,
+                      source: "系统记录",
+                      active: true
+                    },
+                    {
+                      title: `单据状态：${getPurchaseOrderStatusLabel(effectivePurchaseOrderStatus)}`,
+                      source: "状态同步",
+                      active: receivedQuantity > 0
+                    },
+                    {
+                      title: `到货提醒：${arrivalReminder}`,
+                      source: "计划节点",
+                      active: false
+                    },
+                    {
+                      title: `入库进度：${receivedQuantity}/${purchasedQuantity}`,
+                      source: receivedQuantity > 0 ? "实收入库" : "待入库",
+                      active: receivedQuantity >= purchasedQuantity && purchasedQuantity > 0
+                    }
+                  ].map((item) => (
+                    <div key={item.title}>
+                      <i className={item.active ? "is-active" : ""} />
+                      <strong>{item.title}</strong>
+                      <span>{item.source}</span>
                     </div>
                   ))}
                 </div>
@@ -870,7 +894,7 @@ export default function PurchaseOrderDetailPage() {
                               <Form.Item
                                 {...restField}
                                 name={[field.name, "batchNo"]}
-                                label={index === 0 ? "批次号" : " "}
+                                label="批次号"
                                 rules={[{ required: true, message: "请输入批次号" }]}
                               >
                                 <Input placeholder={`第 ${index + 1} 卷/批次号`} />
@@ -878,7 +902,7 @@ export default function PurchaseOrderDetailPage() {
                               <Form.Item
                                 {...restField}
                                 name={[field.name, "quantity"]}
-                                label={index === 0 ? "包装数量" : " "}
+                                label="包装数量"
                                 rules={[{ required: true, message: "请输入数量" }]}
                               >
                                 <InputNumber className="w-full" min={0.001} placeholder="数量" />
@@ -886,7 +910,7 @@ export default function PurchaseOrderDetailPage() {
                               <Form.Item
                                 {...restField}
                                 name={[field.name, "unit"]}
-                                label={index === 0 ? "包装单位" : " "}
+                                label="包装单位"
                                 initialValue={getReceiveConversionDefaults(selectedReceiveItem).unit}
                                 rules={[{ required: true, message: "请选择包装单位" }]}
                               >
@@ -895,7 +919,7 @@ export default function PurchaseOrderDetailPage() {
                               <Form.Item
                                 {...restField}
                                 name={[field.name, "baseUnit"]}
-                                label={index === 0 ? "库存单位" : " "}
+                                label="库存单位"
                                 initialValue={getReceiveConversionDefaults(selectedReceiveItem).baseUnit}
                                 rules={[{ required: true, message: "请选择库存单位" }]}
                               >
@@ -904,7 +928,7 @@ export default function PurchaseOrderDetailPage() {
                               <Form.Item
                                 {...restField}
                                 name={[field.name, "baseQuantityPerPackage"]}
-                                label={index === 0 ? "换算率" : " "}
+                                label="换算率"
                                 initialValue={getReceiveConversionDefaults(selectedReceiveItem).baseQuantityPerPackage}
                                 rules={[{ required: true, message: "请输入换算率" }]}
                               >
@@ -913,7 +937,7 @@ export default function PurchaseOrderDetailPage() {
                               <Form.Item
                                 {...restField}
                                 name={[field.name, "actualCostMode"]}
-                                label={index === 0 ? "实际价处理" : " "}
+                                label="实际价处理"
                                 initialValue="PLANNED"
                               >
                                 <Select
@@ -925,23 +949,47 @@ export default function PurchaseOrderDetailPage() {
                                 />
                               </Form.Item>
                               <Form.Item
-                                {...restField}
-                                name={[field.name, "actualUnitCostYuan"]}
-                                label={index === 0 ? "实际含税单价（元）" : " "}
+                                noStyle
+                                shouldUpdate={(prev, cur) =>
+                                  prev?.batches?.[field.name]?.actualCostMode !== cur?.batches?.[field.name]?.actualCostMode
+                                }
                               >
-                                <InputNumber className="w-full" min={0} precision={2} placeholder="选择后录入" />
-                              </Form.Item>
-                              <Form.Item
-                                {...restField}
-                                name={[field.name, "costDifferenceReason"]}
-                                label={index === 0 ? "成本差异原因" : " "}
-                              >
-                                <Input placeholder="实际价不同于采购单价时必填" />
+                                {({ getFieldValue }) => {
+                                  const isActualCost =
+                                    getFieldValue(["batches", field.name, "actualCostMode"]) === "ACTUAL";
+                                  return (
+                                    <>
+                                      <Form.Item
+                                        {...restField}
+                                        name={[field.name, "actualUnitCostYuan"]}
+                                        label="实际含税单价（元）"
+                                      >
+                                        <InputNumber
+                                          className="w-full"
+                                          min={0}
+                                          precision={2}
+                                          disabled={!isActualCost}
+                                          placeholder={isActualCost ? "请输入实际含税单价" : "默认沿用采购单价"}
+                                        />
+                                      </Form.Item>
+                                      <Form.Item
+                                        {...restField}
+                                        name={[field.name, "costDifferenceReason"]}
+                                        label="成本差异原因"
+                                      >
+                                        <Input
+                                          disabled={!isActualCost}
+                                          placeholder={isActualCost ? "实际价不同于采购单价时必填" : "选择“录入实际入库价”后填写"}
+                                        />
+                                      </Form.Item>
+                                    </>
+                                  );
+                                }}
                               </Form.Item>
                               <Form.Item
                                 {...restField}
                                 name={[field.name, "supplierName"]}
-                                label={index === 0 ? "供应商" : " "}
+                                label="供应商"
                               >
                                 <Select
                                   showSearch

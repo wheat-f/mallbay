@@ -33,6 +33,7 @@ export default function ConstructionLeaveApprovalsPage() {
   const [activeQueue, setActiveQueue] = useState<LeaveApprovalQueue>("pending");
   const [keyword, setKeyword] = useState("");
   const [reviewing, setReviewing] = useState<{ row: LeaveRequestSummary; status: "APPROVED" | "REJECTED" }>();
+  const [actingLeaveId, setActingLeaveId] = useState<string | null>(null);
   const [reviewNote, setReviewNote] = useState("");
 
   const leavesQuery = useQuery({
@@ -65,9 +66,14 @@ export default function ConstructionLeaveApprovalsPage() {
       message.warning("驳回时请填写审批意见");
       return;
     }
-    updateMutation.mutate({ id: reviewing.row.id, status: reviewing.status, reviewNote: reviewNote.trim() || undefined }, {
-      onSuccess: () => setReviewing(undefined)
-    });
+    setActingLeaveId(reviewing.row.id);
+    updateMutation.mutate(
+      { id: reviewing.row.id, status: reviewing.status, reviewNote: reviewNote.trim() || undefined },
+      {
+        onSuccess: () => setReviewing(undefined),
+        onSettled: () => setActingLeaveId(null)
+      }
+    );
   };
 
   return (
@@ -127,12 +133,13 @@ export default function ConstructionLeaveApprovalsPage() {
                   <Tag color={getLeaveRequestStatusColor(row.status)}>{getLeaveRequestStatusLabel(row.status)}</Tag>
                 </div>
                 <p>{row.reason || "未填写请假事由"}</p>
+                {row.reviewNote ? <p className="text-xs text-slate-500">审批意见：{row.reviewNote}</p> : null}
                 <div className="construction-leave-approval-actions">
                   <Button
                     size="small"
                     icon={<CheckCircleOutlined />}
                     disabled={row.status !== "PENDING" || updateMutation.isPending}
-                    loading={updateMutation.isPending}
+                    loading={updateMutation.isPending && actingLeaveId === row.id}
                     onClick={() => openReview(row, "APPROVED")}
                   >
                     批准
@@ -206,7 +213,7 @@ export default function ConstructionLeaveApprovalsPage() {
                     size="small"
                     icon={<CheckCircleOutlined />}
                     disabled={record.status !== "PENDING" || updateMutation.isPending}
-                    loading={updateMutation.isPending}
+                    loading={updateMutation.isPending && actingLeaveId === record.id}
                     onClick={() => openReview(record, "APPROVED")}
                   >
                     批准

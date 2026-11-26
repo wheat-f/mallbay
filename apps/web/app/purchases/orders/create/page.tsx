@@ -179,6 +179,20 @@ export default function PurchaseOrderCreatePage() {
       <div className="purchase-module-layout">
         <PurchaseModuleNav activeKey="orders" />
         <div className="purchase-module-content">
+          {canManagePurchase && !suppliersQuery.isLoading && supplierOptions.length === 0 ? (
+            <Alert
+              type="warning"
+              showIcon
+              className="mb-4"
+              title="当前暂无可用供应商档案"
+              description="生成采购单前请先在供应商管理中维护至少一家合作中供应商。"
+              action={
+                <Button size="small" type="primary" onClick={() => router.push("/purchases/suppliers")}>
+                  去添加供应商
+                </Button>
+              }
+            />
+          ) : null}
           <div className="purchase-order-create-grid">
             <Card className="management-table-card" title="请选择未生成订购的采购需求">
               <Table<PurchaseRequirementRow>

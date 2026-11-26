@@ -90,7 +90,7 @@ test("rebates page separates review finance and payout actions by rebate status"
 
   assert.match(pageSource, /selectedRebateId/);
   assert.match(pageSource, /rebateActionForm/);
-  assert.match(pageSource, /期望发放方式/);
+  assert.doesNotMatch(pageSource, /期望发放方式/);
   assert.match(pageSource, /<span>客户信息<\/span>/);
   assert.match(pageSource, /canBusinessReviewSelected/);
   assert.match(pageSource, /canFinanceApproveSelected/);
@@ -142,9 +142,9 @@ test("rebates page uses mobile rebate cards instead of squeezing the desktop tab
   assert.match(cssSource, /@media \(max-width: 900px\)[\s\S]*\.rebate-mobile-cards\s*\{[\s\S]*display: grid;/);
 });
 
-test("rebates payout preference keeps the prototype recommended deduction wording", () => {
+test("rebates payout preview keeps the stage description wording", () => {
   const pageSource = readFileSync("app/rebates/page.tsx", "utf8");
 
-  assert.match(pageSource, /抵扣返利 \(推荐\)/);
-  assert.doesNotMatch(pageSource, /\{ value: "DEDUCT", label: "抵扣返利" \}/);
+  assert.match(pageSource, /发放操作预设/);
+  assert.doesNotMatch(pageSource, /"DEDUCT"/);
 });

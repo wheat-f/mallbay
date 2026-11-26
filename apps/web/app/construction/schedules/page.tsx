@@ -226,6 +226,21 @@ export default function ConstructionSchedulesPage() {
                       <span><UserOutlined /> {taskMeta.person}</span>
                       <span className="construction-schedule-card-note"><EnvironmentOutlined /> {taskMeta.note}</span>
                     </div>
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        size="small"
+                        type={item.workerId === workerId ? "primary" : "default"}
+                        onClick={() => {
+                          if (canManageSchedules) {
+                            form.setFieldsValue({ workerId: item.workerId, date, status: item.status ?? "WORKING", note: item.note ?? undefined });
+                            return;
+                          }
+                          router.push("/construction/tasks");
+                        }}
+                      >
+                        {canManageSchedules ? "设置排班" : item.workerId === workerId ? "查看任务" : "查看排班"}
+                      </Button>
+                    </div>
                   </article>
                 );
               })}

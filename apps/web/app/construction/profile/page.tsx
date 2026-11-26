@@ -65,7 +65,7 @@ export default function ConstructionProfilePage() {
   const completedRecords = records.filter((record) => record.status === "COMPLETED");
   const photoCount = records.reduce((total, record) => total + (record.photos?.length ?? 0), 0);
   const qualityPassedCount = records.filter((record) =>
-    (record.qualityChecks ?? []).some((check) => check.result === "PASSED")
+    (record.qualityChecks ?? []).some((check) => check.result === "PASS" || check.result === "PASSED")
   ).length;
   const stageCounts = photoStages.map((stage) => ({
     stage,

@@ -148,14 +148,10 @@ export default function ConstructionLeavesPage() {
             rowKey="id"
             loading={leavesQuery.isLoading}
             dataSource={rows}
-            pagination={false}
+            scroll={{ x: 640 }}
+            pagination={{ pageSize: 10 }}
             locale={{ emptyText: <Empty description="暂无请假申请" /> }}
             columns={[
-              {
-                title: "申请人",
-                key: "worker",
-                render: (_, row) => row.worker?.nickname ?? row.worker?.username ?? "当前登录人员"
-              },
               {
                 title: "类型",
                 dataIndex: "leaveType",

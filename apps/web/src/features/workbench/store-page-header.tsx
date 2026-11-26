@@ -13,9 +13,11 @@ type StorePageHeaderProps = {
   description?: ReactNode;
   children?: ReactNode;
   actions?: ReactNode;
+  backHref?: string;
+  backLabel?: string;
 };
 
-export function StorePageHeader({ title, description, children, actions }: StorePageHeaderProps) {
+export function StorePageHeader({ title, description, children, actions, backHref, backLabel }: StorePageHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { storeId } = useCurrentStoreContext();
@@ -31,9 +33,15 @@ export function StorePageHeader({ title, description, children, actions }: Store
         {description ? <Typography.Text className="management-page-description">{description}</Typography.Text> : null}
       </div>
       <Space wrap>
+        {backHref ? (
+          <Button icon={<ArrowLeftOutlined />} onClick={() => router.push(backHref)}>
+            {backLabel ?? "返回"}
+          </Button>
+        ) : null}
         {showFinanceBack ? (
           <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/finance")}>返回财务总览</Button>
-        ) : null}        {showWorkbenchBack ? (
+        ) : null}
+        {showWorkbenchBack ? (
           showFinanceBack ? null : (
             <Button
               icon={<ArrowLeftOutlined />}
